@@ -157,3 +157,65 @@ jobs:
           echo "$RUNNER_TEMP/nsh/bin" >> "$GITHUB_PATH"
       - run: e2e/run.sh
         working-directory: app
+
+  # The Android app on an emulator against a Linux computer: the release APK built here (debug-signed), herdr-core and
+  # the companion on the runner, the emulator reaching them at 10.0.2.2. e2e/android.sh pairs by typing the link,
+  # opens a terminal, types, and checks notifications and the folder picker (its header says all it does).
+  android-linux:
+    name: Android app × Linux computer
+    if: github.repository == 'jt-wang/herdr-anywhere'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      CORE: herdr-core-linux-x86_64.tar.gz
+      CORE_SHA256: 5b2f97cb4b2a9d7a6b2cc5942628203ed9fbb7cc0c2b4b09ad8a6f5648e246b7
+      NSH: nsh-linux-x86_64.tar.gz
+      NSH_SHA256: 539ecf9d76d156b5afa5a086212f23764bfc3945c7395a2119b73a3c66effed0
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: companion/go.mod
+          cache-dependency-path: companion/go.sum
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Install herdr-core, nsh and zsh
+        run: |
+          dir="$RUNNER_TEMP/herdr-core"
+          mkdir -p "$dir"
+          curl -fsSL "https://releases.herdr.dev/core/$HERDR_CORE_VERSION/$CORE" -o "$RUNNER_TEMP/$CORE"
+          echo "$CORE_SHA256  $RUNNER_TEMP/$CORE" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$CORE" -C "$dir"
+          "$dir/herdr-core" --version
+          echo "HM_TEST_HC=$dir/herdr-core" >> "$GITHUB_ENV"
+          curl -fsSL "https://github.com/longbridge/nsh/releases/download/$NSH_VERSION/$NSH" -o "$RUNNER_TEMP/$NSH"
+          echo "$NSH_SHA256  $RUNNER_TEMP/$NSH" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$NSH" -C "$RUNNER_TEMP"
+          "$RUNNER_TEMP/nsh/bin/nsh" --version
+          echo "$RUNNER_TEMP/nsh/bin" >> "$GITHUB_PATH"
+          echo "NSH_HOME=$RUNNER_TEMP/nsh" >> "$GITHUB_ENV"
+          sudo apt-get install -y -qq zsh >/dev/null # android.sh's terminals run zsh, as on a Mac
+      - name: Build the APK
+        working-directory: app
+        run: android/build.sh
+      # android-emulator-runner's setup for hardware acceleration on Linux runners.
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      # The same phone as the Mac's test emulator: API 35, Google APIs, a Pixel 6 screen.
+      - uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
+          working-directory: app
+          script: ANDROID_SERIAL=emulator-5554 e2e/android.sh

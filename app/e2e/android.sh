@@ -14,7 +14,7 @@ app=$(cd "$(dirname "$0")/.." && pwd)
 apk=${1:-$app/android/build/Herdr.apk}
 shot=${2:-}
 adb="${ANDROID_HOME:-$HOME/Library/Android/sdk}/platform-tools/adb"
-hc=$(command -v hc || echo "$HOME/.local/bin/hc")
+hc=${HM_TEST_HC:-$(command -v hc || echo "$HOME/.local/bin/hc")}
 id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$app/nsh.json")
 
 port=7691
