@@ -339,7 +339,10 @@ sleep 1
 tap switcher
 sleep 2
 before=$(at switch-new-folder)
-"$adb" shell input swipe 540 2100 540 1600 300
+[ -n "$before" ] || { echo "FAIL: no switcher rows"; exit 1; }
+# From a row itself: a fixed point can land above a short sheet, where a touch closes it (seen on the CI emulator).
+set -- $before
+"$adb" shell input swipe "$1" "$2" "$1" "$(($2 - 500))" 300
 sleep 2
 after=""; for _ in 1 2 3 4 5; do after=$(at switch-new-folder); [ -n "$after" ] && break; sleep 1; done # a dump can fail while the screen settles
 [ -n "$before" ] && [ "$before" = "$after" ] || { echo "FAIL: a drag moved the switcher's rows (from '$before' to '$after')"; exit 1; }
