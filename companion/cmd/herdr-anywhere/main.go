@@ -98,8 +98,9 @@ func runContext(ctx context.Context, args []string, stdout, stderr io.Writer) in
 	case errors.Is(err, errRestart):
 		if err := restartSelf(); err != nil {
 			fmt.Fprintf(stderr, "herdr-anywhere: restarting: %v\n", err)
+			return 1
 		}
-		return 1
+		return 0 // Windows: the new file runs in a new process (execSelf); elsewhere restartSelf doesn't return
 	case errors.Is(err, errReported):
 		return 1
 	case errors.As(err, &u):
@@ -451,8 +452,9 @@ func reachableURL(urls []string) string {
 // serve records where it listens, so pair's link uses serve's port.
 const serveURLsFile = "serve.json"
 
+// writeServeURLs records where this serve listens, and its process.
 func writeServeURLs(dir string, urls []string) error {
-	b, _ := json.Marshal(map[string][]string{"urls": urls})
+	b, _ := json.Marshal(map[string]any{"urls": urls, "pid": os.Getpid()})
 	return os.WriteFile(filepath.Join(dir, serveURLsFile), b, 0o600)
 }
 

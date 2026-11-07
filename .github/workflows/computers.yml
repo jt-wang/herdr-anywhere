@@ -4,7 +4,7 @@ name: Computers
 # Each job installs herdr-core from Herdr's releases and runs build, vet and the Go tests, including the ones
 # that drive that real core (internal/server/integration_test.go) and the one that pairs a phone over Tailcat's
 # real relays and talks to the core through the tunnel (TestLiveTailcat). Windows Arm runs Herdr's x64 build
-# under Windows' x64 emulation, as Herdr ships no Arm build for Windows yet.
+# under Windows' x64 emulation, as Herdr ships no Arm build for Windows yet, and the same for the x64 companion.
 # Runs only in the public repo, where GitHub's runners for public repos are free.
 on:
   pull_request:
@@ -105,6 +105,20 @@ jobs:
         working-directory: companion
       - run: go test -v ./...
         working-directory: companion
+      # Releases carry one Windows file, for x64. On Windows on Arm it runs under Windows' x64 emulation: the same
+      # update tests, built for x64, run here on the Arm machine.
+      - name: The x64 release file on Windows on Arm
+        if: matrix.os == 'windows-11-arm'
+        working-directory: companion
+        shell: bash
+        env:
+          CGO_ENABLED: "0"
+          GOARCH: amd64
+        run: |
+          echo "machine: $(go env GOHOSTARCH), building for: $(go env GOARCH)"
+          go build -buildvcs=false -trimpath -ldflags="-s -w" -o herdr-anywhere-windows-amd64.exe ./cmd/herdr-anywhere
+          ./herdr-anywhere-windows-amd64.exe --version
+          go test -v -run 'Update|Apply|Asset|Latest' ./internal/update ./cmd/herdr-anywhere
 
   # The phone app's own client code (app/e2e/live.test.ts: pair, connect, run, type, upload, git branch, revoke)
   # against a real companion and core. nsh has builds for macOS Arm, Linux x64 and Windows x64; live-app.tsx

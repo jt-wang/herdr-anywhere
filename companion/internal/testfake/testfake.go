@@ -4,6 +4,7 @@ package testfake
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -106,3 +107,35 @@ func ShortDir(t testing.TB, prefix string) string {
 // PermBits says files here have Unix permission bits. Windows has none (os.Stat
 // shows 0666 or 0444 there); who can open a file is its ACL.
 func PermBits() bool { return runtime.GOOS != "windows" }
+
+var (
+	releasesMu sync.Mutex
+	releases   = map[string][]byte{}
+)
+
+// Release is a program that stands in for a released companion: `--version` prints "herdr-anywhere <version>", or,
+// with exit set, exits with that code; `wait` keeps it running. A real program on every OS, where a #!/bin/sh script
+// doesn't run on Windows.
+func Release(t testing.TB, version string, exit int) []byte {
+	t.Helper()
+	key := fmt.Sprintf("%s/%d", version, exit)
+	releasesMu.Lock()
+	defer releasesMu.Unlock()
+	if b, ok := releases[key]; ok {
+		return b
+	}
+	out := filepath.Join(t.TempDir(), "release"+Ext())
+	flags := "-X main.version=" + version
+	if exit != 0 {
+		flags += fmt.Sprintf(" -X main.exit=%d", exit)
+	}
+	if b, err := exec.Command("go", "build", "-ldflags="+flags, "-o", out, "herdr-anywhere/companion/internal/testfake/fakerelease").CombinedOutput(); err != nil {
+		t.Fatalf("building fakerelease: %v\n%s", err, b)
+	}
+	b, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	releases[key] = b
+	return b
+}

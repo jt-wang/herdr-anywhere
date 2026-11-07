@@ -58,6 +58,8 @@ func newUpdates(dir string, client update.Client, logger *log.Logger, restart fu
 	exe, err := thisFile()
 	if err != nil {
 		logger.Printf("update: can't find this program: %v", err)
+	} else {
+		go update.RemoveOld(exe) // the file an update set aside on Windows
 	}
 	first := 30 * time.Second // a serve that starts and stops at once asks nothing
 	if client.Releases != "" {
