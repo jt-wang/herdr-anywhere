@@ -101,6 +101,16 @@ jobs:
         run: |
           go build -buildvcs=false -trimpath -o "herdr-anywhere$(go env GOEXE)" ./cmd/herdr-anywhere
           "./herdr-anywhere$(go env GOEXE)" --version
+      # The README's and INSTALL.md's PowerShell steps, as written, with the download pointed at the file built here.
+      - name: The install steps on Windows
+        if: runner.os == 'Windows'
+        shell: bash
+        env:
+          CGO_ENABLED: "0"
+          GOARCH: amd64
+        run: |
+          (cd companion && go build -buildvcs=false -trimpath -ldflags="-s -w" -o "$RUNNER_TEMP/herdr-anywhere-windows-amd64.exe" ./cmd/herdr-anywhere)
+          app/e2e/install-docs-windows.sh "$RUNNER_TEMP/herdr-anywhere-windows-amd64.exe" "$HM_TEST_HC"
       - run: go vet ./...
         working-directory: companion
       - run: go test -v ./...

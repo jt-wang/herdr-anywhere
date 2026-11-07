@@ -1,4 +1,4 @@
-// herdr-anywhere lets a paired phone reach herdr-core on this Mac: `pair`
+// herdr-anywhere lets a paired phone reach herdr-core on this computer: `pair`
 // prints a pairing QR code, `serve` bridges each phone WebSocket to its own
 // `hc connect`.
 package main
@@ -37,7 +37,7 @@ var version = "0.1.12"
 
 const defaultPort = "7681"
 
-const usage = `herdr-anywhere: reach herdr-core on this Mac from a paired phone
+const usage = `herdr-anywhere: reach herdr-core on this computer from a paired phone
 
 usage:
   herdr-anywhere serve   [--listen 127.0.0.1:7681]... [--lan] [--tailcat] [--web DIR] [--hc PATH] [--state DIR]
@@ -199,7 +199,7 @@ func listenAddrs(listen []string, withLAN bool, lanAddrs []netip.Addr) ([]string
 	}
 	if withLAN {
 		if len(lanAddrs) == 0 {
-			return nil, errors.New("--lan: this Mac has no private IPv4 LAN address (Wi-Fi or Ethernet)")
+			return nil, errors.New("--lan: this computer has no private IPv4 LAN address (Wi-Fi or Ethernet)")
 		}
 		for _, a := range lanAddrs {
 			add(net.JoinHostPort(a.String(), port))
@@ -212,8 +212,8 @@ func serve(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	fs, state := newFlags("serve", stderr)
 	var listen listFlag
 	fs.Var(&listen, "listen", "address to listen on (repeatable; default 127.0.0.1:7681)")
-	withLAN := fs.Bool("lan", false, "also listen on this Mac's private LAN IPv4 address(es)")
-	withTailcat := fs.Bool("tailcat", false, "also let paired phones reach this Mac through Tailcat, from any network")
+	withLAN := fs.Bool("lan", false, "also listen on this computer's private LAN IPv4 address(es)")
+	withTailcat := fs.Bool("tailcat", false, "also let paired phones reach this computer through Tailcat, from any network")
 	web := fs.String("web", "", "serve the PWA from this directory")
 	hcFlag := fs.String("hc", "", "path to herdr-core's hc (default: hc on PATH, else ~/.local/bin/hc; on Windows herdr-core on PATH, else %LOCALAPPDATA%\\Programs\\herdr-core)")
 	releases := releaseFlags(fs)
