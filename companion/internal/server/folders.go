@@ -58,7 +58,7 @@ func (s *Server) absolute(p string) (string, bool) {
 	switch {
 	case p == "" || p == "~":
 		return s.home(), true
-	case strings.HasPrefix(p, "~/"):
+	case strings.HasPrefix(p, "~/") || strings.HasPrefix(p, "~"+string(filepath.Separator)): // ~\ too on Windows
 		p = filepath.Join(s.home(), p[2:])
 	}
 	if !filepath.IsAbs(p) {
@@ -79,7 +79,7 @@ func (s *Server) folders(w http.ResponseWriter, r *http.Request) {
 	}
 	path, ok := s.absolute(r.URL.Query().Get("path"))
 	if !ok {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "the path must start with / or ~"})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "the path must start with ~ or be a full path"})
 		return
 	}
 	entries, err := os.ReadDir(path)
@@ -136,7 +136,7 @@ func (s *Server) createFolder(w http.ResponseWriter, r *http.Request) {
 	}
 	path, ok := s.absolute(body.Path)
 	if !ok || strings.TrimSpace(body.Path) == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "the path must start with / or ~"})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "the path must start with ~ or be a full path"})
 		return
 	}
 	if isDir(path) {
