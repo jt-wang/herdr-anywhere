@@ -76,10 +76,11 @@ activity=$("$adb" shell cmd package resolve-activity --brief "$id" | tail -1 | t
 # The app's own activity, which can answer the app's host calls (NSH's AppActivity cannot be extended).
 [ "$activity" = "$id/.MainActivity" ] || { echo "FAIL: the launcher opens $activity"; exit 1; }
 "$adb" shell am start -W -n "$activity" >/dev/null
-# What the link field holds.
+# What the link field holds: pair-link is the field's wrapper, whose own text is empty; the text is its child's
+# (run 42365463577's screen dump).
 typed() {
   "$adb" shell uiautomator dump /sdcard/hm.xml >/dev/null 2>&1
-  "$adb" shell cat /sdcard/hm.xml | tr '>' '\n' | grep 'resource-id="pair-link"' | sed -E 's/.*text="([^"]*)".*/\1/'
+  "$adb" shell cat /sdcard/hm.xml | tr '>' '\n' | sed -n '/resource-id="pair-link"/,$p' | grep -oE 'text="[^"]+"' | head -1 | sed -E 's/^text="(.*)"$/\1/'
 }
 # adb's input text drops a character now and then on a slow emulator (run 42364596694 typed 21 of the code's 22
 # characters, and the companion said the code was wrong), so the link is typed until the field holds all of it.
