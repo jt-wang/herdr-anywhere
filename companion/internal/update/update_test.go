@@ -6,6 +6,7 @@ import (
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -661,5 +662,24 @@ func TestApplyReplacesARunningProgram(t *testing.T) {
 	RemoveOld(exe)
 	if es, _ := os.ReadDir(filepath.Dir(exe)); len(es) != 1 {
 		t.Fatalf("left in the folder after the old one ended: %v", es)
+	}
+}
+
+// A computer releases carry no file for (Linux, Windows on Arm built for Arm) still hears of a new version, so the
+// phone can say so and show how to install it by hand; Apply refuses it.
+func TestLatestOnAComputerWithoutAReleaseFile(t *testing.T) {
+	old := Asset
+	Asset = AssetFor("linux", "amd64")
+	t.Cleanup(func() { Asset = old })
+	bin := []byte("mac file")
+	srv, _ := fakeGitHub(t, "v0.1.6", bin, digestOf(bin))
+	c := testClient(srv)
+	c.Asset = ""
+	r, err := c.Latest(context.Background())
+	if err != nil || r.Version != "0.1.6" || r.URL != "" {
+		t.Fatalf("%+v, %v", r, err)
+	}
+	if err := c.Apply(context.Background(), r, filepath.Join(t.TempDir(), "herdr-anywhere")); !errors.Is(err, ErrNotHere) {
+		t.Fatalf("Apply: %v", err)
 	}
 }

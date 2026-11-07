@@ -195,13 +195,14 @@ func (c Client) Latest(ctx context.Context) (Release, error) {
 			continue
 		}
 		switch {
-		case f.Name == c.asset():
+		case c.asset() != "" && f.Name == c.asset():
 			rel.URL, rel.Digest, rel.Bytes = at(f.Name), "sha256:"+f.SHA256, f.Bytes
 		case f.Name == AppAsset:
 			rel.App = App{URL: at(f.Name), Digest: "sha256:" + f.SHA256, Bytes: f.Bytes}
 		}
 	}
-	if rel.URL == "" {
+	// A computer releases carry no file for still hears of the version; Apply refuses it.
+	if rel.URL == "" && c.asset() != "" {
 		return Release{}, fmt.Errorf("release %s has no %s", m.Version, c.asset())
 	}
 	return rel, nil
@@ -226,6 +227,9 @@ func (c Client) read(ctx context.Context, url string, limit int64) ([]byte, erro
 // Apply downloads the release beside exe and puts it in exe's place. It does so only once the file matches the release's
 // digest, and runs, and says it is that version; until then exe stays as it was.
 func (c Client) Apply(ctx context.Context, rel Release, exe string) error {
+	if rel.URL == "" {
+		return ErrNotHere
+	}
 	// The same ending as exe: Windows runs only a file named .exe.
 	tmp, err := os.CreateTemp(filepath.Dir(exe), ".herdr-anywhere-update-*"+filepath.Ext(exe))
 	if err != nil {
