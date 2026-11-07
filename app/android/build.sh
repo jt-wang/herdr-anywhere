@@ -9,6 +9,7 @@ export JAVA_HOME="${JAVA_HOME:-/Applications/Android Studio.app/Contents/jbr/Con
 app="$root/android/app"
 "$root/scripts/tailpocket.sh" android >/dev/null
 mkdir -p "$app/libs"; cp "${NSH_HOME:-$HOME/.nsh}/embed/android/nsh.aar" "$app/libs/nsh.aar"
+export NSH_AAR="$app/libs/nsh.aar" # TailPocket's tailpocket-nsh module compiles against it; it looks in ~/.nsh otherwise
 rm -rf "$app/src/main/assets/nsh"
 nsh build "$root" --release --out "$app/src/main/assets/nsh"
 rm -f "$app/src/main/assets/nsh/bundle.js" "$app/src/main/assets/nsh/bundle.js.map" # the device runs the bytecode
