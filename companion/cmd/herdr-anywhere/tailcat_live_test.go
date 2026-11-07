@@ -123,7 +123,8 @@ func TestLiveTailcat(t *testing.T) {
 	t.Logf("pairing window open after %v; invite %d chars", time.Since(started).Round(time.Millisecond), len(text))
 	inv, err := connectinvite.Decode(text, tailcat.Prefix)
 	if err != nil {
-		t.Fatalf("invite %q: %v\n%s", text, err, out)
+		// CI logs are public: never print the invite or the output holding it.
+		t.Fatalf("invite (%d chars) doesn't decode: %v", len(text), err)
 	}
 
 	started = time.Now()
