@@ -235,7 +235,7 @@ func (c Client) Apply(ctx context.Context, rel Release, exe string) error {
 	if err != nil {
 		return err
 	}
-	defer os.Remove(tmp.Name())
+	defer removeSoon(tmp.Name()) // after it ran, Windows on Arm holds an x64 program's file a moment longer
 	defer tmp.Close()
 
 	r, err := c.get(ctx, rel.URL)
@@ -281,14 +281,19 @@ func (c Client) Apply(ctx context.Context, rel Release, exe string) error {
 // right after a restart the old process may still hold one. Elsewhere there are none.
 func RemoveOld(exe string) {
 	olds, _ := filepath.Glob(exe + ".old*")
-	for i := 0; i < 20 && len(olds) > 0; i++ {
-		left := olds[:0]
-		for _, o := range olds {
-			if err := os.Remove(o); err != nil && !os.IsNotExist(err) {
-				left = append(left, o)
+	removeSoon(olds...)
+}
+
+// removeSoon removes files, trying again for 10 s while Windows still holds one.
+func removeSoon(paths ...string) {
+	for i := 0; i < 20 && len(paths) > 0; i++ {
+		left := paths[:0]
+		for _, p := range paths {
+			if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+				left = append(left, p)
 			}
 		}
-		if olds = left; len(olds) > 0 {
+		if paths = left; len(paths) > 0 {
 			time.Sleep(500 * time.Millisecond)
 		}
 	}
