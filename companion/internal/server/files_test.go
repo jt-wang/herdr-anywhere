@@ -80,7 +80,7 @@ func TestFileNameCannotLeaveItsFolder(t *testing.T) {
 		}
 		p := out["path"].(string)
 		rel, err := filepath.Rel(filepath.Join(home, ".cache", "herdr-anywhere", "uploads"), p)
-		if err != nil || strings.HasPrefix(rel, "..") || strings.Count(rel, "/") != 1 {
+		if err != nil || strings.HasPrefix(rel, "..") || strings.Count(filepath.ToSlash(rel), "/") != 1 { // one folder, then the file
 			t.Fatalf("%q landed at %q", name, p)
 		}
 	}
