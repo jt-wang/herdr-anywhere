@@ -30,8 +30,11 @@ export HC_SESSION="hmandroid-$$" HC_SOCKET="" HOME="$work/home" SHELL=/bin/zsh
 export XDG_STATE_HOME="$work/state" XDG_CONFIG_HOME="$work/config" XDG_DATA_HOME="$work/data" XDG_RUNTIME_DIR="$run"
 export HERDR_ANYWHERE_STATE="$work/companion" GIT_CONFIG_GLOBAL="$work/home/.gitconfig"
 "$hc" run --bg --keep --cwd "$work/home/src/acme-api" --label herdr.space=spandroid --label herdr.tab=tbandroid >/dev/null
-# On a failure, what each terminal of this run's core shows: the computer's side of what the phone sent.
+# On a failure, what is on the phone's screen (ids and texts) and what each terminal of this run's core shows.
 show_terms() {
+  "$adb" shell uiautomator dump /sdcard/hm.xml 2>&1 | grep -v "dumped to" || true
+  echo "--- on the phone's screen:"
+  "$adb" shell cat /sdcard/hm.xml 2>/dev/null | tr '>' '\n' | grep -oE '(resource-id|text)="[^"]+"' | head -40
   for t in $("$hc" ls --json 2>/dev/null | python3 -c 'import json,sys; print(" ".join(x["address"] for x in json.load(sys.stdin)["terminals"]))' 2>/dev/null); do
     echo "--- terminal $t, last lines:"; "$hc" read "$t" 2>&1 | tail -15
   done
@@ -338,7 +341,7 @@ sleep 2
 before=$(at switch-new-folder)
 "$adb" shell input swipe 540 2100 540 1600 300
 sleep 2
-after=$(at switch-new-folder)
+after=""; for _ in 1 2 3 4 5; do after=$(at switch-new-folder); [ -n "$after" ] && break; sleep 1; done # a dump can fail while the screen settles
 [ -n "$before" ] && [ "$before" = "$after" ] || { echo "FAIL: a drag moved the switcher's rows (from '$before' to '$after')"; exit 1; }
 "$adb" shell input keyevent KEYCODE_BACK
 sleep 1
