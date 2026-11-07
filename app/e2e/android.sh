@@ -28,7 +28,15 @@ export HC_SESSION="hmandroid-$$" HC_SOCKET="" HOME="$work/home" SHELL=/bin/zsh
 export XDG_STATE_HOME="$work/state" XDG_CONFIG_HOME="$work/config" XDG_DATA_HOME="$work/data" XDG_RUNTIME_DIR="$run"
 export HERDR_ANYWHERE_STATE="$work/companion" GIT_CONFIG_GLOBAL="$work/home/.gitconfig"
 "$hc" run --bg --keep --cwd "$work/home/src/acme-api" --label herdr.space=spandroid --label herdr.tab=tbandroid >/dev/null
+# On a failure, what each terminal of this run's core shows: the computer's side of what the phone sent.
+show_terms() {
+  for t in $("$hc" ls --json 2>/dev/null | python3 -c 'import json,sys; print(" ".join(x["address"] for x in json.load(sys.stdin)["terminals"]))' 2>/dev/null); do
+    echo "--- terminal $t, last lines:"; "$hc" read "$t" 2>&1 | tail -15
+  done
+}
 cleanup() {
+  status=$?
+  [ "$status" -ne 0 ] && show_terms
   [ -n "${serve_pid:-}" ] && kill "$serve_pid" 2>/dev/null
   "$hc" server stop >/dev/null 2>&1 || true
   chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run"
