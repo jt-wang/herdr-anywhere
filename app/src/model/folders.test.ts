@@ -141,3 +141,65 @@ test('up goes to the folder above; at home there is none', async () => {
   await p.go(HOME)
   expect(p.up()).toBe(undefined)
 })
+
+// A Windows computer: the companion answers with Go's Windows paths (filepath.Clean, filepath.Dir): `\` between
+// parts and a drive at the top, whose folder above is itself.
+const WHOME = 'C:\\Users\\sam'
+const wdisk = () => new FakeFolders(WHOME, ['src\\api', 'src\\demo-app', 'src\\web', 'Documents'], ['src\\api'], ['D:\\work\\x'])
+
+test('Windows: ~ for home with \\, a typed ~\\ or ~/ or drive path is a path, / turned into \\', () => {
+  expect(tilde('C:\\Users\\sam\\src\\api', WHOME)).toBe('~\\src\\api')
+  expect(tilde('C:\\Users\\sam', WHOME)).toBe('~')
+  expect(tilde('C:\\Users\\samuel', WHOME)).toBe('C:\\Users\\samuel')
+  expect(expand('~\\src\\', WHOME)).toBe('C:\\Users\\sam\\src\\')
+  expect(expand('~/src/api', WHOME)).toBe('C:\\Users\\sam\\src\\api')
+  expect(expand('D:\\work', WHOME)).toBe('D:\\work')
+  expect(expand('d:/work/x', WHOME)).toBe('d:\\work\\x')
+  expect(expand('D:', WHOME)).toBe('D:\\')
+  expect(expand('src', WHOME)).toBe(undefined)
+})
+
+test('Windows: the breadcrumb starts at ~ inside home and at the drive outside it', () => {
+  expect(crumbs('C:\\Users\\sam\\src\\api', WHOME)).toEqual([
+    { label: '~', path: 'C:\\Users\\sam' }, { label: 'src', path: 'C:\\Users\\sam\\src' }, { label: 'api', path: 'C:\\Users\\sam\\src\\api' }])
+  expect(crumbs('D:\\work\\x', WHOME)).toEqual([{ label: 'D:', path: 'D:\\' }, { label: 'work', path: 'D:\\work' }, { label: 'x', path: 'D:\\work\\x' }])
+  expect(crumbs('D:\\', WHOME)).toEqual([{ label: 'D:', path: 'D:\\' }])
+})
+
+test('Windows: a typed path goes to its folder, filters, and one that exists can be used as typed', async () => {
+  const p = new FolderPicker(wdisk(), WHOME)
+  await p.go(WHOME)
+  expect(names(p.shown())).toEqual(['Documents', 'src'])
+  await p.type('~\\src\\de')
+  expect(p.listing.get()?.path).toBe('C:\\Users\\sam\\src')
+  expect(names(p.shown())).toEqual(['demo-app'])
+  await p.type('~/src/demo-app')
+  expect(p.typedFolder()).toBe('C:\\Users\\sam\\src\\demo-app')
+  await p.type('D:\\')
+  expect(p.listing.get()?.path).toBe('D:\\')
+  expect(names(p.shown())).toEqual(['work'])
+})
+
+test("Windows: a typed path that doesn't exist: close names, and Create folder in the folder above", async () => {
+  const d = wdisk()
+  const p = new FolderPicker(d, WHOME)
+  await p.go(WHOME)
+  await p.type('~\\scr\\api')
+  expect(p.missing()).toEqual({ path: 'C:\\Users\\sam\\scr\\api', text: "~\\scr\\api doesn't exist", suggestions: ['C:\\Users\\sam\\src\\api'] })
+  await p.type('~\\src\\new-thing')
+  expect(p.missing()?.create).toEqual({ name: 'new-thing', parent: 'C:\\Users\\sam\\src' })
+  expect(await p.create()).toBe('C:\\Users\\sam\\src\\new-thing')
+  await p.type('D:\\nwe')
+  expect(p.missing()).toEqual({ path: 'D:\\nwe', text: "D:\\nwe doesn't exist", suggestions: [], create: { name: 'nwe', parent: 'D:\\' } })
+})
+
+test('Windows: up goes to the folder above, up to the drive; Recent names each folder by its last part', async () => {
+  const p = new FolderPicker(wdisk(), WHOME)
+  await p.go('D:\\work')
+  expect(p.up()).toEqual({ label: 'D:', path: 'D:\\' })
+  await p.go('D:\\')
+  expect(p.up()).toBe(undefined)
+  await p.go(WHOME)
+  expect(p.recent(['C:\\Users\\sam\\src\\api', 'C:\\Users\\sam', 'D:\\'])).toEqual([
+    { name: 'api', path: 'C:\\Users\\sam\\src\\api' }, { name: '~', path: 'C:\\Users\\sam' }, { name: 'D:', path: 'D:\\' }])
+})
