@@ -1,11 +1,11 @@
 #!/bin/sh
 # Runs e2e/live.test.ts against a real companion and a real herdr-core in a session of their own:
 # its own HC_SESSION, HOME, XDG dirs and companion state, a free port on 127.0.0.1, all removed after.
-# Needs: go, nsh, and herdr-core's hc (on PATH or ~/.local/bin).
+# Needs: go, nsh, and herdr-core's hc (HM_TEST_HC, or on PATH, or ~/.local/bin).
 set -eu
 app=$(cd "$(dirname "$0")/.." && pwd)
 companion="$app/../companion"
-hc=$(command -v hc || echo "$HOME/.local/bin/hc")
+hc=${HM_TEST_HC:-$(command -v hc || echo "$HOME/.local/bin/hc")}
 [ -x "$hc" ] || { echo "no hc: install herdr-core first" >&2; exit 1; }
 
 work=$(mktemp -d)

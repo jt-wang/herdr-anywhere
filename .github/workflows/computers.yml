@@ -24,6 +24,9 @@ env:
   # matrix. Update them together.
   HERDR_CORE_VERSION: "0.1.18"
   HM_TAILCAT_LIVE: "1"
+  # nsh from https://github.com/longbridge/nsh/releases/tag/v0.3.0; each file's sha256 (the digest GitHub lists
+  # for it, checked 2026-11-07) is in the app job's matrix.
+  NSH_VERSION: "v0.3.0"
 
 jobs:
   companion:
@@ -102,3 +105,55 @@ jobs:
         working-directory: companion
       - run: go test -v ./...
         working-directory: companion
+
+  # The phone app's own client code (app/e2e/live.test.ts: pair, connect, run, type, upload, git branch, revoke)
+  # against a real companion and core. nsh has builds for macOS Arm, Linux x64 and Windows x64; live-app.tsx
+  # drives a POSIX shell, so Windows isn't here yet.
+  app:
+    name: App against a real core on ${{ matrix.os }}
+    if: github.repository == 'jt-wang/herdr-anywhere'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-26
+            core: herdr-core-macos-aarch64.tar.gz
+            sha256: 77d8af092e25ae650f4424d6dad27514f6916a11d807fb0752858cd27c21e4fc
+            nsh: nsh-macos-arm64.tar.gz
+            nsh_sha256: 34fdd2ec43d5e22986723e7633acf9223e365bd5bace1a502b5ae24fb75c266c
+          - os: ubuntu-latest
+            core: herdr-core-linux-x86_64.tar.gz
+            sha256: 5b2f97cb4b2a9d7a6b2cc5942628203ed9fbb7cc0c2b4b09ad8a6f5648e246b7
+            nsh: nsh-linux-x86_64.tar.gz
+            nsh_sha256: 539ecf9d76d156b5afa5a086212f23764bfc3945c7395a2119b73a3c66effed0
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: companion/go.mod
+          cache-dependency-path: companion/go.sum
+      - name: Install herdr-core and nsh
+        env:
+          CORE: ${{ matrix.core }}
+          CORE_SHA256: ${{ matrix.sha256 }}
+          NSH: ${{ matrix.nsh }}
+          NSH_SHA256: ${{ matrix.nsh_sha256 }}
+        run: |
+          if command -v sha256sum >/dev/null; then sum="sha256sum"; else sum="shasum -a 256"; fi
+          dir="$RUNNER_TEMP/herdr-core"
+          mkdir -p "$dir"
+          curl -fsSL "https://releases.herdr.dev/core/$HERDR_CORE_VERSION/$CORE" -o "$RUNNER_TEMP/$CORE"
+          echo "$CORE_SHA256  $RUNNER_TEMP/$CORE" | $sum -c -
+          tar -xzf "$RUNNER_TEMP/$CORE" -C "$dir"
+          "$dir/herdr-core" --version
+          echo "HM_TEST_HC=$dir/herdr-core" >> "$GITHUB_ENV"
+          curl -fsSL "https://github.com/longbridge/nsh/releases/download/$NSH_VERSION/$NSH" -o "$RUNNER_TEMP/$NSH"
+          echo "$NSH_SHA256  $RUNNER_TEMP/$NSH" | $sum -c -
+          tar -xzf "$RUNNER_TEMP/$NSH" -C "$RUNNER_TEMP"
+          "$RUNNER_TEMP/nsh/bin/nsh" --version
+          echo "$RUNNER_TEMP/nsh/bin" >> "$GITHUB_PATH"
+      - run: e2e/run.sh
+        working-directory: app
