@@ -34,7 +34,8 @@ export HERDR_ANYWHERE_STATE="$work/companion" GIT_CONFIG_GLOBAL="$work/home/.git
 show_terms() {
   "$adb" shell uiautomator dump /sdcard/hm.xml 2>&1 | grep -v "dumped to" || true
   echo "--- on the phone's screen:"
-  "$adb" shell cat /sdcard/hm.xml 2>/dev/null | tr '>' '\n' | grep -oE '(resource-id|text)="[^"]+"' | head -40
+  # CI logs are public: no pairing code, even this run's.
+  "$adb" shell cat /sdcard/hm.xml 2>/dev/null | tr '>' '\n' | grep -oE '(resource-id|text)="[^"]+"' | head -40 | sed -E 's/#pair=[A-Za-z0-9_-]+/#pair=…/g'
   for t in $("$hc" ls --json 2>/dev/null | python3 -c 'import json,sys; print(" ".join(x["address"] for x in json.load(sys.stdin)["terminals"]))' 2>/dev/null); do
     echo "--- terminal $t, last lines:"; "$hc" read "$t" 2>&1 | tail -15
   done
@@ -75,8 +76,21 @@ activity=$("$adb" shell cmd package resolve-activity --brief "$id" | tail -1 | t
 # The app's own activity, which can answer the app's host calls (NSH's AppActivity cannot be extended).
 [ "$activity" = "$id/.MainActivity" ] || { echo "FAIL: the launcher opens $activity"; exit 1; }
 "$adb" shell am start -W -n "$activity" >/dev/null
-tap pair-link
-"$adb" shell input text "'$link'"
+# What the link field holds.
+typed() {
+  "$adb" shell uiautomator dump /sdcard/hm.xml >/dev/null 2>&1
+  "$adb" shell cat /sdcard/hm.xml | tr '>' '\n' | grep 'resource-id="pair-link"' | sed -E 's/.*text="([^"]*)".*/\1/'
+}
+# adb's input text drops a character now and then on a slow emulator (run 42364596694 typed 21 of the code's 22
+# characters, and the companion said the code was wrong), so the link is typed until the field holds all of it.
+for _ in 1 2 3; do
+  tap pair-link
+  "$adb" shell input keyevent KEYCODE_MOVE_END $(printf 'KEYCODE_DEL %.0s' $(seq 1 80))
+  "$adb" shell input text "'$link'"
+  got=$(typed); [ "$got" = "$link" ] && break
+  echo "the link field holds ${#got} of the link's ${#link} characters; typing it again"
+done
+[ "$got" = "$link" ] || { echo "FAIL: the link field never held the whole link"; exit 1; }
 tap pair # once, with the keyboard up: the tap has to reach the button
 
 ok=""
