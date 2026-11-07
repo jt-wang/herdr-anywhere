@@ -1,0 +1,104 @@
+name: Computers
+
+# The companion on every computer Herdr runs on: macOS, Linux and Windows, x64 and Arm where GitHub has runners.
+# Each job installs herdr-core from Herdr's releases and runs build, vet and the Go tests, including the ones
+# that drive that real core (internal/server/integration_test.go) and the one that pairs a phone over Tailcat's
+# real relays and talks to the core through the tunnel (TestLiveTailcat). Windows Arm runs Herdr's x64 build
+# under Windows' x64 emulation, as Herdr ships no Arm build for Windows yet.
+# Runs only in the public repo, where GitHub's runners for public repos are free.
+on:
+  pull_request:
+  push:
+    branches: [main, windows-ci]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: computers-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # herdr-core from https://releases.herdr.dev/core/latest.json (checked 2026-11-07); each job's sha256 is in the
+  # matrix. Update them together.
+  HERDR_CORE_VERSION: "0.1.18"
+  HM_TAILCAT_LIVE: "1"
+
+jobs:
+  companion:
+    name: Companion on ${{ matrix.os }}
+    if: github.repository == 'jt-wang/herdr-anywhere'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-26
+            core: herdr-core-macos-aarch64.tar.gz
+            sha256: 77d8af092e25ae650f4424d6dad27514f6916a11d807fb0752858cd27c21e4fc
+          - os: ubuntu-latest
+            core: herdr-core-linux-x86_64.tar.gz
+            sha256: 5b2f97cb4b2a9d7a6b2cc5942628203ed9fbb7cc0c2b4b09ad8a6f5648e246b7
+          - os: ubuntu-24.04-arm
+            core: herdr-core-linux-aarch64.tar.gz
+            sha256: cf33393cf950bb763734dc3e16610ab9daf8492391a4ef0de56026cd7f752853
+          - os: windows-latest
+            core: herdr-core-windows-x86_64.zip
+            sha256: 2e54e0b1dcbd652a7e89b14c588178f8241b9732fdc4e5f2b27208829b0bfbbc
+          - os: windows-11-arm
+            core: herdr-core-windows-x86_64.zip
+            sha256: 2e54e0b1dcbd652a7e89b14c588178f8241b9732fdc4e5f2b27208829b0bfbbc
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: companion/go.mod
+          cache-dependency-path: companion/go.sum
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+      - name: Install herdr-core
+        if: runner.os != 'Windows'
+        env:
+          CORE: ${{ matrix.core }}
+          CORE_SHA256: ${{ matrix.sha256 }}
+        run: |
+          dir="$RUNNER_TEMP/herdr-core"
+          mkdir -p "$dir"
+          curl -fsSL "https://releases.herdr.dev/core/$HERDR_CORE_VERSION/$CORE" -o "$RUNNER_TEMP/$CORE"
+          if command -v sha256sum >/dev/null; then sum="sha256sum"; else sum="shasum -a 256"; fi
+          echo "$CORE_SHA256  $RUNNER_TEMP/$CORE" | $sum -c -
+          tar -xzf "$RUNNER_TEMP/$CORE" -C "$dir"
+          "$dir/herdr-core" --version
+          echo "HM_TEST_HC=$dir/herdr-core" >> "$GITHUB_ENV"
+      # Where Herdr's own installer puts it. The installer refuses Arm, so this unpacks the release zip itself.
+      - name: Install herdr-core (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          CORE: ${{ matrix.core }}
+          CORE_SHA256: ${{ matrix.sha256 }}
+        run: |
+          $dir = Join-Path $env:LOCALAPPDATA "Programs\herdr-core"
+          $zip = Join-Path $env:RUNNER_TEMP $env:CORE
+          curl.exe -fsSL "https://releases.herdr.dev/core/$env:HERDR_CORE_VERSION/$env:CORE" -o $zip
+          if ((Get-FileHash $zip -Algorithm SHA256).Hash -ne $env:CORE_SHA256) { throw "$env:CORE doesn't match its sha256" }
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          & "$env:SystemRoot\System32\tar.exe" -xf $zip -C $dir
+          & "$dir\herdr-core.exe" --version
+          "HM_TEST_HC=$dir\herdr-core.exe" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+      - name: Build the release file
+        working-directory: companion
+        shell: bash
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          go build -buildvcs=false -trimpath -o "herdr-anywhere$(go env GOEXE)" ./cmd/herdr-anywhere
+          "./herdr-anywhere$(go env GOEXE)" --version
+      - run: go vet ./...
+        working-directory: companion
+      - run: go test -v ./...
+        working-directory: companion

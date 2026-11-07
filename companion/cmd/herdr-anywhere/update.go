@@ -11,7 +11,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"syscall"
 	"time"
 
 	"herdr-anywhere/companion/internal/update"
@@ -83,7 +82,7 @@ func restartSelf() error {
 	if err != nil {
 		return err
 	}
-	return syscall.Exec(exe, os.Args, os.Environ())
+	return execSelf(exe)
 }
 
 func updateCommand(ctx context.Context, args []string, stdout, stderr io.Writer) error {

@@ -17,6 +17,7 @@ import (
 
 	"herdr-anywhere/companion/internal/store"
 	"herdr-anywhere/companion/internal/tailcat"
+	"herdr-anywhere/companion/internal/testfake"
 )
 
 func TestListenAddrs(t *testing.T) {
@@ -64,7 +65,7 @@ func TestStateDir(t *testing.T) {
 	if got := stateDir("", "/env", "/home/u"); got != "/env" {
 		t.Fatal(got)
 	}
-	if got := stateDir("", "", "/home/u"); got != "/home/u/.config/herdr-anywhere" {
+	if got := stateDir("", "", "/home/u"); got != filepath.Join("/home/u", ".config", "herdr-anywhere") {
 		t.Fatal(got)
 	}
 }
@@ -147,16 +148,10 @@ func TestUsage(t *testing.T) {
 	}
 }
 
-// shortStateDir is a state dir under /tmp: it holds serve's control socket,
-// and macOS caps socket paths at 104 bytes, which t.TempDir() exceeds.
+// shortStateDir holds serve's control socket, whose path must stay short.
 func shortStateDir(t *testing.T) string {
 	t.Helper()
-	dir, err := os.MkdirTemp("/tmp", "hmst")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { os.RemoveAll(dir) })
-	return dir
+	return testfake.ShortDir(t, "hmst")
 }
 
 // fakeTailcatServe answers pair the way serve --tailcat does, recording the
@@ -277,7 +272,7 @@ func TestServeTailcatOpensTheControlSocket(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fi.Mode()&os.ModeSocket == 0 || fi.Mode().Perm() != 0o600 {
+	if fi.Mode()&os.ModeSocket == 0 || (testfake.PermBits() && fi.Mode().Perm() != 0o600) {
 		t.Fatalf("control socket mode = %v", fi.Mode())
 	}
 }

@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"syscall"
 	"time"
 )
 
@@ -65,7 +64,7 @@ func Listen(dir string) (net.Listener, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := os.Chmod(p, 0o600); err != nil {
+	if err := restrictSocket(p); err != nil {
 		ln.Close()
 		return nil, err
 	}
@@ -130,7 +129,7 @@ func RequestPair(ctx context.Context, dir, code string) (PairReply, error) {
 	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := client.Do(req)
-	if errors.Is(err, syscall.ENOENT) || errors.Is(err, syscall.ECONNREFUSED) {
+	if noServe(err) {
 		return PairReply{}, ErrNoServe
 	}
 	if err != nil {

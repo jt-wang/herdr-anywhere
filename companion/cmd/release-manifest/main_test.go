@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"herdr-anywhere/companion/internal/testfake"
 	"herdr-anywhere/companion/internal/update"
 )
 
@@ -28,7 +29,7 @@ func TestKeygenKeepsTheKeyToItsOwner(t *testing.T) {
 		t.Fatal(err)
 	}
 	fi, err := os.Stat(key)
-	if err != nil || fi.Mode().Perm() != 0o600 {
+	if err != nil || (testfake.PermBits() && fi.Mode().Perm() != 0o600) {
 		t.Fatalf("key file %v, %v", fi, err)
 	}
 	pub, err := base64.StdEncoding.DecodeString(strings.TrimSpace(out))

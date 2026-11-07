@@ -8,8 +8,9 @@ require (
 	github.com/coder/websocket v1.8.15
 	github.com/jt-wang/tailpocket v0.0.0
 	github.com/mdp/qrterminal/v3 v3.2.1
-	rsc.io/qr v0.2.0
 	github.com/tailscale/tailcat v0.6.0
+	golang.org/x/sys v0.49.0
+	rsc.io/qr v0.2.0
 	tailscale.com v1.103.0-pre.0.20260904030409-31d8badb3bfb
 )
 
@@ -52,7 +53,6 @@ require (
 	golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f // indirect
 	golang.org/x/net v0.61.0 // indirect
 	golang.org/x/sync v0.24.0 // indirect
-	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/term v0.47.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
 	golang.org/x/time v0.15.0 // indirect

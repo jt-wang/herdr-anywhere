@@ -18,6 +18,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -25,6 +26,7 @@ import (
 	"github.com/coder/websocket"
 
 	"herdr-anywhere/companion/internal/hcbin"
+	"herdr-anywhere/companion/internal/testfake"
 )
 
 const (
@@ -48,11 +50,8 @@ func realHC(t *testing.T) string {
 	session := "hmtest-" + hex.EncodeToString(b)
 	scratch := t.TempDir()
 	// The core's sockets must fit macOS's 103-byte limit; t.TempDir() paths
-	// are too long, so the runtime dir is a short one under /tmp.
-	run, err := os.MkdirTemp("/tmp", "hm")
-	if err != nil {
-		t.Fatal(err)
-	}
+	// are too long, so the runtime dir is a short one.
+	run := testfake.ShortDir(t, "hm")
 	env := map[string]string{
 		"HC_SESSION":      session,
 		"HC_SOCKET":       "",
@@ -71,7 +70,6 @@ func realHC(t *testing.T) string {
 		if err != nil {
 			t.Logf("hc server stop: %v: %s", err, out)
 		}
-		os.RemoveAll(run)
 	})
 	return hc
 }
@@ -256,8 +254,14 @@ func TestRealCoreHelloRunAttachAndType(t *testing.T) {
 	if g := generation(cl.hello(map[string]any{"framed": true})); g != 1 {
 		t.Fatalf("hello generation = %v, want 1", g)
 	}
+	// A shell that prints hm-ok, then runs what is typed. The typed line's
+	// output differs from the line itself, so it shows the line ran.
+	argv, typed, ran := []string{"/bin/sh", "-c", "echo hm-ok; exec sh -i"}, "echo hm-$((40+2))\r", "hm-42"
+	if runtime.GOOS == "windows" {
+		argv, typed, ran = []string{"cmd.exe", "/k", "echo hm-ok"}, "echo hm-%OS%\r", "hm-Windows_NT"
+	}
 	run := cl.call("terminal.run", map[string]any{
-		"argv": []string{"/bin/sh", "-c", "echo hm-ok; exec sh -i"},
+		"argv": argv,
 		"keep": true,
 		"env":  map[string]string{"TERM": "xterm-256color"},
 	})
@@ -273,11 +277,8 @@ func TestRealCoreHelloRunAttachAndType(t *testing.T) {
 	ch := uint32(chf)
 	cl.waitFor(ch, "hm-ok")
 
-	cl.send(frame(ch, kData, []byte("echo typed\r")))
-	cl.waitFor(ch, "typed")
-	// "typed" also appears in the echoed command line; the output line ends
-	// with CRLF after the bare word.
-	cl.waitFor(ch, "\r\ntyped\r\n")
+	cl.send(frame(ch, kData, []byte(typed)))
+	cl.waitFor(ch, ran)
 
 	cl.send(frame(ch, kResize, []byte{100, 0, 30, 0}))
 	cl.call("terminal.kill", map[string]any{"terminal": addr})

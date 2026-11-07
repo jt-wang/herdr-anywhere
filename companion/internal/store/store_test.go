@@ -9,6 +9,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"herdr-anywhere/companion/internal/testfake"
 )
 
 type clock struct{ t time.Time }
@@ -170,11 +172,11 @@ func TestPermissions(t *testing.T) {
 		t.Fatal(err)
 	}
 	di, _ := os.Stat(s.dir)
-	if di.Mode().Perm() != 0o700 {
+	if testfake.PermBits() && di.Mode().Perm() != 0o700 {
 		t.Fatalf("dir mode = %v", di.Mode().Perm())
 	}
 	fi, _ := os.Stat(filepath.Join(s.dir, stateName))
-	if fi.Mode().Perm() != 0o600 {
+	if testfake.PermBits() && fi.Mode().Perm() != 0o600 {
 		t.Fatalf("file mode = %v", fi.Mode().Perm())
 	}
 }
@@ -188,7 +190,7 @@ func TestOpenTightensAnExistingLooseDir(t *testing.T) {
 		t.Fatal(err)
 	}
 	di, _ := os.Stat(dir)
-	if di.Mode().Perm() != 0o700 {
+	if testfake.PermBits() && di.Mode().Perm() != 0o700 {
 		t.Fatalf("dir mode = %v", di.Mode().Perm())
 	}
 }

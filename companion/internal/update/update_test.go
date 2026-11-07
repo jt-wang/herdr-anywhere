@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -79,8 +80,13 @@ func script(version string) []byte {
 	return []byte("#!/bin/sh\necho herdr-anywhere " + version + "\n")
 }
 
+// installed is a companion for a Manager to replace. On Windows there's none:
+// releases carry no Windows file and Supported is false there, so nothing installs.
 func installed(t *testing.T) string {
 	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("self-update isn't offered on Windows (Supported)")
+	}
 	exe := filepath.Join(t.TempDir(), "herdr-anywhere")
 	if err := os.WriteFile(exe, script("0.1.5"), 0o755); err != nil {
 		t.Fatal(err)

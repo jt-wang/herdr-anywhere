@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"testing"
@@ -25,6 +26,9 @@ import (
 
 func buildVersion(t *testing.T, v, out string) []byte {
 	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("self-update isn't offered on Windows (update.Supported)")
+	}
 	cmd := exec.Command("go", "build", "-ldflags=-X main.version="+v, "-o", out, ".")
 	if b, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("build %s: %v\n%s", v, err, b)

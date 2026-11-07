@@ -6,7 +6,6 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -14,6 +13,7 @@ import (
 	"time"
 
 	"herdr-anywhere/companion/internal/store"
+	"herdr-anywhere/companion/internal/testfake"
 )
 
 // syncBuffer is a log sink tests can read while the server writes.
@@ -41,21 +41,11 @@ type fixture struct {
 	logs  *syncBuffer
 }
 
-// fakeHC writes a stand-in for hc: `--version` answers like hc, `connect`
-// becomes cat (an echo), recording its pid in $HM_PIDFILE when set.
+// fakeHC is a stand-in for hc: `--version` answers like hc, `connect`
+// echoes, recording its pid in $HM_PIDFILE when set.
 func fakeHC(t *testing.T) string {
 	t.Helper()
-	p := filepath.Join(t.TempDir(), "hc")
-	script := `#!/bin/sh
-case "$1" in
---version) echo "hc 9.9.9" ;;
-connect) [ -n "$HM_PIDFILE" ] && echo $$ > "$HM_PIDFILE"; exec cat ;;
-esac
-`
-	if err := os.WriteFile(p, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	return p
+	return testfake.HC(t, t.TempDir(), "hc", testfake.Spec{Version: "hc 9.9.9", Connect: "echo"})
 }
 
 func newFixture(t *testing.T, mod func(*Config)) *fixture {

@@ -14,8 +14,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
-	"syscall"
 	"time"
 
 	"rsc.io/qr"
@@ -107,7 +107,7 @@ var spawnServe = func(dir string, logFile *os.File) (<-chan error, func(), error
 	}
 	cmd := exec.Command(self, startedServeArgs(dir)...)
 	cmd.Stdout, cmd.Stderr = logFile, logFile
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	cmd.SysProcAttr = detached()
 	if err := cmd.Start(); err != nil {
 		return nil, nil, err
 	}
@@ -180,10 +180,21 @@ var dialogFiles embed.FS
 
 const (
 	dialogMod    = "add-phone"
-	dialogKey    = "cmd-shift-m"
 	dialogAction = "mod.open:" + dialogMod
 	dialogTitle  = `"title": "Add phone"`
 )
+
+// dialogKey opens the dialog, spelled as Herdr's own keys are on this platform.
+var dialogKey = dialogKeyFor(runtime.GOOS)
+
+// dialogKeyFor: Herdr on macOS binds its keys as cmd-<key>; on Windows and
+// Linux as ctrl-shift-<key> (herdr-app 0.1.13's defaults/keys.json there).
+func dialogKeyFor(goos string) string {
+	if goos == "darwin" {
+		return "cmd-shift-m"
+	}
+	return "ctrl-shift-m"
+}
 
 func installDialog(args []string, stdout, stderr io.Writer) error {
 	fs, state := newFlags("install-dialog", stderr)

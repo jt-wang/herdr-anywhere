@@ -214,7 +214,7 @@ func serve(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	withLAN := fs.Bool("lan", false, "also listen on this Mac's private LAN IPv4 address(es)")
 	withTailcat := fs.Bool("tailcat", false, "also let paired phones reach this Mac through Tailcat, from any network")
 	web := fs.String("web", "", "serve the PWA from this directory")
-	hcFlag := fs.String("hc", "", "path to herdr-core's hc (default: hc on PATH, else ~/.local/bin/hc)")
+	hcFlag := fs.String("hc", "", "path to herdr-core's hc (default: hc on PATH, else ~/.local/bin/hc; on Windows herdr-core on PATH, else %LOCALAPPDATA%\\Programs\\herdr-core)")
 	releases := releaseFlags(fs)
 	if err := parse(fs, args); err != nil {
 		return err
