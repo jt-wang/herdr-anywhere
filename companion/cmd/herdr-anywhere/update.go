@@ -11,7 +11,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"syscall"
 	"time"
 
 	"herdr-anywhere/companion/internal/update"
@@ -59,6 +58,8 @@ func newUpdates(dir string, client update.Client, logger *log.Logger, restart fu
 	exe, err := thisFile()
 	if err != nil {
 		logger.Printf("update: can't find this program: %v", err)
+	} else {
+		go update.RemoveOld(exe) // the file an update set aside on Windows
 	}
 	first := 30 * time.Second // a serve that starts and stops at once asks nothing
 	if client.Releases != "" {
@@ -83,7 +84,7 @@ func restartSelf() error {
 	if err != nil {
 		return err
 	}
-	return syscall.Exec(exe, os.Args, os.Environ())
+	return execSelf(exe)
 }
 
 func updateCommand(ctx context.Context, args []string, stdout, stderr io.Writer) error {

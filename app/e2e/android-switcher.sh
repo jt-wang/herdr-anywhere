@@ -13,6 +13,8 @@ port=7761; while nc -z 127.0.0.1 "$port" 2>/dev/null; do port=$((port + 1)); don
 work=$(mktemp -d); run=$(mktemp -d /tmp/hmXXXX); state=$(mktemp -d /tmp/hmtcXXXX)
 mkdir -p "$work/home/src/acme-api" "$work/state" "$work/config" "$work/data" "$work/bin"
 : > "$work/home/.zshrc"
+# Ubuntu's /etc/zsh/zshrc runs compinit, which can stop at a y/n question and eat what the phone types first.
+echo skip_global_compinit=1 > "$work/home/.zshenv"
 # An agent to start that needs no account: the app offers what is on the PATH.
 printf '#!/bin/sh\nexec /bin/zsh\n' > "$work/bin/claude"; chmod +x "$work/bin/claude"
 # A program that takes over the screen and the mouse, as Pi and vim do, and writes down what it receives.

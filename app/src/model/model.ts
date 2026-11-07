@@ -219,9 +219,10 @@ export class Model {
   removePane(paneId: string): [boolean, boolean] {
     const c = this.tabOf(paneId)
     if (!c) return [false, false]
-    remove(c.root, paneId)
+    // A root can't be taken out of itself; a tab whose whole root is this pane is left with none.
+    if (c.root.id !== paneId) remove(c.root, paneId)
     if (c.zoomed === paneId) c.zoomed = undefined
-    const here = panes(c.root).map((n) => n.id)
+    const here = c.root.id === paneId ? [] : panes(c.root).map((n) => n.id)
     if (here.length) {
       c.before = c.before.filter((p) => p !== paneId)
       if (c.focused === paneId) {

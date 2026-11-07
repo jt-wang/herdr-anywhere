@@ -2,7 +2,8 @@
 import { expect, test } from 'nsh/test'
 import { Store } from '../store.ts'
 import { FakeCore, settle } from '../testing/fakecore.ts'
-import { TerminalSession } from './terminal-session.ts'
+import { PAGE_READY_MS, TerminalSession } from './terminal-session.ts'
+import { t } from '../strings/index.ts'
 import { sinceLabel } from '../model/seen.ts'
 
 async function setup() {
@@ -308,4 +309,66 @@ test('the page having the typing focus is passed on, so the app can ask the syst
   const s = new TerminalSession((await setup()).store, 't1', () => {}, (f) => { queueMicrotask(f); return 1 }, { on: { focused: () => { asked++ } } })
   s.page(JSON.stringify({ t: 'focused' }))
   expect(asked).toBe(1)
+})
+
+// A page whose process crashed never says ready (the iOS 26.3 simulator's JavaScriptCore, see PAGE_READY_MS), and the
+// WebView says nothing about it: without this the terminal said "Connecting…" for good.
+async function pageSetup() {
+  const store = new Store({ pipe: () => new FakeCore(), setInterval: (() => 0) as any, clearInterval: (() => {}) as any, setTimeout: (() => 0) as any })
+  await store.connect()
+  const r = await store.newSpace({})
+  const late: { f: () => void; ms: number }[] = []
+  let reloads = 0
+  const s = new TerminalSession(store, r.terminal, () => {}, (f) => { queueMicrotask(f); return 1 },
+    { reload: () => { reloads++ }, pageTimer: (f, ms) => { late.push({ f, ms }) } })
+  return { s, late, reloads: () => reloads, fire: () => late.shift()!.f() }
+}
+
+test('a page that never says ready is loaded again once, then the terminal says so and offers to try again', async () => {
+  const { s, late, reloads, fire } = await pageSetup()
+  expect(late.map((l) => l.ms)).toEqual([PAGE_READY_MS])
+  fire()
+  expect([reloads(), s.state.get()]).toEqual([1, 'waiting'])
+  s.pageLost() // the reloaded page starts loading: its wait starts again
+  expect(late.length).toBe(2)
+  late.shift()
+  fire()
+  expect([reloads(), s.state.get(), s.why.get()]).toEqual([1, 'failed', t('terminalPageFailed')])
+  s.retry()
+  expect([reloads(), s.state.get(), s.why.get()]).toEqual([2, 'waiting', ''])
+  fire()
+  expect([reloads(), s.state.get()]).toEqual([2, 'failed'])
+  s.retry()
+  s.page(JSON.stringify({ t: 'ready', cols: 80, rows: 24 }))
+  await settle()
+  fire()
+  expect([reloads(), s.state.get()]).toEqual([3, 'live'])
+})
+
+test('a page that says ready in time is left alone', async () => {
+  const { s, reloads, fire } = await pageSetup()
+  s.page(JSON.stringify({ t: 'ready', cols: 80, rows: 24 }))
+  await settle()
+  fire()
+  expect([reloads(), s.state.get()]).toEqual([0, 'live'])
+})
+
+test('a left terminal does not load its page again', async () => {
+  const { s, reloads, fire } = await pageSetup()
+  s.dispose()
+  fire()
+  expect([reloads(), s.state.get()]).toEqual([0, 'waiting'])
+})
+
+test('the keyboard asked for before the page is ready comes up once it is (the switch tapped right as a pane opens)', async () => {
+  const { s, posted } = await setup()
+  s.focus()
+  await new Promise((r) => setTimeout(r, 0))
+  expect(posted.filter((m) => m.t === 'focus').length).toBe(0)
+  s.page(JSON.stringify({ t: 'ready', cols: 54, rows: 37 }))
+  await new Promise((r) => setTimeout(r, 0))
+  expect(posted.filter((m) => m.t === 'focus').length).toBe(1)
+  s.page(JSON.stringify({ t: 'ready', cols: 54, rows: 37 }))
+  await new Promise((r) => setTimeout(r, 0))
+  expect(posted.filter((m) => m.t === 'focus').length).toBe(1)
 })

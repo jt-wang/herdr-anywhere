@@ -3,6 +3,8 @@
 # Everything a person reads comes from src/strings (t). Prints file:line for each; fails if there are any,
 # or if Android's strings.xml differ from src/strings.
 set -u
+# The screens are in src; tests and fixtures hold sample data (tab titles), which is not a label.
+[ $# -gt 0 ] || set -- src
 hits=$(grep -rnE --include='*.tsx' \
   -e "(accessibilityLabel|label|placeholder|detail)=\"[A-Z][a-z]+" \
   -e "(accessibilityLabel|label|title|description|body): *['\"\`][A-Z][a-z]+" \

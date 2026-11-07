@@ -67,6 +67,8 @@ export class Updates {
     conn: Signal<Conn>
     fetcher: typeof fetch
     os: string
+    /** store: updated by the place it was installed from, not by these releases (src/channel.ts). */
+    channel?: string
     appVersion: string
     toast: (t: { title: string; body?: string; level: 'info' | 'error' }) => void
     /** ask: open the system's screen for allowing installs when this app may not install yet. */
@@ -101,7 +103,7 @@ export class Updates {
     if (newer(i.latest, i.version)) return { kind: i.canUpdate ? 'computer' : 'computerByHand', version: i.latest }
     if (!newer(i.latest, this.d.appVersion)) return null
     if (this.d.os === 'android') return i.app ? { kind: 'app', version: i.latest } : null
-    if (this.d.os === 'ios') return { kind: 'rebuild', version: i.latest }
+    if (this.d.os === 'ios') return this.d.channel === 'store' ? null : { kind: 'rebuild', version: i.latest }
     return null
   }
 

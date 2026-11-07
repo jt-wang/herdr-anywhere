@@ -12,10 +12,37 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
   var window: UIWindow?
 
   func application(_ application: UIApplication, didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+    hideWebKeyboardBar()
     window = UIWindow(frame: UIScreen.main.bounds)
     window?.rootViewController = AppController()
     window?.makeKeyAndVisible()
     return true
+  }
+}
+
+/// WKWebView puts a bar (˄ ˅ Done) over the keyboard while a field in a page has the typing focus: between the key row
+/// and the keyboard when typing straight into the terminal, whose page has one hidden field and nothing to step to.
+/// When a web view's content view is about to show the keyboard, it becomes a subclass of its class that answers no
+/// accessory view, as react-native-webview's hideKeyboardAccessoryView does; the app's own inputs keep theirs. Replacing
+/// WKContentView's own method at launch left the bar there (iPhone SE simulator, iOS 17, 2026-11-07: the content view
+/// still answered UIWebFormAccessory); the subclass took it away, 44 pt less over the keyboard.
+private func hideWebKeyboardBar() {
+  NotificationCenter.default.addObserver(forName: UIResponder.keyboardWillShowNotification, object: nil, queue: .main) { _ in
+    func focused(_ v: UIView) -> UIView? { if v.isFirstResponder { return v }; for s in v.subviews { if let f = focused(s) { return f } }; return nil }
+    let windows = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap { $0.windows }
+    guard let view = windows.lazy.compactMap({ focused($0) }).first, let base: AnyClass = object_getClass(view) else { return }
+    let name = NSStringFromClass(base)
+    guard name.hasPrefix("WK"), !name.hasSuffix("_NoBar") else { return }
+    var noBar: AnyClass? = NSClassFromString(name + "_NoBar")
+    if noBar == nil, let c = objc_allocateClassPair(base, name + "_NoBar", 0) {
+      let none: @convention(block) (AnyObject) -> UIView? = { _ in nil }
+      class_addMethod(c, #selector(getter: UIResponder.inputAccessoryView), imp_implementationWithBlock(none), "@@:")
+      objc_registerClassPair(c)
+      noBar = c
+    }
+    guard let c = noBar else { return }
+    object_setClass(view, c)
+    view.reloadInputViews()
   }
 }
 

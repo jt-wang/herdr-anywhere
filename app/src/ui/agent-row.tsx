@@ -1,7 +1,7 @@
 // One agent's row, as home, Pinned and the pane's switcher show it (herdr-app defaults/mods/agents): what tells it apart
 // (its tab's name or its title) as the main text, the program's name small and grey before it (Settings can hide it:
 // the icon says it too), its status in words, what it is doing or did a step under the title (smaller, regular, the title's colour at 80 %),
-// and its sub-agents. An idle row is a step dimmer as a whole. Designed in .dev/rows-design.md (v1, and v2 with the name hidden).
+// and its sub-agents. An idle row is a step dimmer as a whole.
 import { colorScheme, computed, Text, View } from 'nsh'
 import type { Store } from '../store.ts'
 import type { AgentInfo } from '../model/agents.ts'
@@ -24,7 +24,11 @@ export function agentWords(s: Store) {
   // What it is doing or did. "Needs you" already shows what a blocked one asks.
   const line = (a: AgentInfo) => { rev(); const l = s.activityOf(a.address); return a.status === 'blocked' || l === title(a) ? '' : l }
   const subs = (a: AgentInfo) => { rev(); return view().subs.get(a.address) ?? [] }
-  return { title, line, subs }
+  // The row's main text: what tells it apart, or with nothing to tell, the program's name.
+  const main = (a: AgentInfo) => title(a) ?? a.programName
+  // A menu on the row: titled with its main text, its space and (when the row shows it) its program under it.
+  const menu = (a: AgentInfo) => ({ title: main(a), description: [a.space_name, ...(title(a) && s.showNames() ? [a.programName] : [])].join(' · ') })
+  return { title, line, subs, main, menu }
 }
 
 /** An agent's row and its sub-agents' rows under it. The screen gives the row's frame (`class`, which lays out the
@@ -50,7 +54,7 @@ export function AgentRow(props: {
           <View style={{ opacity: idle() ? (colorScheme() === 'dark' ? 0.55 : 0.7) : 1 }}><ProgramIcon icon={s.program(a().address).icon} size={size()} /></View>
           <If when={props.full}><Text class="shrink-0 max-w-[30%] text-[12.5px] text-sidebar-foreground" numberOfLines={1}>{a().space_name}</Text></If>
           <If when={named()}><Text class="shrink-0 text-[12.5px] text-sidebar-foreground" numberOfLines={1}>{a().programName}</Text></If>
-          <Text class={`flex-1 text-[14.5px] font-medium ${idle() ? 'text-muted-foreground' : 'text-foreground'}`} numberOfLines={1}>{words.title(a()) ?? a().programName}</Text>
+          <Text class={`flex-1 text-[14.5px] font-medium ${idle() ? 'text-muted-foreground' : 'text-foreground'}`} numberOfLines={1}>{words.main(a())}</Text>
           <Text class={`text-[12px] ${statusText(a().status)}`}>{statusLabel(a().status)}</Text>
         </View>
         <If when={words.line(a())}>

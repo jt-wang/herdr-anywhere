@@ -15,7 +15,7 @@ import { ChecksQuestion, UpdateBanner } from './update.tsx'
 import type { Updates } from '../updates.ts'
 import type { PrefStore } from '../prefs.ts'
 import { ChoiceRow, ConnBanner, Glyph, IconButton, ProgramIcon, SpaceBadge, StatusMark, useRev } from './kit.tsx'
-import { AgentRow } from './agent-row.tsx'
+import { AgentRow, agentWords } from './agent-row.tsx'
 import { t } from '../strings/index.ts'
 import icon from '../../assets/brand/herdr-anywhere.png'
 
@@ -147,8 +147,9 @@ function NeedsYouSection(props: { store: Store; actions: HomeActions }) {
  *  or close it. `full`: no space header above (Pinned), so the row names its space, as the desktop's Pinned rows do. */
 function AgentRows(props: { store: Store; agents: () => AgentInfo[]; full?: boolean; idPrefix: string; actions: HomeActions }) {
   const s = props.store
+  const words = agentWords(s)
   const menu = async (a: AgentInfo) => {
-    const r = await AlertDialog.show({ title: a.programName, presentation: 'actionSheet', actions: [
+    const r = await AlertDialog.show({ ...words.menu(a), presentation: 'actionSheet', actions: [
       { id: 'pin', label: a.pinned ? t('unpin') : t('pinToTop') },
       { id: 'close', label: t('close'), role: 'destructive' }, { id: 'cancel', label: t('cancel'), role: 'cancel' }] })
     if (r === 'close') s.closePane(a.pane)

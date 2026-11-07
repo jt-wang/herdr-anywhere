@@ -144,7 +144,7 @@ export default class AddPhone extends View {
       case "starting":
         return this.message(t, "Starting Herdr Anywhere…");
       case "not-running":
-        return this.message(t, "Herdr Anywhere isn't running on this Mac.", this.button(t, "ap-start", "Start", (cx) => this.start(cx)));
+        return this.message(t, "Herdr Anywhere isn't running on this computer.", this.button(t, "ap-start", "Start", (cx) => this.start(cx)));
       case "start-failed":
         return this.message(t, `Herdr Anywhere didn't start: ${v.message}`, this.button(t, "ap-start", "Try again", (cx) => this.start(cx)));
       case "expired":

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"cmp"
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/base64"
@@ -14,17 +15,21 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"testing"
 	"time"
 
 	"herdr-anywhere/companion/internal/store"
+	"herdr-anywhere/companion/internal/testfake"
 	"herdr-anywhere/companion/internal/update"
 )
 
+// buildVersion builds this program as version v at out (plus .exe on Windows) and returns the file.
 func buildVersion(t *testing.T, v, out string) []byte {
 	t.Helper()
+	out += testfake.Ext()
 	cmd := exec.Command("go", "build", "-ldflags=-X main.version="+v, "-o", out, ".")
 	if b, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("build %s: %v\n%s", v, err, b)
@@ -42,9 +47,11 @@ var releaseKey = ed25519.NewKeyFromSeed(bytes.Repeat([]byte{5}, ed25519.SeedSize
 // releaseServer serves a signed release the way github.com/<repo>/releases does, and the flags that point at it.
 func releaseServer(t *testing.T, version string, bin []byte) (*httptest.Server, []string) {
 	t.Helper()
+	// This computer's file, or the Mac's where releases carry none (the key check comes first anyway).
+	asset := cmp.Or(update.Asset, update.MacAsset)
 	sum := sha256.Sum256(bin)
 	body, sig, err := update.Sign(releaseKey, update.Manifest{Version: version, Files: []update.File{
-		{Name: update.Asset, SHA256: hex.EncodeToString(sum[:]), Bytes: int64(len(bin))},
+		{Name: asset, SHA256: hex.EncodeToString(sum[:]), Bytes: int64(len(bin))},
 	}})
 	if err != nil {
 		t.Fatal(err)
@@ -52,7 +59,7 @@ func releaseServer(t *testing.T, version string, bin []byte) (*httptest.Server, 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/latest/download/"+update.ManifestFile, func(w http.ResponseWriter, r *http.Request) { w.Write(body) })
 	mux.HandleFunc("/latest/download/"+update.ManifestFile+".sig", func(w http.ResponseWriter, r *http.Request) { w.Write(sig) })
-	mux.HandleFunc("/download/v"+version+"/"+update.Asset, func(w http.ResponseWriter, r *http.Request) { w.Write(bin) })
+	mux.HandleFunc("/download/v"+version+"/"+asset, func(w http.ResponseWriter, r *http.Request) { w.Write(bin) })
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	key := base64.StdEncoding.EncodeToString(releaseKey.Public().(ed25519.PublicKey))
@@ -101,7 +108,7 @@ func TestAPhoneUpdatesARunningCompanion(t *testing.T) {
 	dir := t.TempDir()
 	bin := buildVersion(t, "0.0.2", filepath.Join(dir, "new"))
 	buildVersion(t, "0.0.1", filepath.Join(dir, "herdr-anywhere"))
-	exe := filepath.Join(dir, "herdr-anywhere")
+	exe := filepath.Join(dir, "herdr-anywhere"+testfake.Ext())
 	_, flags := releaseServer(t, "0.0.2", bin)
 
 	state := filepath.Join(dir, "state")
@@ -163,16 +170,57 @@ func TestAPhoneUpdatesARunningCompanion(t *testing.T) {
 	}
 
 	waitInfo(t, url, func(i companionInfo) bool { return i.Version == "0.0.2" })
-	if cmd.ProcessState != nil {
-		t.Fatalf("the process ended\n%s", logs.String())
-	}
-	if err := cmd.Process.Signal(syscall.Signal(0)); err != nil {
-		t.Fatalf("not the same process: %v", err)
-	}
 	got, _ := os.ReadFile(exe)
 	if string(got) != string(bin) {
 		t.Fatal("the file wasn't replaced")
 	}
+	if runtime.GOOS != "windows" {
+		if cmd.ProcessState != nil {
+			t.Fatalf("the process ended\n%s", logs.String())
+		}
+		if err := cmd.Process.Signal(syscall.Signal(0)); err != nil {
+			t.Fatalf("not the same process: %v", err)
+		}
+		return
+	}
+	// Windows can't run a new program in a process: the old serve starts the new file with its arguments and ends.
+	pid := servePID(t, state)
+	if pid == cmd.Process.Pid {
+		t.Fatalf("serve.json still names the old process %d", pid)
+	}
+	if p, err := os.FindProcess(pid); err == nil {
+		t.Cleanup(func() { p.Kill() }) // before the cleanup above: the new serve holds the old one's output open
+	}
+	if ps, err := cmd.Process.Wait(); err != nil || !ps.Success() {
+		t.Fatalf("the old serve: %v %v\n%s", ps, err, logs.String())
+	}
+	// The old file, set aside while it ran, is gone once the new serve has started after it ended.
+	deadline := time.Now().Add(20 * time.Second)
+	for {
+		if _, err := os.Stat(exe + ".old"); os.IsNotExist(err) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%s.old is still there", exe)
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+}
+
+// servePID is the process serve.json in state names.
+func servePID(t *testing.T, state string) int {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join(state, serveURLsFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var f struct {
+		PID int `json:"pid"`
+	}
+	if json.Unmarshal(b, &f) != nil || f.PID == 0 {
+		t.Fatalf("serve.json: %s", b)
+	}
+	return f.PID
 }
 
 func TestUpdateCommand(t *testing.T) {
@@ -182,7 +230,7 @@ func TestUpdateCommand(t *testing.T) {
 	dir := t.TempDir()
 	bin := buildVersion(t, "0.0.2", filepath.Join(dir, "new"))
 	buildVersion(t, "0.0.1", filepath.Join(dir, "herdr-anywhere"))
-	exe := filepath.Join(dir, "herdr-anywhere")
+	exe := filepath.Join(dir, "herdr-anywhere"+testfake.Ext())
 	_, flags := releaseServer(t, "0.0.2", bin)
 
 	out, err := exec.Command(exe, append([]string{"update", "--check"}, flags...)...).CombinedOutput()
@@ -212,7 +260,7 @@ func TestTheProgramRefusesAReleaseSignedWithAnotherKey(t *testing.T) {
 	dir := t.TempDir()
 	bin := buildVersion(t, "0.0.2", filepath.Join(dir, "new"))
 	buildVersion(t, "0.0.1", filepath.Join(dir, "herdr-anywhere"))
-	exe := filepath.Join(dir, "herdr-anywhere")
+	exe := filepath.Join(dir, "herdr-anywhere"+testfake.Ext())
 	srv, _ := releaseServer(t, "0.0.2", bin)
 	out, err := exec.Command(exe, "update", "--releases", srv.URL).CombinedOutput()
 	if err == nil || !strings.Contains(string(out), "isn't signed by the Herdr Anywhere key") {

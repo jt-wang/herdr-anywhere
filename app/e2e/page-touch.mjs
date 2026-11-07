@@ -13,7 +13,9 @@ const check = (name, ok, seen) => { console.log(`${ok ? 'ok' : 'FAIL'}: ${name}$
 async function open(opts) {
   const context = await browser.newContext({ viewport: { width: 390, height: 700 }, hasTouch: true, isMobile: true, deviceScaleFactor: 3 })
   const page = await context.newPage()
-  await page.addInitScript(() => { window.posts = []; window.nsh = { postMessage: (m) => window.posts.push(JSON.parse(m)) }; window.addEventListener('error', (e) => { window.pageError = e.message }) })
+  await page.addInitScript(() => { window.posts = []; window.nsh = { postMessage: (m) => window.posts.push(JSON.parse(m)) }; window.addEventListener('error', (e) => { window.pageError = e.message })
+    // The page keeps its terminal in a closure; a test that needs the view's exact line takes it as xterm's bundle sets window.Terminal.
+    let T; Object.defineProperty(window, 'Terminal', { configurable: true, get: () => T, set: (v) => { T = class extends v { constructor(...a) { super(...a); window.term = this } } } }) })
   await page.route('http://terminal.test/', (r) => r.fulfill({ contentType: 'text/html', body: terminalPage({ dark: true, fontSize: 13, scrollback: 2000, ...opts }) }))
   await page.goto('http://terminal.test/')
   await page.waitForFunction(() => window.posts.some((m) => m.t === 'ready'))
@@ -167,6 +169,77 @@ async function open(opts) {
   await t.page.context().close()
 }
 
+// A program that follows the mouse gets wheel reports at the rate xterm.js sends them for a Mac trackpad: one per ~3
+// rows of travel (consumeWheelEvent scales small pixel wheels by 0.3). OpenCode 1.19.0 moves 3 rows per report
+// (scroll_speed's default); at one report per row of finger its content ran 3 times as far as the finger (36 rows
+// for a 12.4-row drag, measured 2026-11-07). Every report of a gesture goes to the cell where
+// the finger went down: that cell picks the panel, and OpenCode ignores a wheel over its prompt box, so a drag that
+// ended low on the screen used to stop. Touch times are set (CDP timestamps become the events' timeStamp), so a
+// flick's speed is the same on every run.
+{
+  const at = (t, i, gap) => ({ timestamp: t + (i * gap) / 1000 })
+  const timed = (cdp, type, x, y, ts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y }], ...ts })
+  // A finger from (x, y): moves of `step` px `gap` ms apart, then held `hold` ms (no glide) or lifted at speed.
+  async function gesture(t, cdp, x, y, steps, gap, hold) {
+    const t0 = Date.now() / 1000
+    await timed(cdp, 'touchStart', x, y, at(t0, 0, gap))
+    let at_y = y, i = 0
+    for (const s of steps) { i++; at_y += s; await timed(cdp, 'touchMove', x, at_y, at(t0, i, gap)) }
+    if (hold) { await t.page.waitForTimeout(hold); await timed(cdp, 'touchEnd', x, at_y, { timestamp: Date.now() / 1000 }) }
+    else await timed(cdp, 'touchEnd', x, at_y, at(t0, i, gap))
+  }
+  const reports = (s) => [...s.matchAll(/\x1b\[<(6[45]);(\d+);(\d+)M/g)].map((m) => ({ up: m[1] === '64', col: +m[2], row: +m[3] }))
+
+  const m = await open({ phone: true })
+  const mcdp = await m.page.context().newCDPSession(m.page)
+  const input = () => m.page.evaluate(() => { const d = window.posts.filter((p) => p.t === 'input').map((p) => p.data).join(''); window.posts = window.posts.filter((p) => p.t !== 'input'); return d })
+  await m.send({ t: 'write', data: '\x1b[?1049h\x1b[?1000h\x1b[?1003h\x1b[?1006h\x1b[2J\x1b[Hfull screen' })
+  await m.page.waitForTimeout(100)
+  const h = await m.page.evaluate(() => { const r = document.querySelector('.xterm-screen').getBoundingClientRect(); return r.height / window.posts.find((p) => p.cols).rows })
+  const top = await m.page.evaluate(() => document.querySelector('.xterm-screen').getBoundingClientRect().top)
+  const rowAt = (y) => Math.floor((y - top) / h) + 1
+
+  // A drag of 12.5 rows, held before lifting.
+  await input()
+  await gesture(m, mcdp, 120, 150, Array(10).fill((12.5 * h) / 10), 16, 300)
+  await m.page.waitForTimeout(100)
+  const drag = reports(await input())
+  check('a drag of 12.5 rows sends a mouse program one report per 3 rows', drag.length >= 3 && drag.length <= 5 && drag.every((r) => r.up), drag.length)
+  check('every report goes to the cell where the finger went down', drag.length > 0 && drag.every((r) => r.row === rowAt(150) && r.col === drag[0].col), drag.map((r) => `${r.col},${r.row}`).join(' '))
+
+  // Leftover travel is kept within a gesture, both ways: 2 rows down and back up is no report.
+  await gesture(m, mcdp, 120, 300, [h, h, -h, -h], 16, 300)
+  await m.page.waitForTimeout(100)
+  check('2 rows down and back up sends nothing', reports(await input()).length === 0)
+  // ...and 2 rows, then 2 more in the same drag, is one report.
+  await gesture(m, mcdp, 120, 300, [h, h, h, h], 16, 300)
+  await m.page.waitForTimeout(100)
+  check('4 rows in small moves send one report', reports(await input()).length === 1)
+
+  // A flick at 2.5 px/ms ending low on the screen: the glide's reports stay at the start cell, and it goes as far
+  // as the same flick in a shell's history.
+  const s = await open({ phone: true })
+  const scdp = await s.page.context().newCDPSession(s.page)
+  await s.send({ t: 'write', data: Array.from({ length: 2000 }, (_, i) => `line ${i}`).join('\r\n') })
+  await s.page.waitForTimeout(300)
+  const viewY = () => s.page.evaluate(() => window.term.buffer.active.viewportY)
+  const from = await viewY()
+  await gesture(s, scdp, 195, 150, Array(8).fill(40), 16, 0)
+  for (let last = -1, now = await viewY(); now !== last; last = now, now = await viewY()) await s.page.waitForTimeout(400)
+  const shellRows = from - (await viewY())
+  await input()
+  await gesture(m, mcdp, 195, 150, Array(8).fill(40), 16, 0)
+  await m.page.waitForTimeout(3000)
+  const flick = reports(await input())
+  const ratio = (flick.length * 3) / shellRows
+  check('a flick in a mouse program goes as far as in a shell (3 rows a report)', ratio >= 0.85 && ratio <= 1.15, { reports: flick.length, shellRows: Math.round(shellRows), ratio: +ratio.toFixed(2) })
+  check('its glide reports stay at the start cell, above the bottom rows', flick.length > 0 && flick.every((r) => r.row === rowAt(150)), [...new Set(flick.map((r) => r.row))])
+  // The shell's own flick is as before: 2.5 px/ms halving about every 225 ms carries ~810 px, plus the 320 px drawn.
+  check("the shell's flick is unchanged", Math.abs(shellRows * h - 1130) < 113, Math.round(shellRows * h))
+  await s.page.context().close()
+  await m.page.context().close()
+}
+
 // A full-screen program that follows the mouse has buttons only a click reaches: OpenCode's update dialog runs Skip and
 // Update on a mouse release (dialog-update.tsx, onMouseUp; it turns on modes 1000, 1002, 1003 and 1006, measured
 // 2026-11-07 with OpenCode 1.19.0 through herdr-core 0.1.18). A tap there is a click on the cell under the finger.
@@ -239,6 +312,85 @@ for (const [width, scale] of [[360, 3], [384, 2.8125], [393, 3], [411, 2.625], [
   })
   check(`${width} px at ${scale}: the columns fit, and no more would`, m.wide <= m.inner + 0.01 && m.inner - m.wide < m.cell - 0.01, m)
   await context.close()
+}
+
+// The terminal's height is a whole number of rows; what is left over, and the page's padding, sit under the last row.
+// They show the terminal's own background, what the program paints in its last row: OpenCode paints its rows
+// rgb(10,10,10) on the default dark theme's #17191d, and a 20 px band of the page's colour showed under them on a
+// 411 dp phone (measured 2026-11-07).
+{
+  const zlib = await import('node:zlib')
+  // The colour of one CSS pixel, from a screenshot (an 8-bit RGBA PNG, as Chromium writes them).
+  const pixel = async (page, x, y) => {
+    const png = await page.screenshot({ clip: { x, y, width: 1, height: 1 }, scale: 'css' })
+    let at = 8, w = 0, idat = []
+    while (at < png.length) {
+      const len = png.readUInt32BE(at), type = png.toString('ascii', at + 4, at + 8)
+      if (type === 'IHDR') w = png.readUInt32BE(at + 8)
+      if (type === 'IDAT') idat.push(png.subarray(at + 8, at + 8 + len))
+      at += 12 + len
+    }
+    const raw = zlib.inflateSync(Buffer.concat(idat))
+    // The first pixel of the first row: after the filter byte, as is under every filter (nothing above it or left of it).
+    if (w !== 1) throw new Error('unexpected PNG width ' + w)
+    return [raw[1], raw[2], raw[3]]
+  }
+  const near = (a, b) => a.every((v, i) => Math.abs(v - b[i]) <= 2)
+  const band = async (t) => {
+    await t.page.waitForTimeout(300)
+    const g = await t.page.evaluate(() => { const s = document.querySelector('.xterm-screen').getBoundingClientRect(); return { bottom: s.bottom, top: s.top, cellH: s.height / window.term.rows, right: s.right, h: innerHeight } })
+    return {
+      lastRow: await pixel(t.page, g.right - 4, g.bottom - g.cellH / 2),
+      below: await pixel(t.page, g.right - 4, (g.bottom + g.h) / 2),
+      bottomEdge: await pixel(t.page, g.right - 4, g.h - 1),
+      firstRow: await pixel(t.page, g.right - 4, g.top + g.cellH / 2),
+      above: await pixel(t.page, g.right - 4, g.top / 2),
+    }
+  }
+  const program = (rgb) => `\x1b[?1049h\x1b[48;2;${rgb.join(';')}m\x1b[2J\x1b[H Build · Model\r\n\x1b[999;1H  ctrl+p commands`
+  for (const dark of [true, false]) {
+    const look = dark ? 'dark' : 'light'
+    const t = await open({ phone: true, dark })
+    const theme = dark ? [0x17, 0x19, 0x1d] : [0xff, 0xff, 0xff]
+    await t.send({ t: 'write', data: 'Line 1 of the answer\r\n$ ' })
+    let b = await band(t)
+    check(`a shell (${look}): under the last row is its background, the theme's`, near(b.below, theme) && near(b.bottomEdge, theme) && near(b.lastRow, theme), b)
+    const own = dark ? [10, 10, 10] : [250, 248, 240]
+    await t.send({ t: 'write', data: program(own) })
+    b = await band(t)
+    check(`a program that paints its rows (${look}): under the last row is the colour of its last row`, near(b.lastRow, own) && near(b.below, own) && near(b.bottomEdge, own), b)
+    check(`… and above the first row the colour of its first row`, near(b.firstRow, own) && near(b.above, own), b)
+    // A palette colour (256-colour index 236 is rgb 48,48,48).
+    await t.send({ t: 'write', data: '\x1b[48;5;236m\x1b[2J' })
+    b = await band(t)
+    check(`a palette background (${look}) fills the band too`, near(b.below, [48, 48, 48]), b)
+    await t.send({ t: 'write', data: '\x1b[0m\x1b[?1049l' })
+    b = await band(t)
+    check(`the program gone (${look}), the band is the theme's again`, near(b.below, theme) && near(b.lastRow, theme), b)
+    await t.send({ t: 'write', data: program(own) })
+    await t.send({ t: 'theme', dark: !dark })
+    b = await band(t)
+    check(`a new theme (${look} → other) keeps the program's colour under its rows`, near(b.below, own), b)
+    await t.page.context().close()
+  }
+  // A first row in another colour (a title bar): the top edge takes it, the rest of the page the last row's.
+  {
+    const t = await open({ phone: true })
+    await t.send({ t: 'write', data: program([10, 10, 10]) + '\x1b[1;1H\x1b[48;2;40;60;90m\x1b[2K Title' })
+    const b = await band(t)
+    check('a title bar in the first row: above it its colour, under the last row the last row\'s', near(b.above, [40, 60, 90]) && near(b.below, [10, 10, 10]), b)
+    await t.page.context().close()
+  }
+  // The wide layout (tablet, computer) has padding at the sides too.
+  {
+    const t = await open({})
+    await t.send({ t: 'write', data: program([10, 10, 10]) })
+    await t.page.waitForTimeout(300)
+    const g = await t.page.evaluate(() => { const s = document.querySelector('.xterm-screen').getBoundingClientRect(); return { left: s.left, mid: (s.top + s.bottom) / 2, h: innerHeight } })
+    const side = await pixel(t.page, g.left / 2, g.mid), under = await pixel(t.page, g.left / 2, g.h - 2)
+    check('the wide layout: the side padding and the band show the program\'s colour', near(side, [10, 10, 10]) && near(under, [10, 10, 10]), { side, under })
+    await t.page.context().close()
+  }
 }
 
 // A pane that loses height to a split takes its rows from the new height; the keyboard's height never does this.

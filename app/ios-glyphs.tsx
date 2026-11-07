@@ -1,8 +1,8 @@
 // The app e2e/ios-glyphs.sh installs: the real terminal page in a real WKWebView, printing what agents print. A probe
 // draws each character with the terminal's own fonts, as xterm's renderer does, and compares it with a code point that
-// has no character at all: the same picture means the phone drew its "missing" box. On iOS 17 that code point draws
-// nothing, so the probe says it cannot tell; use iOS 26. (nsh.json must sit next to the
-// entry, so it is here.)
+// has no character at all: the same picture means the phone could not draw it. iOS 26.3 draws such a code point as a
+// box; iOS 17.0 and 26.5 draw nothing (2026-11-07), so there a character that is blank by nature (a space, U+2800)
+// cannot be judged and is left out. (nsh.json must sit next to the entry, so it is here.)
 import { mount, signal, Text, View, WebView } from 'nsh'
 import { TERMINAL_FONTS, readPageMessage, terminalPage } from './src/ui/terminal-page.ts'
 import { AGENT_GLYPHS, EMOJI, MORE_GLYPHS, SCANNED_BLOCKS } from './e2e/agent-glyphs.ts'
@@ -22,8 +22,14 @@ const probe = `<script>(function () {
   }
   function run() {
     var none = picture('\\u0378');
-    var instrument = picture(' ') !== none && picture('\\u0379') === none && picture('A') !== none && picture('\\u2500') !== none;
-    var lost = function (c) { return picture(c) === none; };
+    // A missing character is a box on some systems and nothing on others (then it looks like a space).
+    var boxed = picture(' ') !== none;
+    // Which of the three checks held, so a failed calibration says why: another unassigned point looks the same, a
+    // letter and a line do not.
+    var cal = [picture('\\u0379') === none, picture('A') !== none, picture('\\u2500') !== none];
+    var instrument = cal.every(Boolean);
+    var empty = /^[\\s\\u2800]$/;
+    var lost = function (c) { return picture(c) === none && (boxed || !empty.test(c)); };
     // Colour, not a monochrome box: some pixel whose red, green and blue differ.
     function colour(c, fonts) {
       ctx.clearRect(0, 0, 96, 96); ctx.font = '48px ' + fonts; ctx.textBaseline = 'middle'; ctx.fillStyle = '#000'; ctx.fillText(c, 16, 48);
@@ -32,7 +38,7 @@ const probe = `<script>(function () {
       return false;
     }
     var grey = function (fonts) { return cfg.emoji.filter(function (c) { return !colour(c, fonts); }); };
-    window.nsh.postMessage(JSON.stringify({ t: 'glyphs', instrument: instrument, need: cfg.need.filter(lost), scan: cfg.scan.filter(lost), page: grey(cfg.fonts), system: grey('sans-serif') }));
+    window.nsh.postMessage(JSON.stringify({ t: 'glyphs', instrument: instrument, missing: boxed ? 'box' : 'blank', cal: cal.map(Number).join(''), need: cfg.need.filter(lost), scan: cfg.scan.filter(lost), page: grey(cfg.fonts), system: grey('sans-serif') }));
   }
   // The terminal's page posts ready once its fonts are loaded; the probe follows it and loads nothing itself.
   var post = window.nsh.postMessage.bind(window.nsh), done = false;
@@ -51,7 +57,7 @@ mount(() => (
       const raw = String(e.data)
       if (raw.includes('"glyphs"')) {
         const r = JSON.parse(raw)
-        result.set(`GLYPHS instrument=${r.instrument} need=${r.need.map(hex).join(',') || 'none'} emojiPage=${r.page.map(hex).join(',') || 'none'} emojiSystem=${r.system.map(hex).join(',') || 'none'} scan=${r.scan.map(hex).join(',') || 'none'}`)
+        result.set(`GLYPHS instrument=${r.instrument} need=${r.need.map(hex).join(',') || 'none'} emojiPage=${r.page.map(hex).join(',') || 'none'} emojiSystem=${r.system.map(hex).join(',') || 'none'} scan=${r.scan.map(hex).join(',') || 'none'} missing=${r.missing} cal=${r.cal}`)
         return
       }
       if (readPageMessage(raw)?.t === 'ready') web?.postMessage(JSON.stringify({ t: 'write', data: `  ⎿  Read 12 lines\r\n${show}\r\n${MORE_GLYPHS.join(' ')}\r\n${EMOJI.join(' ')} A\r\n` }))

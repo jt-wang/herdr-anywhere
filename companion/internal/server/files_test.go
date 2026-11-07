@@ -7,9 +7,12 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
+
+	"herdr-anywhere/companion/internal/testfake"
 )
 
 func upload(t *testing.T, f *fixture, token, name, on string, body []byte) (int, map[string]any) {
@@ -53,7 +56,7 @@ func TestFileLandsPrivatelyAndSaysWhere(t *testing.T) {
 		t.Fatalf("status %d: %v", code, out)
 	}
 	p, _ := out["path"].(string)
-	if !strings.HasPrefix(p, filepath.Join(home, ".cache", "herdr-anywhere", "uploads")+"/") || filepath.Base(p) != "report_final.pdf" {
+	if !strings.HasPrefix(p, filepath.Join(home, ".cache", "herdr-anywhere", "uploads")+string(filepath.Separator)) || filepath.Base(p) != "report_final.pdf" {
 		t.Fatalf("path %q", p)
 	}
 	got, err := os.ReadFile(p)
@@ -63,7 +66,7 @@ func TestFileLandsPrivatelyAndSaysWhere(t *testing.T) {
 	if out["bytes"] != float64(len(body)) {
 		t.Fatalf("bytes %v", out["bytes"])
 	}
-	if st, _ := os.Stat(filepath.Dir(p)); st.Mode().Perm() != 0o700 {
+	if st, _ := os.Stat(filepath.Dir(p)); testfake.PermBits() && st.Mode().Perm() != 0o700 {
 		t.Fatalf("folder mode %v", st.Mode().Perm())
 	}
 }
@@ -77,7 +80,7 @@ func TestFileNameCannotLeaveItsFolder(t *testing.T) {
 		}
 		p := out["path"].(string)
 		rel, err := filepath.Rel(filepath.Join(home, ".cache", "herdr-anywhere", "uploads"), p)
-		if err != nil || strings.HasPrefix(rel, "..") || strings.Count(rel, "/") != 1 {
+		if err != nil || strings.HasPrefix(rel, "..") || strings.Count(filepath.ToSlash(rel), "/") != 1 { // one folder, then the file
 			t.Fatalf("%q landed at %q", name, p)
 		}
 	}
@@ -143,6 +146,9 @@ HOME=` + remote + ` exec "$@"
 }
 
 func TestFileForAnotherMachineGoesThereInPieces(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the other machine runs the sh script hc exec sends; this fake runs it here, and Windows has no sh")
+	}
 	remote := t.TempDir()
 	f, home, token := folderFixture(t)
 	f.s.cfg.HC = fakeExecHC(t, remote)
@@ -153,7 +159,7 @@ func TestFileForAnotherMachineGoesThereInPieces(t *testing.T) {
 		t.Fatalf("status %d: %v", code, out)
 	}
 	p := out["path"].(string)
-	if !strings.HasPrefix(p, filepath.Join(remote, ".cache", "herdr-anywhere", "uploads")+"/") {
+	if !strings.HasPrefix(p, filepath.Join(remote, ".cache", "herdr-anywhere", "uploads")+string(filepath.Separator)) {
 		t.Fatalf("path %q", p)
 	}
 	if got, _ := os.ReadFile(p); !bytes.Equal(got, body) {
@@ -167,7 +173,7 @@ func TestFileForAnotherMachineGoesThereInPieces(t *testing.T) {
 
 func TestFileForAMachineThatFailsSaysSo(t *testing.T) {
 	f, _, token := folderFixture(t)
-	f.s.cfg.HC = "/usr/bin/false"
+	f.s.cfg.HC = testfake.HC(t, t.TempDir(), "hc", testfake.Spec{Exit: 1})
 	if code, out := upload(t, f, token, "a.png", "box", []byte("x")); code != http.StatusBadGateway {
 		t.Fatalf("status %d: %v", code, out)
 	}

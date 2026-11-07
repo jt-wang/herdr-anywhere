@@ -1,0 +1,248 @@
+name: Computers
+
+# The companion on every computer Herdr runs on: macOS, Linux and Windows, x64 and Arm where GitHub has runners.
+# Each job installs herdr-core from Herdr's releases and runs build, vet and the Go tests, including the ones
+# that drive that real core (internal/server/integration_test.go) and the one that pairs a phone over Tailcat's
+# real relays and talks to the core through the tunnel (TestLiveTailcat). Windows Arm runs Herdr's x64 build
+# under Windows' x64 emulation, as Herdr ships no Arm build for Windows yet, and the same for the x64 companion.
+# Runs only in the public repo, where GitHub's runners for public repos are free.
+# It runs on main, on release tags and on the public branch ci, where each release's commit is pushed and
+# must pass before it goes to main.
+on:
+  pull_request:
+  push:
+    branches: [main, ci]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: computers-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # herdr-core from https://releases.herdr.dev/core/latest.json (checked 2026-11-07); each job's sha256 is in the
+  # matrix. Update them together.
+  HERDR_CORE_VERSION: "0.1.18"
+  HM_TAILCAT_LIVE: "1"
+  # nsh from https://github.com/longbridge/nsh/releases/tag/v0.3.0; each file's sha256 (the digest GitHub lists
+  # for it, checked 2026-11-07) is in the app job's matrix.
+  NSH_VERSION: "v0.3.0"
+
+jobs:
+  companion:
+    name: Companion on ${{ matrix.os }}
+    if: github.repository == 'jt-wang/herdr-anywhere'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-26
+            core: herdr-core-macos-aarch64.tar.gz
+            sha256: 77d8af092e25ae650f4424d6dad27514f6916a11d807fb0752858cd27c21e4fc
+          - os: ubuntu-latest
+            core: herdr-core-linux-x86_64.tar.gz
+            sha256: 5b2f97cb4b2a9d7a6b2cc5942628203ed9fbb7cc0c2b4b09ad8a6f5648e246b7
+          - os: ubuntu-24.04-arm
+            core: herdr-core-linux-aarch64.tar.gz
+            sha256: cf33393cf950bb763734dc3e16610ab9daf8492391a4ef0de56026cd7f752853
+          - os: windows-latest
+            core: herdr-core-windows-x86_64.zip
+            sha256: 2e54e0b1dcbd652a7e89b14c588178f8241b9732fdc4e5f2b27208829b0bfbbc
+          - os: windows-11-arm
+            core: herdr-core-windows-x86_64.zip
+            sha256: 2e54e0b1dcbd652a7e89b14c588178f8241b9732fdc4e5f2b27208829b0bfbbc
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: companion/go.mod
+          cache-dependency-path: companion/go.sum
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+      - name: Install herdr-core
+        if: runner.os != 'Windows'
+        env:
+          CORE: ${{ matrix.core }}
+          CORE_SHA256: ${{ matrix.sha256 }}
+        run: |
+          dir="$RUNNER_TEMP/herdr-core"
+          mkdir -p "$dir"
+          curl -fsSL "https://releases.herdr.dev/core/$HERDR_CORE_VERSION/$CORE" -o "$RUNNER_TEMP/$CORE"
+          if command -v sha256sum >/dev/null; then sum="sha256sum"; else sum="shasum -a 256"; fi
+          echo "$CORE_SHA256  $RUNNER_TEMP/$CORE" | $sum -c -
+          tar -xzf "$RUNNER_TEMP/$CORE" -C "$dir"
+          "$dir/herdr-core" --version
+          echo "HM_TEST_HC=$dir/herdr-core" >> "$GITHUB_ENV"
+      # Where Herdr's own installer puts it. The installer refuses Arm, so this unpacks the release zip itself.
+      - name: Install herdr-core (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          CORE: ${{ matrix.core }}
+          CORE_SHA256: ${{ matrix.sha256 }}
+        run: |
+          $dir = Join-Path $env:LOCALAPPDATA "Programs\herdr-core"
+          $zip = Join-Path $env:RUNNER_TEMP $env:CORE
+          curl.exe -fsSL "https://releases.herdr.dev/core/$env:HERDR_CORE_VERSION/$env:CORE" -o $zip
+          if ((Get-FileHash $zip -Algorithm SHA256).Hash -ne $env:CORE_SHA256) { throw "$env:CORE doesn't match its sha256" }
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          & "$env:SystemRoot\System32\tar.exe" -xf $zip -C $dir
+          & "$dir\herdr-core.exe" --version
+          "HM_TEST_HC=$dir\herdr-core.exe" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+      - name: Build the release file
+        working-directory: companion
+        shell: bash
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          go build -buildvcs=false -trimpath -o "herdr-anywhere$(go env GOEXE)" ./cmd/herdr-anywhere
+          "./herdr-anywhere$(go env GOEXE)" --version
+      # The README's and INSTALL.md's PowerShell steps, as written, with the download pointed at the file built here.
+      - name: The install steps on Windows
+        if: runner.os == 'Windows'
+        shell: bash
+        env:
+          CGO_ENABLED: "0"
+          GOARCH: amd64
+        run: |
+          (cd companion && go build -buildvcs=false -trimpath -ldflags="-s -w" -o "$RUNNER_TEMP/herdr-anywhere-windows-amd64.exe" ./cmd/herdr-anywhere)
+          app/e2e/install-docs-windows.sh "$RUNNER_TEMP/herdr-anywhere-windows-amd64.exe" "$HM_TEST_HC"
+      - run: go vet ./...
+        working-directory: companion
+      - run: go test -v ./...
+        working-directory: companion
+      # Releases carry one Windows file, for x64. On Windows on Arm it runs under Windows' x64 emulation: the same
+      # update tests, built for x64, run here on the Arm machine.
+      - name: The x64 release file on Windows on Arm
+        if: matrix.os == 'windows-11-arm'
+        working-directory: companion
+        shell: bash
+        env:
+          CGO_ENABLED: "0"
+          GOARCH: amd64
+        run: |
+          echo "machine: $(go env GOHOSTARCH), building for: $(go env GOARCH)"
+          go build -buildvcs=false -trimpath -ldflags="-s -w" -o herdr-anywhere-windows-amd64.exe ./cmd/herdr-anywhere
+          ./herdr-anywhere-windows-amd64.exe --version
+          go test -v -run 'Update|Apply|Asset|Latest' ./internal/update ./cmd/herdr-anywhere
+
+  # The phone app's own client code (app/e2e/live.test.ts: pair, connect, run, type, upload, git branch, revoke)
+  # against a real companion and core. nsh has builds for macOS Arm, Linux x64 and Windows x64; live-app.tsx
+  # drives a POSIX shell, so Windows isn't here yet.
+  app:
+    name: App against a real core on ${{ matrix.os }}
+    if: github.repository == 'jt-wang/herdr-anywhere'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-26
+            core: herdr-core-macos-aarch64.tar.gz
+            sha256: 77d8af092e25ae650f4424d6dad27514f6916a11d807fb0752858cd27c21e4fc
+            nsh: nsh-macos-arm64.tar.gz
+            nsh_sha256: 34fdd2ec43d5e22986723e7633acf9223e365bd5bace1a502b5ae24fb75c266c
+          - os: ubuntu-latest
+            core: herdr-core-linux-x86_64.tar.gz
+            sha256: 5b2f97cb4b2a9d7a6b2cc5942628203ed9fbb7cc0c2b4b09ad8a6f5648e246b7
+            nsh: nsh-linux-x86_64.tar.gz
+            nsh_sha256: 539ecf9d76d156b5afa5a086212f23764bfc3945c7395a2119b73a3c66effed0
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: companion/go.mod
+          cache-dependency-path: companion/go.sum
+      - name: Install herdr-core and nsh
+        env:
+          CORE: ${{ matrix.core }}
+          CORE_SHA256: ${{ matrix.sha256 }}
+          NSH: ${{ matrix.nsh }}
+          NSH_SHA256: ${{ matrix.nsh_sha256 }}
+        run: |
+          if command -v sha256sum >/dev/null; then sum="sha256sum"; else sum="shasum -a 256"; fi
+          dir="$RUNNER_TEMP/herdr-core"
+          mkdir -p "$dir"
+          curl -fsSL "https://releases.herdr.dev/core/$HERDR_CORE_VERSION/$CORE" -o "$RUNNER_TEMP/$CORE"
+          echo "$CORE_SHA256  $RUNNER_TEMP/$CORE" | $sum -c -
+          tar -xzf "$RUNNER_TEMP/$CORE" -C "$dir"
+          "$dir/herdr-core" --version
+          echo "HM_TEST_HC=$dir/herdr-core" >> "$GITHUB_ENV"
+          curl -fsSL "https://github.com/longbridge/nsh/releases/download/$NSH_VERSION/$NSH" -o "$RUNNER_TEMP/$NSH"
+          echo "$NSH_SHA256  $RUNNER_TEMP/$NSH" | $sum -c -
+          tar -xzf "$RUNNER_TEMP/$NSH" -C "$RUNNER_TEMP"
+          "$RUNNER_TEMP/nsh/bin/nsh" --version
+          echo "$RUNNER_TEMP/nsh/bin" >> "$GITHUB_PATH"
+      - run: e2e/run.sh
+        working-directory: app
+
+  # The Android app on an emulator against a Linux computer: the release APK built here (debug-signed), herdr-core and
+  # the companion on the runner, the emulator reaching them at 10.0.2.2. e2e/android.sh pairs by typing the link,
+  # opens a terminal, types, and checks notifications and the folder picker (its header says all it does).
+  android-linux:
+    name: Android app × Linux computer
+    if: github.repository == 'jt-wang/herdr-anywhere'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      CORE: herdr-core-linux-x86_64.tar.gz
+      CORE_SHA256: 5b2f97cb4b2a9d7a6b2cc5942628203ed9fbb7cc0c2b4b09ad8a6f5648e246b7
+      NSH: nsh-linux-x86_64.tar.gz
+      NSH_SHA256: 539ecf9d76d156b5afa5a086212f23764bfc3945c7395a2119b73a3c66effed0
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: companion/go.mod
+          cache-dependency-path: companion/go.sum
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Install herdr-core, nsh and zsh
+        run: |
+          dir="$RUNNER_TEMP/herdr-core"
+          mkdir -p "$dir"
+          curl -fsSL "https://releases.herdr.dev/core/$HERDR_CORE_VERSION/$CORE" -o "$RUNNER_TEMP/$CORE"
+          echo "$CORE_SHA256  $RUNNER_TEMP/$CORE" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$CORE" -C "$dir"
+          "$dir/herdr-core" --version
+          echo "HM_TEST_HC=$dir/herdr-core" >> "$GITHUB_ENV"
+          curl -fsSL "https://github.com/longbridge/nsh/releases/download/$NSH_VERSION/$NSH" -o "$RUNNER_TEMP/$NSH"
+          echo "$NSH_SHA256  $RUNNER_TEMP/$NSH" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$NSH" -C "$RUNNER_TEMP"
+          "$RUNNER_TEMP/nsh/bin/nsh" --version
+          echo "$RUNNER_TEMP/nsh/bin" >> "$GITHUB_PATH"
+          echo "NSH_HOME=$RUNNER_TEMP/nsh" >> "$GITHUB_ENV"
+          sudo apt-get install -y -qq zsh >/dev/null # android.sh's terminals run zsh, as on a Mac
+      - name: Build the APK
+        working-directory: app
+        run: android/build.sh
+      # android-emulator-runner's setup for hardware acceleration on Linux runners.
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      # The same phone as the Mac's test emulator: API 35, Google APIs, a Pixel 6 screen.
+      - uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
+          working-directory: app
+          script: ANDROID_SERIAL=emulator-5554 e2e/android.sh

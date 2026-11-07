@@ -687,3 +687,28 @@ test('pinning from an agent\'s menu pins it on the computer; Unpin from the Pinn
   await app.waitFor('id:space-agent-t2')
   expect(app.count('text:Pinned')).toBe(0)
 })
+
+test("an agent's menu is titled with its row's main text, its space and program under it", async () => {
+  const shown: { title?: string | null; message?: string | null }[] = []
+  const menuOf = async (app: any, row: string) => {
+    app.onDialog((d: any) => { shown.push({ title: d.title, message: d.message }); return 'Cancel' })
+    await app.longPress(row)
+    await app.waitUntil(() => shown.length > 0)
+    return shown.pop()
+  }
+  const twins = await open('./fixtures/fake.tsx', { host: { params: { scene: 'twins' } } })
+  await twins.waitFor('id:space-agent-t1')
+  expect(await menuOf(twins, 'id:space-agent-t1')).toEqual({ title: 'fix login', message: 'api · Claude Code' })
+  // Pinned: the same words as its row there.
+  await twins.host.send('fake.label', { address: 't4', labels: { 'herdr.pinned': '1' } })
+  await twins.waitFor('id:pinned-agent-t4')
+  expect(await menuOf(twins, 'id:pinned-agent-t4')).toEqual({ title: 'Checkout page', message: 'web · Claude Code' })
+  // With Show agent names off the program's name is left out, as on the row.
+  const off = await open('./fixtures/fake.tsx', { host: { params: { scene: 'twins', prefs: JSON.stringify({ showAgentNames: false }) } } })
+  await off.waitFor('id:space-agent-t1')
+  expect(await menuOf(off, 'id:space-agent-t1')).toEqual({ title: 'fix login', message: 'api' })
+  // No title: the program's name is the main text, and is not said twice.
+  const app = await busy()
+  await app.waitFor('id:space-agent-t2')
+  expect(await menuOf(app, 'id:space-agent-t2')).toEqual({ title: 'Codex', message: 'api' })
+})

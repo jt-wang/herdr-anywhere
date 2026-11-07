@@ -38,6 +38,32 @@ export function notifyFromPage(n: { title: string; body?: string; terminal?: str
   if (host.available()) host.call('page.notify', { title: n.title, body: n.body ?? null, terminal: n.terminal ?? null, kind: n.kind, quiet: !!n.quiet }).catch(() => {})
 }
 
+/** What Android does with each kind of notification, as its channel stands now (MainActivity): with a pop-up and a
+ *  sound, a sound only, silent, or turned off there. `null` where there are no channels (iOS, a browser, an older app). */
+export type ChannelState = 'alert' | 'sound' | 'silent' | 'off'
+export type ChannelKind = 'blocked' | 'done' | 'connection'
+export type Channels = Record<ChannelKind, ChannelState>
+const STATES: ChannelState[] = ['alert', 'sound', 'silent', 'off']
+export async function notifyChannels(): Promise<Channels | null> {
+  if (!host.available()) return null
+  try {
+    const c: any = await host.call('page.notifyChannels')
+    const ok = c && (['blocked', 'done', 'connection'] as const).every((k) => STATES.includes(c[k]))
+    return ok ? { blocked: c.blocked, done: c.done, connection: c.connection } : null
+  } catch {
+    return null
+  }
+}
+/** Opens the page in Android's settings for one kind, or for the whole app (`app`). */
+export function openChannel(kind: ChannelKind | 'app') {
+  if (host.available()) host.call('page.openChannel', { kind }).catch(() => {})
+}
+/** Calls `back` each time the app comes back in front, as from Android's settings. Returns the stop. */
+export function onFront(back: () => void): () => void {
+  if (!host.available()) return () => {}
+  return host.on('page.front', (d: any) => { if (d?.front === true) back() })
+}
+
 /** Follows whether the page is in front (`front`), and taps on its notifications (`open`). Returns the stop. */
 export function followPage(on: { front: (front: boolean) => void; open: (terminal: string) => void }): () => void {
   if (!host.available()) return () => {}

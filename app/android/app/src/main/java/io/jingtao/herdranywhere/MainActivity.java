@@ -21,6 +21,7 @@ import android.content.pm.PackageInfo;
 import android.content.pm.PackageInstaller;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
+import android.media.AudioAttributes;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
@@ -57,8 +58,12 @@ import kotlinx.coroutines.CoroutineScopeKt;
  * page.uploadFile (src/link.ts): NSH 0.3.0 has a picker for photos and none for other files.
  */
 public class MainActivity extends Activity {
-  /** A question or an approval: heads-up with sound. A finished agent: in the shade only, without sound. */
-  private static final String NEEDS_YOU = "needs-you", FINISHED = "finished";
+  /** A question or an approval, and a finished agent: each pops up with Herdr's sound for it (assets/sounds, copied to
+   *  res/raw by android/build.sh); the person can lower either on its page in Android's settings. */
+  private static final String NEEDS_YOU = "agent-needs-you", FINISHED = "agent-finished";
+  /** Their ids until 0.1.13, when a finished agent was silent and a question had the phone's sound. Android keeps a
+   *  channel as it was first made, so a change needs a new id (Signal's NotificationChannels does the same). */
+  private static final String OLD_NEEDS_YOU = "needs-you", OLD_FINISHED = "finished";
   private static final String TERMINAL = "terminal";
   private static final int ASK = 1, PICK = 2;
 
@@ -89,6 +94,8 @@ public class MainActivity extends Activity {
     view.handle("page.notify", (data, reply) -> reply.resolve(notify(data)));
     view.handle("page.notifications", (data, reply) -> reply.resolve(permission()));
     view.handle("page.allowNotifications", (data, reply) -> runOnUiThread(() -> allow(reply)));
+    view.handle("page.notifyChannels", (data, reply) -> reply.resolve(channelStates()));
+    view.handle("page.openChannel", (data, reply) -> runOnUiThread(() -> reply.resolve(openChannel(data))));
     view.handle("page.pickFiles", (data, reply) -> runOnUiThread(() -> pickFiles(data, reply)));
     view.handle("page.uploadFile", this::uploadFile);
     view.handle("page.installUpdate", this::installUpdate);
@@ -139,12 +146,58 @@ public class MainActivity extends Activity {
 
   private void channels() {
     NotificationManager nm = getSystemService(NotificationManager.class);
-    NotificationChannel needs = new NotificationChannel(NEEDS_YOU, getString(R.string.channel_needs_you), NotificationManager.IMPORTANCE_HIGH);
-    needs.setDescription(getString(R.string.channel_needs_you_detail));
-    NotificationChannel finished = new NotificationChannel(FINISHED, getString(R.string.channel_finished), NotificationManager.IMPORTANCE_LOW);
-    finished.setDescription(getString(R.string.channel_finished_detail));
-    nm.createNotificationChannel(needs);
-    nm.createNotificationChannel(finished);
+    nm.createNotificationChannel(channel(nm, NEEDS_YOU, OLD_NEEDS_YOU, R.string.channel_needs_you, R.string.channel_needs_you_detail, "request"));
+    nm.createNotificationChannel(channel(nm, FINISHED, OLD_FINISHED, R.string.channel_finished, R.string.channel_finished_detail, "done"));
+    nm.deleteNotificationChannel(OLD_NEEDS_YOU);
+    nm.deleteNotificationChannel(OLD_FINISHED);
+    nm.createNotificationChannel(KeepAlive.channel(this));
+  }
+
+  /** Sound and pop-up with Herdr's sound. Made the first time over an older version, it keeps what the person chose on
+   *  the old channel: its importance (off and silent included) and its sound. Made again later, it changes nothing. */
+  private NotificationChannel channel(NotificationManager nm, String id, String old, int name, int detail, String sound) {
+    NotificationChannel c = new NotificationChannel(id, getString(name), NotificationManager.IMPORTANCE_HIGH);
+    c.setDescription(getString(detail));
+    c.setSound(Uri.parse("android.resource://" + getPackageName() + "/raw/" + sound), new AudioAttributes.Builder()
+        .setUsage(AudioAttributes.USAGE_NOTIFICATION).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build());
+    NotificationChannel was = nm.getNotificationChannel(old);
+    if (was == null || nm.getNotificationChannel(id) != null) return c;
+    // Before Android 10 there is no telling whether the person set it; off is theirs either way.
+    boolean setImportance = Build.VERSION.SDK_INT >= 29 ? was.hasUserSetImportance() : was.getImportance() == NotificationManager.IMPORTANCE_NONE;
+    if (setImportance || was.getImportance() == NotificationManager.IMPORTANCE_NONE) c.setImportance(was.getImportance());
+    if (Build.VERSION.SDK_INT >= 29 && was.hasUserSetSound()) c.setSound(was.getSound(), was.getAudioAttributes());
+    c.enableVibration(was.shouldVibrate());
+    if (was.getVibrationPattern() != null) c.setVibrationPattern(was.getVibrationPattern());
+    c.setLockscreenVisibility(was.getLockscreenVisibility());
+    c.setShowBadge(was.canShowBadge());
+    return c;
+  }
+
+  /** What Android does with each kind now (src/page.ts ChannelState), for Settings. */
+  private Map<String, String> channelStates() {
+    NotificationManager nm = getSystemService(NotificationManager.class);
+    boolean on = nm.areNotificationsEnabled();
+    Map<String, String> states = new HashMap<>();
+    states.put("blocked", on ? state(nm.getNotificationChannel(NEEDS_YOU)) : "off");
+    states.put("done", on ? state(nm.getNotificationChannel(FINISHED)) : "off");
+    states.put("connection", on ? state(nm.getNotificationChannel(KeepAlive.CHANNEL)) : "off");
+    return states;
+  }
+
+  private static String state(NotificationChannel c) {
+    if (c == null || c.getImportance() == NotificationManager.IMPORTANCE_NONE) return "off";
+    if (c.getImportance() < NotificationManager.IMPORTANCE_DEFAULT || c.getSound() == null) return "silent";
+    return c.getImportance() >= NotificationManager.IMPORTANCE_HIGH ? "alert" : "sound";
+  }
+
+  /** A kind's page in Android's settings, or the app's (`app`). */
+  private boolean openChannel(Object data) {
+    Object kind = data instanceof Map ? ((Map<?, ?>) data).get("kind") : null;
+    String channel = "blocked".equals(kind) ? NEEDS_YOU : "done".equals(kind) ? FINISHED : "connection".equals(kind) ? KeepAlive.CHANNEL : null;
+    Intent i = channel == null
+        ? new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, getPackageName())
+        : new Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, getPackageName()).putExtra(Settings.EXTRA_CHANNEL_ID, channel);
+    try { startActivity(i); return true; } catch (RuntimeException e) { Log.w("HerdrAnywhere", "no settings page: " + e); return false; }
   }
 
   /** Posts one, only while the app is not in front (its toast shows otherwise). One per terminal: the newest replaces. */

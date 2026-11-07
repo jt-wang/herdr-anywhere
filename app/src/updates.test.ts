@@ -7,7 +7,7 @@ const APP = { url: 'https://example.com/a.apk', digest: 'sha256:ab', bytes: 136_
 
 type Calls = { method: string; url: string; auth: string; body?: string }[]
 
-function setup(o: { info?: any; os?: 'android' | 'ios' | 'web'; app?: string; answers?: Record<string, { status: number; body: any }>; install?: (a: any, p: (n: number) => void, ask?: boolean) => Promise<any>; waitMs?: number } = {}) {
+function setup(o: { info?: any; os?: 'android' | 'ios' | 'web'; channel?: 'source' | 'store'; app?: string; answers?: Record<string, { status: number; body: any }>; install?: (a: any, p: (n: number) => void, ask?: boolean) => Promise<any>; waitMs?: number } = {}) {
   const calls: Calls = []
   const conn = new Signal<Conn>('ready')
   const box = { info: o.info }
@@ -30,6 +30,7 @@ function setup(o: { info?: any; os?: 'android' | 'ios' | 'web'; app?: string; an
     conn,
     fetcher,
     os: o.os ?? 'android',
+    channel: o.channel,
     appVersion: o.app ?? '0.1.5',
     toast: (t) => toasts.push(t),
     install: o.install ?? (async (a) => { installs.push(a); return 'installing' }),
@@ -82,6 +83,15 @@ test('each phone gets the update it can use', async () => {
   const web = setup({ os: 'web', info })
   await web.u.refresh()
   expect(web.u.notice()).toBe(null)
+})
+
+test('an app updated by the place it was installed from is not sent to build the app itself', async () => {
+  const { u } = setup({ os: 'ios', channel: 'store', info: { version: '0.1.6', latest: '0.1.6', canUpdate: true, app: APP } })
+  await u.refresh()
+  expect(u.notice()).toBe(null)
+  const computer = setup({ os: 'ios', channel: 'store', info: { version: '0.1.5', latest: '0.1.6', canUpdate: true, app: APP } })
+  await computer.u.refresh()
+  expect(computer.u.notice()).toEqual({ kind: 'computer', version: '0.1.6' })
 })
 
 test('an Android phone with a release that has no app is told nothing it cannot do', async () => {

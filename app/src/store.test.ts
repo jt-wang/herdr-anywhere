@@ -711,3 +711,51 @@ test('pins the phone kept by itself before are not shown: only the computer\'s c
   expect(store.agents()[0].pinned).toBe(false)
   expect(store.agentsView().groups.map((g) => g.id)).not.toContain('pinned')
 })
+
+// A tab whose root is the pane block itself (not a row holding it). Herdr writes row roots, but the shared document
+// takes any tree. terminal.get answers are held so a loop shows as a growing count instead of a hung test.
+const rootBlockDoc = (live: string, gone: string) => ({ spaces: [{ id: 's0', name: '', folder: '/x', tabs: [
+  { id: 'c0', name: '', root: { id: 'c0', type: 'row', children: [{ id: 'x0', type: 'block', content: { terminal: live } }] } },
+  { id: 'c1', name: '', root: { id: 'x1', type: 'block', content: { terminal: gone } } },
+] }] })
+
+test('a tab whose root is a pane block with an ended terminal closes, asking terminal.get once', async () => {
+  const core = new FakeCore()
+  const live = core.run({ argv: ['zsh'], labels: { 'herdr.space': 's0', 'herdr.tab': 'c0' } })
+  const gone = core.run({ argv: ['zsh'], labels: { 'herdr.space': 's0', 'herdr.tab': 'c1' } })
+  core.finish(gone.address)
+  core.docs.set('', { version: 1, value: rootBlockDoc(live.address, gone.address) })
+  core.holding.add('terminal.get')
+  const { store, advance } = setup(core)
+  await store.connect()
+  advance(6000)
+  store.sync()
+  for (let i = 0; i < 20; i++) { core.release(); await settle(1) }
+  const asked = core.calls.filter((c) => c.method === 'terminal.get' && c.params.terminal === gone.address).length
+  expect(asked).toBe(1)
+  expect(store.model.tabs().map((t) => t.id)).toEqual(['c0'])
+  expect(core.doc().spaces[0].tabs.map((t: any) => t.id)).toEqual(['c0'])
+})
+
+test('reconcile asks again only on the next loop when closing a pane or placing a terminal changes nothing', async () => {
+  const core = new FakeCore()
+  const live = core.run({ argv: ['zsh'], labels: { 'herdr.space': 's0', 'herdr.tab': 'c0' } })
+  const gone = core.run({ argv: ['zsh'], labels: { 'herdr.space': 's0', 'herdr.tab': 'c1' } })
+  core.finish(gone.address)
+  core.docs.set('', { version: 1, value: rootBlockDoc(live.address, gone.address) })
+  const stray = core.run({ argv: ['zsh'], keep: true, labels: { 'herdr.space': 's0', 'herdr.tab': 'c2' } })
+  core.holding.add('terminal.get')
+  const { store, advance } = setup(core)
+  await store.connect()
+  // A model that can't do either: any re-check before the next loop is the store scheduling itself without a change.
+  store.model.removePane = () => [false, false]
+  store.model.adopt = () => {}
+  advance(6000)
+  store.sync()
+  for (let i = 0; i < 20; i++) { core.release(); await settle(1) }
+  const asked = (a: string) => core.calls.filter((c) => c.method === 'terminal.get' && c.params.terminal === a).length
+  expect([asked(gone.address), asked(stray.address)]).toEqual([1, 1])
+  store.sync()
+  for (let i = 0; i < 20; i++) { core.release(); await settle(1) }
+  expect([asked(gone.address), asked(stray.address)]).toEqual([2, 2])
+})

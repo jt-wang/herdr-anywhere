@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.1.15
+
+- The computer's side runs on Windows. Install it with the PowerShell steps in the README, or have your coding agent follow INSTALL.md. It updates itself from the phone as on a Mac, and the same file runs on Windows on Arm.
+- In a pane you can type straight into the terminal with your phone's keyboard, or keep the input box. Switch with the `>_` button next to the input box and the pen in the key row; a tap on the note that appears keeps your choice for every pane. Attach is in the ⋯ menu.
+- Typing into the terminal: Enter with Gboard no longer deletes a character, a picked correction replaces the word instead of adding it again, and the first backspace after a Chinese, Japanese or Korean word deletes it, in the terminal and in the input box.
+- Holding ⇧ or ctrl darkens only that key, and the key row stays on one line on small phones and at the largest text size.
+- Android: when an agent finishes, its notification now pops up, the same as when an agent needs you. Both play Herdr's own sounds through Android's notification, and the app no longer plays a second sound of its own while in the background. Settings › Alerts says what Android does with each kind and opens its page in Android's settings. A kind you had silenced or turned off stays that way after the update.
+- In OpenCode and other programs that use the mouse, a drag moves the text as far as your finger, and a flick keeps going and slows down as it does in a plain terminal, even when your finger ends near the bottom of the screen. Before, the text ran about three times as far as the finger, and scrolling stopped when the finger ended over OpenCode's prompt box.
+- A terminal that doesn't load opens again once, then says so and offers Try again. Before, it could stay on Connecting… for good.
+- Long-pressing an agent on home opens a menu titled with what its row says first, its tab's name or title, with its space (and "Claude Code", when Show agent names is on) under it. Before, every Claude Code's menu read only "Claude Code".
+- The strip between a terminal's last line and the input box now has the terminal's own colour. In OpenCode and other programs that paint their own background, it used to show as a lighter band.
+
+Android: `Herdr-Anywhere.apk`; an installed 0.1.6 or later can update to it from home. Mac: `herdr-anywhere-macos-arm64`. Windows: `herdr-anywhere-windows-amd64.exe`.
+
 ## v0.1.14
 
 - Agent rows on home and in the switcher lead with what each agent is about: its tab's name or title is the main text, what it is doing sits under it in a readable grey, and "Claude Code" steps back to a small grey label. Idle agents are a step dimmer. Settings › Show agent names turns the label off; the icon still shows the program.

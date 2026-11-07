@@ -24,6 +24,8 @@ run=$(mktemp -d /tmp/hmXXXX)
 state=$(mktemp -d /tmp/hmtcXXXX)
 mkdir -p "$work/home/src/acme-api" "$work/state" "$work/config" "$work/data"
 : > "$work/home/.zshrc"
+# Ubuntu's /etc/zsh/zshrc runs compinit, which can stop at a y/n question and eat what the phone types first.
+echo skip_global_compinit=1 > "$work/home/.zshenv"
 export HC_SESSION="hmaqt-$$" HC_SOCKET="" HOME="$work/home" SHELL=/bin/zsh
 export XDG_STATE_HOME="$work/state" XDG_CONFIG_HOME="$work/config" XDG_DATA_HOME="$work/data" XDG_RUNTIME_DIR="$run"
 export GIT_CONFIG_GLOBAL="$work/home/.gitconfig"
@@ -178,7 +180,7 @@ away() {
   echo "  away 50 s: process state: $("$adb" shell ps -o S,WCHAN -p "${p:-1}" | tail -1 | tr -s ' ')"
   echo "  away 50 s: foreground service running: $("$adb" shell dumpsys activity services "$id" | grep -c 'isForeground=true' || true)"
   "$hc" send --force "$term" 'sh hm-away.sh' >/dev/null 2>&1 || true
-  got=no; for _ in 1 2 3 4 5 6 7 8 9 10; do "$adb" shell dumpsys notification --noredact | grep -q "NotificationRecord.*pkg=$id .*channel=needs-you" && { got=yes; break; }; sleep 1; done
+  got=no; for _ in 1 2 3 4 5 6 7 8 9 10; do "$adb" shell dumpsys notification --noredact | grep -q "NotificationRecord.*pkg=$id .*channel=agent-needs-you" && { got=yes; break; }; sleep 1; done
   echo "  away 50 s: an agent asking reached the notification shade: $got"
 }
 during=away

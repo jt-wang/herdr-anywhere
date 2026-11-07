@@ -10,11 +10,12 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
 	"github.com/coder/websocket"
+
+	"herdr-anywhere/companion/internal/testfake"
 )
 
 func wsURL(f *fixture, query string) string {
@@ -193,8 +194,7 @@ func TestWrongMessageTypeClosesTheSocket(t *testing.T) {
 }
 
 func TestCoreExitClosesTheSocket(t *testing.T) {
-	p := filepath.Join(t.TempDir(), "hc")
-	os.WriteFile(p, []byte("#!/bin/sh\n[ \"$1\" = --version ] && echo 'hc 9' && exit 0\nprintf bye\nexit 0\n"), 0o755)
+	p := testfake.HC(t, t.TempDir(), "hc", testfake.Spec{Version: "hc 9", Connect: "print:bye"})
 	f := newFixture(t, func(c *Config) { c.HC = p })
 	_, token := f.pair(t)
 	c, _, err := dial(t, wsURL(f, "token="+token), nil)
@@ -209,8 +209,6 @@ func TestCoreExitClosesTheSocket(t *testing.T) {
 		t.Fatalf("close %v %q, want reason \"core closed\"", code, reason)
 	}
 }
-
-func alive(pid int) bool { return syscall.Kill(pid, 0) == nil }
 
 func TestSocketCloseEndsHcConnect(t *testing.T) {
 	pidfile := filepath.Join(t.TempDir(), "pid")

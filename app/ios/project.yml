@@ -9,8 +9,8 @@ settings:
   base:
     # BUNDLE_ID_PREFIX and the signing team: Signing.xcconfig.
     PRODUCT_BUNDLE_IDENTIFIER: $(BUNDLE_ID_PREFIX).herdranywhere
-    MARKETING_VERSION: "0.1.14"
-    CURRENT_PROJECT_VERSION: "14"
+    MARKETING_VERSION: "0.1.15"
+    CURRENT_PROJECT_VERSION: "15"
     SWIFT_VERSION: "5.0"
     TARGETED_DEVICE_FAMILY: "1,2"
     GENERATE_INFOPLIST_FILE: NO
@@ -50,7 +50,7 @@ targets:
         # On ProMotion iPhones the app's animations move at 120 Hz (NSH's docs; nsh package sets it too).
         CADisableMinimumFrameDurationOnPhone: true
         # Standard algorithms only (WireGuard through Tailscale's library, X25519 and ChaCha20-Poly1305 in TailPocket's pairing), from
-        # public source. Without this TestFlight holds each build on a compliance question. A store release in France needs a declaration to ANSSI first.
+        # public source. This declares it for Apple's export compliance.
         ITSAppUsesNonExemptEncryption: false
         # TailPocket's QR scanner, for pairing.
         NSCameraUsageDescription: Herdr Anywhere scans the QR code herdr-anywhere pair shows, to pair with your computer.

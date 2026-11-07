@@ -15,23 +15,38 @@ export type FolderApi = {
   create(path: string): Promise<string>
 }
 
-/** `/Users/sam/src` reads `~/src` under home `/Users/sam`. */
+/** How the computer writes paths, told by its home: `C:\\Users\\sam` is Windows, `\\` between parts and a drive
+ * (`C:\\`) at the top, as the companion's Go answers there; anything else has `/` and `/` at the top. */
+type Style = { sep: string; win: boolean }
+const styleOf = (home: string): Style => (/^[A-Za-z]:\\/.test(home) ? { sep: '\\', win: true } : { sep: '/', win: false })
+/** The top a path starts at (`/`, `C:\\`), or '' for one that isn't absolute. */
+const rootOf = (p: string, s: Style) => (s.win ? (/^[A-Za-z]:\\/.test(p) ? p.slice(0, 3) : '') : p.startsWith('/') ? '/' : '')
+const join = (dir: string, name: string, s: Style) => (dir.endsWith(s.sep) ? dir + name : dir + s.sep + name)
+const dirname = (p: string, s: Style) => {
+  const root = rootOf(p, s)
+  const i = p.lastIndexOf(s.sep)
+  return i < root.length ? root : p.slice(0, i)
+}
+const leaf = (p: string, s: Style) => p.slice(p.lastIndexOf(s.sep) + 1)
+/** A top's name in the breadcrumb: `/`, or the drive (`C:`). */
+const rootLabel = (root: string, s: Style) => (s.win ? root.slice(0, 2) : root)
+
+/** `/Users/sam/src` reads `~/src` under home `/Users/sam`; `C:\\Users\\sam\\src` reads `~\\src`. */
 export function tilde(path: string, home: string): string {
   if (!home) return path
   if (path === home) return '~'
-  return path.startsWith(home + '/') ? '~' + path.slice(home.length) : path
+  return path.startsWith(home + styleOf(home).sep) ? '~' + path.slice(home.length) : path
 }
 
-/** A typed `~…` or `/…` path, absolute; other text is a filter, not a path. */
+/** A typed `~…` or absolute path (`/…`; on Windows `C:\\…`, with `/` read as `\\`), absolute; other text is a filter. */
 export function expand(text: string, home: string): string | undefined {
-  const t = text.trim()
+  const s = styleOf(home)
+  let t = text.trim()
+  if (s.win) t = t.replace(/\//g, '\\').replace(/^([A-Za-z]:)$/, '$1\\')
   if (t === '~') return home
-  if (t.startsWith('~/')) return home + t.slice(1)
-  return t.startsWith('/') ? t : undefined
+  if (t.startsWith('~' + s.sep)) return home + t.slice(1)
+  return rootOf(t, s) ? t : undefined
 }
-
-const join = (dir: string, name: string) => (dir === '/' ? `/${name}` : `${dir}/${name}`)
-const dirname = (p: string) => p.slice(0, p.lastIndexOf('/')) || '/'
 
 /** The folders whose names contain the text, any case; those that start with it first. */
 export function filterFolders(folders: Folder[], text: string): Folder[] {
@@ -67,13 +82,15 @@ export function closeNames(name: string, folders: Folder[], max = 3): string[] {
     .map((f) => f.name)
 }
 
-/** The path as parts to tap to go up: `~` and its folders inside home, `/` and its folders outside. */
+/** The path as parts to tap to go up: `~` and its folders inside home, `/` (or the drive) and its folders outside. */
 export function crumbs(path: string, home: string): { label: string; path: string }[] {
-  const inHome = !!home && (path === home || path.startsWith(home + '/'))
-  const out = [inHome ? { label: '~', path: home } : { label: '/', path: '/' }]
+  const s = styleOf(home)
+  const inHome = !!home && (path === home || path.startsWith(home + s.sep))
+  const root = rootOf(path, s) || s.sep
+  const out = [inHome ? { label: '~', path: home } : { label: rootLabel(root, s), path: root }]
   let at = out[0].path
-  for (const part of (inHome ? path.slice(home.length) : path).split('/').filter(Boolean)) {
-    at = join(at, part)
+  for (const part of path.slice(inHome ? home.length : root.length).split(s.sep).filter(Boolean)) {
+    at = join(at, part, s)
     out.push({ label: part, path: at })
   }
   return out
@@ -98,8 +115,11 @@ export class FolderPicker {
   private gone?: { path: string; existing: Listing | undefined }
   private asked = 0
   private hidden = false
+  private s: Style
 
-  constructor(private api: FolderApi, private home: string) {}
+  constructor(private api: FolderApi, private home: string) {
+    this.s = styleOf(home)
+  }
 
   /** "Show hidden": lists the folder again with its dot folders, or without. */
   async showHidden(on: boolean): Promise<void> {
@@ -127,7 +147,7 @@ export class FolderPicker {
     if (!l || l.path !== this.home || this.typed()) return []
     const q = this.text.get().trim().toLowerCase()
     return folders
-      .map((path) => ({ name: path === this.home ? '~' : path.slice(path.lastIndexOf('/') + 1) || '/', path }))
+      .map((path) => ({ name: path === this.home ? '~' : leaf(path, this.s) || rootLabel(rootOf(path, this.s), this.s), path }))
       .filter((f) => !q || f.name.toLowerCase().includes(q) || tilde(f.path, this.home).toLowerCase().includes(q))
   }
 
@@ -162,9 +182,13 @@ export class FolderPicker {
   private typed(): { dir: string; leaf: string } | undefined {
     const abs = expand(this.text.get(), this.home)
     if (abs === undefined) return undefined
-    if (abs.endsWith('/') && abs !== '/') return { dir: abs.replace(/\/+$/, '') || '/', leaf: '' }
-    if (abs === '/') return { dir: '/', leaf: '' }
-    return { dir: dirname(abs), leaf: abs.slice(abs.lastIndexOf('/') + 1) }
+    const root = rootOf(abs, this.s)
+    if (abs.endsWith(this.s.sep)) {
+      let dir = abs
+      while (dir.endsWith(this.s.sep) && dir.length > root.length) dir = dir.slice(0, -1)
+      return { dir, leaf: '' }
+    }
+    return { dir: dirname(abs, this.s), leaf: leaf(abs, this.s) }
   }
 
   /** The subfolders on screen: the listed folder's, filtered by what is typed. */
@@ -181,7 +205,7 @@ export class FolderPicker {
     const l = this.listing.get()
     const t = this.typed()
     if (!l || !t?.leaf || this.gone || !l.folders.some((f) => f.name === t.leaf)) return undefined
-    return join(t.dir, t.leaf)
+    return join(t.dir, t.leaf, this.s)
   }
 
   /** A typed path that doesn't exist: said plainly, with close names from the nearest folder that does. */
@@ -189,18 +213,19 @@ export class FolderPicker {
     const typed = this.typed()
     const l = this.listing.get()
     if (!typed) return undefined
-    const path = typed.leaf ? join(typed.dir, typed.leaf) : typed.dir
+    const s = this.s
+    const path = typed.leaf ? join(typed.dir, typed.leaf, s) : typed.dir
     const note = (suggestions: string[]) => ({ path, text: t('pathMissing', { path: tilde(path, this.home) }), suggestions })
     if (this.gone) {
       // The first part that is missing is the slip; the rest of the typed path follows the close name.
       const near = this.gone.existing
       if (!near) return note([])
-      const rest = path.slice(near.path === '/' ? 1 : near.path.length + 1).split('/')
-      const tail = rest.slice(1).join('/')
-      return note(closeNames(rest[0], near.folders).map((n) => join(join(near.path, n), tail).replace(/\/$/, '')))
+      const rest = path.slice(near.path.endsWith(s.sep) ? near.path.length : near.path.length + 1).split(s.sep)
+      const tail = rest.slice(1).join(s.sep)
+      return note(closeNames(rest[0], near.folders).map((n) => (tail ? join(join(near.path, n, s), tail, s) : join(near.path, n, s))))
     }
     if (!l || !typed.leaf || l.folders.some((f) => f.name === typed.leaf)) return undefined
-    return { ...note(closeNames(typed.leaf, l.folders).map((n) => join(typed.dir, n))), create: { name: typed.leaf, parent: typed.dir } }
+    return { ...note(closeNames(typed.leaf, l.folders).map((n) => join(typed.dir, n, s))), create: { name: typed.leaf, parent: typed.dir } }
   }
 
   /** "Create folder": makes the missing folder on the computer, after that tap only, when the folder above exists. */

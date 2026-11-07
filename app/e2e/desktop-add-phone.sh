@@ -25,14 +25,26 @@ finish() {
   [ "$status" = 0 ] && echo "PASS" || echo "FAIL"
   exit "$status"
 }
-trap finish EXIT INT TERM
-fail() { echo "FAIL: $1"; exit 1; }
+trap finish EXIT
+# A run stopped from outside is no pass (before 2026-11-08 a TERM went to finish with the last command's 0: PASS).
+trap 'echo "FAIL: stopped by a signal"; exit 1' INT TERM
+fail() {
+  echo "FAIL: $1"
+  echo "clicks: ${clicks-unset}, screen locked now: $("$work/tool" locked 2>/dev/null && echo yes || echo no), state: $(ls "$work/s" 2>/dev/null | tr '\n' ' ')"
+  [ -f "$work/app.log" ] && { echo "app.log, last lines:"; tail -15 "$work/app.log"; }
+  exit 1
+}
 
 (cd "$companion" && go build -o "$work/herdr-anywhere" ./cmd/herdr-anywhere)
 swiftc -O "$here/desktop-tool.swift" -o "$work/tool" 2>/dev/null
 caffeinate -u -t 600 & awake=$! # a sleeping display draws no frames
 
 echo '{"frame.welcomed":"skipped"}' >"$work/app/shared.json" # no first-run welcome over the dialog
+# Nor What's new: on a fresh app home Herdr opens it over everything for a release whose notes it shows by itself
+# (0.1.13, 2026-11-08: it covered the dialog, and neither Got it nor Enter closed it from under the dialog). Herdr
+# records shown notes in update-notes.json; this is what it wrote after showing them (read back 2026-11-08).
+herdr_version=$(herdr-app --version | awk '{print $2}')
+printf '{"last_run":"%s","presented":["%s"]}\n' "$herdr_version" "$herdr_version" >"$work/app/update-notes.json"
 herdr-app >"$work/app.log" 2>&1 & window=$!
 for _ in $(seq 1 30); do [ -f "$work/app/keys.json" ] && [ -S "$work/app/herdr-app.sock" ] && break; sleep 1; done
 [ -f "$work/app/keys.json" ] || fail "no window"
@@ -53,7 +65,12 @@ frame() {
   "$work/tool" scan "$work/f.png" >"$work/f.txt" || : >"$work/f.txt"
 }
 wait_for() { # text to find in a frame
-  for _ in $(seq 1 40); do frame; grep -qF "$1" "$work/f.txt" && return 0; sleep 1; done
+  for _ in $(seq 1 40); do
+    frame
+    grep -qF "What's new in Herdr" "$work/f.txt" && { sed 's/^qr .*/qr <decoded>/' "$work/f.txt"; fail "Herdr's What's new window is open: update-notes.json no longer keeps it shut"; }
+    grep -qF "$1" "$work/f.txt" && return 0
+    sleep 1
+  done
   sed 's/^qr .*/qr <decoded>/' "$work/f.txt"; fail "the dialog never showed: $1"
 }
 
@@ -70,14 +87,23 @@ press() { # text of a button on the frame just read
 }
 # Behind a locked screen a mouse click never arrives (tried 2026-11-03): use the keyboard and the CLI there.
 clicks=yes; "$work/tool" locked && clicks=""
+# Behind a locked screen Herdr 0.1.13's dialog takes no keys either (2026-11-08: eight Enters, it stayed on Start;
+# 0.1.12 took them on 2026-11-03). There the companion is started from the CLI, as the button does, and the dialog
+# opened again; main.test.mjs presses Start under node.
+reopen() { herdr-app do overlay.close >/dev/null; sleep 1; herdr-app do mod.open --name add-phone >/dev/null; }
 if [ -n "$clicks" ]; then press Start; else
-  for _ in 1 2 3 4 5 6 7 8; do
+  for _ in 1 2 3; do
     front; sleep 0.5; "$work/tool" key "$window" 36; sleep 2
     [ -S "$work/s/serve.sock" ] && break
   done
+  if [ ! -S "$work/s/serve.sock" ]; then
+    echo "not checked: Start from the dialog, the screen is locked and the window takes no keys (main.test.mjs presses it under node)"
+    hm start >/dev/null || fail "herdr-anywhere start"
+    reopen
+  fi
 fi
 wait_for "scan this code"
-echo "ok: Start brought up the companion and a code"
+echo "ok: the companion is up and the dialog shows a code"
 grep -q '^qr herdr1:' "$work/f.txt" || fail "the frame's QR code did not decode to an invite"
 ( umask 077; sed -n 's/^qr //p' "$work/f.txt" >"$work/invite" )
 echo "ok: the code on screen decodes to an invite, $(wc -c <"$work/invite" | tr -d ' ') characters"
@@ -92,14 +118,26 @@ echo "ok: the invite is in no file of the app home, the state or the core"
 overlays() { herdr-app status | grep -c '"add-phone"' || true; }
 # The first key after coming to the front can be lost, so a key gets a few tries.
 for _ in 1 2 3 4 5; do front; sleep 0.5; "$work/tool" key "$window" 53; sleep 1; [ "$(overlays)" = 0 ] && break; done
-[ "$(overlays)" = 0 ] || fail "Escape did not close the dialog"
-echo "ok: Escape closes the dialog"
+if [ "$(overlays)" != 0 ] && [ -z "$clicks" ]; then
+  echo "not checked: Escape, the screen is locked and the window takes no keys"
+  herdr-app do overlay.close >/dev/null; sleep 1
+else
+  [ "$(overlays)" = 0 ] || fail "Escape did not close the dialog"
+  echo "ok: Escape closes the dialog"
+fi
+[ "$(overlays)" = 0 ] || fail "the dialog did not close"
 hm pair --json | grep -q '"invite"' || fail "the companion died with the dialog"
 echo "ok: the companion outlives the dialog"
 
 for _ in 1 2 3 4 5; do front; sleep 0.5; "$work/tool" key "$window" 46 cmd-shift; sleep 1; [ "$(overlays)" = 1 ] && break; done
-[ "$(overlays)" = 1 ] || fail "cmd-shift-m did not open the dialog"
-echo "ok: cmd-shift-m opens the dialog"
+if [ "$(overlays)" != 1 ] && [ -z "$clicks" ]; then
+  echo "not checked: cmd-shift-m, the screen is locked and the window takes no keys"
+  herdr-app do mod.open --name add-phone >/dev/null; sleep 1
+else
+  [ "$(overlays)" = 1 ] || fail "cmd-shift-m did not open the dialog"
+  echo "ok: cmd-shift-m opens the dialog"
+fi
+[ "$(overlays)" = 1 ] || fail "the dialog did not open again"
 wait_for "scan this code"
 sed -n 's/^qr //p' "$work/f.txt" >"$work/invite"
 (cd "$companion" && HM_SCREEN_INVITE="$work/invite" go test ./cmd/herdr-anywhere -run TestPairFromScreen -count=1 >"$work/pair.log" 2>&1) || { cat "$work/pair.log"; fail "pairing with the decoded invite"; }

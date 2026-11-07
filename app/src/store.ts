@@ -20,7 +20,7 @@ import { spaceMarks } from './model/marks.ts'
 const PIN_LABEL = 'herdr.pinned'
 
 export type Conn = 'idle' | 'connecting' | 'ready' | 'reconnecting' | 'failed' | 'unpaired'
-export type Toast = { id: number; title: string; body?: string; level: 'info' | 'error'; action?: { pane?: string; terminal?: string } }
+export type Toast = { id: number; title: string; body?: string; level: 'info' | 'error'; action?: { pane?: string; terminal?: string; run?: () => void } }
 export type Machine = { name: string; host?: string; state?: string; temporary?: boolean }
 export type Slot = { version: number; last: string; available: boolean; loaded: boolean; error?: string; writing: boolean }
 
@@ -473,11 +473,12 @@ export class Store {
       ).then((closed) => {
         this.checking.delete(a)
         const pane = this.model.paneOf(a)
-        if (closed && pane) {
-          this.model.removePane(pane)
-          this.dirty = true
-          this.schedule()
-        }
+        if (!closed || !pane) return
+        this.model.removePane(pane)
+        // Only a change earns another pass now; otherwise the next loop asks again (no change → no loop).
+        if (this.model.paneOf(a) === pane) return
+        this.dirty = true
+        this.schedule()
       })
     }
     // Live terminals labeled for a space that no pane shows: place them (started by an agent, a script, another screen).
@@ -500,6 +501,7 @@ export class Store {
           if (rec.keep !== true) await this.call('terminal.keep', { terminal: o.t.address, keep: true })
           if (this.model.paneOf(o.t.address) !== undefined || this.placing.has(`${o.space} ${o.tab}`)) return
           this.model.adopt(o.t.address, o.space, o.tab, rec.foreground?.cwd ?? rec.cwd ?? this.home)
+          if (this.model.paneOf(o.t.address) === undefined) return
           this.dirty = true
           this.schedule()
         } catch {} finally {

@@ -19,18 +19,14 @@ import (
 	"tailscale.com/types/key"
 
 	"herdr-anywhere/companion/internal/store"
+	"herdr-anywhere/companion/internal/testfake"
 )
 
-// newStore opens a store in a short dir under /tmp: the control socket lives
-// there, and macOS caps socket paths at 104 bytes, which t.TempDir() exceeds.
+// newStore opens a store in a short dir: the control socket lives there, and
+// macOS caps socket paths at 104 bytes, which t.TempDir() exceeds.
 func newStore(t *testing.T) *store.Store {
 	t.Helper()
-	dir, err := os.MkdirTemp("/tmp", "hmtc")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { os.RemoveAll(dir) })
-	st, err := store.Open(dir)
+	st, err := store.Open(testfake.ShortDir(t, "hmtc"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +109,7 @@ func TestSaveWritesTheStateReadableOnlyByTheUser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fi.Mode().Perm() != 0o600 {
+	if testfake.PermBits() && fi.Mode().Perm() != 0o600 {
 		t.Fatalf("mode = %v, want 0600", fi.Mode().Perm())
 	}
 	var got connecthost.State
@@ -259,7 +255,7 @@ func TestPairRequestReachesServe(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fi.Mode().Perm() != 0o600 {
+	if testfake.PermBits() && fi.Mode().Perm() != 0o600 {
 		t.Fatalf("socket mode = %v, want 0600", fi.Mode().Perm())
 	}
 	r, err := RequestPair(context.Background(), st.Dir(), "the-code")

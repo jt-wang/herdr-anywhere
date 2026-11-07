@@ -31,6 +31,7 @@ import (
 	"herdr-anywhere/companion/internal/hcbin"
 	"herdr-anywhere/companion/internal/store"
 	"herdr-anywhere/companion/internal/tailcat"
+	"herdr-anywhere/companion/internal/testfake"
 )
 
 // isolatedHC points this process, and every hc serve spawns, at a fresh core
@@ -45,10 +46,7 @@ func isolatedHC(t *testing.T) string {
 	b := make([]byte, 4)
 	rand.Read(b)
 	scratch := t.TempDir()
-	run, err := os.MkdirTemp("/tmp", "hm") // the core's sockets must fit macOS's 104 bytes
-	if err != nil {
-		t.Fatal(err)
-	}
+	run := testfake.ShortDir(t, "hm") // the core's sockets must fit macOS's 104 bytes
 	for k, v := range map[string]string{
 		"HC_SESSION": "hmtest-" + hex.EncodeToString(b), "HC_SOCKET": "",
 		"XDG_STATE_HOME": filepath.Join(scratch, "state"), "XDG_CONFIG_HOME": filepath.Join(scratch, "config"),
@@ -63,7 +61,6 @@ func isolatedHC(t *testing.T) string {
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Logf("hc server stop: %v: %s", err, out)
 		}
-		os.RemoveAll(run)
 	})
 	return hc
 }
@@ -126,7 +123,8 @@ func TestLiveTailcat(t *testing.T) {
 	t.Logf("pairing window open after %v; invite %d chars", time.Since(started).Round(time.Millisecond), len(text))
 	inv, err := connectinvite.Decode(text, tailcat.Prefix)
 	if err != nil {
-		t.Fatalf("invite %q: %v\n%s", text, err, out)
+		// CI logs are public: never print the invite or the output holding it.
+		t.Fatalf("invite (%d chars) doesn't decode: %v", len(text), err)
 	}
 
 	started = time.Now()

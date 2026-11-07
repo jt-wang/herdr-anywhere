@@ -30,6 +30,8 @@ run=$(mktemp -d /tmp/hmXXXX)
 state=$(mktemp -d /tmp/hmtcXXXX)
 mkdir -p "$work/home/src/acme-api" "$work/state" "$work/config" "$work/data"
 : > "$work/home/.zshrc"
+# Ubuntu's /etc/zsh/zshrc runs compinit, which can stop at a y/n question and eat what the phone types first.
+echo skip_global_compinit=1 > "$work/home/.zshenv"
 export HC_SESSION="hmatc-$$" HC_SOCKET="" HOME="$work/home" SHELL=/bin/zsh
 export XDG_STATE_HOME="$work/state" XDG_CONFIG_HOME="$work/config" XDG_DATA_HOME="$work/data" XDG_RUNTIME_DIR="$run"
 export GIT_CONFIG_GLOBAL="$work/home/.gitconfig"

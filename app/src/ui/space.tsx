@@ -13,10 +13,11 @@ import { gitTail } from '../model/marks.ts'
 import { ConnBanner, Glyph, IconButton, ProgramIcon, SpaceBadge, StatusDot, StatusMark, shortPath, useRev } from './kit.tsx'
 import { t } from '../strings/index.ts'
 import { TerminalView, WIDE } from './terminal.tsx'
-import { PaneBar } from './pane-bar.tsx'
+import { attachToTerminal, PaneBar } from './pane-bar.tsx'
 import { AgentRow } from './agent-row.tsx'
 import { startable } from '../model/programs.ts'
 import type { TerminalSession } from './terminal-session.ts'
+import type { TypeIn } from '../prefs.ts'
 
 export type SpaceActions = {
   back: () => void
@@ -25,6 +26,9 @@ export type SpaceActions = {
   addAgent: (spaceId: string) => void
   rename: (kind: 'space' | 'tab', id: string, current: string) => void
   fontSize: () => number
+  /** Where a pane opens typing: the phone's last kept choice. */
+  typeIn: () => TypeIn
+  keepTypeIn: (m: TypeIn) => void
   /** Opens a terminal wherever it is (another space included). */
   open: (address: string) => void
   settings: () => void
@@ -140,7 +144,7 @@ function PhoneSpace(props: { store: Store; spaceId: string; tab: Tab; actions: S
           )}</Each>
           <Each of={session() ? [session()!] : []}>{(t) => {
             const p = () => { rev(); return s.program(t().address) }
-            return <PaneBar store={s} session={t()} program={p().name} agent={!!p().agent} />
+            return <PaneBar store={s} session={t()} program={p().name} agent={!!p().agent} typeIn={props.actions.typeIn} keep={props.actions.keepTypeIn} />
           }}</Each>
         </View>
       }>
@@ -319,7 +323,7 @@ function WidePanes(props: { store: Store; spaceId: string; tab: Tab; actions: Sp
           )
         }}</Each>
       </View>
-      <Each of={focusedSession() ? [focusedSession()!] : []}>{(t) => <PaneBar store={s} session={t()} program={s.program(t().address).name} agent={!!s.program(t().address).agent} />}</Each>
+      <Each of={focusedSession() ? [focusedSession()!] : []}>{(t) => <PaneBar store={s} session={t()} program={s.program(t().address).name} agent={!!s.program(t().address).agent} typeIn={props.actions.typeIn} keep={props.actions.keepTypeIn} />}</Each>
     </View>
   )
 }
@@ -401,12 +405,14 @@ export function SpaceScreen(props: { store: Store; spaceId: string; actions: Spa
     const session = address ? sessions.get(address) : undefined
     const r = await AlertDialog.show({ title: name(), presentation: 'actionSheet', actions: [
       ...(session ? [{ id: 'type', label: t('typeInTerminal') }] : []),
+      ...(session?.typeIn.get() === 'terminal' ? [{ id: 'attach', label: t('attach') }] : []),
       ...(phone && pane ? [{ id: 'split-right', label: t('splitRight') }, { id: 'split-down', label: t('splitDown') }, { id: 'close-pane', label: t('closePane'), role: 'destructive' as const }] : []),
       ...(phone && current && panes(current.root).length > 1 ? [s.shownWhole.has(current.id) ? { id: 'show-one', label: t('showOnePane') } : { id: 'show-all', label: t('showAllPanes') }] : []),
       ...(phone && current ? [{ id: 'rename-tab', label: t('renameTab') }] : []),
       { id: 'rename', label: t('renameSpace') }, { id: 'close', label: t('closeSpace'), role: 'destructive' },
       ...(phone ? [{ id: 'settings', label: t('settings') }] : []), { id: 'cancel', label: t('cancel'), role: 'cancel' }] })
     if (r === 'type') session?.focus()
+    else if (r === 'attach' && session) void attachToTerminal(s, session)
     else if (r === 'split-right' || r === 'split-down') void split(pane, r === 'split-right' ? 'right' : 'down')
     else if (r === 'show-one' && current) s.showWhole(current.id, false)
     else if (r === 'show-all' && current) { if (await accepts()) s.showWhole(current.id, true) }

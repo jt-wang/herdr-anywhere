@@ -1,8 +1,8 @@
 {
   "name": "Herdr Anywhere",
   "id": "io.jingtao.herdranywhere",
-  "version": "0.1.14",
-  "build": 16,
+  "version": "0.1.15",
+  "build": 17,
   "appearance": "system",
   "theme": {
     "cssVars": {

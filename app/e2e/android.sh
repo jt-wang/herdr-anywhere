@@ -2,9 +2,11 @@
 # The app on an Android device or emulator against a real computer: an isolated herdr-core with a fake project and the
 # companion on this computer's loopback, which an emulator reaches as 10.0.2.2. Installs the APK, pairs it by typing the
 # link, and passes when the phone is connected (the companion logs it) and its home screen lists the project.
-# Then it opens the space and types a command into its terminal, which passes when the file the command makes appears.
+# Then it opens the space and types a command into its terminal, which passes when the file the command makes appears;
+# and the input box row's switch: the keyboard in the terminal with no input box, a command typed there runs, and the
+# key row's pen brings the box back.
 # Last, away from the app: a blocked terminal posts Android's notification and a tap on it opens the pane; a finished one
-# posts the quieter kind. Then, back in the app, a new space whose folder is picked by browsing the computer, and one
+# pops up too, on its own channel. Then, back in the app, a new space whose folder is picked by browsing the computer, and one
 # in a typed folder that doesn't exist, which the app makes after the tap on Create it.
 # Usage: ANDROID_SERIAL=emulator-5554 e2e/android.sh [apk] [screenshot.png]
 # ANDROID_SERIAL is required, so the run never lands on another emulator.
@@ -14,8 +16,11 @@ app=$(cd "$(dirname "$0")/.." && pwd)
 apk=${1:-$app/android/build/Herdr.apk}
 shot=${2:-}
 adb="${ANDROID_HOME:-$HOME/Library/Android/sdk}/platform-tools/adb"
-hc=$(command -v hc || echo "$HOME/.local/bin/hc")
+hc=${HM_TEST_HC:-$(command -v hc || echo "$HOME/.local/bin/hc")}
 id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$app/nsh.json")
+# The app's package, for every later adb call: a loop variable named id once replaced it, and the sound step then
+# looked for the players of a package called to-box (2026-11-07).
+readonly id
 
 port=7691
 while nc -z 127.0.0.1 "$port" 2>/dev/null; do port=$((port + 1)); done
@@ -24,11 +29,25 @@ work=$(mktemp -d)
 run=$(mktemp -d /tmp/hmXXXX)
 mkdir -p "$work/home/src/acme-api" "$work/home/src/beta-web" "$work/state" "$work/config" "$work/data"
 : > "$work/home/.zshrc"
+# Ubuntu's /etc/zsh/zshrc runs compinit, which can stop at a y/n question and eat what the phone types first.
+echo skip_global_compinit=1 > "$work/home/.zshenv"
 export HC_SESSION="hmandroid-$$" HC_SOCKET="" HOME="$work/home" SHELL=/bin/zsh
 export XDG_STATE_HOME="$work/state" XDG_CONFIG_HOME="$work/config" XDG_DATA_HOME="$work/data" XDG_RUNTIME_DIR="$run"
 export HERDR_ANYWHERE_STATE="$work/companion" GIT_CONFIG_GLOBAL="$work/home/.gitconfig"
 "$hc" run --bg --keep --cwd "$work/home/src/acme-api" --label herdr.space=spandroid --label herdr.tab=tbandroid >/dev/null
+# On a failure, what is on the phone's screen (ids and texts) and what each terminal of this run's core shows.
+show_terms() {
+  "$adb" shell uiautomator dump /sdcard/hm.xml 2>&1 | grep -v "dumped to" || true
+  echo "--- on the phone's screen:"
+  # CI logs are public: no pairing code, even this run's.
+  "$adb" shell cat /sdcard/hm.xml 2>/dev/null | tr '>' '\n' | grep -oE '(resource-id|text)="[^"]+"' | head -40 | sed -E 's/#pair=[A-Za-z0-9_-]+/#pair=…/g'
+  for t in $("$hc" ls --json 2>/dev/null | python3 -c 'import json,sys; print(" ".join(x["address"] for x in json.load(sys.stdin)["terminals"]))' 2>/dev/null); do
+    echo "--- terminal $t, last lines:"; "$hc" read "$t" 2>&1 | tail -15
+  done
+}
 cleanup() {
+  status=$?
+  [ "$status" -ne 0 ] && show_terms
   [ -n "${serve_pid:-}" ] && kill "$serve_pid" 2>/dev/null
   "$hc" server stop >/dev/null 2>&1 || true
   chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run"
@@ -47,14 +66,23 @@ at() {
   "$adb" shell cat /sdcard/hm.xml | tr '>' '\n' | grep -F "$q" | head -1 |
     sed -E 's/.*bounds="\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\]".*/\1 \2 \3 \4/' | awk '{print int(($1+$3)/2), int(($2+$4)/2)}'
 }
+# On a slow emulator Android can cover the app with "<some app> isn't responding" (CI, 2026-11-08: "Pixel Launcher
+# isn't responding" hid the pairing screen). Wait is the system's own answer to it; the app under test is not touched.
+not_responding() {
+  w=$(at android:id/aerr_wait); [ -n "$w" ] || return 1
+  echo "note: a system \"isn't responding\" dialog covered the screen; pressed Wait"; "$adb" shell input tap $w; sleep 1
+}
 tap() {
-  xy=""; for _ in 1 2 3 4 5 6 7 8 9 10; do xy=$(at "$1"); [ -n "$xy" ] && break; sleep 1; done
+  xy=""; for _ in 1 2 3 4 5 6 7 8 9 10; do xy=$(at "$1"); [ -n "$xy" ] && break; not_responding; sleep 1; done
   [ -n "$xy" ] || { echo "FAIL: no view $1 on screen"; exit 1; }
   "$adb" shell input tap $xy
 }
 screen_has() { "$adb" shell uiautomator dump /sdcard/hm.xml >/dev/null 2>&1; "$adb" shell cat /sdcard/hm.xml | grep -q "$1"; }
+xml() { "$adb" shell uiautomator dump /sdcard/hm.xml >/dev/null 2>&1; "$adb" shell cat /sdcard/hm.xml; }
 
-"$adb" install -r "$apk" >/dev/null
+# Another build of the app, signed with another key, can't be replaced: then it goes first (its data is cleared below
+# either way).
+"$adb" install -r "$apk" >/dev/null 2>&1 || { "$adb" uninstall "$id" >/dev/null; "$adb" install "$apk" >/dev/null; }
 "$adb" shell pm clear "$id" >/dev/null
 # Android 13+ posts an app's notifications only once the person allows them (the app asks from Settings).
 "$adb" shell pm grant "$id" android.permission.POST_NOTIFICATIONS
@@ -62,8 +90,22 @@ activity=$("$adb" shell cmd package resolve-activity --brief "$id" | tail -1 | t
 # The app's own activity, which can answer the app's host calls (NSH's AppActivity cannot be extended).
 [ "$activity" = "$id/.MainActivity" ] || { echo "FAIL: the launcher opens $activity"; exit 1; }
 "$adb" shell am start -W -n "$activity" >/dev/null
-tap pair-link
-"$adb" shell input text "'$link'"
+# What the link field holds: pair-link is the field's wrapper, whose own text is empty; the text is its child's
+# (seen in a CI run's screen dump).
+typed() {
+  "$adb" shell uiautomator dump /sdcard/hm.xml >/dev/null 2>&1
+  "$adb" shell cat /sdcard/hm.xml | tr '>' '\n' | sed -n '/resource-id="pair-link"/,$p' | grep -oE 'text="[^"]+"' | head -1 | sed -E 's/^text="(.*)"$/\1/'
+}
+# adb's input text drops a character now and then on a slow emulator (in one CI run it typed 21 of the code's 22
+# characters, and the companion said the code was wrong), so the link is typed until the field holds all of it.
+for _ in 1 2 3; do
+  tap pair-link
+  "$adb" shell input keyevent KEYCODE_MOVE_END $(printf 'KEYCODE_DEL %.0s' $(seq 1 80))
+  "$adb" shell input text "'$link'"
+  got=$(typed); [ "$got" = "$link" ] && break
+  echo "the link field holds ${#got} of the link's ${#link} characters; typing it again"
+done
+[ "$got" = "$link" ] || { echo "FAIL: the link field never held the whole link"; exit 1; }
 tap pair # once, with the keyboard up: the tap has to reach the button
 
 ok=""
@@ -172,6 +214,31 @@ for _ in $(seq 1 10); do grep -qF '^[[Z' "$work/home/src/acme-api/hm-keys" 2>/de
 grep -qF '^[[Z' "$work/home/src/acme-api/hm-keys" 2>/dev/null || { echo "FAIL: Shift then Tab did not send back-tab ($(cat -v "$work/home/src/acme-api/hm-keys" 2>/dev/null))"; ls "$work/home/src/acme-api"; "$hc" read "$("$hc" ls --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["terminals"][0]["address"])')" | tail -8; exit 1; }
 echo "ok: Shift then Tab from the key row sends back-tab"
 
+# The input box row's switch: the box goes, the keyboard comes up in the terminal under the key row (esc and the pen),
+# and what is typed there runs on the computer. The key row's pen brings the box back.
+"$adb" shell input keyevent 4
+sleep 1
+tap to-terminal
+up=""; for _ in 1 2 3 4 5; do keyboard_up && { up=1; break; }; sleep 1; done
+[ -n "$up" ] || { echo "FAIL: the switch to the terminal brought no keyboard"; exit 1; }
+screen=$(xml)
+echo "$screen" | grep -q 'resource-id="compose-input"' && { echo "FAIL: the input box is still there after the switch"; exit 1; }
+for view in key-row row-esc to-box; do echo "$screen" | grep -q "resource-id=\"$view\"" || { echo "FAIL: no $view after the switch"; exit 1; }; done
+"$adb" shell input text "'touch hm-switched'"
+"$adb" shell input keyevent 66
+for _ in $(seq 1 15); do [ -e "$work/home/src/acme-api/hm-switched" ] && break; sleep 1; done
+[ -n "$shot" ] && "$adb" exec-out screencap -p > "${shot%.png}-switched.png"
+[ -e "$work/home/src/acme-api/hm-switched" ] || { echo "FAIL: typed in the terminal after the switch, nothing ran"; exit 1; }
+echo "ok: the switch hides the input box and what is typed in the terminal runs"
+tap to-box
+box=""; for _ in 1 2 3 4 5; do xml | grep -q 'resource-id="compose-input"' && { box=1; break; }; sleep 1; done
+[ -n "$box" ] || { echo "FAIL: the key row's pen did not bring the input box back"; exit 1; }
+echo "ok: the key row's pen brings the input box back"
+# As before the switch: the keyboard in the terminal from the menu (once the switch's toast has gone from the header).
+"$adb" shell input keyevent 4
+sleep 6
+typein "after the switch back"
+
 # An agent's TUI wraps a paragraph at the phone's width itself, one row at a time, so the terminal sees a newline at
 # every row's end. This program writes one paragraph that way, longer than the screen, then writes what it is sent. A
 # hold and a drag on it copies; pasted into the composer and sent, the text is the paragraph's words on one line.
@@ -240,8 +307,9 @@ typein "after the composer"
 # The terminal reports idle, then blocked (OSC 7501, as agents do): the app plays Herdr's request sound. Android logs
 # each player the app starts (dumpsys audio, "playback activity"); the emulator has no audio out, so this is the
 # player starting, not a sound heard.
-printf '%s\n' "printf '\033]7501;state=idle\033\\\\'; sleep 3; printf '\033]7501;state=blocked\033\\\\'" > "$work/home/src/acme-api/hm-alert.sh"
+printf '%s\n' "touch hm-alert-ran; printf '\033]7501;state=idle\033\\\\'; sleep 3; printf '\033]7501;state=blocked\033\\\\'" > "$work/home/src/acme-api/hm-alert.sh"
 uid=$("$adb" shell pm list packages -U "$id" | grep -oE 'uid:[0-9]+' | head -1 | cut -d: -f2)
+[ -n "$uid" ] || { echo "FAIL: no uid for $id, which the audio log names the app's players by"; exit 1; }
 # Android keeps earlier runs' players in that log; count only the ones that appear after this point.
 before=$("$adb" shell dumpsys audio | grep -oE "new player piid:[0-9]+ uid/pid:$uid/" | grep -oE 'piid:[0-9]+' | tr '\n' ' ')
 "$adb" shell input text "'sh hm-alert.sh'"
@@ -256,7 +324,14 @@ for _ in $(seq 1 20); do
   [ -n "$played" ] && break
   sleep 1
 done
-[ -n "$played" ] || { echo "FAIL: no player started after the terminal became blocked"; "$adb" shell dumpsys audio | grep -E "uid/pid:$uid/" | tail -3; exit 1; }
+if [ -z "$played" ]; then
+  [ -n "$shot" ] && "$adb" exec-out screencap -p > "${shot%.png}-alert.png"
+  [ -e "$work/home/src/acme-api/hm-alert-ran" ] || { echo "FAIL: sh hm-alert.sh, typed in the terminal, did not run"; exit 1; }
+  echo "FAIL: no player started after the terminal became blocked (app uid: $uid)"
+  "$adb" shell dumpsys audio | grep -E "new player|event:started" | tail -6 | sed 's/^/  audio: /'
+  "$adb" logcat -d -t 600 | grep -iE "mediaplayer|exoplayer|audiotrack|video|sound|nsh" | grep -viE "chatty" | tail -25 | sed 's/^/  logcat: /'
+  exit 1
+fi
 echo "ok: a blocked terminal starts the app's sound player"
 
 # Away from the app (the home screen in front), the terminal asks a question: the notification says who asks, what,
@@ -273,7 +348,7 @@ asked=""
 for _ in $(seq 1 15); do posted "android.text=String \(Which port\?" && posted "^acme-api › " && { asked=1; break; }; sleep 1; done
 [ -n "$asked" ] || { echo "FAIL: no notification with what it asks, then where it is"; "$adb" shell dumpsys notification --noredact | grep -A40 "pkg=$id" | grep -E "android\.(title|text)|channel" | head -6; exit 1; }
 posted "android.title=String \(.* needs you\)" || { echo "FAIL: the notification does not say who needs you"; exit 1; }
-record "importance=4 .*channel=needs-you" || { echo "FAIL: a question is not on the needs-you channel (heads-up)"; exit 1; }
+record "importance=4 .*channel=agent-needs-you" || { echo "FAIL: a question is not on the agent-needs-you channel (heads-up)"; exit 1; }
 [ -n "$shot" ] && "$adb" exec-out screencap -p > "${shot%.png}-notification.png"
 echo "ok: away from the app, a blocked terminal posts a notification with who, where and what"
 
@@ -291,7 +366,7 @@ for _ in $(seq 1 10); do screen_has "resource-id=\"terminal-$term\"" && screen_h
 [ -n "$opened" ] || { echo "FAIL: tapping the notification did not open the pane of $term"; exit 1; }
 echo "ok: tapping the notification opens the pane"
 
-# Away again, the terminal finishes: the notification is the quieter kind. As Claude Code does (2.1.319, measured
+# Away again, the terminal finishes: it pops up too, on its own channel (e2e/android-notify.sh). As Claude Code does (2.1.319, measured
 # 2026-11-06), it reports done with no words first and says what it did a few seconds later: the notification takes them.
 "$adb" shell input keyevent 3
 sleep 1
@@ -303,8 +378,8 @@ for _ in $(seq 1 15); do posted "android.title=String \(.* finished\)" && { done
 said=""
 for _ in $(seq 1 15); do posted "android.text=String \(Ran the tests" && { said=1; break; }; sleep 1; done
 [ -n "$said" ] || { echo "FAIL: the finished notification does not say what it did"; "$adb" shell dumpsys notification --noredact | grep -A40 "pkg=$id" | grep -E "android\.(title|text)" | head -4; exit 1; }
-record "importance=2 .*channel=finished" || { echo "FAIL: a finished terminal is not on the quiet channel"; exit 1; }
-echo "ok: notifications away from the app: a question with who, what and where opens its pane; a finish says what it did, quieter"
+record "importance=4 .*channel=agent-finished" || { echo "FAIL: a finished terminal is not on the agent-finished channel"; exit 1; }
+echo "ok: notifications away from the app: a question with who, what and where opens its pane; a finish says what it did"
 
 # A new space's folder, picked by browsing: home, then src, then beta-web. The terminal starts there (hc ls: its cwd).
 started_in() {
@@ -326,9 +401,12 @@ sleep 1
 tap switcher
 sleep 2
 before=$(at switch-new-folder)
-"$adb" shell input swipe 540 2100 540 1600 300
+[ -n "$before" ] || { echo "FAIL: no switcher rows"; exit 1; }
+# From a row itself: a fixed point can land above a short sheet, where a touch closes it (seen on the CI emulator).
+set -- $before
+"$adb" shell input swipe "$1" "$2" "$1" "$(($2 - 500))" 300
 sleep 2
-after=$(at switch-new-folder)
+after=""; for _ in 1 2 3 4 5; do after=$(at switch-new-folder); [ -n "$after" ] && break; sleep 1; done # a dump can fail while the screen settles
 [ -n "$before" ] && [ "$before" = "$after" ] || { echo "FAIL: a drag moved the switcher's rows (from '$before' to '$after')"; exit 1; }
 "$adb" shell input keyevent KEYCODE_BACK
 sleep 1

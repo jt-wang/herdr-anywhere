@@ -14,7 +14,9 @@ export class Alerts {
   private next = 0
   private setTimeout: typeof setTimeout
 
-  constructor(private io: { notify?: (t: Toast, kind: AlertKind, quiet?: boolean) => void; setTimeout?: typeof setTimeout } = {}) {
+  /** `soundAway: false`: where the system's notification makes the sound (Android, MainActivity's channels play
+   *  Herdr's sounds), away from the app the notification is the only sound, so its channel and the ringer decide it. */
+  constructor(private io: { notify?: (t: Toast, kind: AlertKind, quiet?: boolean) => void; setTimeout?: typeof setTimeout; soundAway?: boolean } = {}) {
     this.setTimeout = io.setTimeout ?? globalThis.setTimeout.bind(globalThis)
   }
 
@@ -24,11 +26,12 @@ export class Alerts {
       if (!front) this.io.notify?.(toast, kind, true)
       return
     }
+    if (!front) this.io.notify?.(toast, kind)
+    if (!front && this.io.soundAway === false) return
     const sound = { id: ++this.next, kind }
     this.sounds.set([...this.sounds.get(), sound])
     // A player that never says it ended (a sound that can't load) must not stay forever.
     this.setTimeout(() => this.ended(sound.id), SOUND_LIMIT_MS)
-    if (!front) this.io.notify?.(toast, kind)
   }
 
   ended(id: number) {

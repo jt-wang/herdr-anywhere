@@ -258,3 +258,14 @@ test('adopting a labeled terminal makes its space under the label id, or joins i
   expect(m.space('sp1')!.tabs.map((t) => t.id)).toEqual(['tb1', 'tb-new'])
   expect(m.space('sp1')!.active).toBe('tb1')
 })
+
+test('removing the pane that is its tab\'s whole root closes the tab, as removing its last pane does', () => {
+  const m = modelWithOne()
+  m.addTab('p1', newTab('c2', '', 'x2', 't2'))
+  m.tab('c2')!.root = { id: 'x2', type: 'block', content: { terminal: 't2' } }
+  expect(m.removePane('x2')).toEqual([true, false])
+  expect(m.tabs().map((t) => t.id)).toEqual(['c1'])
+  m.tab('c1')!.root = { id: 'x1', type: 'block', content: { terminal: 't1' } }
+  expect(m.removePane('x1')).toEqual([true, true])
+  expect(m.spaces).toEqual([])
+})

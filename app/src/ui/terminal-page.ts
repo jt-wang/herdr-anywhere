@@ -106,6 +106,32 @@ const BOOT = `(function () {
     var b = term.buffer.active, a = b.viewportY < live();
     if (a !== away) { away = a; post({ t: 'away', away: a }); lift(); }
   }
+  // The padding and the height left over under the last row show the terminal's own background: what the program paints
+  // in its first and last rows (OpenCode paints its own), else the theme's. Otherwise they show as stripes.
+  var COLORS = ['black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white'], LEVELS = [0, 95, 135, 175, 215, 255], painted = '';
+  function rgb(r, g, b) { return '#' + ((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1); }
+  function palette(i) {
+    var t = term.options.theme;
+    if (i < 16) return t[i < 8 ? COLORS[i] : 'bright' + COLORS[i - 8][0].toUpperCase() + COLORS[i - 8].slice(1)];
+    if (i < 232) { i -= 16; return rgb(LEVELS[Math.floor(i / 36)], LEVELS[Math.floor(i / 6) % 6], LEVELS[i % 6]); }
+    var g = 8 + (i - 232) * 10; return rgb(g, g, g);
+  }
+  function cellBg(c) {
+    var t = term.options.theme;
+    if (c.isInverse()) return c.isFgRGB() ? rgb(c.getFgColor() >> 16, (c.getFgColor() >> 8) & 255, c.getFgColor() & 255) : c.isFgPalette() ? palette(c.getFgColor()) : t.foreground;
+    return c.isBgRGB() ? rgb(c.getBgColor() >> 16, (c.getBgColor() >> 8) & 255, c.getBgColor() & 255) : c.isBgPalette() ? palette(c.getBgColor()) : t.background;
+  }
+  // The colour most of a row's cells have.
+  function rowBg(y) {
+    var l = term.buffer.active.getLine(y), n = {}, best = term.options.theme.background, most = 0, c;
+    for (var x = 0; l && x < term.cols; x++) { c = l.getCell(x, c); if (!c) continue; var k = cellBg(c); n[k] = (n[k] || 0) + 1; if (n[k] > most) { most = n[k]; best = k; } }
+    return best;
+  }
+  function edges() {
+    var b = term.buffer.active, top = rowBg(b.viewportY), bottom = rowBg(b.viewportY + term.rows - 1);
+    var css = top === bottom ? bottom : 'linear-gradient(' + top + ' 12px, ' + bottom + ' 12px)';
+    if (css !== painted) { painted = css; document.documentElement.style.background = css; document.body.style.background = css; }
+  }
   function follow() { if (!away && term.buffer.active.viewportY !== live()) term.scrollToLine(live()); }
   function size() {
     if (cfg.phone) {
@@ -179,7 +205,7 @@ const BOOT = `(function () {
   }
   // The keyboard: only when the app asks. xterm focuses its textarea on every mouse event, so between two asks the
   // textarea says it wants no keyboard.
-  function keyboard() { var ta = term.textarea; if (ta && ta.getAttribute('inputmode') !== 'text') { ta.blur(); ta.setAttribute('inputmode', 'text'); } term.focus(); post({ t: 'focused' }); }
+  function keyboard() { var ta = term.textarea; if (ta && ta.getAttribute('inputmode') !== 'text') { ta.blur(); ta.setAttribute('inputmode', 'text'); } forget(); term.focus(); post({ t: 'focused' }); }
   // Where a finger is, in cells of the whole buffer.
   function cell(x, y) {
     var r = term.element.querySelector('.xterm-screen').getBoundingClientRect();
@@ -261,9 +287,14 @@ const BOOT = `(function () {
     term.select(s.col, s.row, (e.row - s.row) * term.cols + (e.col - s.col) + 1);
     span = { s: s, e: e };
   }
-  // Back in history by this many lines. A full-screen program has none here: xterm turns a wheel into what that program
+  // Back in history by this many steps. A full-screen program has none here: xterm turns a wheel into what that program
   // asked for (its mouse encoding, or arrow keys in its cursor mode).
   function ownScroll() { return term.modes.mouseTrackingMode !== 'none' || term.buffer.active.type === 'alternate'; }
+  // Rows of finger travel per step. A program that follows the mouse gets a wheel report per 3 rows, the rate xterm
+  // sends for a Mac trackpad (small pixel wheels count 0.3 of their rows); OpenCode moves 3 rows on each, so its
+  // content keeps up with the finger. An arrow key moves one row.
+  function rowsPerStep() { return term.modes.mouseTrackingMode !== 'none' ? 3 : 1; }
+  // x, y: where the finger went down. It picks the panel, and a program can ignore a wheel elsewhere (OpenCode's prompt box).
   function scrollView(lines, x, y) {
     if (!ownScroll()) { term.scrollLines(-lines); if (term.buffer.active.viewportY > live()) term.scrollToLine(live()); return where(); }
     for (var i = Math.abs(lines); i > 0; i--) term.element.dispatchEvent(new WheelEvent('wheel', { deltaY: lines > 0 ? -1 : 1, deltaMode: 1, clientX: x, clientY: y, bubbles: true, cancelable: true }));
@@ -278,15 +309,15 @@ const BOOT = `(function () {
     el.dispatchEvent(new MouseEvent('mouseup', o));
   }
   // After the finger lifts the view keeps its speed (px per ms, down = back in history) and loses it smoothly, the
-  // curve native lists use: speed halves about every 225 ms. xterm scrolls whole lines, so what is less than a line waits.
+  // curve native lists use: speed halves about every 225 ms. It moves in whole steps, so what is less than a step waits.
+  // A program that follows the mouse glides as far as the page's own history would.
   var gliding = 0;
   function stopGlide() { var was = !!gliding; if (gliding) cancelAnimationFrame(gliding); gliding = 0; return was; }
   function glide(v, h, x, y) {
-    // A program answers every wheel over the network, so a flick sends it fewer than the page can scroll by itself.
-    var most = ownScroll() ? 2 : 8;
-    v = Math.max(-most, Math.min(most, v));
+    v = Math.max(-8, Math.min(8, v));
     if (Math.abs(v) < 0.25) return;
     var last = performance.now(), carry = 0;
+    h *= rowsPerStep();
     function step(now) {
       var dt = Math.max(0, now - last);
       last = now; carry += v * dt; v *= Math.exp(-dt / 325);
@@ -319,8 +350,9 @@ const BOOT = `(function () {
       if (Math.abs(dx) > 8 || Math.abs(dy) > 8) { moved = true; clearTimeout(press); }
       if (selecting) { selectSpan(selecting, cell(p.clientX, p.clientY)); return; }
       if (moved && Math.abs(dy) > Math.abs(dx)) {
-        var h = cell(p.clientX, p.clientY).h, lines = Math.trunc((dy - scrolled) / h);
-        if (lines) { scrollView(lines, p.clientX, p.clientY); scrolled += lines * h; }
+        // Travel short of a step is kept for the next move, so a finger that goes back cancels it.
+        var u = cell(p.clientX, p.clientY).h * rowsPerStep(), steps = Math.trunc((dy - scrolled) / u);
+        if (steps) { scrollView(steps, t0.x, t0.y); scrolled += steps * u; }
         dragging = true;
         trail.push({ y: p.clientY, at: e.timeStamp });
         while (trail.length > 2 && e.timeStamp - trail[0].at > 100) trail.shift();
@@ -335,7 +367,7 @@ const BOOT = `(function () {
       if (selecting) { selecting = null; var text = selectedText(); if (text) post({ t: 'selected', text: text }); return; }
       if (dragging && trail.length > 1 && e.timeStamp - trail[trail.length - 1].at < 60) {
         var a = trail[0], z = trail[trail.length - 1];
-        glide((z.y - a.y) / (z.at - a.at), cell(p.clientX, p.clientY).h, p.clientX, p.clientY);
+        glide((z.y - a.y) / (z.at - a.at), cell(p.clientX, p.clientY).h, start.x, start.y);
         return;
       }
       if (Math.abs(dx) > 70 && Math.abs(dx) > 2 * Math.abs(dy) && ms < 600 && scrolled === 0) { post({ t: 'swipe', dir: dx < 0 ? 'next' : 'prev' }); return; }
@@ -347,6 +379,57 @@ const BOOT = `(function () {
         post({ t: 'tap' });
       }
     }, { passive: false });
+  }
+  // A phone's keyboard edits xterm's hidden field and says little about which key it was (keydown 229). xterm guesses
+  // the bytes from the field and guesses wrong with Gboard (API 35 emulator, 2026-11-07): Enter sent "\\r" and then a
+  // stray backspace, because xterm empties the field on Enter and then reads the shorter field as a deletion; a
+  // correction picked from the suggestions sent the whole field again. So the page reads the field itself: whatever
+  // the keyboard did to it since the last look (typed, corrected, composed and picked, deleted) goes to the program
+  // as backspaces for what it took away and the text it put in. Enter empties it, as does any key xterm handles
+  // (arrows, Tab, ctrl), the key bar and a paste, so the keyboard never corrects text the program may have moved
+  // away from. A keyboard with real keys still goes through xterm for everything but text, Enter and backspace.
+  var field = null, said = '', composing = false;
+  function seen() {
+    // iOS types a space as U+00A0 and swaps it for a plain one later: both are a space to the terminal.
+    var now = field.value.replace(/\\u00a0/g, ' ');
+    if (now === said) return;
+    var a = Array.from(said), b = Array.from(now), p = 0, out = '';
+    while (p < a.length && p < b.length && a[p] === b[p]) p++;
+    for (var i = p; i < a.length; i++) out += '\\x7f';
+    out += b.slice(p).join('');
+    said = now;
+    if (out) post({ t: 'input', data: out });
+  }
+  function forget() { if (field) { field.value = ''; said = ''; composing = false; } }
+  function typing() {
+    field = term.textarea;
+    if (!field) return;
+    var mine = function (e) { return e.target === field; };
+    var stop = function (e) { e.stopImmediatePropagation(); e.stopPropagation(); };
+    var on = function (type, f) { term.element.addEventListener(type, function (e) { if (mine(e)) f(e); }, true); };
+    on('compositionstart', function (e) { stop(e); composing = true; });
+    on('compositionupdate', stop);
+    // A word picked in Chinese, Japanese or Korean leaves the field: Gboard's pinyin otherwise keeps it as its own and
+    // spends the next backspace on it, sending nothing (logcat trace, API 35 emulator, 2026-11-07).
+    on('compositionend', function (e) { stop(e); composing = false; seen(); if (/[\\u3000-\\u30ff\\u3400-\\u9fff\\uac00-\\ud7af\\uff00-\\uffef]/.test(e.data || '')) setTimeout(function () { if (!composing) forget(); }, 0); });
+    on('beforeinput', function (e) {
+      stop(e);
+      if (e.inputType === 'insertLineBreak' || e.inputType === 'insertParagraph') { e.preventDefault(); seen(); post({ t: 'input', data: '\\r' }); forget(); }
+    });
+    on('input', function (e) { stop(e); if (!composing && !e.isComposing) seen(); });
+    on('keypress', stop);
+    on('keydown', function (e) {
+      var plain = !e.ctrlKey && !e.altKey && !e.metaKey;
+      if (e.keyCode === 229 || e.key === 'Unidentified' || e.key === 'Process' || e.isComposing || composing) { stop(e); return; }
+      if (e.key === 'Enter' && plain && !e.shiftKey) { stop(e); e.preventDefault(); seen(); post({ t: 'input', data: '\\r' }); forget(); return; }
+      if (e.key === 'Backspace' && plain) {
+        stop(e);
+        if (!field.value || field.selectionEnd === 0) { e.preventDefault(); post({ t: 'input', data: '\\x7f' }); }
+        return;
+      }
+      if (plain && e.key && Array.from(e.key).length === 1) { stop(e); return; }
+      forget();
+    });
   }
   function boot() {
     var keep = cfg.phone ? { overviewRuler: { width: 1 } } : {};
@@ -374,6 +457,7 @@ const BOOT = `(function () {
     try { var gl = new WebglAddon.WebglAddon(); gl.onContextLoss(function () { gl.dispose(); }); term.loadAddon(gl); } catch (e) {}
     new ResizeObserver(size).observe(cfg.phone ? document.documentElement : box);
     term.onData(function (d) { post({ t: 'input', data: d }); });
+    typing();
     // A program that asked for the mouse without SGR (mode 1006) gets X10 reports, which xterm hands out as bytes. Below
     // 95 columns and rows every byte is ASCII and goes as text unchanged; a phone has fewer.
     term.onBinary(function (d) { post({ t: 'input', data: d }); });
@@ -381,6 +465,7 @@ const BOOT = `(function () {
     var settle = null;
     term.onScroll(function () { if (!cfg.phone) where(); });
     term.onWriteParsed(function () { follow(); where(); settled(); lift(); });
+    term.onRender(edges);
     function lines(from, to) { var b = term.buffer.active, out = []; for (var i = from; i < to; i++) { var l = b.getLine(i); out.push(l ? l.translateToString(true) : ''); } return out; }
     function settled() {
       clearTimeout(settle);
@@ -424,8 +509,8 @@ const BOOT = `(function () {
       var m; try { m = JSON.parse(e.data); } catch (_) { return; }
       if (m.t === 'reset') { stopGlide(); term.reset(); kitty = []; span = null; linked = []; linking = null; }
       else if (m.t === 'write') term.write(m.data);
-      else if (m.t === 'paste') term.paste(m.data);
-      else if (m.t === 'theme') { term.options.theme = cfg.themes[m.dark ? 'dark' : 'light']; document.body.style.background = term.options.theme.background; }
+      else if (m.t === 'paste') { forget(); term.paste(m.data); }
+      else if (m.t === 'theme') { term.options.theme = cfg.themes[m.dark ? 'dark' : 'light']; edges(); }
       else if (m.t === 'fontSize') setFont(m.size);
       else if (m.t === 'focus') keyboard();
       else if (m.t === 'copy') post({ t: 'copied', text: screenText() });
@@ -434,6 +519,7 @@ const BOOT = `(function () {
       else if (m.t === 'text') post({ t: 'text', base: 0, lines: lines(0, term.buffer.active.length) });
       else if (m.t === 'mark') mark(m.line, m.label);
       else if (m.t === 'key') {
+        forget();
         var seq = m.name === 'esc' ? '\\x1b' : m.name === 'tab' ? '\\t' : m.name === 'btab' ? '\\x1b[Z' : m.name === 'enter' ? '\\r' : m.name === 'ctrlc' ? '\\x03' : m.name === 'pgup' ? '\\x1b[5~' : m.name === 'pgdn' ? '\\x1b[6~'
           : CSI[m.name] ? (term.modes.applicationCursorKeysMode ? '\\x1bO' : '\\x1b[') + CSI[m.name] : '';
         if (m.ctrl || m.shift) seq = held(m.name, seq, m.shift, m.ctrl);

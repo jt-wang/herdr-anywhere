@@ -17,6 +17,7 @@ import { PeekSheet } from './peek.tsx'
 import { makeDemo, type Demo } from '../demo.ts'
 import { useSignal } from './kit.tsx'
 import { APP_VERSION, installProblem, Updates } from '../updates.ts'
+import { CHANNEL } from '../channel.ts'
 import { t } from '../strings/index.ts'
 
 export type RootDeps = {
@@ -45,7 +46,7 @@ function Toasts(props: { store: Store; open: (terminal: string) => void }) {
   return (
     <View class="absolute left-3 right-3 gap-2" style={{ top: insets().top + 12 }} pointerEvents="box-none">
       <Each of={toasts()} key={(t) => t.id}>{(t) => (
-        <View role="button" testID={`toast-${t().id}`} onPress={() => { props.store.dismiss(t().id); if (t().action?.terminal) props.open(t().action!.terminal!) }}
+        <View role="button" testID={`toast-${t().id}`} onPress={() => { props.store.dismiss(t().id); if (t().action?.terminal) props.open(t().action!.terminal!); t().action?.run?.() }}
           class="flex-row items-center gap-2.5 rounded-[12px] bg-popover border border-border px-3.5 py-2.5 shadow-md">
           <View class={`w-2 h-2 rounded-full ${t().level === 'error' ? 'bg-chart-2' : 'bg-chart-3'}`} />
           <View class="flex-1">
@@ -86,7 +87,7 @@ function Connected(props: { deps: RootDeps; store: Store; link: Link; unpaired: 
   store.files = fileApi(deps.linker, deps.fetcher)
   const updates = new Updates({
     baseUrl: () => deps.linker.baseUrl(), token: () => deps.linker.link.get()?.token ?? '', conn: store.conn, fetcher: deps.fetcher ?? fetch,
-    os: platform.os, appVersion: APP_VERSION, toast: (t) => store.toast(t), install: installApp,
+    os: platform.os, channel: CHANNEL, appVersion: APP_VERSION, toast: (t) => store.toast(t), install: installApp,
   })
   updates.start()
   const offInstall = followInstallFailures((m) => store.toast({ title: t('couldntUpdateApp'), body: installProblem(m), level: 'error' }))
@@ -95,7 +96,7 @@ function Connected(props: { deps: RootDeps; store: Store; link: Link; unpaired: 
   store.showNames = () => prefs().showAgentNames
   store.wants = (k) => (k === 'blocked' ? deps.prefs.prefs.get().alertBlocked : deps.prefs.prefs.get().alertDone)
   // The page (web-host.js) or the Android activity says whether the app is in front; on iOS it is while it runs.
-  const alerts = new Alerts({ notify: (t, kind, quiet) => notifyFromPage({ title: t.title, body: t.body, terminal: t.action?.terminal, kind, quiet }) })
+  const alerts = new Alerts({ notify: (t, kind, quiet) => notifyFromPage({ title: t.title, body: t.body, terminal: t.action?.terminal, kind, quiet }), soundAway: platform.os !== 'android' })
   store.onAlert = (kind, toast, again) => alerts.ring(kind, toast, store.appActive, again)
   const offPage = followPage({ front: (f) => { store.appActive = f; if (f) void updates.inFront() }, open: (a) => openTerminal(a) })
   const offConn = store.conn.sub((c) => { if (c === 'unpaired') props.unpaired() })
@@ -138,6 +139,7 @@ function Connected(props: { deps: RootDeps; store: Store; link: Link; unpaired: 
           <SpaceScreen store={store} spaceId={r.id} actions={{
             back: () => nav.pop(), newTab: (space) => newTarget.set({ kind: 'tab', space }), addAgent: (space) => newTarget.set({ kind: 'tab', space, agent: true }),
             rename: (kind, id, current) => renaming.set({ kind, id, current }), fontSize: () => prefs().fontSize,
+            typeIn: () => deps.prefs.prefs.get().typeIn, keepTypeIn: (m) => deps.prefs.set({ typeIn: m }),
             open: (a) => openTerminal(a), settings: () => nav.push({ name: 'settings' }),
           }} />
         </NavPage>

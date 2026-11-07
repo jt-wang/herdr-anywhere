@@ -4,12 +4,13 @@
 import type { Store } from '../store.ts'
 import type { CloseReason, Stream } from '../hc/client.ts'
 import { Signal } from '../store.ts'
+import type { TypeIn } from '../prefs.ts'
 import { focusTerminalView } from '../page.ts'
 import { PageChannel, ctrlKey, readPageMessage, xtermTheme, type BarKey } from './terminal-page.ts'
 import { findSince, sinceLabel, tailOf } from '../model/seen.ts'
 import { t, type Key } from '../strings/index.ts'
 
-export type SessionState = 'waiting' | 'live' | 'ended' | 'lost'
+export type SessionState = 'waiting' | 'live' | 'ended' | 'lost' | 'failed'
 /** What fingers did on the page that the app acts on. */
 export type Gestures = { swipe?: (dir: 'next' | 'prev') => void; link?: (url: string) => void
   selected?: (text: string) => void; tap?: () => void; focused?: () => void }
@@ -23,12 +24,18 @@ const WHY: Record<string, Key> = {
 
 /** How often a viewer in use tells herdr-core so. */
 const CLAIM_MS = 2000
+/** How long a page has to say ready. It takes 0.3–1.4 s on the iOS 17 simulator (2026-11-07). A page whose web process
+ *  crashed never does, and the WebView says nothing about it: on the iOS 26.3 simulator JavaScriptCore crashed in about
+ *  half the opens while xterm's script ran (in its string code: parseInt, String.prototype.replace). */
+export const PAGE_READY_MS = 6000
 
 export class TerminalSession {
   readonly state = new Signal<SessionState>('waiting')
   readonly why = new Signal('')
   readonly ctrl = new Signal(false)
   readonly shift = new Signal(false)
+  /** Where typing goes in this pane now: the input box or the terminal (pane-bar.tsx switches it). */
+  readonly typeIn = new Signal<TypeIn>('composer')
   private claimedAt = 0
   /** Scrolled back from the live bottom. */
   readonly away = new Signal(false)
@@ -36,6 +43,8 @@ export class TerminalSession {
   private stream?: Stream
   private size?: { cols: number; rows: number }
   private attaching = false
+  /** The keyboard was asked for before the page could take it (a switch tapped as the pane opens): asked again on ready. */
+  private focusLater = false
   private attachedOnce = false
   private copying?: (text: string) => void
   private off: () => unknown
@@ -46,10 +55,16 @@ export class TerminalSession {
   private lines?: string[]
   private marking = false
   private dark?: boolean
+  // The page's wait for ready: which one is current, whether it said ready (focus() waits for that too), and whether it
+  // was already loaded again.
+  private pageWait = 0
+  private pageReady = false
+  private reloaded = false
 
   constructor(private store: Store, readonly address: string, post: (m: string) => void, later?: (f: () => void, ms: number) => number,
-    private opts: { observe?: boolean; on?: Gestures } = {}) {
+    private opts: { observe?: boolean; on?: Gestures; reload?: () => void; pageTimer?: (f: () => void, ms: number) => unknown } = {}) {
     this.channel = new PageChannel(post, later)
+    this.waitForPage()
     this.off = store.conn.sub((c) => {
       if (c === 'ready' && this.state.get() === 'lost') void this.attach()
     })
@@ -60,8 +75,12 @@ export class TerminalSession {
     const m = readPageMessage(data)
     if (!m) return
     if (m.t === 'ready') {
+      this.pageReady = true
+      this.reloaded = false
+      if (this.state.get() === 'failed') { this.state.set('waiting'); this.why.set('') }
       this.size = { cols: m.cols, rows: m.rows }
       this.channel.ready()
+      if (this.focusLater) { this.focusLater = false; this.focus() }
       if (!this.stream) void this.attach()
       else if (!this.opts.observe) this.stream.resize(m.cols, m.rows)
     } else if (m.t === 'size') {
@@ -98,6 +117,14 @@ export class TerminalSession {
     }
   }
 
+  /** The page did not load: load it again and wait once more. */
+  retry() {
+    this.state.set('waiting')
+    this.why.set('')
+    this.opts.reload?.()
+    this.waitForPage()
+  }
+
   /** Back to the live bottom. */
   bottom() { this.channel.send({ t: 'bottom' }) }
   refit() { this.channel.send({ t: 'refit' }) }
@@ -105,6 +132,24 @@ export class TerminalSession {
   /** The page was torn down or reloads: output waits until it is ready again. */
   pageLost() {
     this.channel.lost()
+    this.waitForPage()
+  }
+
+  /** A page that does not say ready in time is loaded again once; after that the terminal says so (retry()). */
+  private waitForPage() {
+    const wait = ++this.pageWait
+    this.pageReady = false
+    ;(this.opts.pageTimer ?? setTimeout)(() => {
+      if (wait !== this.pageWait || this.pageReady || this.disposed) return
+      if (!this.reloaded) {
+        this.reloaded = true
+        this.opts.reload?.()
+        this.waitForPage()
+        return
+      }
+      this.state.set('failed')
+      this.why.set(t('terminalPageFailed'))
+    }, PAGE_READY_MS)
   }
 
   key(name: BarKey) {
@@ -125,6 +170,7 @@ export class TerminalSession {
   toggleShift() { this.shift.set(!this.shift.get()) }
   paste(text: string) { this.channel.send({ t: 'paste', data: text }) }
   focus() {
+    if (!this.pageReady) { this.focusLater = true; return }
     this.stream?.focus(true)
     void focusTerminalView().then(() => this.channel.send({ t: 'focus' }))
   }

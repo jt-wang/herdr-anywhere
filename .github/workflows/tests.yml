@@ -1,12 +1,13 @@
 name: Tests
 
-# Every pull request and every push to main runs the tests a contributor runs locally, plus a secret scan over the
-# whole history. The device suites (app/e2e/android*.sh, ios*.sh) and the ones that need a real herdr-core
-# (app/e2e/run.sh, user-path.sh) need an emulator, a simulator or herdr-core, and run on a Mac before a release.
+# Every pull request and every push to main or ci (where a release's commit is tested before main) runs the
+# tests a contributor runs locally, plus a secret scan over the whole history. The device suites (app/e2e/android*.sh,
+# ios*.sh) and user-path.sh need an emulator, a simulator or herdr-core, and run on a Mac before a release.
+# app/e2e/run.sh runs in computers.yml, with herdr-core.
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, ci]
   workflow_dispatch:
 
 permissions:

@@ -1,7 +1,7 @@
 #!/bin/sh
-# Passes when the iOS terminal draws every character in e2e/agent-glyphs.ts, none of them as the "missing" box, and
+# Passes when the iOS terminal draws every character in e2e/agent-glyphs.ts, none of them as "missing", and
 # its emoji in colour wherever the phone has emoji at all.
-# Use an iOS 26 simulator: iOS 17 has these characters itself and draws nothing for the probe's marker.
+# Runs on any simulator: iOS 26.3 draws a missing character as a box, iOS 17.0 and 26.5 as nothing (ios-glyphs.tsx).
 # Usage: SIM_UDID=<udid> e2e/ios-glyphs.sh [screenshot.png]   Needs nsh, go, idb, xcodegen and Xcode.
 set -eu
 : "${SIM_UDID:?set SIM_UDID to the simulator to use}"
@@ -25,7 +25,7 @@ xcrun simctl uninstall "$SIM_UDID" "$id" 2>/dev/null || true
 [ -n "$line" ] || { echo "FAIL: the probe gave no answer within 40 s"; exit 1; }
 echo "$line"
 case "$line" in *"instrument=true"*) ;; *) echo "FAIL: the probe cannot tell a drawn character from a missing one"; exit 1 ;; esac
-case "$line" in *"need=none "*) ;; *) echo "FAIL: characters drawn as the missing box"; exit 1 ;; esac
+case "$line" in *"need=none "*) ;; *) echo "FAIL: characters the phone could not draw"; exit 1 ;; esac
 # Emoji are the phone's: a phone that draws none with a plain system font is not the page's fault.
 case "$line" in
   *"emojiPage=none "*) echo "PASS: every character is drawn, and emoji in colour" ;;

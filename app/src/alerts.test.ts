@@ -58,3 +58,14 @@ test("new words for an alert change its notification without a sound, and only w
   expect(notified.length).toBe(2)
   expect(quiet).toEqual([false, true])
 })
+
+test("where the system's notification has the sound (Android), away from the app it is the only sound", () => {
+  const notified: string[] = []
+  const alerts = new Alerts({ notify: (t) => notified.push(t.title), soundAway: false, setTimeout: (() => 0) as any })
+  alerts.ring('blocked', toast('Claude Code needs you'), false)
+  alerts.ring('done', toast('Codex finished'), false)
+  expect(notified).toEqual(['Claude Code needs you', 'Codex finished'])
+  expect(alerts.sounds.get()).toEqual([])
+  alerts.ring('blocked', toast('Claude Code needs you'), true)
+  expect(alerts.sounds.get().map((s) => s.kind)).toEqual(['blocked'])
+})

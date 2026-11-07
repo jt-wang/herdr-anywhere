@@ -6,8 +6,8 @@ import { busyWord, runUpdate, useUpdates } from './update.tsx'
 import { APP_VERSION, type Updates } from '../updates.ts'
 import { companionVersion, type Link, type Linker, type Route } from '../link.ts'
 import { FONT_MAX, FONT_MIN, type Appearance, type PrefStore } from '../prefs.ts'
-import { allowNotifications, notifications, type Permission } from '../page.ts'
-import { IconButton, openPrivacy, SectionLabel, useRev, useSignal } from './kit.tsx'
+import { allowNotifications, notifications, notifyChannels, onFront, openChannel, type ChannelKind, type Channels, type ChannelState, type Permission } from '../page.ts'
+import { Glyph, IconButton, openPrivacy, SectionLabel, useRev, useSignal } from './kit.tsx'
 import { t, type Key } from '../strings/index.ts'
 
 function Row(props: { label: string; detail?: string; children?: any; testID?: string; onPress?: () => void }) {
@@ -91,6 +91,21 @@ function UpdateRows(props: { updates: Updates }) {
   )
 }
 
+const CHANNEL_WORD: Record<ChannelState, Key> = { alert: 'channelAlert', sound: 'channelSound', silent: 'channelSilent', off: 'channelOff' }
+
+/** Under an alert's switch on Android: what Android does with that kind now; a tap opens its page there, where the
+ *  person picks the sound, the pop-up or silence (an app can't change a channel once it exists). */
+function ChannelLine(props: { kind: ChannelKind; label: string; state: ChannelState }) {
+  return (
+    <View role="button" testID={`channel-${props.kind}`} accessibilityLabel={`${props.label}: ${t(CHANNEL_WORD[props.state])}`} onPress={() => openChannel(props.kind)}
+      class="flex-row items-center min-h-10 pl-4 pr-3 gap-2 border-b border-border bg-card active:bg-sidebar-accent">
+      <Text class="flex-1 text-[12px] text-foreground">{t(CHANNEL_WORD[props.state])}</Text>
+      <Text class="text-[12px] text-sidebar-foreground">{t('androidSettings')}</Text>
+      <Glyph name="chevron-right" size={14} />
+    </View>
+  )
+}
+
 function Toggle(props: { on: boolean; label: string; testID: string; onChange: (on: boolean) => void }) {
   return (
     <View role="switch" accessibilityLabel={props.label} accessibilityState={{ checked: props.on }} testID={props.testID} onPress={() => props.onChange(!props.on)}
@@ -141,6 +156,11 @@ export function SettingsScreen(props: { updates?: Updates; store: Store; prefs: 
   const notify = signal<Permission>('unsupported')
   void notifications().then((n) => notify.set(n))
   const allow = () => void allowNotifications().then((n) => notify.set(n))
+  // What Android does with each kind (MainActivity's channels), read again on the way back from Android's settings.
+  const channels = signal<Channels | null>(null)
+  const readChannels = () => void notifyChannels().then((c) => channels.set(c))
+  readChannels()
+  cleanup(onFront(() => { readChannels(); void notifications().then((n) => notify.set(n)) }))
   const NOTIFY = (n: Permission) => (n === 'default' ? t('notifyDefault') : n === 'granted' ? t('notifyGranted') : n === 'denied' ? t('notifyDenied') : '')
   const looks: { id: Appearance; label: Key }[] = [{ id: 'system', label: 'system' }, { id: 'light', label: 'light' }, { id: 'dark', label: 'dark' }]
   return (
@@ -171,19 +191,27 @@ export function SettingsScreen(props: { updates?: Updates; store: Store; prefs: 
         <Row label={t('agentNeedsYou')} detail={t('agentNeedsYouDetail')}>
           <Toggle label={t('agentNeedsYou')} testID="alert-blocked" on={p().alertBlocked} onChange={(on) => props.prefs.set({ alertBlocked: on })} />
         </Row>
+        <If when={channels() && p().alertBlocked}><ChannelLine kind="blocked" label={t('agentNeedsYou')} state={channels()!.blocked} /></If>
         <Row label={t('agentFinished')} detail={t('agentFinishedDetail')}>
           <Toggle label={t('agentFinished')} testID="alert-done" on={p().alertDone} onChange={(on) => props.prefs.set({ alertDone: on })} />
         </Row>
+        <If when={channels() && p().alertDone}><ChannelLine kind="done" label={t('agentFinished')} state={channels()!.done} /></If>
         <If when={platform.os === 'android'}>
           <Row label={t('stayConnected')} detail={t('stayConnectedDetail')}>
             <Toggle label={t('stayConnected')} testID="stay-connected" on={p().stayConnected} onChange={(on) => props.prefs.set({ stayConnected: on })} />
           </Row>
+          <If when={channels() && p().stayConnected}><ChannelLine kind="connection" label={t('stayConnected')} state={channels()!.connection} /></If>
         </If>
         <If when={notify() !== 'unsupported'}>
           <Row label={t('systemNotifications')} detail={NOTIFY(notify())}>
             <If when={notify() === 'default'}>
               <View role="button" testID="notify-allow" onPress={allow} class="px-2.5 py-1 rounded-[6px] bg-muted active:bg-accent">
                 <Text class="text-[12px] text-foreground">{t('allow')}</Text>
+              </View>
+            </If>
+            <If when={notify() === 'denied' && platform.os === 'android'}>
+              <View role="button" testID="notify-settings" onPress={() => openChannel('app')} class="px-2.5 py-1 rounded-[6px] bg-muted active:bg-accent">
+                <Text class="text-[12px] text-foreground">{t('androidSettings')}</Text>
               </View>
             </If>
           </Row>

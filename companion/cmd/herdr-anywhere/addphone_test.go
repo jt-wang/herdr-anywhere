@@ -17,6 +17,7 @@ import (
 
 	"herdr-anywhere/companion/internal/store"
 	"herdr-anywhere/companion/internal/tailcat"
+	"herdr-anywhere/companion/internal/testfake"
 )
 
 type pairReplyJSON struct {
@@ -203,7 +204,7 @@ func TestStartShowsWhyServeDied(t *testing.T) {
 		t.Fatalf("exit %d: %s", code, errs)
 	}
 	fi, err := os.Stat(filepath.Join(dir, "serve.log"))
-	if err != nil || fi.Mode().Perm() != 0o600 {
+	if err != nil || (testfake.PermBits() && fi.Mode().Perm() != 0o600) {
 		t.Fatalf("serve.log: %v %v", fi, err)
 	}
 }
@@ -272,7 +273,8 @@ func TestInstallDialogAddsTheModAndItsKey(t *testing.T) {
 	}
 	cfg, _ := os.ReadFile(filepath.Join(home, "mods", "add-phone", "config.js"))
 	self, _ := os.Executable()
-	if !strings.Contains(string(cfg), self) || !strings.Contains(string(cfg), "/some/state") {
+	selfJSON, _ := json.Marshal(self) // Windows paths' backslashes are escaped in config.js
+	if !strings.Contains(string(cfg), string(selfJSON)) || !strings.Contains(string(cfg), "/some/state") {
 		t.Fatalf("config.js: %s", cfg)
 	}
 	b, _ := os.ReadFile(filepath.Join(home, "keys.json"))
@@ -286,7 +288,7 @@ func TestInstallDialogAddsTheModAndItsKey(t *testing.T) {
 	if strings.Index(string(b), "cmd-p") > strings.Index(string(b), "terminal.copy") {
 		t.Fatalf("the file was reordered: %s", b)
 	}
-	if !strings.Contains(out, "cmd-shift-m") {
+	if !strings.Contains(out, dialogKey) {
 		t.Fatalf("does not say how to open it: %s", out)
 	}
 	if _, _, code = runCLI(t, "install-dialog", "--app-home", home, "--state", "/some/state"); code != 0 {
@@ -346,5 +348,17 @@ func TestInstallDialogLeavesKeysItCannotRead(t *testing.T) {
 	b, _ := os.ReadFile(filepath.Join(home, "keys.json"))
 	if string(b) != "{ not json" {
 		t.Fatalf("changed: %s", b)
+	}
+}
+
+// Herdr for Windows and Linux binds its own keys as ctrl-shift-<key>: the
+// defaults/keys.json in herdr-app 0.1.13 for each has ctrl-shift-t, -o, -c and
+// no cmd- chords, and its release notes give Ctrl+Shift+F for what macOS has
+// as Cmd+F. ctrl-shift-m is not among those defaults.
+func TestDialogKeyPerPlatform(t *testing.T) {
+	for goos, want := range map[string]string{"darwin": "cmd-shift-m", "windows": "ctrl-shift-m", "linux": "ctrl-shift-m"} {
+		if got := dialogKeyFor(goos); got != want {
+			t.Errorf("dialogKeyFor(%q) = %q, want %q", goos, got, want)
+		}
 	}
 }

@@ -30,7 +30,8 @@ const memory = new Map<string, string>(opened ? [] : [['link', JSON.stringify({ 
 // `opened`: how many times the app opened before (the question about checking for new versions waits for the second).
 // `prefs`: settings saved before, as JSON (`{"showAgentNames":false}`).
 if (params.opened || params.prefs) memory.set('prefs', JSON.stringify({ ...(params.prefs ? JSON.parse(params.prefs) : {}), ...(params.opened ? { opened: Number(params.opened) } : {}) }))
-const io = { load: async (k: string) => memory.get(k) ?? null, save: (k: string, v: string) => void memory.set(k, v), remove: (k: string) => void memory.delete(k) }
+// Saved settings, where a test reads them (`app.storage()['fake-prefs']`).
+const io = { load: async (k: string) => memory.get(k) ?? null, save: (k: string, v: string) => { memory.set(k, v); if (k === 'prefs') void Storage.setItem('fake-prefs', v) }, remove: (k: string) => void memory.delete(k) }
 
 export const core = new FakeCore()
 core.echo = true

@@ -27,8 +27,10 @@ import (
 const (
 	// Repo holds the releases.
 	Repo = "jt-wang/herdr-anywhere"
-	// Asset is the one companion file a release carries.
-	Asset = "herdr-anywhere-macos-arm64"
+	// MacAsset is a release's companion for Apple silicon Macs.
+	MacAsset = "herdr-anywhere-macos-arm64"
+	// WindowsAsset is a release's companion for Windows: x64, which Windows on Arm runs under its emulation.
+	WindowsAsset = "herdr-anywhere-windows-amd64.exe"
 	// AppAsset is the Android app in a release.
 	AppAsset = "Herdr-Anywhere.apk"
 
@@ -50,8 +52,23 @@ var ErrNotHere = errors.New("releases don't include a companion for this compute
 // ErrBusy says an update is already being installed.
 var ErrBusy = errors.New("already updating")
 
-// Supported says a released file can run here: releases carry one file, for Apple silicon Macs.
-func Supported() bool { return runtime.GOOS == "darwin" && runtime.GOARCH == "arm64" }
+// AssetFor is the release's companion file for a computer, "" for one releases carry none for. A program built for
+// amd64 says amd64 on Windows on Arm too, where it runs under emulation.
+func AssetFor(goos, goarch string) string {
+	switch goos + "/" + goarch {
+	case "darwin/arm64":
+		return MacAsset
+	case "windows/amd64":
+		return WindowsAsset
+	}
+	return ""
+}
+
+// Asset is this computer's file in a release.
+var Asset = AssetFor(runtime.GOOS, runtime.GOARCH)
+
+// Supported says a released file can run here.
+func Supported() bool { return Asset != "" }
 
 // Newer says version a comes after b. Anything that isn't numbers, such as a developer's build, is never newer or older.
 func Newer(a, b string) bool {
@@ -107,6 +124,15 @@ type Client struct {
 	Key      ed25519.PublicKey
 	Current  string
 	HTTP     *http.Client
+	// Asset is the release file to install; empty is this computer's (Asset).
+	Asset string
+}
+
+func (c Client) asset() string {
+	if c.Asset != "" {
+		return c.Asset
+	}
+	return Asset
 }
 
 func (c Client) key() ed25519.PublicKey {
@@ -168,15 +194,16 @@ func (c Client) Latest(ctx context.Context) (Release, error) {
 		if _, err := hex.DecodeString(f.SHA256); err != nil || f.SHA256 == "" {
 			continue
 		}
-		switch f.Name {
-		case Asset:
+		switch {
+		case c.asset() != "" && f.Name == c.asset():
 			rel.URL, rel.Digest, rel.Bytes = at(f.Name), "sha256:"+f.SHA256, f.Bytes
-		case AppAsset:
+		case f.Name == AppAsset:
 			rel.App = App{URL: at(f.Name), Digest: "sha256:" + f.SHA256, Bytes: f.Bytes}
 		}
 	}
-	if rel.URL == "" {
-		return Release{}, fmt.Errorf("release %s has no %s", m.Version, Asset)
+	// A computer releases carry no file for still hears of the version; Apply refuses it.
+	if rel.URL == "" && c.asset() != "" {
+		return Release{}, fmt.Errorf("release %s has no %s", m.Version, c.asset())
 	}
 	return rel, nil
 }
@@ -200,11 +227,15 @@ func (c Client) read(ctx context.Context, url string, limit int64) ([]byte, erro
 // Apply downloads the release beside exe and puts it in exe's place. It does so only once the file matches the release's
 // digest, and runs, and says it is that version; until then exe stays as it was.
 func (c Client) Apply(ctx context.Context, rel Release, exe string) error {
-	tmp, err := os.CreateTemp(filepath.Dir(exe), ".herdr-anywhere-update-*")
+	if rel.URL == "" {
+		return ErrNotHere
+	}
+	// The same ending as exe: Windows runs only a file named .exe.
+	tmp, err := os.CreateTemp(filepath.Dir(exe), ".herdr-anywhere-update-*"+filepath.Ext(exe))
 	if err != nil {
 		return err
 	}
-	defer os.Remove(tmp.Name())
+	defer removeSoon(tmp.Name()) // after it ran, Windows on Arm holds an x64 program's file a moment longer
 	defer tmp.Close()
 
 	r, err := c.get(ctx, rel.URL)
@@ -223,8 +254,10 @@ func (c Client) Apply(ctx context.Context, rel Release, exe string) error {
 	if got := "sha256:" + hex.EncodeToString(hash.Sum(nil)); got != rel.Digest {
 		return errors.New("the download doesn't match the release's digest")
 	}
-	if err := tmp.Chmod(0o755); err != nil {
-		return err
+	if runtime.GOOS != "windows" { // no permission bits there: any file named .exe runs
+		if err := tmp.Chmod(0o755); err != nil {
+			return err
+		}
 	}
 	if err := tmp.Close(); err != nil {
 		return err
@@ -241,7 +274,29 @@ func (c Client) Apply(ctx context.Context, rel Release, exe string) error {
 	if got, want := strings.TrimSpace(out.String()), "herdr-anywhere "+rel.Version; got != want {
 		return fmt.Errorf("the new file says %q, not %q", got, want)
 	}
-	return os.Rename(tmp.Name(), exe)
+	return replace(tmp.Name(), exe)
+}
+
+// RemoveOld removes the files an update set aside on Windows (exe + ".old", exe + ".old-<n>"), trying for a while:
+// right after a restart the old process may still hold one. Elsewhere there are none.
+func RemoveOld(exe string) {
+	olds, _ := filepath.Glob(exe + ".old*")
+	removeSoon(olds...)
+}
+
+// removeSoon removes files, trying again for 10 s while Windows still holds one.
+func removeSoon(paths ...string) {
+	for i := 0; i < 20 && len(paths) > 0; i++ {
+		left := paths[:0]
+		for _, p := range paths {
+			if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+				left = append(left, p)
+			}
+		}
+		if paths = left; len(paths) > 0 {
+			time.Sleep(500 * time.Millisecond)
+		}
+	}
 }
 
 // Manager keeps a running companion up to date.

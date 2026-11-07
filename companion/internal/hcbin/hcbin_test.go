@@ -2,23 +2,27 @@ package hcbin
 
 import (
 	"errors"
-	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
+
+	"herdr-anywhere/companion/internal/testfake"
 )
 
 func fake(t *testing.T, dir, out string) string {
-	t.Helper()
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
+	return testfake.HC(t, dir, "hc", testfake.Spec{Version: out})
+}
+
+// lastResort is the folder Resolve tries after PATH: ~/.local/bin, or on
+// Windows %LOCALAPPDATA%\Programs\herdr-core, which it points at home.
+func lastResort(t *testing.T, home string) string {
+	if runtime.GOOS == "windows" {
+		local := filepath.Join(home, "AppData", "Local")
+		t.Setenv("LOCALAPPDATA", local)
+		return filepath.Join(local, "Programs", "herdr-core")
 	}
-	p := filepath.Join(dir, "hc")
-	script := "#!/bin/sh\n[ \"$1\" = --version ] && printf '%s\\n' '" + out + "'\n"
-	if err := os.WriteFile(p, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	return p
+	return filepath.Join(home, ".local", "bin")
 }
 
 func noPath(string) (string, error) { return "", exec.ErrNotFound }
@@ -41,7 +45,7 @@ func TestVersionMustStartWithHc(t *testing.T) {
 func TestResolveOrder(t *testing.T) {
 	d := t.TempDir()
 	home := filepath.Join(d, "home")
-	homeHc := fake(t, filepath.Join(home, ".local", "bin"), "hc 0.1.1")
+	homeHc := fake(t, lastResort(t, home), "hc 0.1.1")
 	pathHc := fake(t, filepath.Join(d, "path"), "hc 0.1.2")
 	flagHc := fake(t, filepath.Join(d, "flag"), "hc 0.1.3")
 	wrong := fake(t, filepath.Join(d, "wrong"), "hc-other 1")
@@ -56,7 +60,7 @@ func TestResolveOrder(t *testing.T) {
 	}{
 		{"flag wins", flagHc, onPath(pathHc), flagHc, "hc 0.1.3"},
 		{"then PATH", "", onPath(pathHc), pathHc, "hc 0.1.2"},
-		{"then ~/.local/bin", "", noPath, homeHc, "hc 0.1.1"},
+		{"then the last resort", "", noPath, homeHc, "hc 0.1.1"},
 		{"a foreign hc on PATH is skipped", "", onPath(wrong), homeHc, "hc 0.1.1"},
 	}
 	for _, c := range cases {
@@ -72,7 +76,7 @@ func TestResolveOrder(t *testing.T) {
 func TestResolveExplicitBadPathFails(t *testing.T) {
 	d := t.TempDir()
 	home := filepath.Join(d, "home")
-	fake(t, filepath.Join(home, ".local", "bin"), "hc 0.1.1")
+	fake(t, lastResort(t, home), "hc 0.1.1")
 	wrong := fake(t, filepath.Join(d, "wrong"), "nope")
 	if _, _, err := Resolve(wrong, noPath, home); err == nil {
 		t.Fatal("an explicit --hc that is not hc must fail, not fall back")
@@ -80,8 +84,44 @@ func TestResolveExplicitBadPathFails(t *testing.T) {
 }
 
 func TestResolveNothingFound(t *testing.T) {
-	_, _, err := Resolve("", noPath, t.TempDir())
+	home := t.TempDir()
+	lastResort(t, home)
+	_, _, err := Resolve("", noPath, home)
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("err = %v, want ErrNotFound", err)
+	}
+}
+
+// Herdr's Windows installer (releases.herdr.dev/core/install.ps1, read
+// 2026-11-07) puts herdr-core.exe in %LOCALAPPDATA%\Programs\herdr-core and on
+// PATH, and makes hc.exe beside it only when no hc exists yet.
+func TestCandidatesOnWindows(t *testing.T) {
+	look := func(name string) (string, error) {
+		if name == "herdr-core" {
+			return `C:\elsewhere\herdr-core.exe`, nil
+		}
+		return "", exec.ErrNotFound
+	}
+	got := Candidates("windows", look, `D:\h`, `D:\appdata`)
+	want := []string{
+		`C:\elsewhere\herdr-core.exe`,
+		filepath.Join(`D:\appdata`, "Programs", "herdr-core", "hc.exe"),
+		filepath.Join(`D:\appdata`, "Programs", "herdr-core", "herdr-core.exe"),
+	}
+	if len(got) != len(want) {
+		t.Fatalf("Candidates = %q, want %q", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("Candidates = %q, want %q", got, want)
+		}
+	}
+}
+
+func TestCandidatesElsewhereUnchanged(t *testing.T) {
+	got := Candidates("darwin", func(string) (string, error) { return "/opt/hc", nil }, "/h", "")
+	want := []string{"/opt/hc", filepath.Join("/h", ".local", "bin", "hc")}
+	if len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("Candidates = %q, want %q", got, want)
 	}
 }
