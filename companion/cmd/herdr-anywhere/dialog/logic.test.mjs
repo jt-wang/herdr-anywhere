@@ -2,6 +2,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { addedSince, ago, parseDevices, parsePair, remaining, runs } from './logic.js'
+import { STRINGS } from './strings.js'
 
 const ok = (stdout) => ({ code: 0, stdout, stderr: '' })
 const failed = (stdout, stderr = '') => ({ code: 1, stdout, stderr })
@@ -18,8 +19,8 @@ test('no companion is its own state, so the dialog can offer Start', () => {
 test('any other failure shows what went wrong', () => {
   assert.deepEqual(parsePair(failed('{"error":"relay down"}')), { kind: 'error', message: 'relay down' })
   assert.deepEqual(parsePair(failed('', 'herdr-anywhere pair: boom\n')), { kind: 'error', message: 'herdr-anywhere pair: boom' })
-  assert.equal(parsePair(ok('not json')).kind, 'error')
-  assert.equal(parsePair(ok('{"invite":"herdr1:X"}')).kind, 'error')
+  assert.deepEqual(parsePair(ok('not json')), { kind: 'error', message: '' })
+  assert.deepEqual(parsePair(ok('{"invite":"herdr1:X"}')), { kind: 'error', message: '' })
 })
 
 test('devices are read, and a failure is not an empty list', () => {
@@ -48,11 +49,16 @@ test('time left reads as minutes and seconds and stops at zero', () => {
   assert.equal(remaining(1000, 5000), '0:00')
 })
 
-test('last seen reads the way the phone app writes it', () => {
+test('last seen reads the way the phone app writes a span, in the dialog\'s language', () => {
   const now = Date.parse('2026-11-03T10:00:00Z')
-  assert.equal(ago(undefined, now), 'Never connected')
-  assert.equal(ago('2026-11-03T09:59:40Z', now), 'Last seen just now')
-  assert.equal(ago('2026-11-03T09:55:00Z', now), 'Last seen 5m ago')
-  assert.equal(ago('2026-11-03T07:00:00Z', now), 'Last seen 3h ago')
-  assert.equal(ago('2026-11-01T10:00:00Z', now), 'Last seen 2d ago')
+  const en = STRINGS.en, ja = STRINGS.ja, ru = STRINGS.ru
+  assert.equal(ago(undefined, now, en), 'Never connected')
+  assert.equal(ago('2026-11-03T09:59:40Z', now, en), 'Last seen just now')
+  assert.equal(ago('2026-11-03T09:55:00Z', now, en), 'Last seen 5m ago')
+  assert.equal(ago('2026-11-03T07:00:00Z', now, en), 'Last seen 3h ago')
+  assert.equal(ago('2026-11-01T10:00:00Z', now, en), 'Last seen 2d ago')
+  assert.equal(ago('2026-11-03T09:55:00Z', now, ja), '5分前に接続')
+  assert.equal(ago('2026-11-03T07:00:00Z', now, STRINGS['zh-Hans']), '3小时前连接过')
+  assert.equal(ago('2026-11-01T10:00:00Z', now, ru), 'Последнее подключение 2 д назад')
+  assert.equal(ago(undefined, now, ja), ja.neverConnected)
 })

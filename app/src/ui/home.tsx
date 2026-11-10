@@ -269,7 +269,7 @@ function SpacesSection(props: { store: Store; actions: HomeActions }) {
       }>
         <Each of={groups()} key={(g) => g.machine}>{(g) => (
           <View>
-            <If when={groups().length > 1}><Text class="px-4 pt-2 pb-1 text-[11px] text-sidebar-foreground">{g().machine || here()}</Text></If>
+            <If when={groups().some((x) => x.machine)}><Text class="px-4 pt-2 pb-1 text-[11px] text-sidebar-foreground">{g().machine || here()}</Text></If>
             <Each of={g().spaces} key={(sp) => sp.id}>{(sp) => (
               <View>
                 <SpaceRow store={props.store} space={sp()} color={marks()[sp().id]} actions={props.actions} />

@@ -19,6 +19,7 @@ The connection is encrypted end to end. There is no account to create and no ser
 - **Start work.** Open a new tab or space with a shell or any agent Herdr knows, and split panes side by side.
 - **Stays connected on Android.** The app keeps its connection in the background, with a quiet notification saying so, and an agent's question reaches you as a notification. Settings can turn this off.
 - **Updates itself.** Home says when a new version is out, and one tap installs it on the computer, then on the phone. The app asks first whether the computer may check: after a yes it asks GitHub once a day, and Settings can turn that off, check right away, or have the computer install new versions by itself. The phone reaches GitHub only to download the app after you tap Download.
+- **Agents on a server you ssh into.** They show up on the phone too, through your computer or with the companion on the server: [INSTALL.md](INSTALL.md#if-the-users-agents-run-on-a-server-they-reach-with-ssh).
 - **Your phone's language.** English, Simplified and Traditional Chinese, Spanish, Korean, Japanese and Russian, following the phone.
 
 ## Try it
@@ -34,7 +35,7 @@ The connection is encrypted end to end. There is no account to create and no ser
 
    ```sh
    mkdir -p ~/.local/bin
-   curl -fsSL -o ~/.local/bin/herdr-anywhere https://github.com/jt-wang/herdr-anywhere/releases/latest/download/herdr-anywhere-macos-arm64
+   curl -fsSL -o ~/.local/bin/herdr-anywhere https://github.com/jt-wang/herdr-anywhere/releases/latest/download/herdr-anywhere-macos-$(uname -m | sed 's/x86_64/amd64/')
    chmod +x ~/.local/bin/herdr-anywhere
    ~/.local/bin/herdr-anywhere install-dialog
    ```
@@ -62,14 +63,16 @@ The connection is encrypted end to end. There is no account to create and no ser
 
 3. In the Herdr desktop app press `cmd-shift-m` (`ctrl-shift-m` on Windows and Linux), press Start, and scan the QR code with the phone app.
 
-The phone and the computer can be on different networks from then on. Paired phones are listed under the code, and you can remove them there. After a restart of the computer, press Start in the dialog once.
+The phone and the computer can be on different networks from then on. Paired phones are listed under the code, and you can remove them there. The companion starts again by itself when you log in after a restart.
 
 ### From a terminal instead of the dialog
 
 ```sh
-~/.local/bin/herdr-anywhere serve --tailcat     # keep it running
-~/.local/bin/herdr-anywhere pair                # in another terminal: shows a QR code that works once, for 2 minutes
+~/.local/bin/herdr-anywhere start               # runs in the background, and again after each restart
+~/.local/bin/herdr-anywhere pair                # shows a QR code that works once, for 2 minutes
 ```
+
+`herdr-anywhere stop` stops it and keeps it from starting at login.
 
 `herdr-anywhere devices` lists the paired phones and `herdr-anywhere revoke <id>` cuts one off at once.
 
@@ -129,7 +132,7 @@ go build -o ~/.local/bin/herdr-anywhere ./cmd/herdr-anywhere    # needs Go 1.27.
 | iOS simulator | `app/ios/build.sh App.tsx simulator` (needs Xcode, xcodegen and Go) | `app/ios/build/Herdr.app` |
 | iPhone, under your Apple account (not yet tried on a phone) | [app/ios/README.md](app/ios/README.md) | `app/ios/build/Herdr.app` |
 | Web | `cd app && nsh package --target web -o dist/web` | `app/dist/web/Herdr Anywhere` |
-| The release's companion | `cd companion && CGO_ENABLED=0 go build -buildvcs=false -trimpath -ldflags '-s -w' -o herdr-anywhere-macos-arm64 ./cmd/herdr-anywhere` | `companion/herdr-anywhere-macos-arm64` |
+| The release's companion | `cd companion && CGO_ENABLED=0 go build -buildvcs=false -trimpath -ldflags '-s -w' -o herdr-anywhere-macos-arm64 ./cmd/herdr-anywhere` (for an Intel Mac: `GOARCH=amd64` and `-o herdr-anywhere-macos-amd64`) | `companion/herdr-anywhere-macos-arm64` |
 
 Tests:
 

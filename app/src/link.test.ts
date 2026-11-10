@@ -126,7 +126,7 @@ test('the companion says its version at /api/info; a failure or an odd answer is
 
 test('an invite is the herdr1: text, alone or inside what was scanned or pasted', () => {
   expect(parseInvite(` ${INVITE} `)).toBe(INVITE)
-  expect(parseInvite(`Scan with the Herdr app, or paste this invite into it:\n  ${INVITE}\n`)).toBe(INVITE)
+  expect(parseInvite(`Paste this invite into the Herdr app, or scan its QR code with the app:\n  ${INVITE}\n`)).toBe(INVITE)
   expect(parseInvite('tailpocket1:eyJ2IjoxfQ')).toBe(null)
   expect(parseInvite('http://192.168.1.20:7681/#pair=K7QD-M2XP')).toBe(null)
 })
@@ -142,7 +142,7 @@ test('a refused TailPocket pairing says why, in words a person can act on', asyn
   const why = (o: any) => pairThrough(fakeTunnel(o).t, INVITE, 'iPhone').then(() => 'paired', (e) => e.message)
   expect(await why({ fail: 'expired' })).toBe('That invite expired. Run herdr-anywhere pair again.')
   expect(await why({ fail: 'unreachable' })).toBe(
-    "Can't reach the computer through TailPocket. Is herdr-anywhere serve --tailcat running, and is this phone online?")
+    "Can't reach the computer. Is Companion running there (herdr-anywhere start), and is this phone online?")
   expect(await why({ fail: 'invalid-invite' })).toBe("That isn't an invite from herdr-anywhere pair. Scan its QR code again.")
   expect(await why({ payload: 'not json' })).toBe('The computer paired, but gave no token. Run herdr-anywhere pair again.')
 })
@@ -178,6 +178,32 @@ test('a TailPocket link opens /hc on the tunnel, and a tunnel whose forwarder st
   expect(made[2].url).toBe('ws://127.0.0.1:40002/hc?token=tk')
   expect(log.slice(1)).toEqual(['connect 40001', 'close 40001', 'connect 40002'])
   expect(reasons).toEqual(['network'])
+})
+
+// Measured over Tailcat's real relays (companion/cmd/herdr-anywhere/tailcat_lost_probe_test.go, HM_TAILCAT_PROBE=1):
+// with Companion stopped and with this phone taken off the computer, the phone's handshake gets the same nothing
+// back, for 10 s, with the same Tailcat log. So a socket that closes unanswered says only that: no answer.
+test('through TailPocket, a socket that closes before the computer answered closes with no-answer; one that was answered, with its own reason', async () => {
+  const { t } = fakeTunnel()
+  const made: any[] = []
+  const socket = () => { const pipe: any = { send() {}, close() {} }; made.push(pipe); return pipe }
+  const l = new Linker({ load: async () => null, save() {}, remove() {}, socket: socket as any, tunnel: t })
+  l.set(await pairThrough(t, INVITE, 'iPhone'))
+  const reasons: string[] = []
+  const a = l.pipe()
+  a.onClose = (r) => reasons.push(r)
+  await settle()
+  made[0].onClose('network')
+  const b = l.pipe()
+  b.onClose = (r) => reasons.push(r)
+  await settle()
+  made[1].onBytes(new Uint8Array([1]))
+  made[1].onClose('network')
+  const c = l.pipe()
+  c.onClose = (r) => reasons.push(r)
+  await settle()
+  made[2].onClose('unpaired')
+  expect(reasons).toEqual(['no-answer', 'network', 'unpaired'])
 })
 
 test('a tunnel that cannot open closes the pipe, so the store retries; forgetting the computer forgets its TailPocket link', async () => {

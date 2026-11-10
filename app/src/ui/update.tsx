@@ -6,8 +6,8 @@ import type { Notice, Updates } from '../updates.ts'
 import type { PrefStore } from '../prefs.ts'
 import { useSignal } from './kit.tsx'
 
-// Rebuild by hand for a computer the phone can't update: the same files INSTALL.md downloads.
-const INSTALL_COMMAND = 'curl -fsSL -o ~/.local/bin/herdr-anywhere https://github.com/jt-wang/herdr-anywhere/releases/latest/download/herdr-anywhere-macos-arm64 && chmod +x ~/.local/bin/herdr-anywhere'
+// Rebuild by hand for a Mac the phone can't update: the file INSTALL.md downloads for its processor.
+export const INSTALL_COMMAND = 'curl -fsSL -o ~/.local/bin/herdr-anywhere https://github.com/jt-wang/herdr-anywhere/releases/latest/download/herdr-anywhere-macos-$(uname -m | sed \'s/x86_64/amd64/\') && chmod +x ~/.local/bin/herdr-anywhere'
 const IPHONE_GUIDE = 'https://github.com/jt-wang/herdr-anywhere/blob/main/app/ios/README.md'
 
 /** Follows what the updates say. */

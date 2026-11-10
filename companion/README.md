@@ -13,13 +13,21 @@ go build ./cmd/herdr-anywhere          # needs Go 1.27.1
 ./herdr-anywhere pair                  # prints a QR code and a link; scan it with the phone
 ./herdr-anywhere devices               # id, name, created, last seen
 ./herdr-anywhere revoke <id>           # the device's live connections close within a second
-./herdr-anywhere start                 # serve --tailcat in the background, on any free local port; returns once it answers
-./herdr-anywhere install-dialog        # adds the Add phone dialog and its key to the Herdr desktop app
+./herdr-anywhere start                 # serve --tailcat in the background, on any free local port, and again at each login
+./herdr-anywhere start --lan           # the same, also on this computer's LAN address at port 7681
+./herdr-anywhere stop                  # stops it and takes it off login
+./herdr-anywhere install-dialog        # adds the Add phone dialog and its key to the Herdr desktop app (start does too)
 ```
 
 `pair --json` and `devices --json` are what the dialog reads: `pair --json` prints `{invite, expires, qr}`, with `qr` as
 rows of 0 and 1, or `{"error":"not-running"}` and exit 1 without creating a code. `start` logs to `serve.log` (0600) in
-the state dir. Its serve lives until the Mac restarts or it is killed; nothing restarts it.
+the state dir. start writes a login entry that runs `serve --tailcat --listen 127.0.0.1:0 --state DIR` with the PATH it
+was run with: a LaunchAgent (`~/Library/LaunchAgents/io.jingtao.herdranywhere.companion.plist`, RunAtLoad, KeepAlive
+on failure) that launchd also runs now, a systemd user unit (`herdr-anywhere.service`, Restart=on-failure,
+KillMode=process) that systemd also starts now, or on Windows the `Herdr Anywhere` value under the Run key (with
+`--log`), which starts it from the next login; start runs it itself then, and wherever the manager fails. An update
+replaces the file at the same path, so the entry stays right. `stop` removes the entry and ends a serve that answers on
+the state dir. With no serve running, `pair` (but not `pair --json` or `pair --url`) starts one as start does.
 
 `serve` options: `--listen ADDR` (repeatable), `--lan`, `--tailcat`, `--web DIR` (the PWA build), `--hc PATH`,
 `--state DIR`.
@@ -67,8 +75,8 @@ herdr-core's API can run any command as you, so whoever holds a device token can
 - A release counts only if its `latest.json` is signed by the Ed25519 key built into the companion
   (`internal/update/manifest.go`). It lists each file's SHA-256 and size; the companion installs a file only if it
   matches, runs, and says it is that version, and tells phones the app's SHA-256 from the same list. Releases are signed
-  with `go run ./cmd/release-manifest sign -key <key> -version X.Y.Z -out <dir> <files>`; the private key stays off
-  GitHub.
+  with `go run ./cmd/release-manifest sign -key <key> -version X.Y.Z -out <dir> <files>`, which refuses a release that
+  leaves out any computer's file; the private key stays off GitHub.
 
 ## Tests
 

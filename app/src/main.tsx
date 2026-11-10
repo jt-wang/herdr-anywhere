@@ -24,7 +24,7 @@ export function start(o: { pairLink?: string; opensSettings?: boolean } = {}) {
     <Root deps={{
       linker: new Linker({ ...io, tunnel }),
       prefs: new PrefStore(io),
-      makeStore: (l) => new Store({ pipe: () => l.pipe(), load: io.load, save: io.save }),
+      makeStore: (l) => new Store({ pipe: () => l.pipe(), tunnelled: () => l.link.get()?.via === 'tailpocket', load: io.load, save: io.save }),
       device: DEVICE[platform.os] ?? 'Phone',
       pairLink: o.pairLink ?? page?.href,
       origin: page?.origin,

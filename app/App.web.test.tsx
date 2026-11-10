@@ -25,6 +25,9 @@ test('on a page of the computer, the code alone pairs with that computer', async
     host: { handlers: { 'page.address': { href: `${PAGE}/`, origin: PAGE }, 'page.dropPair': null } },
   })
   await app.waitFor('id:pair-link')
+  // start --lan keeps the LAN serve running, also after a restart; serve --lan stops with its terminal.
+  expect(app.shows('text:herdr-anywhere start --lan')).toBe(true)
+  expect(app.shows('text:herdr-anywhere serve --lan')).toBe(false)
   await app.type('id:pair-link', 'GOOD-CODE')
   await app.press('id:pair')
   await app.waitUntil(() => app.requests().some((r) => r.url === `${PAGE}/api/pair`))

@@ -2,12 +2,14 @@
 // below it. Runs herdr-anywhere for everything. The code stays in memory: it
 // comes from `pair --json` and is drawn as divs, never written to a file.
 // Opened as a dialog (`mod.open add-phone`, bound by `herdr-anywhere install-dialog`).
+// It speaks the computer's language, which `herdr-anywhere language` reads on each open (strings.js).
 
 import { View, div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { exec, theme, props, closeOverlay } from "herdr";
 import { BIN, STATE } from "./config.js";
 import { addedSince, ago, parseDevices, parsePair, remaining, runs } from "./logic.js";
+import { fill, wordsFor } from "./strings.js";
 
 const MODULE = 5; // points per module: a 528-character invite is 81 modules across
 const QUIET = 4; // modules of white around the code, as the QR standard asks
@@ -15,11 +17,17 @@ const QUIET = 4; // modules of white around the code, as the QR standard asks
 export default class AddPhone extends View {
   init(_props, cx) {
     this.view = { kind: "loading" };
+    this.words = null; // drawn once the language is known, so nothing shows in a language it isn't
     this.devices = null;
     this.confirming = null;
     this.handle = cx.focus_handle();
     this.handle.focus();
-    this.getCode(cx);
+    cx.spawn(async (cx) => {
+      // A companion from before 0.1.20 has no `language`: its dialog is English.
+      const r = await exec(BIN, ["language"]).catch(() => ({ code: 1, stdout: "" }));
+      this.words = wordsFor(r.code === 0 ? r.stdout : "en");
+      this.getCode(cx);
+    });
     cx.timer.every(2000, (cx) => this.pollDevices(cx));
     cx.timer.every(1000, (cx) => {
       if (this.view.kind !== "code") return;
@@ -41,7 +49,7 @@ export default class AddPhone extends View {
         this.devices = parseDevices(await this.run(["devices", "--json"])) ?? this.devices;
         this.view = parsePair(await this.run(["pair", "--json"]));
       } catch {
-        this.view = { kind: "error", message: `Cannot run ${BIN}. Run herdr-anywhere install-dialog again.` };
+        this.view = { kind: "cant-run" };
       }
       cx.notify();
     });
@@ -71,9 +79,10 @@ export default class AddPhone extends View {
 
   remove(id, cx) {
     this.confirming = null;
+    const name = this.devices?.find((d) => d.id === id)?.name ?? id;
     cx.spawn(async (cx) => {
       const r = await this.run(["revoke", id]).catch((e) => ({ code: 1, stderr: String(e) }));
-      if (r.code !== 0) this.view = { kind: "error", message: r.stderr.trim() };
+      if (r.code !== 0) this.view = { kind: "remove-failed", name, message: r.stderr.trim() };
       this.devices = parseDevices(await this.run(["devices", "--json"])) ?? this.devices;
       cx.notify();
     });
@@ -82,7 +91,7 @@ export default class AddPhone extends View {
   primary(cx) {
     const k = this.view.kind;
     if (k === "not-running" || k === "start-failed") this.start(cx);
-    else if (k === "expired" || k === "paired" || k === "error") this.getCode(cx);
+    else if (k === "expired" || k === "paired" || k === "error" || k === "cant-run" || k === "remove-failed") this.getCode(cx);
   }
 
   key(e, cx) {
@@ -123,42 +132,49 @@ export default class AddPhone extends View {
     return body;
   }
 
-  message(t, text, action) {
+  // `detail` is what the CLI printed, under the sentence, as it printed it.
+  message(t, text, action, detail) {
     const box = v_flex().items_center().justify_center().gap(14).py(40).px(12);
     box.child(div().text_size(13).text_color(t.foreground).child(text));
+    if (detail) box.child(div().text_size(12).text_color(t.muted).child(detail));
     return action ? box.child(action) : box;
   }
 
-  body(t) {
+  body(t, s) {
     const v = this.view;
+    const again = () => this.button(t, "ap-new", s.tryAgain, (cx) => this.getCode(cx));
     switch (v.kind) {
       case "code":
         return v_flex()
           .items_center()
           .gap(12)
           .child(this.code(v.rows))
-          .child(div().text_size(13).text_color(t.foreground).child("Open Herdr on your phone and scan this code."))
-          .child(div().text_size(12).text_color(t.muted).child(`Works once. Expires in ${remaining(v.expires, Date.now())}.`));
+          .child(div().text_size(13).text_color(t.foreground).child(s.scan))
+          .child(div().text_size(12).text_color(t.muted).child(fill(s.expires, { time: remaining(v.expires, Date.now()) })));
       case "loading":
-        return this.message(t, "Getting a code…");
+        return this.message(t, s.loading);
       case "starting":
-        return this.message(t, "Starting Herdr Anywhere…");
+        return this.message(t, s.starting);
       case "not-running":
-        return this.message(t, "Herdr Anywhere isn't running on this computer.", this.button(t, "ap-start", "Start", (cx) => this.start(cx)));
+        return this.message(t, s.notRunning, this.button(t, "ap-start", s.start, (cx) => this.start(cx)));
       case "start-failed":
-        return this.message(t, `Herdr Anywhere didn't start: ${v.message}`, this.button(t, "ap-start", "Try again", (cx) => this.start(cx)));
+        return this.message(t, s.startFailed, this.button(t, "ap-start", s.tryAgain, (cx) => this.start(cx)), v.message);
       case "expired":
-        return this.message(t, "This code expired.", this.button(t, "ap-new", "New code", (cx) => this.getCode(cx)));
+        return this.message(t, s.expired, this.button(t, "ap-new", s.newCode, (cx) => this.getCode(cx)));
       case "paired":
-        return this.message(t, `${v.name} is paired.`, this.button(t, "ap-new", "Add another", (cx) => this.getCode(cx)));
+        return this.message(t, fill(s.paired, { name: v.name }), this.button(t, "ap-new", s.addAnother, (cx) => this.getCode(cx)));
+      case "cant-run":
+        return this.message(t, fill(s.cantRun, { bin: BIN }), again());
+      case "remove-failed":
+        return this.message(t, fill(s.couldntRemove, { name: v.name }), again(), v.message);
       default:
-        return this.message(t, v.message, this.button(t, "ap-new", "Try again", (cx) => this.getCode(cx)));
+        return this.message(t, s.noCode, again(), v.message || s.unreadable);
     }
   }
 
-  phones(t) {
+  phones(t, s) {
     const list = v_flex().id("ap-phones").max_h(160).overflow_y_scroll().mt(16).pt(12).gap(2).border_t_1().border_color(t.border);
-    list.child(div().pb(4).text_size(12).font_medium().text_color(t.muted).child("Paired phones"));
+    list.child(div().pb(4).text_size(12).font_medium().text_color(t.muted).child(s.pairedPhones));
     for (const d of this.devices) {
       const confirming = this.confirming === d.id;
       list.child(
@@ -170,7 +186,7 @@ export default class AddPhone extends View {
             v_flex()
               .flex_1()
               .child(div().text_size(13).text_color(t.foreground).child(d.name))
-              .child(div().text_size(11).text_color(t.muted).child(ago(d.last_seen, Date.now()))),
+              .child(div().text_size(11).text_color(t.muted).child(ago(d.last_seen, Date.now(), s))),
           )
           .child(
             div()
@@ -187,7 +203,7 @@ export default class AddPhone extends View {
                 this.confirming = d.id;
                 cx.notify();
               })
-              .child(confirming ? "Remove it?" : "Remove"),
+              .child(confirming ? s.removeConfirm : s.remove),
           ),
       );
     }
@@ -196,7 +212,8 @@ export default class AddPhone extends View {
 
   render() {
     const t = theme();
-    return v_flex()
+    const s = this.words;
+    const root = v_flex()
       .id("add-phone")
       .track_focus(this.handle)
       .on_key_down((e, cx) => this.key(e, cx))
@@ -204,9 +221,11 @@ export default class AddPhone extends View {
       .p(18)
       .rounded(12)
       .bg(t.popover)
-      .text_color(t.foreground)
-      .child(div().pb(14).text_size(15).font_semibold().child("Add phone"))
-      .child(this.body(t))
-      .when(Boolean(this.devices?.length), (el) => el.child(this.phones(t)));
+      .text_color(t.foreground);
+    if (!s) return root;
+    return root
+      .child(div().pb(14).text_size(15).font_semibold().child(s.title))
+      .child(this.body(t, s))
+      .when(Boolean(this.devices?.length), (el) => el.child(this.phones(t, s)));
   }
 }

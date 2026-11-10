@@ -232,11 +232,39 @@ test("a computer that refuses at once has Herdr's companion stopped; one that ne
   await store.connect().catch(() => {})
   await settle()
   expect(store.conn.get()).toBe('reconnecting')
-  expect(store.error.get()).toBe("The computer answers, but Herdr Anywhere's companion isn't running there. Start it; this reconnects by itself.")
+  expect(store.lostWhy.get()).toBe('refused')
+  // The banner puts what to run under it (restart.ts), as for a tunnel left unanswered.
+  expect(store.error.get()).toBe("Can't reach Companion on your computer. Run this on it:")
   mode = 'silent'
   timers.shift()!()
   await settle(20)
   expect(store.error.get()).toBe("The computer doesn't answer: it may be asleep, off, or on another network. Trying again…")
+})
+
+test("a retry that the tunnel leaves unanswered keeps saying so: the failed retry doesn't turn it into 'asleep or away'", async () => {
+  // As measured over a real tunnel to a stopped Companion: each retry's socket ends unanswered after the tunnel's 10 s.
+  let now = 1_000_000
+  let mode: 'up' | 'silent' = 'up'
+  const core = new FakeCore()
+  const pipe = () => {
+    if (mode === 'up') return core
+    const c = new FakeCore()
+    c.send = () => { now += 10_000; c.drop('no-answer') }
+    return c
+  }
+  const timers: (() => void)[] = []
+  const store = new Store({ pipe, now: () => now, setInterval: (() => 0) as any, clearInterval: (() => {}) as any,
+    setTimeout: ((f: () => void) => { timers.push(f); return 0 }) as any })
+  await store.connect()
+  mode = 'silent'
+  core.drop('network')
+  await settle()
+  for (let i = 0; i < 3; i++) {
+    timers.shift()!()
+    await settle(20)
+    expect(store.lostWhy.get()).toBe('no-answer')
+    expect(store.error.get()).toBe("Your computer doesn't answer. Run this on it:")
+  }
 })
 
 test('while the line is down, the state shown says how old it is', async () => {

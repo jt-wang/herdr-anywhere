@@ -129,8 +129,14 @@ block() { # file, a word in the block
 run_block() {
   b=$(block "$1" "$2")
   [ -n "$b" ] || fail "$1 has no sh block with $2"
-  # This commit's companion in place of the latest release's, when one is given.
-  [ -z "${HM_COMPANION-}" ] || b=$(printf '%s\n' "$b" | sed "s|https://github.com/jt-wang/herdr-anywhere/releases/latest/download/herdr-anywhere-macos-arm64|file://$HM_COMPANION|")
+  # This commit's companion in place of the latest release's, when one is given: a folder holding it under this Mac's
+  # release name, so a step that picks the other Mac's file finds nothing.
+  if [ -n "${HM_COMPANION-}" ]; then
+    rel="$tmp/hm-release"
+    mkdir -p "$rel"
+    ln -sf "$HM_COMPANION" "$rel/herdr-anywhere-macos-$(uname -m | sed 's/x86_64/amd64/')"
+    b=$(printf '%s\n' "$b" | sed "s|https://github.com/jt-wang/herdr-anywhere/releases/latest/download/|file://$rel/|")
+  fi
   echo "--- $1, the block with $2" >&2
   printf '%s\n' "$b" | sh 2>&1
 }
@@ -152,7 +158,7 @@ if [ "$phase" = dialog ]; then
   echo "$out1" | grep -qE 'hc [0-9]+\.[0-9]+\.[0-9]+' || fail "INSTALL.md step 1 found no herdr-core"
   ok "INSTALL.md step 1: herdr-core is installed"
 
-  out2=$(run_block INSTALL.md "herdr-anywhere-macos-arm64")
+  out2=$(run_block INSTALL.md "herdr-anywhere-macos-")
   echo "$out2"
   want=$(sed -n 's/^var version = "\(.*\)"$/\1/p' "$repo/companion/cmd/herdr-anywhere/main.go")
   if [ -n "${HM_COMPANION-}" ]; then

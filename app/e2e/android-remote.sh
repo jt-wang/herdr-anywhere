@@ -66,7 +66,13 @@ case "${1:-}" in
     "$adb" shell pm grant "$id" android.permission.POST_NOTIFICATIONS >/dev/null 2>&1 || true
     "$adb" shell am start -W -n "$id/.MainActivity" >/dev/null
     for _ in $(seq 1 30); do screen_has 'resource-id="pair-link"' && break; sleep 1; done
-    screen_has 'resource-id="pair-link"' || { screen; fail "the app did not open on the pairing screen"; }
+    if ! screen_has 'resource-id="pair-link"'; then
+      screen
+      echo "--- in front:"; "$adb" shell dumpsys activity activities | grep -E 'ResumedActivity' | head -3
+      echo "--- crashes:"; "$adb" logcat -d -b crash | tail -40
+      echo "--- the app's log:"; "$adb" logcat -d | grep -iE 'herdranywhere|AndroidRuntime|ActivityTaskManager' | tail -40
+      fail "the app did not open on the pairing screen"
+    fi
     echo "ok: the app is open on the pairing screen"
     rm -rf "$clip_dir"; mkdir -p "$clip_dir"
     python3 -m venv "$clip_dir/py"

@@ -155,9 +155,12 @@ export class Linker {
       let heard = false
       const s = (inner = open(socketUrl(c.baseUrl, l.token, l.enc), l.enc))
       s.onBytes = (b) => { heard = true; outer.onBytes?.(b) }
+      // Unanswered, it is all the phone can know: Companion stopped and this phone taken off the computer look the
+      // same through the tunnel (link.test.ts).
       s.onClose = (r) => {
-        if (r === 'network' && !heard) this.dropTunnel(t)
-        closed(r)
+        const silent = r === 'network' && !heard
+        if (silent) this.dropTunnel(t)
+        closed(silent ? 'no-answer' : r)
       }
       for (const b of queue.splice(0)) s.send(b)
     }, () => {

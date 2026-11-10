@@ -54,18 +54,20 @@ func TestSignWritesWhatACompanionAccepts(t *testing.T) {
 	}
 	pub, _ := base64.StdEncoding.DecodeString(strings.TrimSpace(out))
 	mac := filepath.Join(dir, update.MacAsset)
+	intel := filepath.Join(dir, intelMac)
 	win := filepath.Join(dir, update.WindowsAsset)
 	linux := filepath.Join(dir, update.LinuxAsset)
 	linuxArm := filepath.Join(dir, update.LinuxArmAsset)
 	apk := filepath.Join(dir, update.AppAsset)
 	os.WriteFile(mac, []byte("mac file"), 0o755)
+	os.WriteFile(intel, []byte("intel mac file"), 0o755)
 	os.WriteFile(win, []byte("windows file"), 0o644)
 	os.WriteFile(linux, []byte("linux file"), 0o755)
 	os.WriteFile(linuxArm, []byte("linux arm file"), 0o755)
 	os.WriteFile(apk, []byte("android file"), 0o644)
 	rel := filepath.Join(dir, "out")
 	os.Mkdir(rel, 0o755)
-	if _, err := run(t, "sign", "-key", key, "-version", "0.1.8", "-out", rel, "-any-key", mac, win, linux, linuxArm, apk); err != nil {
+	if _, err := run(t, "sign", "-key", key, "-version", "0.1.8", "-out", rel, "-any-key", mac, intel, win, linux, linuxArm, apk); err != nil {
 		t.Fatal(err)
 	}
 	body, _ := os.ReadFile(filepath.Join(rel, update.ManifestFile))
@@ -76,7 +78,7 @@ func TestSignWritesWhatACompanionAccepts(t *testing.T) {
 	}
 	sum := sha256.Sum256([]byte("mac file"))
 	want := update.File{Name: update.MacAsset, SHA256: hex.EncodeToString(sum[:]), Bytes: 8}
-	names := []string{update.MacAsset, update.WindowsAsset, update.LinuxAsset, update.LinuxArmAsset, update.AppAsset}
+	names := []string{update.MacAsset, intelMac, update.WindowsAsset, update.LinuxAsset, update.LinuxArmAsset, update.AppAsset}
 	if m.Version != "0.1.8" || len(m.Files) != len(names) || m.Files[0] != want {
 		t.Fatalf("%+v", m)
 	}
@@ -84,6 +86,40 @@ func TestSignWritesWhatACompanionAccepts(t *testing.T) {
 		if m.Files[i].Name != n {
 			t.Errorf("file %d is %q, want %q", i, m.Files[i].Name, n)
 		}
+	}
+}
+
+// The Intel Mac's file, as an Intel Mac's companion looks for it (update.AssetFor("darwin", "amd64")).
+const intelMac = "herdr-anywhere-macos-amd64"
+
+// A release that leaves out one computer's file, such as the Intel Mac's when a release script built only the others,
+// would tell that computer of a version it can't install. sign refuses it unless asked for part of a release (-only,
+// for tests that need one computer's file).
+func TestSignRefusesAReleaseMissingAComputersFile(t *testing.T) {
+	dir := t.TempDir()
+	key := filepath.Join(dir, "update.key")
+	run(t, "keygen", key)
+	var files []string
+	for _, n := range update.ReleaseFiles {
+		if n == intelMac {
+			continue
+		}
+		p := filepath.Join(dir, n)
+		os.WriteFile(p, []byte(n), 0o644)
+		files = append(files, p)
+	}
+	if len(files) != len(update.ReleaseFiles)-1 {
+		t.Fatalf("a release's files are %v, without %s", update.ReleaseFiles, intelMac)
+	}
+	out, err := run(t, append([]string{"sign", "-key", key, "-version", "0.1.8", "-out", dir, "-any-key"}, files...)...)
+	if err == nil || !strings.Contains(err.Error(), intelMac) {
+		t.Fatalf("%v %s", err, out)
+	}
+	if _, err := os.Stat(filepath.Join(dir, update.ManifestFile)); err == nil {
+		t.Fatal("wrote a manifest anyway")
+	}
+	if _, err := run(t, append([]string{"sign", "-key", key, "-version", "0.1.8", "-out", dir, "-any-key", "-only"}, files...)...); err != nil {
+		t.Fatalf("-only: %v", err)
 	}
 }
 
@@ -127,7 +163,7 @@ func TestSignRefusesAVersionThatIsNotOne(t *testing.T) {
 	run(t, "keygen", key)
 	mac := filepath.Join(dir, update.MacAsset)
 	os.WriteFile(mac, []byte("x"), 0o755)
-	if _, err := run(t, "sign", "-key", key, "-version", "v0.1", "-out", dir, "-any-key", mac); err == nil {
-		t.Fatal("no error")
+	if out, err := run(t, "sign", "-key", key, "-version", "v0.1", "-out", dir, "-any-key", "-only", mac); err == nil || !strings.Contains(err.Error(), "v0.1") {
+		t.Fatalf("%v %s", err, out)
 	}
 }

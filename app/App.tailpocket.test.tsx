@@ -16,6 +16,9 @@ const calls = (app: any, name: string) => app.host.calls().filter((c: any) => c.
 test('an invite pasted on a phone pairs through TailPocket, and the app connects through its tunnel', async () => {
   const app = await open('./App.tsx', { platform: 'ios', host: { handlers: handlers() }, network: { '*': { error: 'offline' } } })
   await app.waitFor('id:pair-link')
+  // What keeps Companion running, also after the computer restarts; serve --tailcat stops with its terminal.
+  expect(app.shows('text:herdr-anywhere start')).toBe(true)
+  expect(app.shows('text:herdr-anywhere serve --tailcat')).toBe(false)
   await app.type('id:pair-link', INVITE)
   await app.press('id:pair')
   await app.waitUntil(() => calls(app, 'tailPocket.connect').length > 0)

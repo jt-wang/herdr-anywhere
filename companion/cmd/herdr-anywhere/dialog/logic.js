@@ -1,4 +1,5 @@
 // What the Add phone dialog decides, without drawing anything: tested by logic.test.mjs.
+import { fill } from "./strings.js";
 
 function json(text) {
   try {
@@ -8,7 +9,8 @@ function json(text) {
   }
 }
 
-// A finished `pair --json` as what the dialog shows.
+// A finished `pair --json` as what the dialog shows. An error's message is the CLI's own detail, in English
+// like all its output; an empty one means the answer could not be read.
 export function parsePair({ code, stdout, stderr }) {
   const reply = json(stdout);
   if (reply?.error === "not-running") return { kind: "not-running" };
@@ -16,7 +18,7 @@ export function parsePair({ code, stdout, stderr }) {
   if (code === 0 && Array.isArray(reply?.qr) && reply.expires) {
     return { kind: "code", expires: Date.parse(reply.expires), rows: reply.qr };
   }
-  return { kind: "error", message: stderr?.trim() || "herdr-anywhere gave an answer the dialog cannot read." };
+  return { kind: "error", message: stderr?.trim() || "" };
 }
 
 // null when the list could not be read: that is not the same as no phones.
@@ -49,12 +51,12 @@ export function remaining(expires, now) {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
-export function ago(lastSeen, now) {
-  if (!lastSeen) return "Never connected";
+// How long ago a phone was last seen, in the words `s` (strings.js) and the phone app's short spans.
+export function ago(lastSeen, now, s) {
+  if (!lastSeen) return s.neverConnected;
   const minutes = Math.floor((now - Date.parse(lastSeen)) / 60000);
-  if (minutes < 1) return "Last seen just now";
-  if (minutes < 60) return `Last seen ${minutes}m ago`;
+  if (minutes < 1) return s.lastSeenNow;
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `Last seen ${hours}h ago`;
-  return `Last seen ${Math.floor(hours / 24)}d ago`;
+  const age = minutes < 60 ? `${minutes}${s.units.m}` : hours < 24 ? `${hours}${s.units.h}` : `${Math.floor(hours / 24)}${s.units.d}`;
+  return fill(s.lastSeen, { age });
 }

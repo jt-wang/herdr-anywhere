@@ -7,9 +7,11 @@ toolchain go1.27.3
 require (
 	github.com/coder/websocket v1.8.15
 	github.com/jt-wang/tailpocket v0.0.0
+	github.com/makiuchi-d/gozxing v0.1.1
 	github.com/mdp/qrterminal/v3 v3.2.1
 	github.com/tailscale/tailcat v0.6.0
 	golang.org/x/sys v0.49.0
+	golang.org/x/term v0.47.0
 	rsc.io/qr v0.2.0
 	tailscale.com v1.103.0-pre.0.20260904030409-31d8badb3bfb
 )
@@ -53,9 +55,9 @@ require (
 	golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f // indirect
 	golang.org/x/net v0.61.0 // indirect
 	golang.org/x/sync v0.24.0 // indirect
-	golang.org/x/term v0.47.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
+	golang.org/x/xerrors v0.0.0-20240716161551-93cc26a95ae9 // indirect
 	golang.zx2c4.com/wintun v0.0.0-20230126152724-0fa3db229ce2 // indirect
 	golang.zx2c4.com/wireguard/windows v0.5.3 // indirect
 	gvisor.dev/gvisor v0.0.0-20260224225140-573d5e7127a8 // indirect

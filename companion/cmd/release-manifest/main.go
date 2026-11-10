@@ -87,6 +87,7 @@ func sign(args []string, stdout io.Writer) error {
 	version := fs.String("version", "", "the release's version, such as 0.1.8")
 	out := fs.String("out", ".", "where to write latest.json and latest.json.sig")
 	anyKey := fs.Bool("any-key", false, "sign with a key the companion doesn't have (tests)")
+	only := fs.Bool("only", false, "sign a release that leaves out some computers' files (tests)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -101,9 +102,23 @@ func sign(args []string, stdout io.Writer) error {
 		return errors.New("this key isn't the one built into the companion; computers would refuse the release")
 	}
 	m := update.Manifest{Version: *version}
+	var given []string
 	for _, p := range fs.Args() {
 		if !slices.Contains(update.ReleaseFiles, filepath.Base(p)) {
 			return fmt.Errorf("no computer looks for %s; a release's files are named %s", filepath.Base(p), strings.Join(update.ReleaseFiles, ", "))
+		}
+		given = append(given, filepath.Base(p))
+	}
+	// A computer whose file is missing would hear of a version it can't install.
+	if !*only {
+		var missing []string
+		for _, n := range update.ReleaseFiles {
+			if !slices.Contains(given, n) {
+				missing = append(missing, n)
+			}
+		}
+		if len(missing) > 0 {
+			return fmt.Errorf("the release has no %s; every computer needs its file", strings.Join(missing, ", "))
 		}
 	}
 	for _, p := range fs.Args() {

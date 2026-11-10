@@ -27,8 +27,9 @@ import (
 const (
 	// Repo holds the releases.
 	Repo = "jt-wang/herdr-anywhere"
-	// MacAsset is a release's companion for Apple silicon Macs.
-	MacAsset = "herdr-anywhere-macos-arm64"
+	// MacAsset and MacIntelAsset are a release's companions for Macs with Apple silicon and with an Intel processor.
+	MacAsset      = "herdr-anywhere-macos-arm64"
+	MacIntelAsset = "herdr-anywhere-macos-amd64"
 	// WindowsAsset is a release's companion for Windows: x64, which Windows on Arm runs under its emulation.
 	WindowsAsset = "herdr-anywhere-windows-amd64.exe"
 	// LinuxAsset and LinuxArmAsset are a release's companions for Linux on x64 and on Arm: static programs, so any
@@ -48,7 +49,7 @@ const (
 )
 
 // ReleaseFiles are the files a release's latest.json lists: each computer's companion, and the Android app.
-var ReleaseFiles = []string{MacAsset, WindowsAsset, LinuxAsset, LinuxArmAsset, AppAsset}
+var ReleaseFiles = []string{MacAsset, MacIntelAsset, WindowsAsset, LinuxAsset, LinuxArmAsset, AppAsset}
 
 // ErrNoUpdate says there is nothing newer to install.
 var ErrNoUpdate = errors.New("already the latest version")
@@ -65,6 +66,8 @@ func AssetFor(goos, goarch string) string {
 	switch goos + "/" + goarch {
 	case "darwin/arm64":
 		return MacAsset
+	case "darwin/amd64":
+		return MacIntelAsset
 	case "windows/amd64":
 		return WindowsAsset
 	case "linux/amd64":

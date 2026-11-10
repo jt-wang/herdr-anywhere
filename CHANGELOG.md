@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.1.20
+
+- After a restart the phone finds the computer again: `herdr-anywhere start` now also starts Companion when you log in, and `herdr-anywhere stop` undoes it. `start --lan` and `start --listen <address>` do the same for a phone on your Wi-Fi or VPN. Before, Companion stayed off until you started it again.
+- When the phone can't reach the computer, it shows the one command that brings it back for how this phone was paired, and a Pair again button. Phones paired through TailPocket no longer read "the computer answers" when Companion isn't running.
+- Intel Mac: Companion now has its own file, `herdr-anywhere-macos-amd64`, and updates itself like the others.
+- `herdr-anywhere pair` opens the QR code as a picture when the terminal is too small to show it whole.
+- Add phone in Herdr Desktop App is in place after `herdr-anywhere start`, stays current with each update, and speaks the computer's language (English, Español, 日本語, 한국어, Русский, 简体中文, 繁體中文).
+- Agents running on an ssh server: home names the machine for a space that is on another computer, and `pair` says how Companion is listening.
+
+Android: `Herdr-Anywhere.apk`; an installed 0.1.6 or later can update to it from home. Intel Mac: `herdr-anywhere-macos-amd64`.
+
 ## v0.1.19
 
 - In Pi and other programs that move one line per scroll step, a drag moves the text as far as your finger; since 0.1.15 it moved about a third as far. OpenCode scrolls as before.

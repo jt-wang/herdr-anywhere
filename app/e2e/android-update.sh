@@ -39,7 +39,7 @@ for s in good bad-digest other-key; do
   ln -s "$new_bin" "$work/rel-$s/files/herdr-anywhere-macos-arm64"
   case $s in good) a=$new_apk ;; bad-digest) a=$old_apk ;; other-key) a=$other_apk ;; esac
   ln -s "$a" "$work/rel-$s/files/Herdr-Anywhere.apk"
-  "$work/release-manifest" sign -any-key -key "$work/release.key" -version "$new_version" -out "$work/rel-$s" \
+  "$work/release-manifest" sign -any-key -only -key "$work/release.key" -version "$new_version" -out "$work/rel-$s" \
     "$work/rel-$s/files/herdr-anywhere-macos-arm64" "$work/rel-$s/files/Herdr-Anywhere.apk" >/dev/null
 done
 cat > "$work/gh.py" <<'EOF'

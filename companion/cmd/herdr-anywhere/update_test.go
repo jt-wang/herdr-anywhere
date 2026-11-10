@@ -232,6 +232,7 @@ func TestUpdateCommand(t *testing.T) {
 	buildVersion(t, "0.0.1", filepath.Join(dir, "herdr-anywhere"))
 	exe := filepath.Join(dir, "herdr-anywhere"+testfake.Ext())
 	_, flags := releaseServer(t, "0.0.2", bin)
+	home := oldDialog(t, "cmd-k")
 
 	out, err := exec.Command(exe, append([]string{"update", "--check"}, flags...)...).CombinedOutput()
 	if err != nil || !strings.Contains(string(out), "0.0.2 is available") {
@@ -240,9 +241,16 @@ func TestUpdateCommand(t *testing.T) {
 	if got, _ := os.ReadFile(exe); string(got) == string(bin) {
 		t.Fatal("--check replaced the file")
 	}
+	if read(t, modFile(home, "main.js")) != "// old main\n" {
+		t.Fatal("--check changed the dialog")
+	}
 	out, err = exec.Command(exe, append([]string{"update"}, flags...)...).CombinedOutput()
 	if err != nil || !strings.Contains(string(out), "updated to herdr-anywhere 0.0.2") {
 		t.Fatalf("%v: %s", err, out)
+	}
+	// The new version's Add phone dialog, put in place by the new version.
+	if read(t, modFile(home, "main.js")) != embedded(t, "main.js") || !strings.Contains(string(out), "Add phone") {
+		t.Fatalf("the dialog is the old one after the update: %s", out)
 	}
 	out, err = exec.Command(exe, "--version").CombinedOutput()
 	if err != nil || strings.TrimSpace(string(out)) != "herdr-anywhere 0.0.2" {

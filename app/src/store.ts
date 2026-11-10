@@ -12,6 +12,7 @@ const AGENT_KEYS = new Set(startable().map((p) => p.key))
 import { addresses, find, modBlock, panes, terminalOf, type Axis, type Node } from './model/layout.ts'
 import { recentFolders } from './model/folders.ts'
 import { activity } from './model/answers.ts'
+import type { Restart } from './restart.ts'
 import { t as tr, type Key } from './strings/index.ts'
 import { readMenu, type Menu } from './model/menu.ts'
 import { spaceMarks } from './model/marks.ts'
@@ -27,6 +28,9 @@ export type Slot = { version: number; last: string; available: boolean; loaded: 
 export type StoreIO = {
   /** Opens a byte pipe to herdr-core (a WebSocket to the companion, a fake core in tests). */
   pipe: () => Pipe
+  /** The pipe goes through TailPocket: its socket ends at the phone's own forward, so how fast it fails says nothing
+   *  about the computer, and a failure before it answered is no answer. */
+  tunnelled?: () => boolean
   setInterval?: typeof setInterval
   clearInterval?: typeof clearInterval
   setTimeout?: typeof setTimeout
@@ -51,6 +55,7 @@ export const LOST_TEXT: Record<string, Key> = {
   refused: 'lostRefused',
   unreachable: 'lostUnreachable',
   tunnel: 'lostTunnel',
+  'no-answer': 'lostNoAnswer',
   'binary-unsupported': 'lostSlower',
 }
 
@@ -78,6 +83,12 @@ export class Store {
   readonly agentList = new AgentList()
   readonly conn = new Signal<Conn>('idle')
   readonly error = new Signal<string>('')
+  /** Why the line is down, as a code (LOST_TEXT's keys); '' while it is up. The banner adds what to do for some. */
+  readonly lostWhy = new Signal<string>('')
+  /** Opens pairing again, keeping this link until a new one pairs (set by the screens). */
+  pairAgain?: () => void
+  /** What to run on the computer so this phone connects again, from how it was paired (restart.ts; set by the screens). */
+  restart?: Restart
   readonly rev = new Signal(0)
   readonly toasts = new Signal<Toast[]>([])
   readonly machines = new Signal<Machine[]>([])
@@ -130,7 +141,7 @@ export class Store {
   constructor(io: StoreIO) {
     this.io = {
       setInterval: globalThis.setInterval.bind(globalThis), clearInterval: globalThis.clearInterval.bind(globalThis),
-      setTimeout: globalThis.setTimeout.bind(globalThis), now: () => Date.now(), ...io,
+      setTimeout: globalThis.setTimeout.bind(globalThis), now: () => Date.now(), tunnelled: () => false, ...io,
     }
     this.model.now = this.io.now
   }
@@ -140,6 +151,7 @@ export class Store {
   async connect(): Promise<void> {
     this.wantConnected = true
     this.attemptAt = this.io.now()
+    this.attempt++
     this.opened = false
     this.conn.set(this.retry ? 'reconnecting' : 'connecting')
     try {
@@ -172,6 +184,7 @@ export class Store {
       this.sync()
       this.conn.set('ready')
       this.error.set('')
+      this.lostWhy.set('')
       this.loop = this.io.setInterval(() => this.sync(), 500)
       this.machineLoop = this.io.setInterval(() => void this.refreshMachines(), 2500)
       this.heardAt = this.checkedAt = this.io.now()
@@ -212,6 +225,9 @@ export class Store {
   }
 
   private attemptAt = 0
+  private attempt = 0
+  /** The attempt whose line already said why it was lost. */
+  private lostAttempt = -1
   private opened = false
   private retrying = false
   private syncedAt = 0
@@ -222,6 +238,9 @@ export class Store {
   }
 
   private lost(reason: string) {
+    // A retry fails after its line closed, and the close already said why (a tunnel left unanswered): keep that.
+    if (reason === 'retry failed' && this.lostAttempt === this.attempt) return
+    this.lostAttempt = this.attempt
     this.stopLoops()
     this.hc = undefined
     this.held.clear()
@@ -234,7 +253,10 @@ export class Store {
     }
     this.conn.set('reconnecting')
     const plain = reason === 'network' || reason === 'closed' || reason === 'retry failed'
-    const why = plain && !this.opened ? (this.io.now() - this.attemptAt < REFUSED_MS ? 'refused' : 'unreachable') : reason
+    const why = !plain || this.opened ? reason
+      : this.io.tunnelled() ? 'no-answer'
+      : this.io.now() - this.attemptAt < REFUSED_MS ? 'refused' : 'unreachable'
+    this.lostWhy.set(why)
     this.error.set(LOST_TEXT[why] ? tr(LOST_TEXT[why]) : plain ? tr('lostNetwork') : tr('lostReason', { reason }))
     if (this.retrying) return
     // Back off like the desktop's 1 s retry, capped so a phone in a tunnel doesn't spin.

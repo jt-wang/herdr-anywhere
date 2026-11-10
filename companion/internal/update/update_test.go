@@ -581,16 +581,17 @@ func TestWhatACheckFoundSurvivesARestart(t *testing.T) {
 	}
 }
 
-// Each computer installs the one file of a release built for it: the Mac's, Windows' .exe, which Windows on Arm runs
-// too, under its x64 emulation, where the program reports amd64, or Linux's for x64 or Arm. Herdr ships these four
-// (releases.herdr.dev/app/latest.json 0.1.13) and an Intel Mac core, which has no file here.
+// Each computer installs the one file of a release built for it: the Mac's for Apple silicon or Intel, Windows' .exe,
+// which Windows on Arm runs too, under its x64 emulation, where the program reports amd64, or Linux's for x64 or Arm.
+// herdr-core ships these five (releases.herdr.dev/core/latest.json 0.1.19); Herdr's app has no Intel Mac build, so
+// an Intel Mac runs one built from source.
 func TestAssetPerComputer(t *testing.T) {
 	for _, c := range []struct{ goos, goarch, want string }{
 		{"darwin", "arm64", "herdr-anywhere-macos-arm64"},
+		{"darwin", "amd64", "herdr-anywhere-macos-amd64"},
 		{"windows", "amd64", "herdr-anywhere-windows-amd64.exe"},
 		{"linux", "amd64", "herdr-anywhere-linux-amd64"},
 		{"linux", "arm64", "herdr-anywhere-linux-arm64"},
-		{"darwin", "amd64", ""},
 		{"windows", "arm64", ""},
 		{"linux", "386", ""},
 		{"freebsd", "amd64", ""},
@@ -604,11 +605,13 @@ func TestAssetPerComputer(t *testing.T) {
 	}
 }
 
-// A release with the Mac's and Windows' files: a Windows computer takes the .exe, with its own digest and size.
+// A release with both Macs' files and Windows': each computer takes its own, with its own digest and size. An Intel
+// Mac's companion says amd64, and must not take the Apple silicon file, which it can't run.
 func TestLatestReadsTheFileForThisComputer(t *testing.T) {
-	mac, win := []byte("mac file"), []byte("windows file!")
+	mac, intel, win := []byte("mac file"), []byte("intel mac file"), []byte("windows file!")
 	body, sig, err := Sign(testPriv, Manifest{Version: "0.1.6", Files: []File{
 		{Name: MacAsset, SHA256: strings.TrimPrefix(digestOf(mac), "sha256:"), Bytes: int64(len(mac))},
+		{Name: "herdr-anywhere-macos-amd64", SHA256: strings.TrimPrefix(digestOf(intel), "sha256:"), Bytes: int64(len(intel))},
 		{Name: WindowsAsset, SHA256: strings.TrimPrefix(digestOf(win), "sha256:"), Bytes: int64(len(win))},
 	}})
 	if err != nil {
@@ -619,14 +622,27 @@ func TestLatestReadsTheFileForThisComputer(t *testing.T) {
 	mux.HandleFunc("/latest/download/"+ManifestFile+".sig", func(w http.ResponseWriter, r *http.Request) { w.Write(sig) })
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
-	c := testClient(srv)
-	c.Asset = WindowsAsset
-	r, err := c.Latest(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if r.URL != srv.URL+"/download/v0.1.6/"+WindowsAsset || r.Digest != digestOf(win) || r.Bytes != int64(len(win)) {
-		t.Fatalf("%+v", r)
+	for _, c := range []struct {
+		goos, goarch, file string
+		want               []byte
+	}{
+		{"windows", "amd64", WindowsAsset, win},
+		{"darwin", "amd64", "herdr-anywhere-macos-amd64", intel},
+		{"darwin", "arm64", MacAsset, mac},
+	} {
+		cl := testClient(srv)
+		cl.Asset = AssetFor(c.goos, c.goarch)
+		if cl.Asset == "" {
+			t.Errorf("%s/%s: no release file", c.goos, c.goarch)
+			continue
+		}
+		r, err := cl.Latest(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r.URL != srv.URL+"/download/v0.1.6/"+c.file || r.Digest != digestOf(c.want) || r.Bytes != int64(len(c.want)) {
+			t.Errorf("%s/%s: %+v", c.goos, c.goarch, r)
+		}
 	}
 }
 
@@ -669,11 +685,11 @@ func TestApplyReplacesARunningProgram(t *testing.T) {
 	}
 }
 
-// A computer releases carry no file for (an Intel Mac, Windows on Arm built for Arm) still hears of a new version, so
-// the phone can say so and show how to install it by hand; Apply refuses it.
+// A computer releases carry no file for (Windows on Arm built for Arm, FreeBSD) still hears of a new version, so the
+// phone can say so and show how to install it by hand; Apply refuses it.
 func TestLatestOnAComputerWithoutAReleaseFile(t *testing.T) {
 	old := Asset
-	Asset = AssetFor("darwin", "amd64")
+	Asset = AssetFor("windows", "arm64")
 	t.Cleanup(func() { Asset = old })
 	bin := []byte("mac file")
 	srv, _ := fakeGitHub(t, "v0.1.6", bin, digestOf(bin))

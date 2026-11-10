@@ -471,6 +471,51 @@ test('a computer that forgot this phone shows pairing again, and a good code pai
   await app.waitFor('text:Start a terminal or an agent')
 })
 
+// After the computer restarted, Companion wasn't running, and the phone said the computer might be asleep or on
+// another network. Through TailPocket the phone can't tell Companion stopped from this phone taken off the computer
+// (link.test.ts), so it says the likely one with what to run, and offers pairing again.
+test('a computer that does not answer through the tunnel says to start Companion there, and offers pairing again', async () => {
+  const app = await open('./fixtures/fake.tsx', { host: { params: { scene: 'companion-off', via: 'tailpocket' } } })
+  await app.waitFor("text:Your computer doesn't answer. Run this on it:")
+  expect(app.shows('text:herdr-anywhere start')).toBe(true)
+  expect(app.shows('text:asleep')).toBe(false)
+  // Only what the person acts on: the reason, the command, the button.
+  expect(app.texts().some((t) => /reconnects by itself|no longer know/.test(t))).toBe(false)
+  await app.press('id:pair-again')
+  await app.waitFor('id:pair-link')
+  await app.press('id:pair-back')
+  await app.waitFor('id:conn-banner')
+  await app.press('id:pair-again')
+  await app.waitFor('id:pair-link')
+  await app.type('id:pair-link', 'herdr1:eyJ2IjoxfQ')
+  await app.press('id:pair')
+  await app.waitFor('text:Start a terminal or an agent')
+  expect(app.shows('id:conn-banner')).toBe(false)
+})
+
+// A phone paired over the LAN said Companion wasn't running, with nothing to run and no way to pair again; and
+// `start` (Tailcat only) wouldn't bring it back.
+test('a LAN-paired phone whose computer refuses says to run start --lan there, and offers pairing again', async () => {
+  const app = await open('./fixtures/fake.tsx', { host: { params: { scene: 'companion-refused', url: 'http://192.168.1.20:7681' } } })
+  await app.waitFor("text:Can't reach Companion on your computer. Run this on it:")
+  expect(app.shows('text:herdr-anywhere start --lan')).toBe(true)
+  expect(app.shows('text:herdr-anywhere start')).toBe(false)
+  expect(app.texts().some((t) => /terminal open/.test(t))).toBe(false)
+  // Unless it can be told apart, the words don't say the computer answered.
+  expect(app.texts().some((t) => /answers/.test(t))).toBe(false)
+  await app.press('id:pair-again')
+  await app.waitFor('id:pair-back')
+  await app.press('id:pair-back')
+  await app.waitFor('id:conn-banner')
+})
+
+test('a phone that reaches the computer by a name says that name, since how serve listens there is unknown', async () => {
+  const app = await open('./fixtures/fake.tsx', { host: { params: { scene: 'companion-refused', url: 'http://mac.example:7681' } } })
+  await app.waitFor("text:Can't reach Companion at mac.example:7681. Start it there the way you set it up.")
+  expect(app.shows('id:conn-command')).toBe(false)
+  expect(app.shows('id:pair-again')).toBe(true)
+})
+
 test('opened with a pairing link, the app pairs by itself, then drops the link from the address', async () => {
   const app = await open('./fixtures/fake.tsx', { host: { params: { scene: 'link', link: 'http://192.0.2.10:7681/#pair=GOOD-CODE' } } })
   await app.waitFor('text:Start a terminal or an agent')

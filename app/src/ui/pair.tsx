@@ -8,7 +8,7 @@ import { keyboardGone } from './keyboard.ts'
 
 /** `origin`: on the web, the computer that serves the page, where a `#pair=` link opens and the code alone is enough.
  *  `tunnel`: in the phone apps, TailPocket, which pairs by the invite `serve --tailcat` shows, scanned or pasted. */
-export function PairScreen(props: { onPaired: (l: Link) => void; device: string; fetcher?: typeof fetch; initial?: string; message?: string; origin?: string; tunnel?: Tunnel; onTry?: () => void }) {
+export function PairScreen(props: { onPaired: (l: Link) => void; device: string; fetcher?: typeof fetch; initial?: string; message?: string; origin?: string; tunnel?: Tunnel; onTry?: () => void; onBack?: () => void }) {
   const text = signal(props.initial ?? '')
   const busy = signal(false)
   const error = signal(props.message ?? '')
@@ -47,6 +47,11 @@ export function PairScreen(props: { onPaired: (l: Link) => void; device: string;
   if (props.initial && (parsePairLink(props.initial) || (tunnel && parseInvite(props.initial)))) queueMicrotask(() => void pair())
   return (
     <Scroll class="flex-1 bg-background" keyboardShouldPersistTaps="handled" contentClass="px-6 pt-[env(safe-area-inset-top)] mt-12 pb-10 gap-3">
+      <If when={props.onBack}>
+        <View role="button" testID="pair-back" onPress={() => props.onBack!()} class="self-start -ml-2 -mt-8 px-2 py-2 active:opacity-60">
+          <Text class="text-[15px] text-foreground">‹ {t('back')}</Text>
+        </View>
+      </If>
       <Text class="text-[24px] font-semibold text-foreground tracking-[-0.4px]">{t('pairTitle')}</Text>
       <Text class="text-[15px] leading-[22px] text-muted-foreground">
         {tunnel
@@ -56,7 +61,7 @@ export function PairScreen(props: { onPaired: (l: Link) => void; device: string;
       <View class="mt-3 gap-2 rounded-(--radius) bg-muted p-4">
         <Text class="text-[13px] text-foreground font-medium">{t('onTheComputer')}</Text>
         <Text class="text-[13px] text-muted-foreground">{t('startCompanion')}</Text>
-        <Text selectable class="text-[12.5px] font-mono text-foreground">{tunnel ? 'herdr-anywhere serve --tailcat' : 'herdr-anywhere serve --lan'}</Text>
+        <Text selectable class="text-[12.5px] font-mono text-foreground">{tunnel ? 'herdr-anywhere start' : 'herdr-anywhere start --lan'}</Text>
         <Text class="text-[13px] text-muted-foreground">{tunnel ? t('showQr') : t('makeLink')}</Text>
         <Text selectable class="text-[12.5px] font-mono text-foreground">herdr-anywhere pair</Text>
       </View>

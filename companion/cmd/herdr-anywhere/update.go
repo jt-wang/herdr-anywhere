@@ -10,6 +10,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"time"
 
@@ -121,5 +122,11 @@ func updateCommand(ctx context.Context, args []string, stdout, stderr io.Writer)
 		return err
 	}
 	fmt.Fprintf(stdout, "updated to herdr-anywhere %s; a serve that is running keeps the old version until it restarts\n", rel.Version)
+	// The new version puts its own Add phone dialog in place; an older one's update leaves that to its serve.
+	out, err := exec.Command(exe, "install-dialog", "--if-installed").CombinedOutput()
+	stdout.Write(out)
+	if err != nil {
+		fmt.Fprintf(stderr, "herdr-anywhere update: the Add phone dialog stays as it was: %v\n", err)
+	}
 	return nil
 }

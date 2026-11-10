@@ -33,10 +33,15 @@ export function ConnBanner(props: { store: Store }) {
   const s = props.store
   const rev = useRev(s)
   const error = useSignal(s.error)
+  const why = useSignal(s.lostWhy)
   // The age moves on while nothing else does.
   const tick = signal(0)
   const timer = setInterval(() => tick.update((n) => n + 1), 15000)
   cleanup(() => clearInterval(timer))
+  // Not running there, or no answer through the tunnel: what to run (restart.ts) and pairing again. A name or a proxy
+  // (pair --url) gives no command: the address the phone uses, to start it there as it was set up.
+  const toDo = () => why() === 'no-answer' || why() === 'refused'
+  const atAddress = () => (why() === 'refused' && !s.restart?.command ? s.restart?.address ?? '' : '')
   const down = () => { rev(); const c = s.conn.get(); return c === 'reconnecting' || c === 'failed' }
   const age = () => { rev(); tick(); const ms = s.staleFor(); return ms === undefined ? '' : ms < 60000 ? t('lastUpdatedNow') : t('lastUpdated', { age: duration(ms) }) }
   return (
@@ -44,7 +49,19 @@ export function ConnBanner(props: { store: Store }) {
       <View testID="conn-banner" class="flex-row gap-2 px-4 py-2 bg-popover border-b border-border">
         <View class="w-1.5 h-1.5 mt-[7px] rounded-full bg-chart-2" />
         <View class="flex-1 gap-[1px]">
-          <Text class="text-[12.5px] text-foreground">{error() || t('notConnected')}</Text>
+          <Text class="text-[12.5px] text-foreground">{atAddress() ? t('lostRefusedAt', { address: atAddress() }) : error() || t('notConnected')}</Text>
+          <If when={toDo()}>
+            <View class="mt-1 flex-row items-center gap-2">
+              <If when={s.restart?.command} else={<View class="flex-1" />}>
+                <Text selectable testID="conn-command" class="flex-1 text-[12.5px] font-mono text-foreground">{s.restart?.command}</Text>
+              </If>
+              <If when={s.pairAgain}>
+                <View role="button" testID="pair-again" onPress={() => s.pairAgain?.()} class="rounded-(--radius) border border-input px-2.5 py-1 active:bg-accent">
+                  <Text class="text-[12.5px] font-medium text-foreground">{t('pairAgain')}</Text>
+                </View>
+              </If>
+            </View>
+          </If>
           <If when={age()}><Text class="text-[11.5px] text-sidebar-foreground">{age()}</Text></If>
         </View>
       </View>

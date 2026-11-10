@@ -65,3 +65,25 @@ test('what the computer says stays as it is: an agent\'s own choices are not tra
   await app.waitFor('id:needs-t1-choice-1')
   expect(app.count('label:1. Yes')).toBe(1)
 })
+
+for (const locale of LOCALES) {
+  test(`${locale}: a LAN computer that refuses, and one reached by a name, have no English words left`, async () => {
+    for (const url of ['http://192.0.2.10:7681', 'http://mac.example:7681']) {
+      const app = await open('./fixtures/fake.tsx', { locale, host: { params: { scene: 'companion-refused', url } } })
+      await app.waitFor('id:pair-again')
+      expect(english(app.texts(), locale)).toEqual([])
+    }
+  })
+}
+
+for (const locale of LOCALES) {
+  test(`${locale}: a computer that doesn't answer, and pairing again from there, have no English words left`, async () => {
+    const app = await open('./fixtures/fake.tsx', { locale, host: { params: { scene: 'companion-off', via: 'tailpocket' } } })
+    await app.waitFor('id:pair-again')
+    expect(app.shows('text:herdr-anywhere start')).toBe(true)
+    expect(english(app.texts(), locale)).toEqual([])
+    await app.press('id:pair-again')
+    await app.waitFor('id:pair-back')
+    expect(english(app.texts(), locale)).toEqual([])
+  })
+}

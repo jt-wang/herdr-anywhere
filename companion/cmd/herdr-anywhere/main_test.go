@@ -158,6 +158,12 @@ func shortStateDir(t *testing.T) string {
 // pairing code it was given.
 func fakeTailcatServe(t *testing.T, dir string, urls []string) *string {
 	t.Helper()
+	return fakeTailcatServeInvite(t, dir, urls, tailcat.Prefix+"INVITE")
+}
+
+// fakeTailcatServeInvite is fakeTailcatServe giving this invite.
+func fakeTailcatServeInvite(t *testing.T, dir string, urls []string, invite string) *string {
+	t.Helper()
 	got := new(string)
 	ln, err := tailcat.Listen(dir)
 	if err != nil {
@@ -165,7 +171,7 @@ func fakeTailcatServe(t *testing.T, dir string, urls []string) *string {
 	}
 	open := func(_ context.Context, code string) (tailcat.Window, error) {
 		*got = code
-		return tailcat.Window{Invite: tailcat.Prefix + "INVITE", Expires: time.Now().Add(2 * time.Minute)}, nil
+		return tailcat.Window{Invite: invite, Expires: time.Now().Add(2 * time.Minute)}, nil
 	}
 	srv := &http.Server{Handler: tailcat.ControlHandler(open, urls)}
 	go srv.Serve(ln)
@@ -336,5 +342,84 @@ func TestPairLinksToThePortServeListensOn(t *testing.T) {
 func TestUsageNamesTheCommand(t *testing.T) {
 	if !strings.HasPrefix(usage, "herdr-anywhere: ") || !strings.Contains(usage, "herdr-anywhere serve") {
 		t.Fatalf("usage: %.60s", usage)
+	}
+}
+
+// The line under the pairing link says what the phone needs running, from how serve really listens: a serve on a
+// VPN address (--listen 100.x) is not sent to --lan, which would not listen there.
+const lanOnlyHint = "`herdr-anywhere serve --lan` must be running"
+
+func TestPairHintFollowsHowServeListens(t *testing.T) {
+	cases := []struct {
+		name    string
+		urls    []string
+		urlFlag bool
+		want    []string
+		not     []string
+	}{
+		{"a VPN address", []string{"http://127.0.0.1:7681", "http://100.64.0.5:7681"}, false,
+			[]string{"serve is listening on http://100.64.0.5:7681"}, []string{"--lan", "--tailcat"}},
+		{"the LAN", []string{"http://192.168.1.5:7681"}, false,
+			[]string{"serve is listening on http://192.168.1.5:7681"}, []string{"--lan", "--tailcat"}},
+		// `start` keeps a running serve as it is, so a serve to restart is stopped first.
+		{"loopback only", []string{"http://127.0.0.1:7681"}, false,
+			[]string{"only on 127.0.0.1", "herdr-anywhere stop", "herdr-anywhere start", "--lan", "--listen"}, []string{"serve --tailcat"}},
+		{"loopback only, with --url (a proxy in front)", []string{"http://127.0.0.1:7681"}, true,
+			nil, []string{"only on 127.0.0.1", "--lan"}},
+		// With no serve, pair starts Companion itself; this is the hint with --url, or when that failed.
+		{"no serve", nil, false,
+			[]string{"No `herdr-anywhere serve` is running", "herdr-anywhere start", "--lan", "--listen"}, []string{"serve --tailcat", "herdr-anywhere stop"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := pairHint(c.urls, c.urlFlag)
+			for _, w := range c.want {
+				if !strings.Contains(got, w) {
+					t.Errorf("want %q in:\n%s", w, got)
+				}
+			}
+			for _, n := range c.not {
+				if strings.Contains(got, n) {
+					t.Errorf("did not want %q in:\n%s", n, got)
+				}
+			}
+		})
+	}
+}
+
+func TestPairWithServeListeningDoesNotSendYouToLan(t *testing.T) {
+	dir := shortStateDir(t)
+	stdout, _ := startServe(t, "--listen", "127.0.0.1:0", "--state", dir)
+	if regexp.MustCompile(`listening on http://127\.0\.0\.1:\d+`).FindString(stdout.String()) == "" {
+		t.Fatalf("no listen address in:\n%s", stdout)
+	}
+	out, errs, code := runCLI(t, "pair", "--state", dir)
+	if code != 0 {
+		t.Fatalf("pair exit %d: %s", code, errs)
+	}
+	if strings.Contains(out, lanOnlyHint) || !strings.Contains(out, "only on 127.0.0.1") {
+		t.Fatalf("want the loopback hint, not %q:\n%s", lanOnlyHint, out)
+	}
+}
+
+func TestPairWithoutServeNamesEveryWayToStartIt(t *testing.T) {
+	out, errs, code := runCLI(t, "pair", "--state", shortStateDir(t), "--url", "http://10.0.0.2:7681")
+	if code != 0 {
+		t.Fatalf("pair exit %d: %s", code, errs)
+	}
+	// `start`, not `serve`: serve in a terminal stops with it, start keeps it running and starts it at login.
+	for _, w := range []string{"herdr-anywhere start ", "start --lan", "start --listen"} {
+		if !strings.Contains(out, w) {
+			t.Errorf("want %q in:\n%s", w, out)
+		}
+	}
+}
+
+func TestPairOverTailcatSaysNothingAboutLan(t *testing.T) {
+	dir := shortStateDir(t)
+	fakeTailcatServe(t, dir, []string{"http://127.0.0.1:7681"})
+	out, _, _ := runCLI(t, "pair", "--state", dir)
+	if strings.Contains(out, "--lan") {
+		t.Fatalf("Tailcat pairing mentions --lan:\n%s", out)
 	}
 }

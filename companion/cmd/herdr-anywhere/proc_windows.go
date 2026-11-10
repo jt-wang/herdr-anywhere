@@ -28,3 +28,28 @@ func execSelf(exe string) error {
 	}
 	return cmd.Start()
 }
+
+// endProcess ends pid: Windows has no SIGTERM to send another process.
+func endProcess(pid int) error {
+	p, err := os.FindProcess(pid)
+	if err != nil {
+		return err
+	}
+	return p.Kill()
+}
+
+// alive says whether pid is still running.
+func alive(pid int) bool {
+	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(pid))
+	if err != nil {
+		return false
+	}
+	defer windows.CloseHandle(h)
+	var code uint32
+	return windows.GetExitCodeProcess(h, &code) == nil && code == 259 // STILL_ACTIVE
+}
+
+var freeConsole = windows.NewLazySystemDLL("kernel32.dll").NewProc("FreeConsole")
+
+// detachConsole leaves the console window Windows opened for a serve started from the Run key, which then closes.
+func detachConsole() { freeConsole.Call() }

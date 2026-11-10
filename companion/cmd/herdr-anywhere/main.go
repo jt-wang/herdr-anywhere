@@ -33,7 +33,7 @@ import (
 )
 
 // A var so a test can build two versions of this program.
-var version = "0.1.19"
+var version = "0.1.20"
 
 const defaultPort = "7681"
 
@@ -41,19 +41,27 @@ const usage = `herdr-anywhere: reach herdr-core on this computer from a paired p
 
 usage:
   herdr-anywhere serve   [--listen 127.0.0.1:7681]... [--lan] [--tailcat] [--web DIR] [--hc PATH] [--state DIR]
-  herdr-anywhere start   [--state DIR]
+  herdr-anywhere start   [--lan] [--listen ADDR]... [--state DIR]
+  herdr-anywhere stop    [--state DIR]
   herdr-anywhere pair    [--name "Phone"] [--ttl 10m] [--url URL] [--json] [--state DIR]
   herdr-anywhere devices [--json] [--state DIR]
   herdr-anywhere revoke  [--state DIR] <device id>
   herdr-anywhere install-dialog [--app-home DIR] [--state DIR]
+  herdr-anywhere language   this computer's language for the Add phone dialog: en zh-Hans zh-Hant es ko ja ru
   herdr-anywhere update [--check]
   herdr-anywhere track tree|status|add|set|move|file|queue|place|scan|watch|report   (track help for more)
   herdr-anywhere progress on|off|status|agents   the experimental progress page, off by default
 
 The state dir defaults to ~/.config/herdr-anywhere ($HERDR_ANYWHERE_STATE overrides).
 With serve --tailcat running, pair shows a Tailcat invite the Herdr app scans.
-start runs serve --tailcat in the background and returns once it answers.
-install-dialog adds an Add phone dialog to the Herdr desktop app, which does all of this without a terminal.
+start runs serve --tailcat in the background, returns once it answers, and has it start again
+whenever you log in (and after a crash); stop stops it and turns that off.
+start --lan and start --listen ADDR add those to that serve, at each login too; a later start without them takes them out.
+With no serve running, pair starts one the way start does.
+install-dialog adds an Add phone dialog to the Herdr desktop app, which does all of this without a terminal;
+start adds it too, and start, serve and update keep it up to date.
+When pair's QR code doesn't fit the terminal, pair opens it as an image (pair-qr.png in the state dir).
+The dialog speaks the computer's language ($HERDR_ANYWHERE_LANG overrides it).
 `
 
 func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }
@@ -75,10 +83,14 @@ func runContext(ctx context.Context, args []string, stdout, stderr io.Writer) in
 		err = serve(ctx, rest, stdout, stderr)
 	case "start":
 		err = start(rest, stdout, stderr)
+	case "stop":
+		err = stop(rest, stdout, stderr)
 	case "pair":
 		err = pair(rest, stdout, stderr)
 	case "install-dialog":
 		err = installDialog(rest, stdout, stderr)
+	case "language":
+		err = languageCommand(rest, stdout, stderr)
 	case "devices":
 		err = devices(rest, stdout, stderr)
 	case "revoke":
@@ -221,6 +233,7 @@ func serve(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	withLAN := fs.Bool("lan", false, "also listen on this computer's private LAN IPv4 address(es)")
 	withTailcat := fs.Bool("tailcat", false, "also let paired phones reach this computer through Tailcat, from any network")
 	web := fs.String("web", "", "serve the PWA from this directory")
+	logTo := fs.String("log", "", "append what serve prints to this file (start's entry on Windows, which has no console)")
 	hcFlag := fs.String("hc", "", "path to herdr-core's hc (default: hc or herdr-core on PATH, else in ~/.local/bin, on Windows in %LOCALAPPDATA%\\Programs\\herdr-core)")
 	releases := releaseFlags(fs)
 	if err := parse(fs, args); err != nil {
@@ -229,9 +242,29 @@ func serve(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	if fs.NArg() > 0 {
 		return usageError{fmt.Errorf("unexpected argument %q", fs.Arg(0))}
 	}
+	if *logTo != "" {
+		f, err := os.OpenFile(*logTo, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		stdout, stderr = f, f
+		detachConsole()
+	}
 	st, err := openStore(*state)
 	if err != nil {
 		return err
+	}
+	// A new version of serve (after an update, at login) brings an installed Add phone dialog up to date, also
+	// when an older version did the update and knew nothing of this.
+	if home, err := herdrAppHome(""); err == nil {
+		if _, err := refreshDialog(home); err != nil {
+			fmt.Fprintf(stderr, "could not bring the Add phone dialog up to date: %v\n", err)
+		}
+	}
+	// Before anything listens: a second serve would start this computer's Tailcat node a second time.
+	if *withTailcat && tailcat.ServeRunning(st.Dir()) {
+		return fmt.Errorf("--tailcat: Companion is already running on %s (herdr-anywhere stop stops it)", st.Dir())
 	}
 	var lanAddrs []netip.Addr
 	if *withLAN {
@@ -310,6 +343,9 @@ func serve(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		fmt.Fprintln(stdout, "listening on Tailcat; phones pair by scanning `herdr-anywhere pair`")
 	}
 	fmt.Fprintf(stdout, "state in %s; pair a phone with: herdr-anywhere pair\n", st.Dir())
+	if isTerminal(stdout) {
+		fmt.Fprintln(stdout, foregroundTip(*withLAN, listen))
+	}
 	go updates.Run(ctx)
 	if hcPath != "" {
 		go progressLoop(ctx, hcPath, st.Dir(), stderr)
@@ -355,7 +391,7 @@ func serveTailcat(ctx context.Context, st *store.Store, httpSrv *http.Server, re
 		return nil, err
 	}
 	go func() { errc <- httpSrv.Serve(tc.Listener()) }()
-	ctlSrv := &http.Server{Handler: tailcat.ControlHandler(tc.Pair, urls), ReadHeaderTimeout: 10 * time.Second, ErrorLog: logger}
+	ctlSrv := &http.Server{Handler: tailcat.ControlHandler(removeImageAfter(st.Dir(), tc.Pair), urls), ReadHeaderTimeout: 10 * time.Second, ErrorLog: logger}
 	go ctlSrv.Serve(ctl)
 	watch, stopWatch := context.WithCancel(ctx)
 	go tc.Watch(watch, time.Second, revoking)
@@ -401,15 +437,19 @@ func pair(args []string, stdout, stderr io.Writer) error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	reply, err := tailcat.RequestPair(ctx, st.Dir(), code)
+	if errors.Is(err, tailcat.ErrNoServe) && *base == "" && readServeURLs(st.Dir()) == nil {
+		reply, err = startForPair(ctx, st, code, stdout, stderr)
+	}
 	switch {
 	case errors.Is(err, tailcat.ErrNoServe):
 	case err != nil:
 		return err
 	default:
-		printTailcatPair(stdout, reply, *base, code, *ttl)
+		printTailcatPair(stdout, reply, *base, code, *ttl, st.Dir())
 		return nil
 	}
 
+	urlGiven := *base != ""
 	if *base == "" {
 		addrs, _ := lan.SystemAddresses()
 		if len(addrs) == 0 {
@@ -418,27 +458,64 @@ func pair(args []string, stdout, stderr io.Writer) error {
 		*base = pairBase(readServeURLs(st.Dir()), addrs)
 	}
 	link := pairLink(*base, code)
-	printQR(stdout, link)
-	fmt.Fprintf(stdout, "\nScan with the phone, or open:\n  %s\n\nSingle use; expires in %s (at %s). `herdr-anywhere serve --lan` must be running.\n",
-		link, *ttl, time.Now().Add(*ttl).Format("15:04"))
+	rest := fmt.Sprintf("\nScan with the phone, or open:\n  %s\n\nSingle use; expires in %s (at %s).\n%s\n",
+		link, *ttl, time.Now().Add(*ttl).Format("15:04"), pairHint(readServeURLs(st.Dir()), urlGiven))
+	showQR(stdout, link, st.Dir(), strings.Count(rest, "\n")+1)
+	fmt.Fprint(stdout, rest)
 	return nil
+}
+
+// pairHint says what the phone needs for the link, from how the running serve
+// listens (urls, nil when none answers): where it listens, a serve the phone
+// cannot reach, or the ways to start one. urlGiven is --url: the user named
+// how the phone reaches serve (a proxy, a tailnet name), so loopback is fine.
+func pairHint(urls []string, urlGiven bool) string {
+	var reach []string
+	for _, u := range urls {
+		if reachableURL([]string{u}) != "" {
+			reach = append(reach, u)
+		}
+	}
+	switch {
+	case len(urls) == 0:
+		return "No `herdr-anywhere serve` is running. Start one the phone can reach:\n" + serveWays
+	case len(reach) > 0:
+		return "serve is listening on " + strings.Join(reach, ", ") + "."
+	case urlGiven:
+		return "serve is listening on " + strings.Join(urls, ", ") + "."
+	default:
+		return "serve listens only on 127.0.0.1, which the phone cannot reach. Stop it (`herdr-anywhere stop`), then start it with one of:\n" + serveWays
+	}
+}
+
+// start runs serve --tailcat and keeps it running, also after a restart; serve itself stops with its terminal.
+const serveWays = `  herdr-anywhere start                              from any network, end-to-end encrypted; also starts at login
+  herdr-anywhere start --lan                        also on the same Wi-Fi or Ethernet
+  herdr-anywhere start --listen <VPN address>:7681  also over your own VPN (a Tailscale 100.x address, say)`
+
+// startForPair: with no serve at all, a link pair printed would open nothing (after a restart, the phone got
+// a LAN link no serve answered). So pair starts Companion as start does, and shows its Tailcat invite.
+func startForPair(ctx context.Context, st *store.Store, code string, stdout, stderr io.Writer) (tailcat.PairReply, error) {
+	fmt.Fprintln(stdout, "Companion wasn't running, so it is starting in the background.")
+	if err := startCompanion(st, serveOpts{}, stdout, stderr); err != nil {
+		return tailcat.PairReply{}, fmt.Errorf("Companion isn't running, and starting it failed: %w", err)
+	}
+	return tailcat.RequestPair(ctx, st.Dir(), code)
 }
 
 func printQR(w io.Writer, text string) {
 	qrterminal.GenerateWithConfig(text, qrterminal.Config{
-		Level: qrterminal.L, Writer: w, HalfBlocks: true, QuietZone: 2,
+		Level: qrterminal.L, Writer: w, HalfBlocks: true, QuietZone: qrQuietZone,
 		BlackChar: qrterminal.BLACK_BLACK, WhiteBlackChar: qrterminal.WHITE_BLACK,
 		WhiteChar: qrterminal.WHITE_WHITE, BlackWhiteChar: qrterminal.BLACK_WHITE,
 	})
 }
 
-// printTailcatPair shows the Tailcat invite as the QR code, and the http link
-// for the same code when the phone can reach serve directly: --url, or a
-// non-loopback address serve listens on (--lan).
-func printTailcatPair(w io.Writer, r tailcat.PairReply, base, code string, ttl time.Duration) {
-	printQR(w, r.Invite)
-	fmt.Fprintf(w, "\nScan with the Herdr app, or paste this invite into it:\n  %s\n\nSingle use; expires in %s (at %s).\n",
-		r.Invite, time.Until(r.Expires).Round(time.Second), r.Expires.Local().Format("15:04"))
+// printTailcatPair shows the Tailcat invite and, when the phone can reach serve directly (--url, or a non-loopback
+// address serve listens on: --lan), the http link for the same code; then the invite's QR code, last, so the lines
+// after it don't push its top off the screen. dir is where an image of the code goes when the terminal is too small.
+func printTailcatPair(w io.Writer, r tailcat.PairReply, base, code string, ttl time.Duration, dir string) {
+	fmt.Fprintf(w, "Paste this invite into the Herdr app, or scan its QR code with the app:\n  %s\n", r.Invite)
 	if base == "" {
 		base = reachableURL(r.URLs)
 	}
@@ -446,6 +523,9 @@ func printTailcatPair(w io.Writer, r tailcat.PairReply, base, code string, ttl t
 		fmt.Fprintf(w, "\nOn the same network, or in a browser, you can also open:\n  %s\n(expires in %s, at %s)\n",
 			pairLink(base, code), ttl, time.Now().Add(ttl).Format("15:04"))
 	}
+	fmt.Fprintln(w)
+	showQR(w, r.Invite, dir, 2) // the line below, and the shell's prompt
+	fmt.Fprintf(w, "Single use; expires in %s (at %s).\n", time.Until(r.Expires).Round(time.Second), r.Expires.Local().Format("15:04"))
 }
 
 // reachableURL is the first of serve's URLs a phone could reach: not loopback.

@@ -2,6 +2,15 @@
 import { open, test } from 'nsh/test'
 
 for (const scheme of ['dark', 'light'] as const) {
+  test(`home with every space on a server, ${scheme}`, async () => {
+    const app = await open('../fixtures/fake.tsx', { host: { params: { scene: 'busy', remote: 'only', prefs: JSON.stringify({ appearance: scheme }) } }, colorScheme: scheme })
+    await app.waitFor('text:web')
+    await app.wait(1500)
+    await app.screenshot(`e2e/shots/remote-home-${scheme}.png`)
+  }, 60000)
+}
+
+for (const scheme of ['dark', 'light'] as const) {
   test(`home and a space, ${scheme}`, async () => {
     const app = await open('../fixtures/fake.tsx', { host: { params: { scene: 'busy' } }, colorScheme: scheme })
     await app.waitFor('text:Needs you')

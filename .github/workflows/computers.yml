@@ -43,6 +43,10 @@ jobs:
           - os: macos-26
             core: herdr-core-macos-aarch64.tar.gz
             sha256: 77d8af092e25ae650f4424d6dad27514f6916a11d807fb0752858cd27c21e4fc
+          # An Intel Mac: the release's amd64 file, its updates and the install steps, on a real Intel processor.
+          - os: macos-26-intel
+            core: herdr-core-macos-x86_64.tar.gz
+            sha256: 15a12b80e93ec4e074dbdb82fa8a66e529857abfbdfb456f94d5116dc438fedc
           - os: ubuntu-latest
             core: herdr-core-linux-x86_64.tar.gz
             sha256: 5b2f97cb4b2a9d7a6b2cc5942628203ed9fbb7cc0c2b4b09ad8a6f5648e246b7
@@ -126,9 +130,32 @@ jobs:
           mkdir -p "$RUNNER_TEMP/release"
           (cd companion && go build -buildvcs=false -trimpath -ldflags="-s -w" -o "$RUNNER_TEMP/release/herdr-anywhere-linux-$(go env GOARCH)" ./cmd/herdr-anywhere)
           app/e2e/install-docs-linux.sh "$RUNNER_TEMP/release" "$HM_TEST_HC"
+      # The README's and INSTALL.md's Mac steps, as written, from a folder holding only this Mac's release file.
+      - name: The install steps on a Mac
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          echo "machine: $(uname -m)"
+          mkdir -p "$RUNNER_TEMP/release"
+          (cd companion && go build -buildvcs=false -trimpath -ldflags="-s -w" -o "$RUNNER_TEMP/release/herdr-anywhere-macos-$(go env GOARCH)" ./cmd/herdr-anywhere)
+          app/e2e/install-docs-mac.sh "$RUNNER_TEMP/release" "$HM_TEST_HC"
+      # The login entry test (cmd/herdr-anywhere/login_live_test.go) runs serve under systemd's user instance, which a
+      # runner has only once its user lingers.
+      - name: A systemd user instance (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo loginctl enable-linger "$USER"
+          echo "XDG_RUNTIME_DIR=/run/user/$(id -u)" >> "$GITHUB_ENV"
+          for i in $(seq 1 30); do XDG_RUNTIME_DIR=/run/user/$(id -u) systemctl --user show-environment >/dev/null 2>&1 && break; sleep 1; done
+          XDG_RUNTIME_DIR=/run/user/$(id -u) systemctl --user is-system-running || true
+          echo "HM_SYSTEMD_LIVE=1" >> "$GITHUB_ENV"
       - run: go vet ./...
         working-directory: companion
-      - run: go test -v ./...
+      # cmd/herdr-anywhere cross-compiles each release file and vets two of them: on macos-26-intel that alone ran
+      # past go test's default 10 minutes, with no test failing.
+      - run: go test -v -timeout 30m ./...
         working-directory: companion
       # Releases carry one Windows file, for x64. On Windows on Arm it runs under Windows' x64 emulation: the same
       # update tests, built for x64, run here on the Arm machine.

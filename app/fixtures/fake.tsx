@@ -1,6 +1,7 @@
 // The app over an in-memory herdr-core (src/testing/fakecore.ts), already paired, for the screen tests.
 // `host.params.scene`: "empty" (a fresh computer), "busy" (two spaces, agents in every state), "twins" (two Claude
-// Codes in one space), "unpaired",
+// Codes in one space), "unpaired", "companion-off" (with via: "tailpocket": nothing answers through the tunnel), "companion-refused" (the computer at
+// `url` refuses at once),
 // "link" (never paired, opened with the `#pair=` link in `host.params.link`, as the web app is), "link-forgotten" (the
 // same, and the computer forgets the phone right after), "relaunch-forgotten" (paired before, opened again with that
 // link, as e2e/ios-tailcat.sh's build opens every launch, and the computer forgets the phone right after).
@@ -53,6 +54,23 @@ if (scene === 'busy' || scene === 'single') {
   ])
   if (scene === 'busy') add('sp2', '/Users/sam/src/clients/northwind/storefront-redesign-2026/web', 'web', [{ id: 'tb3', argv: ['zsh'] }])
   core.docs.set('', { value: doc, version: 1 })
+}
+// `remote: "only"`: the spaces are on a server herdr-core added with `hc machine add my-server`, none on this computer;
+// `remote: "both"`: the same server, and one more space on this computer.
+if (params.remote) {
+  core.machines = [{ name: 'my-server', host: 'my-server', state: 'connected' }]
+  core.docs.set('my-server', core.docs.get('') ?? { value: { spaces: [] }, version: 1 })
+  // herdr-core lists a machine's terminals as `my-server/t1`; that machine's own document says `t1`.
+  for (const [a, t] of [...core.terms]) {
+    core.terms.delete(a)
+    t.address = `my-server/${a}`
+    core.terms.set(t.address, t)
+    const screen = core.screens.get(a)
+    if (screen !== undefined) { core.screens.delete(a); core.screens.set(t.address, screen) }
+  }
+  const here = { spaces: [] as any[] }
+  if (params.remote === 'both') core.addSpace(here, 'sp9', '/Users/sam/notes', 'notes', [{ id: 'tb9', argv: ['zsh'] }])
+  core.docs.set('', { value: here, version: 1 })
 }
 // `scene: "many"`: 24 Claude Codes at work in four spaces, as a busy computer has them.
 if (scene === 'many') {
@@ -108,6 +126,43 @@ if (scene === 'twins') {
   core.run({ argv: ['claude'], parent: 't1', name: 'test runner' })
   core.docs.set('', { value: doc, version: 1 })
 }
+// `scene: "site"`: a made-up computer for the website's phone pictures (e2e/site-app.tsx): Claude
+// Code at work in acme-api with a Pi helper, Kimi asking to trust billing, Pi done in worker and at work in web-app on
+// a line typed from the phone (`params.typed`, in the phone's language), its colors for `params.scheme`.
+if (scene === 'site') {
+  const doc = { spaces: [] as any[] }
+  const src = `${core.home}/src`
+  core.git.set(`${src}/acme-api`, '# branch.oid 1\n# branch.head feature/login\n')
+  core.git.set(`${src}/web-app`, '# branch.oid 1\n# branch.head main\n')
+  core.addSpace(doc, 'sp1', `${src}/acme-api`, '', [{ id: 'tb1', argv: ['claude'], status: 'working' }])
+  core.addSpace(doc, 'sp2', `${src}/billing`, '', [{ id: 'tb2', argv: ['kimi'] }])
+  core.addSpace(doc, 'sp3', `${src}/worker`, '', [{ id: 'tb3', argv: ['pi'] }])
+  core.addSpace(doc, 'sp4', `${src}/web-app`, '', [{ id: 'tb4', argv: ['pi'] }])
+  const helper = core.run({ argv: ['pi'], parent: 't1', name: 'review', cwd: `${src}/acme-api` })
+  core.setStatus(helper.address, 'working', 'pi')
+  core.setStatus('t2', 'blocked', 'kimi-code', { msg: 'Workspace trust required' })
+  core.terms.get('t3')!.title = 'π - worker'
+  // Done shows for an agent seen working that stopped since: so Pi works a moment first.
+  core.setStatus('t3', 'working', 'pi')
+  setTimeout(() => core.setStatus('t3', 'done', 'pi'), 800)
+  core.terms.get('t4')!.title = 'π - web-app'
+  core.setStatus('t4', 'working', 'pi')
+  // Pi's screen as it draws it at work: its startup lines, the line sent from the phone, its status and footer.
+  const dim = (s: string) => `\x1b[38;5;244m${s}\x1b[0m`, rule = (s: string) => `\x1b[38;2;137;117;232m${s}\x1b[0m`
+  const W = 44, line = '─'.repeat(W), light = params.scheme === 'light'
+  const fill = light ? '48;2;221;232;240' : '48;2;31;58;74'
+  // Pi's box is as wide as its rules; a CJK character takes two columns.
+  const cols = (s: string) => [...s].reduce((n, c) => n + (/[\u1100-\u115f\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe30-\ufe4f\uff00-\uff60\uffe0-\uffe6]/.test(c) ? 2 : 1), 0)
+  const box = (s: string) => `\x1b[${fill}m${s}${' '.repeat(Math.max(0, W - cols(s)))}\x1b[0m`
+  core.screens.set('t4', [
+    dim(' Press ctrl+o to show full startup help.'), '',
+    dim(' Pi can explain its own features and look up its'), dim(' docs. Ask it how to use or extend Pi.'), '',
+    box(''), box(` ${params.typed ?? 'Add a logout test'}`).replace('m ', 'm\x1b[1m '), box(''), '',
+    rule(`── ⠋ \x1b[1mWorking\x1b[22m ${'─'.repeat(W - 13)}`), '\x1b[7m \x1b[27m', rule(line),
+    dim('~/src/web-app (main)'), dim(`0.1%/1.0M (auto)${' '.repeat(W - 40)}deepseek-v4-flash • high`),
+  ].join('\n'))
+  core.docs.set('', { value: doc, version: 1 })
+}
 // Keys pressed in a terminal, where a test reads them (`app.storage()['fake-keys']`); an answered agent goes on working.
 const pressed: [string, string[]][] = []
 core.onKeys = (addr, keys) => {
@@ -154,13 +209,17 @@ let forgot = 0
 const pipe = (l: Linker) => () => {
   const forgotten = (scene === 'unpaired' && l.link.get()?.token === 'synthetic-token') || ((scene === 'link-forgotten' || scene === 'relaunch-forgotten') && !forgot++)
   if (forgotten) { const c = new FakeCore(); c.send = () => c.drop('unpaired'); return c }
+  // "companion-off": through the tunnel nothing answers the saved link; a link from pairing again gets through.
+  if (scene === 'companion-off' && l.link.get()?.token === 'synthetic-token') { const c = new FakeCore(); c.send = () => c.drop('no-answer'); return c }
+  // "companion-refused": the computer at `url` refuses at once (nothing listens on the port).
+  if (scene === 'companion-refused' && l.link.get()?.token === 'synthetic-token') { const c = new FakeCore(); c.send = () => c.drop('network'); return c }
   return core
 }
 
 const routes = (params.routes ?? 'direct').split(',')
 let updatePosts = 0
 const fakeTunnel: Tunnel = {
-  pair: async () => '', scan: async () => '', forget: () => {},
+  pair: async () => JSON.stringify({ token: 'new-token', device: 'd2', name: 'studio' }), scan: async () => '', forget: () => {},
   connect: async () => ({
     baseUrl: 'http://127.0.0.1:1', close: () => {},
     path: async () => {
@@ -195,8 +254,9 @@ mount(() => (
     linker: new Linker(params.via === 'tailpocket' ? { ...io, tunnel: fakeTunnel } : io),
     opensSettings: params.open === 'settings',
     prefs: new PrefStore(io),
-    makeStore: (l) => counted(new Store({ pipe: pipe(l) })),
+    makeStore: (l) => counted(new Store({ pipe: pipe(l), tunnelled: () => l.link.get()?.via === 'tailpocket' })),
     device: 'Test phone',
+    tunnel: params.via === 'tailpocket' ? fakeTunnel : undefined,
     pairLink: opened || scene === 'relaunch-forgotten' ? String((host.params as any)?.link) : undefined,
     // Recorded where a test can read it: the app's own storage.
     pairLinkUsed: () => void Storage.setItem('pair-link-used', '1'),

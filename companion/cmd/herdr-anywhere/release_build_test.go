@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"debug/elf"
+	"debug/macho"
 	"debug/pe"
 	"os"
 	"os/exec"
@@ -97,6 +98,31 @@ func TestBuildsForWindows(t *testing.T) {
 	}
 	if p := localPath(t, exe); p != "" {
 		t.Fatalf("the file holds %s", p)
+	}
+}
+
+// herdr-core ships macOS aarch64 and x86_64 builds (releases.herdr.dev/core/latest.json 0.1.19), so releases carry a
+// companion for Apple silicon and one for Intel Macs. Each file is a Mac program for its own processor, with no local paths.
+func TestBuildsForMac(t *testing.T) {
+	if testing.Short() {
+		t.Skip("cross-compiles the companion")
+	}
+	for arch, cpu := range map[string]macho.Cpu{"arm64": macho.CpuArm64, "amd64": macho.CpuAmd64} {
+		exe := buildFor(t, "darwin", arch, releaseBuild, arch == "amd64")
+		if want := "herdr-anywhere-macos-" + arch; filepath.Base(exe) != want {
+			t.Fatalf("the release file is named %q, want %q", filepath.Base(exe), want)
+		}
+		f, err := macho.Open(exe)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if f.Cpu != cpu {
+			t.Errorf("%s: cpu %v", arch, f.Cpu)
+		}
+		f.Close()
+		if p := localPath(t, exe); p != "" {
+			t.Errorf("%s: the file holds %s", arch, p)
+		}
 	}
 }
 

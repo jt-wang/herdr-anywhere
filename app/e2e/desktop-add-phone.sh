@@ -17,6 +17,8 @@ work=$(mktemp -d /tmp/hmap.XXXX) # sockets must fit macOS's 104 bytes
 mkdir -p "$work/app" "$work/s" "$work/x"
 export HERDR_APP_HOME="$work/app" HC_SESSION="hmap-$$" HC_SOCKET="" XDG_STATE_HOME="$work/x/state" XDG_CONFIG_HOME="$work/x/config" XDG_RUNTIME_DIR="$work/x"
 unset HERDR_ENV HERDR_PANE_ID HERDR_SOCKET_PATH HERDR_TAB_ID HERDR_WORKSPACE_ID HERDR_BIN_PATH HERDR_ANYWHERE_STATE
+# The dialog speaks the Mac's language; the words this script looks for are its English ones.
+export HERDR_ANYWHERE_LANG=en
 
 window=""; awake=""; watch=""; start=""; focus=""; why_focus=""; window_pid=""
 frontmost() { osascript -e 'tell application "System Events" to get unix id of first process whose frontmost is true' 2>/dev/null || echo -1; }
@@ -93,7 +95,7 @@ start=$(frontmost)
 # opens behind and stays there (the focus check below fails if that changes). -n: a second Herdr beside the person's.
 open -g -n /Applications/Herdr.app --stdout "$work/app.log" --stderr "$work/app.log" \
   --env HERDR_APP_HOME="$HERDR_APP_HOME" --env HC_SESSION="$HC_SESSION" --env HC_SOCKET= --env XDG_STATE_HOME="$XDG_STATE_HOME" \
-  --env XDG_CONFIG_HOME="$XDG_CONFIG_HOME" --env XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR"
+  --env XDG_CONFIG_HOME="$XDG_CONFIG_HOME" --env XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" --env HERDR_ANYWHERE_LANG=en
 for _ in $(seq 1 30); do [ -f "$work/app/keys.json" ] && [ -S "$work/app/herdr-app.sock" ] && break; sleep 1; done
 [ -f "$work/app/keys.json" ] || fail "no window"
 window=$(lsof -t "$work/app/herdr-app.sock" 2>/dev/null | head -1); window_pid=$window

@@ -162,7 +162,7 @@ func TestStartReturnsAtOnceWhenServeIsRunning(t *testing.T) {
 	fakeTailcatServe(t, dir, nil)
 	restore := spawnServe
 	t.Cleanup(func() { spawnServe = restore })
-	spawnServe = func(string, *os.File) (<-chan error, func(), error) {
+	spawnServe = func([]string, *os.File) (<-chan error, func(), error) {
 		t.Fatal("spawned a second serve")
 		return nil, nil, nil
 	}
@@ -176,7 +176,7 @@ func TestStartWaitsForServeToAnswer(t *testing.T) {
 	dir := shortStateDir(t)
 	restore := spawnServe
 	t.Cleanup(func() { spawnServe = restore })
-	spawnServe = func(string, *os.File) (<-chan error, func(), error) {
+	spawnServe = func([]string, *os.File) (<-chan error, func(), error) {
 		time.AfterFunc(300*time.Millisecond, func() { fakeTailcatServe(t, dir, nil) })
 		return make(chan error), func() {}, nil
 	}
@@ -193,7 +193,7 @@ func TestStartShowsWhyServeDied(t *testing.T) {
 	dir := shortStateDir(t)
 	restore := spawnServe
 	t.Cleanup(func() { spawnServe = restore })
-	spawnServe = func(_ string, log *os.File) (<-chan error, func(), error) {
+	spawnServe = func(_ []string, log *os.File) (<-chan error, func(), error) {
 		log.WriteString("listening went wrong\nbind: address already in use\n")
 		c := make(chan error, 1)
 		c <- errors.New("exit status 1")
@@ -215,7 +215,7 @@ func TestStartStopsAServeThatNeverAnswers(t *testing.T) {
 	t.Cleanup(func() { spawnServe, startWait = restore, wait })
 	startWait = 200 * time.Millisecond
 	stopped := false
-	spawnServe = func(string, *os.File) (<-chan error, func(), error) {
+	spawnServe = func([]string, *os.File) (<-chan error, func(), error) {
 		return make(chan error), func() { stopped = true }, nil
 	}
 	_, errs, code := runCLI(t, "start", "--state", dir)
@@ -226,7 +226,7 @@ func TestStartStopsAServeThatNeverAnswers(t *testing.T) {
 
 func TestStartNeedsNoFixedPort(t *testing.T) {
 	// Phones come through Tailcat, so another program on 7681 must not stop it.
-	args := strings.Join(startedServeArgs("/some/state"), " ")
+	args := strings.Join(startedServeArgs("/some/state", serveOpts{}), " ")
 	if !strings.Contains(args, "--tailcat") || !strings.Contains(args, "--listen 127.0.0.1:0") || !strings.Contains(args, "--state /some/state") {
 		t.Fatalf("serve args: %s", args)
 	}
@@ -263,7 +263,7 @@ func TestInstallDialogAddsTheModAndItsKey(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit %d: %s", code, errs)
 	}
-	for _, f := range []string{"main.js", "logic.js", "mod.json", "config.js"} {
+	for _, f := range []string{"main.js", "logic.js", "strings.js", "mod.json", "config.js"} {
 		if _, err := os.Stat(filepath.Join(home, "mods", "add-phone", f)); err != nil {
 			t.Fatal(err)
 		}

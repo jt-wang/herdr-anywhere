@@ -1,7 +1,8 @@
 // The byte pipe to the companion's `/hc` (companion/internal/server/bridge.go): each binary message is bytes for
 // `hc connect`'s stdin and back, or base64 text with `enc=b64` for a WebSocket that cannot carry binary.
 // Close reasons: `unpaired` (4401: the computer forgot this phone), `no-core` (4503: herdr-core is not installed),
-// `binary-unsupported` (1003, or binary that gets no answer), `network`, `closed` (we closed it).
+// `binary-unsupported` (1003, or binary that gets no answer), `network`, `closed` (we closed it). Through TailPocket,
+// src/link.ts turns a `network` close before any answer into `no-answer`.
 import type { Pipe } from './client.ts'
 
 export type Enc = 'bin' | 'b64'

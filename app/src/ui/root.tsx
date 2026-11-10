@@ -21,6 +21,7 @@ import { useSignal } from './kit.tsx'
 import { APP_VERSION, installProblem, Updates } from '../updates.ts'
 import { CHANNEL } from '../channel.ts'
 import { t } from '../strings/index.ts'
+import { restartFor } from '../restart.ts'
 
 export type RootDeps = {
   linker: Linker
@@ -218,6 +219,8 @@ export function Root(props: { deps: RootDeps }) {
   const link = useSignal(deps.linker.link)
   const prefs = useSignal(deps.prefs.prefs)
   const unpairedMessage = signal('')
+  // Pairing again from the banner: the link stays until a new one pairs, and Back returns to it.
+  const repairing = signal(false)
   const demo = signal<Demo | null>(null)
   const leaveDemo = () => { demo()?.stop(); demo.set(null) }
   effect(() => setColorScheme(prefs().appearance))
@@ -229,6 +232,8 @@ export function Root(props: { deps: RootDeps }) {
     if (!l) return (made = undefined)
     const key = `${l.url} ${l.token}`
     if (made?.key !== key) made = { key, store: deps.makeStore(deps.linker) }
+    made.store.pairAgain = () => repairing.set(true)
+    made.store.restart = restartFor(l)
     return made.store
   })
   const opened = deps.pairLink
@@ -243,11 +248,13 @@ export function Root(props: { deps: RootDeps }) {
           <Connected deps={{ ...deps, linker: d().linker, fetcher: d().fetcher, opensSettings: false }} store={d().store} link={d().link} unpaired={leaveDemo} leaveDemo={leaveDemo} />
         )}</Each>
       }>
-      <If when={link() && !unpairedMessage()} else={
-        <PairScreen device={deps.device} fetcher={deps.fetcher} origin={deps.origin} tunnel={deps.tunnel} message={unpairedMessage()} initial={pairInitial()} onTry={() => demo.set(makeDemo())}
+      <If when={link() && !unpairedMessage() && !repairing()} else={
+        <PairScreen device={deps.device} fetcher={deps.fetcher} origin={deps.origin} tunnel={deps.tunnel} message={unpairedMessage()} initial={pairInitial()} onTry={repairing() ? undefined : () => demo.set(makeDemo())}
+          onBack={repairing() ? () => repairing.set(false) : undefined}
           onPaired={(l) => {
             if (pairInitial()) { pairInitial.set(undefined); deps.pairLinkUsed?.() }
             unpairedMessage.set('')
+            repairing.set(false)
             deps.linker.set(l)
           }} />
       }>
