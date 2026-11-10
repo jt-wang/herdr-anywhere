@@ -88,7 +88,10 @@ func decodePNG(t *testing.T, path string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	res, err := gozxingqr.NewQRCodeReader().Decode(bmp, nil)
+	// PURE_BARCODE reads the modules straight off this clean, unrotated image. Without it, gozxing's finder-pattern
+	// search misses about 1 in 40 of these 81-module codes (NotFoundException, FormatException) though the image is
+	// right: macOS CoreImage, and gozxing with this hint, read every one of them.
+	res, err := gozxingqr.NewQRCodeReader().Decode(bmp, map[gozxing.DecodeHintType]interface{}{gozxing.DecodeHintType_PURE_BARCODE: true})
 	if err != nil {
 		t.Fatalf("%s does not decode as a QR code: %v", path, err)
 	}

@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.1.20
+## v0.1.21
 
 - After a restart the phone finds the computer again: `herdr-anywhere start` now also starts Companion when you log in, and `herdr-anywhere stop` undoes it. `start --lan` and `start --listen <address>` do the same for a phone on your Wi-Fi or VPN. Before, Companion stayed off until you started it again.
 - When the phone can't reach the computer, it shows the one command that brings it back for how this phone was paired, and a Pair again button. Phones paired through TailPocket no longer read "the computer answers" when Companion isn't running.
