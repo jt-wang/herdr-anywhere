@@ -30,9 +30,11 @@ type Config struct {
 	Version string
 	// WebDir holds the PWA; empty serves no files.
 	WebDir string
-	// Home is what "~" means in /api/folders; empty is this user's home.
-	Home   string
-	Logger *log.Logger
+	// Home is what "~" means in /api/folders and /api/image; empty is this user's home.
+	Home string
+	// ImageTemp are the temp folders /api/image reads pictures from besides home; nil is the system's.
+	ImageTemp []string
+	Logger    *log.Logger
 	// Updates answers about new versions; nil means this companion doesn't know of any.
 	Updates Updates
 	// RevokePoll is how often live sockets are checked against the device
@@ -55,6 +57,9 @@ type Server struct {
 
 	maxUpload    int64
 	machineChunk int
+	maxImage     int64
+	// The temp folders a picture on another machine may be in; nil: that machine's /tmp and $TMPDIR (tests set it).
+	remoteTemp []string
 }
 
 func New(cfg Config) *Server {
@@ -74,6 +79,7 @@ func New(cfg Config) *Server {
 
 		maxUpload:    maxUpload,
 		machineChunk: machineChunk,
+		maxImage:     maxImage,
 	}
 	if cfg.WebDir != "" {
 		st, err := newStatic(cfg.WebDir)
@@ -94,6 +100,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/folders", s.folders)
 	mux.HandleFunc("POST /api/folders", s.createFolder)
 	mux.HandleFunc("POST /api/files", s.upload)
+	mux.HandleFunc("GET /api/image", s.image)
+	mux.HandleFunc("POST /api/image/check", s.imageCheck)
 	mux.HandleFunc("POST /api/update", s.update)
 	mux.HandleFunc("POST /api/update/auto", s.updateAuto)
 	mux.HandleFunc("POST /api/update/checks", s.updateChecks)

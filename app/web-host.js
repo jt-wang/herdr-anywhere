@@ -55,6 +55,30 @@ async function uploadFile({ id, url, token }) {
   return { status: r.status, body: await r.text() }
 }
 
+// A picture on the clipboard (src/page.ts copyPicture): NSH 0.3.0's Clipboard.writeImage writes nothing in a browser.
+// The Blob is made of the bytes, as the page's CSP blocks fetching a data: URL. Chrome takes PNG only, so another type
+// is drawn as PNG where the browser can't take it as it is.
+async function copyImage(a) {
+  const m = /^data:(image\/(?:png|jpeg|gif|webp));base64,([A-Za-z0-9+/=]+)$/.exec(a?.url ?? '')
+  if (!m || typeof ClipboardItem === 'undefined' || !globalThis.navigator?.clipboard?.write) return false
+  const raw = atob(m[2])
+  const bytes = new Uint8Array(raw.length)
+  for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i)
+  let type = m[1]
+  let blob = new Blob([bytes], { type })
+  const takes = (t) => (typeof ClipboardItem.supports === 'function' ? ClipboardItem.supports(t) : t === 'image/png')
+  if (!takes(type)) {
+    if (typeof createImageBitmap !== 'function' || typeof OffscreenCanvas === 'undefined') return false
+    const bitmap = await createImageBitmap(blob)
+    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height)
+    canvas.getContext('2d').drawImage(bitmap, 0, 0)
+    bitmap.close()
+    blob = await canvas.convertToBlob({ type: (type = 'image/png') })
+  }
+  await navigator.clipboard.write([new ClipboardItem({ [type]: blob })])
+  return true
+}
+
 export function createHost(player) {
   const functions = new Map([
     ['page.address', () => (typeof location === 'undefined' ? null : { href: location.href, origin: location.origin })],
@@ -66,6 +90,7 @@ export function createHost(player) {
     ['page.notify', (a) => notify(player, a)],
     ['page.pickFiles', pickFiles],
     ['page.uploadFile', uploadFile],
+    ['page.copyImage', copyImage],
     ['page.notifications', permission],
     // Browsers ask only from a tap, so the app calls this from its Settings button.
     ['page.allowNotifications', () => (typeof Notification === 'undefined' ? 'unsupported' : Notification.requestPermission())],

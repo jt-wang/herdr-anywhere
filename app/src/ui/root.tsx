@@ -4,7 +4,7 @@ import { cleanup, colorScheme, computed, effect, Keyboard, platform, safeAreaIns
 import { createNavStack, NavPage, NavStack } from 'nsh/base'
 import type { ViewSwitchProps } from './view-switch.tsx'
 import type { Store } from '../store.ts'
-import { fileApi, folderApi, parseInvite, type Link, type Linker, type Tunnel } from '../link.ts'
+import { fileApi, folderApi, imageApi, parseInvite, type Link, type Linker, type Tunnel } from '../link.ts'
 import type { PrefStore } from '../prefs.ts'
 import { Alerts, type AlertKind } from '../alerts.ts'
 import { followInstallFailures, installApp, allowNotifications, followPage, keepAlive, notifications, notifyFromPage, wantsKeepAlive } from '../page.ts'
@@ -16,6 +16,7 @@ import { SettingsScreen } from './settings.tsx'
 import { PairScreen } from './pair.tsx'
 import { NewSheet, RenameSheet, type NewTarget, type RenameTarget } from './sheets.tsx'
 import { PeekSheet } from './peek.tsx'
+import { PictureSheet } from './picture-sheet.tsx'
 import { makeDemo, type Demo } from '../demo.ts'
 import { useSignal } from './kit.tsx'
 import { APP_VERSION, installProblem, Updates } from '../updates.ts'
@@ -92,6 +93,7 @@ function Connected(props: { deps: RootDeps; store: Store; link: Link; unpaired: 
   const peeking = signal<string | null>(null)
   const folders = folderApi(deps.linker, deps.fetcher)
   store.files = fileApi(deps.linker, deps.fetcher)
+  store.images = imageApi(deps.linker, deps.fetcher)
   const updates = new Updates({
     baseUrl: () => deps.linker.baseUrl(), token: () => deps.linker.link.get()?.token ?? '', conn: store.conn, fetcher: deps.fetcher ?? fetch,
     os: platform.os, channel: CHANNEL, appVersion: APP_VERSION, toast: (t) => store.toast(t), install: installApp,
@@ -207,6 +209,7 @@ function Connected(props: { deps: RootDeps; store: Store; link: Link; unpaired: 
       <NewSheet store={store} target={newTarget} folders={folders} onStarted={(r) => openSpace(r.space)} />
       <RenameSheet store={store} target={renaming} />
       <PeekSheet store={store} address={peeking} fontSize={() => prefs().fontSize} />
+      <PictureSheet store={store} />
       <Toasts store={store} open={openTerminal} />
       <AlertSounds alerts={alerts} />
     </View>

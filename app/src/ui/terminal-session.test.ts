@@ -180,15 +180,15 @@ test('peeking watches without taking the size: observe on attach, no resize afte
   expect(core.resized).toEqual([])
 })
 
-test("the page's gestures reach the app: flick, link, selection and tap", async () => {
+test("the page's gestures reach the app: flick, link, image, selection and tap", async () => {
   const { store, r } = await setup()
   const seen: any[] = []
   const s = new TerminalSession(store, r.terminal, () => {}, (f) => { queueMicrotask(f); return 1 }, { on: {
-    swipe: (d) => seen.push(['swipe', d]), link: (u) => seen.push(['link', u]),
+    swipe: (d) => seen.push(['swipe', d]), link: (u) => seen.push(['link', u]), image: (p) => { seen.push(['image', p]) },
     selected: (t) => seen.push(['selected', t]), tap: () => seen.push(['tap']) } })
-  for (const m of [{ t: 'swipe', dir: 'prev' }, { t: 'link', url: 'https://example.com' }, { t: 'selected', text: 'abc' }, { t: 'tap' }])
+  for (const m of [{ t: 'swipe', dir: 'prev' }, { t: 'link', url: 'https://example.com' }, { t: 'image', path: 'a.png', id: 1 }, { t: 'selected', text: 'abc' }, { t: 'tap' }])
     s.page(JSON.stringify(m))
-  expect(seen).toEqual([['swipe', 'prev'], ['link', 'https://example.com'], ['selected', 'abc'], ['tap']])
+  expect(seen).toEqual([['swipe', 'prev'], ['link', 'https://example.com'], ['image', 'a.png'], ['selected', 'abc'], ['tap']])
 })
 
 test('scrolled back, the page says so; latest takes it to the bottom', async () => {
@@ -371,4 +371,20 @@ test('the keyboard asked for before the page is ready comes up once it is (the s
   s.page(JSON.stringify({ t: 'ready', cols: 54, rows: 37 }))
   await new Promise((r) => setTimeout(r, 0))
   expect(posted.filter((m) => m.t === 'focus').length).toBe(1)
+})
+
+// A tap on an image's path waits for the app: the page opens nothing and sends nothing until the app says whether it
+// is a picture there (the app opens the sheet), or not (the page then sends the tap on, as for any other text).
+test('a tapped image path is answered to the page: a picture or not', async () => {
+  const { store, r } = await setup()
+  const posted: any[] = []
+  const s = new TerminalSession(store, r.terminal, (m) => posted.push(JSON.parse(m)), (f) => { queueMicrotask(f); return 1 }, { on: {
+    image: async (p) => p === 'a.png', paths: async (ps) => Object.fromEntries(ps.map((p) => [p, p === 'a.png'])) } })
+  s.page(JSON.stringify({ t: 'ready', cols: 80, rows: 24 }))
+  s.page(JSON.stringify({ t: 'image', path: 'a.png', id: 1 }))
+  s.page(JSON.stringify({ t: 'image', path: 'gone.png', id: 2 }))
+  s.page(JSON.stringify({ t: 'paths', paths: ['a.png', 'gone.png'] }))
+  await settle()
+  expect(posted.filter((m) => m.t === 'image' || m.t === 'pictures')).toEqual([
+    { t: 'image', id: 1, picture: true }, { t: 'image', id: 2, picture: false }, { t: 'pictures', paths: { 'a.png': true, 'gone.png': false } }])
 })

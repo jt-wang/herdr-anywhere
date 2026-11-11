@@ -13,6 +13,11 @@ import { t, type Key } from '../strings/index.ts'
 export type SessionState = 'waiting' | 'live' | 'ended' | 'lost' | 'failed'
 /** What fingers did on the page that the app acts on. */
 export type Gestures = { swipe?: (dir: 'next' | 'prev') => void; link?: (url: string) => void
+  /** An image's path was tapped, as the terminal shows it: whether it is a picture there (the app then opens its
+   *  sheet). Not one, the page sends the tap on as for other text. */
+  image?: (path: string) => Promise<boolean> | boolean | void
+  /** Image paths the page shows: which of them are pictures there, for the page to underline those. */
+  paths?: (paths: string[]) => Promise<Record<string, boolean> | null>
   selected?: (text: string) => void; tap?: () => void; focused?: () => void }
 
 const WHY: Record<string, Key> = {
@@ -102,6 +107,12 @@ export class TerminalSession {
       this.copying = undefined
     } else if (m.t === 'swipe') this.opts.on?.swipe?.(m.dir)
     else if (m.t === 'link') this.opts.on?.link?.(m.url)
+    else if (m.t === 'image') {
+      const id = m.id
+      void Promise.resolve(this.opts.on?.image?.(m.path)).then((v) => v !== false, () => false).then((picture) => this.channel.send({ t: 'image', id, picture }))
+    } else if (m.t === 'paths') {
+      void Promise.resolve(this.opts.on?.paths?.(m.paths)).then((v) => v ?? null, () => null).then((found) => { if (found) this.channel.send({ t: 'pictures', paths: found }) })
+    }
     else if (m.t === 'selected') this.opts.on?.selected?.(m.text)
     else if (m.t === 'tap') this.opts.on?.tap?.()
     else if (m.t === 'focused') this.opts.on?.focused?.()

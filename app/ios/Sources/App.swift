@@ -1,7 +1,7 @@
 // The app: one window showing the NSH app full screen, as `nsh package` builds it; the app keeps clear of the
 // notch and home bar itself (safeAreaInsets). TailPocket answers the app's tailPocket.* host calls (src/tunnel.ts);
 // this class answers page.pickFiles and page.uploadFile (src/link.ts): NSH 0.3.0 has a picker for photos and none for
-// other files.
+// other files; and page.copyImage (src/page.ts).
 import NativeShell
 import TailPocketNSH
 import UIKit
@@ -70,11 +70,25 @@ final class AppController: UIViewController, UIDocumentPickerDelegate {
         catch { reply.reject(error.localizedDescription) }
       }
     }
+    // A picture on the clipboard (src/page.ts copyPicture), its own bytes under its own type: nothing re-encoded.
+    app.handle("page.copyImage") { data, reply in
+      reply.resolve(Self.copyImage((data as? [String: Any])?["url"] as? String))
+    }
     guard let url = Bundle.main.url(forResource: "bundle", withExtension: "nshc", subdirectory: "nsh") else {
       NSLog("nsh: no bundle in the app")
       return
     }
     do { try app.loadBundle(at: url) } catch { NSLog("nsh: cannot load: %@", "\(error)") }
+  }
+
+  static func copyImage(_ url: String?) -> Bool {
+    let types: [String: UTType] = ["png": .png, "jpeg": .jpeg, "gif": .gif, "webp": .webP]
+    guard let url, url.hasPrefix("data:image/"), let comma = url.firstIndex(of: ","),
+          let head = url[..<comma].split(separator: "/").last?.split(separator: ";").first,
+          url[..<comma].hasSuffix(";base64"), let type = types[String(head)],
+          let bytes = Data(base64Encoded: String(url[url.index(after: comma)...])) else { return false }
+    UIPasteboard.general.setData(bytes, forPasteboardType: type.identifier)
+    return true
   }
 
   private func pickFiles(limit: Int?, answer: @escaping (Any?) -> Void) {

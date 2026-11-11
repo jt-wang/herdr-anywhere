@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.1.23
+
+- Tap a picture's path in a terminal to see the picture. When an agent reads or writes a screenshot, its path gets a line under it; a tap opens the picture with its full path. Copy copies the path, and touching and holding the picture copies the picture. It also works in full-screen programs like Codex, and for terminals on another machine. A path to a file that isn't a picture, or to one that doesn't exist, gets no line.
+
+Android: `Herdr-Anywhere.apk`; an installed 0.1.6 or later can update to it from home. Intel Mac: `herdr-anywhere-macos-amd64`.
+
 ## v0.1.22
 
 - After a restart the phone finds the computer again: `herdr-anywhere start` now also starts Companion when you log in, and `herdr-anywhere stop` undoes it. `start --lan` and `start --listen <address>` do the same for a phone on your Wi-Fi or VPN. Before, Companion stayed off until you started it again.

@@ -4,6 +4,7 @@ import { cleanup, Clipboard, colorScheme, effect, keyboardFrame, openUrl, platfo
 import type { Store } from '../store.ts'
 import { terminalPage, webViewScrollable } from './terminal-page.ts'
 import { showTerminalKeyboard } from '../page.ts'
+import { pictureTaps } from './picture-taps.ts'
 import { TerminalSession } from './terminal-session.ts'
 import { useSignal } from './kit.tsx'
 import { t } from '../strings/index.ts'
@@ -22,6 +23,7 @@ export function TerminalView(props: { store: Store; address: string; fontSize?: 
     tap: () => props.tap?.(),
     focused: () => showTerminalKeyboard(),
     link: (url) => { void openUrl(url).catch(() => {}) },
+    ...pictureTaps(props.store, props.address),
     selected: (text) => { void Clipboard.writeText(text).then(() => props.store.toast({ title: t('copied'), level: 'info' })) },
   } })
   props.onSession?.(session)

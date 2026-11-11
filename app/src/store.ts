@@ -1,7 +1,7 @@
 // The live connection to herdr-core and the world it shows, driven the way herdr-app's window is
 // (herdr-app/src/window.rs): every change folds into the model, the model is reconciled with the core's
 // terminals, and this machine's layout document is written back with compare-and-set.
-import type { FileApi } from './link.ts'
+import type { FileApi, ImageApi } from './link.ts'
 import { HcClient, HcError, type Pipe, type Stream, type StreamHandlers, type Hello } from './hc/client.ts'
 import { Model, type FolderInfo, type Space, type Tab, newTab, local, machineOfAddress, spaceActiveTab, shownNode, focusedPaneOf, withPane } from './model/model.ts'
 import { captureDoc, replaceDoc, captureView, applyView, type View } from './model/doc.ts'
@@ -751,6 +751,10 @@ export class Store {
 
   /** Sends what the composer attaches to the computer (link.ts); the screens that start the store set it. */
   files?: FileApi
+  /** Reads a picture a terminal shows (link.ts imageApi); set as `files` is. */
+  images?: ImageApi
+  /** The picture whose path was tapped in a terminal, shown in its sheet (ui/picture-sheet.tsx) until closed. */
+  readonly picture = new Signal<{ path: string; terminal: string } | null>(null)
 
   private flushing = false
   private async flushPending() {

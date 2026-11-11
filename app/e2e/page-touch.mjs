@@ -692,6 +692,24 @@ for (const [width, scale] of [[360, 3], [384, 2.8125], [393, 3], [411, 2.625], [
   const zhRows = `${zh}${head}\r\n  ${tail} ）\r\n`
   check('a link after Chinese that the TUI wrapped opens whole', (await tapRow(zhRows, 0, cols - 3)) === post, await tapRow(zhRows, 0, cols - 3))
   check('and from its second row', (await tapRow(zhRows, 1, 4)) === post, await tapRow(zhRows, 1, 4))
+  // Image paths, as agents print them: the app shows the picture. Only the shape is judged here (a path that ends in an
+  // image type); which file it is, and whether it may be read, is the Companion's to say.
+  const tapImage = async (text, row, col) => {
+    await tapRow(text, row, col)
+    return t.page.evaluate(() => window.posts.filter((m) => m.t === 'image').map((m) => m.path).join(' '))
+  }
+  check('an image path opens its picture', (await tapImage('⏺ Read(/work/acme/shot.png)', 0, 12)) === '/work/acme/shot.png', await tapImage('⏺ Read(/work/acme/shot.png)', 0, 12))
+  check('and opens no link', (await tapRow('⏺ Read(/work/acme/shot.png)', 0, 12)) === '')
+  check('a relative one, any case', (await tapImage('saved to shots/Home.JPEG.', 0, 12)) === 'shots/Home.JPEG', await tapImage('saved to shots/Home.JPEG.', 0, 12))
+  check('one under the home folder, spaces in its name', (await tapImage('open ~/Desktop/a b.png', 0, 7)) === '~/Desktop/a b.png', await tapImage('open ~/Desktop/a b.png', 0, 7))
+  const shot = '/Users/someone/Desktop/Screenshot of the home page at 10.00.00.png'
+  check('a screenshot as macOS names it', (await tapImage(`Read(${shot})`, 0, 40)) === shot, await tapImage(`Read(${shot})`, 0, 40))
+  check('of two paths on a line, the one tapped', (await tapImage('from /a/notes.txt to /b/c.png', 0, 23)) === '/b/c.png', await tapImage('from /a/notes.txt to /b/c.png', 0, 23))
+  check('a tap beside it opens nothing', (await tapImage('⏺ Read(/work/acme/shot.png)', 0, 3)) === '')
+  check('a path to another kind of file opens nothing', (await tapImage('⏺ Read(/work/acme/notes.txt)', 0, 12)) === '')
+  check('a link to an image stays a link', (await tapRow('see https://example.com/a.png now', 0, 8)) === 'https://example.com/a.png')
+  const deep = '/Users/someone/projects/acme/app/screenshots/settings-dark-mode.png'
+  check('a long one the TUI wrapped with its indent opens whole', (await tapImage(`  ⎿  Read(${deep.slice(0, 40)}\r\n       ${deep.slice(40)})\r\n`, 1, 9)) === deep, await tapImage(`  ⎿  Read(${deep.slice(0, 40)}\r\n       ${deep.slice(40)})\r\n`, 1, 9))
   // Selecting: hold, drag; what is selected goes to the app when the finger lifts.
   await t.send({ t: 'reset' })
   await t.send({ t: 'write', data: 'hello world again\r\nsecond line here\r\n' })
@@ -741,6 +759,94 @@ for (const [width, scale] of [[360, 3], [384, 2.8125], [393, 3], [411, 2.625], [
   const t = await open({})
   const s = await t.size()
   check('a wide pane keeps the desktop padding', s.left === 14, s)
+  await t.page.context().close()
+}
+{
+  // An image's path is a picture only if the computer says so (POST /api/image/check): a tap on one asks the app and
+  // waits. A picture: the app opens its sheet and the tap goes nowhere else. Not one (only mentioned, not a picture,
+  // not allowed): the tap goes on as on any text, a click for a full-screen program that follows the mouse.
+  const t = await open({ phone: true })
+  const ready = await t.page.evaluate(() => window.posts.find((m) => m.t === 'ready'))
+  const at = (row, col) => t.page.evaluate(([row, col, ready]) => {
+    const r = document.querySelector('.xterm-screen').getBoundingClientRect()
+    return { x: r.left + (col + 0.5) * (r.width / ready.cols), y: r.top + (row + 0.5) * (r.height / ready.rows) }
+  }, [row, col, ready])
+  const posts = () => t.page.evaluate(() => window.posts)
+  const input = async () => (await posts()).filter((m) => m.t === 'input').map((m) => m.data).join('')
+  const show = async (data) => { await t.send({ t: 'reset' }); await t.send({ t: 'write', data }); await t.page.waitForTimeout(150); await t.page.evaluate(() => { window.posts = [] }) }
+  const tapAt = async (row, col) => { const p = await at(row, col); await t.tap(p.x, p.y) }
+  const asked = async () => (await posts()).filter((m) => m.t === 'image')
+
+  await show('⏺ Read(shots/a.png)\r\n')
+  await tapAt(0, 10)
+  let a = await asked()
+  check('a tap on an image path asks the app which it is', a.length === 1 && a[0].path === 'shots/a.png' && Number.isInteger(a[0].id), a)
+  check('and sends nothing else while it waits', !(await posts()).some((m) => m.t === 'tap' || m.t === 'input'), await posts())
+  await t.send({ t: 'image', id: a[0].id, picture: true })
+  await t.page.waitForTimeout(150)
+  check('a picture: the tap goes nowhere else', !(await posts()).some((m) => m.t === 'tap' || m.t === 'input'))
+
+  await show('⏺ Read(gone.png)\r\n')
+  await tapAt(0, 9)
+  a = await asked()
+  await t.send({ t: 'image', id: a[0]?.id, picture: false })
+  await t.page.waitForTimeout(150)
+  check('not a picture, in a plain terminal: the tap goes on as a tap', (await posts()).some((m) => m.t === 'tap'), await posts())
+
+  const full = '\x1b[?1049h\x1b[?1000h\x1b[?1006h\x1b[2J\x1b[5;3HRead(gone.png)'
+  await show(full)
+  await tapAt(4, 9)
+  a = await asked()
+  check('in a full-screen program that follows the mouse, the tap asks too', a.length === 1 && a[0].path === 'gone.png', a)
+  check('and clicks nothing while it waits', (await input()) === '')
+  await t.send({ t: 'image', id: a[0]?.id, picture: false })
+  await t.page.waitForTimeout(150)
+  const clicked = await input()
+  check('not a picture: the click goes to the program, on the cell tapped', clicked === '\x1b[<0;10;5M\x1b[<0;10;5m', clicked)
+  await show(full)
+  await tapAt(4, 9)
+  a = await asked()
+  await t.send({ t: 'image', id: a[0]?.id, picture: true })
+  await t.page.waitForTimeout(150)
+  check('a picture: the program gets no click', (await input()) === '')
+
+  // Underlined: only the paths the computer said are pictures. The page asks about all those on screen at once.
+  const lines = () => t.page.evaluate(() => [...document.querySelectorAll('.picture-lines > div')].map((d) => {
+    const s = document.querySelector('.xterm-screen').getBoundingClientRect(), r = d.getBoundingClientRect()
+    return { left: Math.round(r.left - s.left), top: Math.round(r.bottom - s.top), width: Math.round(r.width) }
+  }))
+  const cellW = await t.page.evaluate((ready) => document.querySelector('.xterm-screen').getBoundingClientRect().width / ready.cols, ready)
+  const cellH = await t.page.evaluate((ready) => document.querySelector('.xterm-screen').getBoundingClientRect().height / ready.rows, ready)
+  await t.send({ t: 'reset' })
+  await t.page.evaluate(() => { window.posts = [] })
+  await t.send({ t: 'write', data: '⏺ Read(shots/a.png)\r\n  saved gone.png\r\n  see notes.txt\r\n' })
+  await t.page.waitForTimeout(600)
+  const q = (await posts()).filter((m) => m.t === 'paths')
+  const qp = q.flatMap((m) => m.paths).sort()
+  check('the page asks about the image paths on screen, once, together', q.length === 1 && JSON.stringify(qp) === JSON.stringify(['gone.png', 'shots/a.png']), q)
+  check('and draws no line before the answer', (await lines()).length === 0, await lines())
+  await t.send({ t: 'pictures', paths: { 'shots/a.png': true, 'gone.png': false } })
+  await t.page.waitForTimeout(200)
+  let l = await lines()
+  check('a line under the picture only, along its cells', l.length === 1 && Math.abs(l[0].left - 7 * cellW) < 2 && Math.abs(l[0].width - 11 * cellW) < 2 && Math.abs(l[0].top - cellH) < 3, { l, cellW, cellH })
+  // The same rows again: nothing more to ask.
+  await t.page.evaluate(() => { window.posts = [] })
+  await t.page.evaluate(() => window.term.scrollLines(0))
+  await t.page.waitForTimeout(400)
+  check('what is known is not asked again', !(await posts()).some((m) => m.t === 'paths'))
+  // The row is written again (the agent saved the file since): the page asks again, and the line follows the answer.
+  await t.page.waitForTimeout(1100)
+  await t.send({ t: 'write', data: '\x1b[2;1H\x1b[2K  wrote gone.png' })
+  await t.page.waitForTimeout(600)
+  const again = (await posts()).filter((m) => m.t === 'paths').flatMap((m) => m.paths)
+  check('a row written again is asked about again', JSON.stringify(again) === JSON.stringify(['gone.png']), again)
+  await t.send({ t: 'pictures', paths: { 'gone.png': true } })
+  await t.page.waitForTimeout(200)
+  check('and its picture is underlined once there', (await lines()).length === 2, await lines())
+  // Scrolled out of view, a line goes with its text.
+  await t.send({ t: 'write', data: '\x1b[999;1H' + Array.from({ length: 80 }, (_, i) => '\r\nline ' + i).join('') })
+  await t.page.waitForTimeout(400)
+  check('a line scrolled out of view goes with its text', (await lines()).length === 0, await lines())
   await t.page.context().close()
 }
 {

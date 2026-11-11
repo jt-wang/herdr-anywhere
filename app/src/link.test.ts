@@ -1,6 +1,6 @@
 // Pairing with the companion (`herdr-anywhere pair` prints `<url>/#pair=<code>`) and the saved link.
 import { expect, test } from 'nsh/test'
-import { companionVersion, folderApi, Linker, pairThrough, parseInvite, parsePairLink, pairWith, type Tunnel } from './link.ts'
+import { companionVersion, folderApi, imageApi, Linker, pairThrough, parseInvite, parsePairLink, pairWith, type Tunnel } from './link.ts'
 
 test('a pairing link names the computer and the code; anything else is not one', () => {
   expect(parsePairLink(' http://192.168.1.20:7681/#pair=K7QD-M2XP ')).toEqual({ url: 'http://192.168.1.20:7681', code: 'K7QD-M2XP' })
@@ -248,6 +248,52 @@ test("folders are listed and made on the computer with the phone's token; a miss
   expect(sent[4].url).toBe('http://192.168.1.20:7681/api/folders?path=%2FUsers%2Fsam&hidden=1')
 })
 
+// GET /api/image: the path as the terminal shows it and the terminal it is in; the computer says the real path.
+test("a picture is asked for by the path a terminal shows, with the phone's token; a refusal says why", async () => {
+  const l = new Linker({ load: async () => null, save() {}, remove() {} })
+  l.set({ url: 'http://192.168.1.20:7681', token: 'tk', device: 'd1', name: 'studio', enc: 'bin' })
+  const sent: any[] = []
+  const answers: [number, unknown][] = [
+    [200, { path: '/Users/sam/src/api/shots/a b.png', url: 'data:image/png;base64,iVBORw0KGgo=' }],
+    [415, { error: 'not a picture', why: 'not_image', path: '/Users/sam/src/api/notes.png' }],
+    [409, { error: 'something new', why: 'toString' }],
+    [200, { path: 7, url: 'javascript:alert(1)' }],
+  ]
+  const fetch = (async (url: string, init: any) => { sent.push({ url, ...init }); return reply(...answers.shift()!)() }) as any
+  const api = imageApi(l, fetch)
+  expect(await api.read('shots/a b.png', 't3')).toEqual({ path: '/Users/sam/src/api/shots/a b.png', url: 'data:image/png;base64,iVBORw0KGgo=' })
+  expect(sent[0].url).toBe('http://192.168.1.20:7681/api/image?path=shots%2Fa%20b.png&terminal=t3')
+  expect(sent[0].headers.authorization).toBe('Bearer tk')
+  // Why, in the phone's language, from the computer's code; a code it doesn't know of says it can't read it.
+  expect(await api.read('notes.png', 't3').then(() => 'read', (e) => e.message)).toBe("This file isn't a picture.")
+  expect(await api.read('n.png', 't3').then(() => 'read', (e) => e.message)).toBe("The computer can't read this picture.")
+  // Only a picture's data: URL is shown.
+  expect(await api.read('x.png', 't3').then(() => 'read', () => 'refused')).toBe('refused')
+  const offline = imageApi(l, (async () => { throw new Error('down') }) as any)
+  expect(await offline.read('x.png', 't3').then(() => 'read', (e) => e.message)).toBe("Can't reach the computer.")
+})
+
+// A picture on another machine comes through hc, which carries 8 MB at most: the limit said is the one the computer
+// used. That machine may be out of reach while the computer is not.
+test('a picture too big says the limit the computer used; a machine out of reach says so', async () => {
+  const l = new Linker({ load: async () => null, save() {}, remove() {} })
+  l.set({ url: 'http://192.168.1.20:7681', token: 'tk', device: 'd1', name: 'studio', enc: 'bin' })
+  const answers: [number, unknown][] = [
+    [413, { error: 'too big', why: 'too_big', limit: 8 << 20 }],
+    [413, { error: 'too big', why: 'too_big', limit: 12 << 20 }],
+    [413, { error: 'too big', why: 'too_big' }],
+    [502, { error: "couldn't reach box", why: 'unreachable' }],
+    [400, { error: "can't be read", why: 'remote' }],
+  ]
+  const api = imageApi(l, (async () => reply(...answers.shift()!)()) as any)
+  const why = () => api.read('a.png', 'box/t3').then(() => 'read', (e) => e.message)
+  expect(await why()).toBe('This picture is over 8 MB, too big to show.')
+  expect(await why()).toBe('This picture is over 12 MB, too big to show.')
+  expect(await why()).toBe('This picture is too big to show.')
+  expect(await why()).toBe("Can't reach the machine this terminal is on.")
+  expect(await why()).toBe("Pictures on this machine can't be read.")
+})
+
 test('through TailPocket, the folder calls go to the tunnel the pipes use', async () => {
   const { t } = fakeTunnel()
   const l = new Linker({ load: async () => null, save() {}, remove() {}, socket: (() => ({ send() {}, close() {} })) as any, tunnel: t })
@@ -258,4 +304,28 @@ test('through TailPocket, the folder calls go to the tunnel the pipes use', asyn
   l.pipe()
   await folderApi(l, fetch).list('~')
   expect(urls).toEqual(['http://127.0.0.1:40001/api/folders?path=~', 'http://127.0.0.1:40001/api/folders?path=~'])
+})
+
+// The tap and the underline go only to what is a picture on that computer: it says so for many paths at once
+// (POST /api/image/check). A computer too old to say gives null: the phone then goes by the name, as before.
+test('which paths are pictures the computer says for many at once; one too old to say gives null', async () => {
+  const l = new Linker({ load: async () => null, save() {}, remove() {} })
+  l.set({ url: 'http://192.168.1.20:7681', token: 'tk', device: 'd1', name: 'studio', enc: 'bin' })
+  const sent: any[] = []
+  let answer: [number, unknown] = [200, { paths: [{ asked: 'a.png', path: '/w/a.png', picture: true }, { asked: 'gone.png', picture: false, why: 'missing' }, { asked: 'big.png', picture: true, why: 'too_big' }] }]
+  const fetch = (async (url: string, init: any) => { sent.push({ url, ...init }); return reply(...answer)() }) as any
+  const api = imageApi(l, fetch)
+  expect(await api.check('box/t3', ['a.png', 'gone.png', 'big.png'])).toEqual({ 'a.png': true, 'gone.png': false, 'big.png': true })
+  expect(sent[0].url).toBe('http://192.168.1.20:7681/api/image/check')
+  expect(sent[0].method).toBe('POST')
+  expect(sent[0].headers.authorization).toBe('Bearer tk')
+  expect(JSON.parse(sent[0].body)).toEqual({ terminal: 'box/t3', paths: ['a.png', 'gone.png', 'big.png'] })
+  answer = [404, {}]
+  expect(await api.check('t1', ['a.png'])).toBe(null)
+  answer = [405, {}]
+  expect(await api.check('t1', ['a.png'])).toBe(null)
+  answer = [502, { error: "couldn't reach box", why: 'unreachable' }]
+  expect(await api.check('box/t3', ['a.png']).then(() => 'answered', (e) => e.message)).toBe("Can't reach the machine this terminal is on.")
+  const offline = imageApi(l, (async () => { throw new Error('down') }) as any)
+  expect(await offline.check('t1', ['a.png']).then(() => 'answered', (e) => e.message)).toBe("Can't reach the computer.")
 })

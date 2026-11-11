@@ -253,6 +253,61 @@ export function folderApi(linker: Linker, fetcher: typeof fetch = fetch): Folder
   }
 }
 
+/** A picture a terminal shows, read on the computer (GET /api/image): `path` is where it is there. */
+export type Picture = { path: string; url: string }
+// The computer's reasons (image.go `why`) said in the phone's language; the rest come down to "can't read it".
+const PICTURE_WHY: Record<string, Key> = { missing: 'pictureMissing', outside: 'pictureOutside', not_image: 'pictureNotImage', too_big: 'pictureTooBig', remote: 'pictureRemote', unreachable: 'pictureUnreachable' }
+// The limit the computer used, in whole MB (12 here, 8 from another machine: image.go maxImage, maxThere).
+function pictureWhy(body: any): string {
+  const why = typeof body.why === 'string' && Object.prototype.hasOwnProperty.call(PICTURE_WHY, body.why) ? body.why : ''
+  if (why === 'too_big') {
+    const mb = typeof body.limit === 'number' && body.limit > 0 ? Math.floor(body.limit / (1 << 20)) : 0
+    return mb > 0 ? tr('pictureTooBig', { mb }) : tr('pictureTooBigNoLimit')
+  }
+  return tr(why ? PICTURE_WHY[why] : 'pictureCantRead')
+}
+export type ImageApi = {
+  read(path: string, terminal: string): Promise<Picture>
+  /** Which of the paths a terminal shows are pictures there, by path as asked; null: the computer is too old to say. */
+  check(terminal: string, paths: string[]): Promise<Record<string, boolean> | null>
+}
+
+/** The picture at a path a terminal shows: the computer finds the file, says whether it may be read and is a picture
+ *  (companion/internal/server/image.go). Nothing is kept: the sheet holds it while it is open. */
+export function imageApi(linker: Linker, fetcher: typeof fetch = fetch): ImageApi {
+  return {
+    async read(path, terminal) {
+      const token = linker.link.get()?.token ?? ''
+      let r: Response
+      try {
+        r = await fetcher(`${await linker.baseUrl()}/api/image?path=${encodeURIComponent(path)}&terminal=${encodeURIComponent(terminal)}`, { headers: { authorization: `Bearer ${token}` } })
+      } catch {
+        throw new Error(tr('cantReachComputer'))
+      }
+      const body: any = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(pictureWhy(body))
+      if (typeof body.path !== 'string' || typeof body.url !== 'string' || !/^data:image\/(png|jpeg|gif|webp);base64,/.test(body.url)) throw new Error(tr('pictureCantRead'))
+      return { path: body.path, url: body.url }
+    },
+    async check(terminal, paths) {
+      let r: Response
+      try {
+        r = await fetcher(`${await linker.baseUrl()}/api/image/check`, { method: 'POST', body: JSON.stringify({ terminal, paths }),
+          headers: { authorization: `Bearer ${linker.link.get()?.token ?? ''}`, 'content-type': 'application/json' } })
+      } catch {
+        throw new Error(tr('cantReachComputer'))
+      }
+      // A Companion from before the check has no such route.
+      if (r.status === 404 || r.status === 405) return null
+      const body: any = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(pictureWhy(body))
+      const out: Record<string, boolean> = {}
+      for (const a of Array.isArray(body.paths) ? body.paths : []) if (typeof a?.asked === 'string') out[a.asked] = a.picture === true
+      return out
+    },
+  }
+}
+
 /** The largest file the phone sends (companion/internal/server/files.go maxUpload). */
 export const MAX_FILE = 2 * 1024 * 1024 * 1024
 

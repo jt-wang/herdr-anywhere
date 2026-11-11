@@ -98,6 +98,7 @@ public class MainActivity extends Activity {
     view.handle("page.openChannel", (data, reply) -> runOnUiThread(() -> reply.resolve(openChannel(data))));
     view.handle("page.pickFiles", (data, reply) -> runOnUiThread(() -> pickFiles(data, reply)));
     view.handle("page.uploadFile", this::uploadFile);
+    view.handle("page.copyImage", this::copyImage);
     view.handle("page.installUpdate", this::installUpdate);
     listenForInstall();
     view.handle("page.keepAlive", (data, reply) -> runOnUiThread(() -> {
@@ -338,6 +339,28 @@ public class MainActivity extends Activity {
         reply.reject(String.valueOf(e.getMessage()));
       } finally {
         if (http != null) http.disconnect();
+      }
+    }).start();
+  }
+
+  /** A picture on the clipboard (src/page.ts copyPicture): NSH 0.3.0 refuses images on Android, and Android takes one
+   *  only as an address, which Copied.java answers. */
+  private void copyImage(Object data, NshHostReply reply) {
+    Object url = data instanceof Map ? ((Map<?, ?>) data).get("url") : null;
+    java.util.regex.Matcher m = java.util.regex.Pattern.compile("^data:image/(png|jpeg|gif|webp);base64,([A-Za-z0-9+/=]+)$").matcher(url instanceof String ? (String) url : "");
+    if (!m.matches()) { reply.resolve(false); return; }
+    new Thread(() -> {
+      try {
+        byte[] bytes = android.util.Base64.decode(m.group(2), android.util.Base64.DEFAULT);
+        Uri uri = Copied.put(this, bytes, "jpeg".equals(m.group(1)) ? "jpg" : m.group(1));
+        runOnUiThread(() -> {
+          android.content.ClipboardManager clip = (android.content.ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+          clip.setPrimaryClip(ClipData.newUri(getContentResolver(), "picture", uri));
+          reply.resolve(true);
+        });
+      } catch (Exception e) {
+        Log.w("herdr", "copying a picture: " + e);
+        reply.resolve(false);
       }
     }).start();
   }

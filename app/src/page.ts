@@ -111,3 +111,11 @@ export function followInstallFailures(failed: (message: string) => void): () => 
   if (!host.available()) return () => {}
   return host.on('page.updateFailed', (d: any) => failed(String(d?.message ?? '')))
 }
+
+/** Puts a picture (`url`, a data: URL) on the system's clipboard; false when it couldn't. The hosts do it (web-host.js,
+ *  MainActivity, App.swift): NSH 0.3.0's Clipboard.writeImage writes nothing in a browser and refuses on Android
+ *  (ERR_FEATURE_UNAVAILABLE_ON_PLATFORM), measured with a probe app. */
+export async function copyPicture(url: string): Promise<boolean> {
+  if (!host.available()) return false
+  return host.call('page.copyImage', { url }).then((r) => r === true, () => false)
+}

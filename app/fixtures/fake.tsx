@@ -17,6 +17,7 @@ import { Root } from '../src/ui/root.tsx'
 import { CLAUDE_EDIT_MENU, FakeCore, type FakeTab } from '../src/testing/fakecore.ts'
 import { FakeFolders } from '../src/testing/fake-folders.ts'
 import { AGENTS, progressTree, saidOn, waitOn } from './progress-tree.ts'
+import { SAMPLE_PICTURE } from './picture.ts'
 
 // Recorded where a test can read it, as pairLinkUsed below: the test's own Keyboard is another bundle's.
 const putAway = Keyboard.dismiss
@@ -204,6 +205,21 @@ async function folders(url: string, init: any) {
   const r = await disk.list(decodeURIComponent(/(?:^|&)path=([^&]*)/.exec(q)?.[1] ?? ''), /(?:^|&)hidden=1/.test(q))
   return 'missing' in r ? answer(404, { error: 'no such folder', ...r }) : answer(200, r)
 }
+// GET /api/image as the computer answers it: notes.png isn't a picture, gone.png isn't there, any other is the sample
+// screenshot; a relative path is in t1's folder. Each ask is written where a test reads it (`fake-pictures`).
+const pictureAsks: string[] = []
+function picture(url: string) {
+  const q = new URLSearchParams(url.split('?')[1] ?? '')
+  const path = q.get('path') ?? '', terminal = q.get('terminal') ?? ''
+  pictureAsks.push(`${terminal} ${path}`)
+  void Storage.setItem('fake-pictures', JSON.stringify(pictureAsks))
+  const real = path.startsWith('/') ? path : path.startsWith('~/') ? `/Users/sam/${path.slice(2)}` : `/Users/sam/src/api/${path}`
+  if (/notes\.png$/.test(path)) return answer(415, { error: 'not a picture', why: 'not_image', path: real })
+  if (/gone\.png$/.test(path)) return answer(404, { error: 'no such file', why: 'missing', path: real })
+  return answer(200, { path: real, url: SAMPLE_PICTURE })
+}
+// `params.picture`: a path tapped in t1 once the app is up, opening its sheet.
+const tapPicture = (store: Store) => { if (params.picture) setTimeout(() => store.picture.set({ path: params.picture!, terminal: 't1' }), 50); return store }
 // "unpaired": the computer refuses the saved token; a token from pairing again gets through.
 let forgot = 0
 const pipe = (l: Linker) => () => {
@@ -254,7 +270,7 @@ mount(() => (
     linker: new Linker(params.via === 'tailpocket' ? { ...io, tunnel: fakeTunnel } : io),
     opensSettings: params.open === 'settings',
     prefs: new PrefStore(io),
-    makeStore: (l) => counted(new Store({ pipe: pipe(l), tunnelled: () => l.link.get()?.via === 'tailpocket' })),
+    makeStore: (l) => tapPicture(counted(new Store({ pipe: pipe(l), tunnelled: () => l.link.get()?.via === 'tailpocket' }))),
     device: 'Test phone',
     tunnel: params.via === 'tailpocket' ? fakeTunnel : undefined,
     pairLink: opened || scene === 'relaunch-forgotten' ? String((host.params as any)?.link) : undefined,
@@ -263,6 +279,9 @@ mount(() => (
     fetcher: (async (url: string, init: any) => {
       if (url.includes('/api/files')) return answer(200, { path: landed(new URLSearchParams(url.split('?')[1]), init.body.size) })
       if (url.includes('/api/folders')) return folders(url, init)
+      // POST /api/image/check: the same files as picture(): notes.png isn't a picture, gone.png isn't there.
+      if (url.includes('/api/image/check')) { const { paths } = JSON.parse(init.body); return answer(200, { paths: paths.map((p: string) => ({ asked: p, picture: !/(notes|gone)\.png$/.test(p), ...(/notes\.png$/.test(p) ? { why: 'not_image' } : /gone\.png$/.test(p) ? { why: 'missing' } : {}) })) }) }
+      if (url.includes('/api/image')) return picture(url)
       if (url.includes('/api/update/auto')) { const on = JSON.parse(init.body).on; said = { ...said, autoUpdate: on, ...(on ? { checks: 'on' } : {}) }; void Storage.setItem('update-auto', String(init.body)); return answer(200, {}) }
       if (url.includes('/api/update/checks')) { const on = JSON.parse(init.body).on; said = { ...said, checks: on ? 'on' : 'off', ...(on ? {} : { autoUpdate: false }) }; void Storage.setItem('update-checks', String(init.body)); return answer(200, { checks: JSON.parse(init.body).on ? 'on' : 'off' }) }
       if (url.includes('/api/update/check')) { void Storage.setItem('update-check-posts', String(++checkPosts)); return answer(200, { latest: '9.0.0' }) }

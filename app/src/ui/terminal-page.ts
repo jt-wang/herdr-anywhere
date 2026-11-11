@@ -21,8 +21,8 @@ import { FIT_JS, GRAPHEMES_JS, WEBGL_JS, XTERM_CSS, XTERM_JS } from '../vendor/x
 import { MONO_WOFF, NOTO_MONO_WOFF, SYMBOLS1_WOFF, SYMBOLS2_WOFF, SYMBOLS_WOFF } from '../vendor/fonts.ts'
 
 export type PageMessage = { t: 'ready' | 'size'; cols: number; rows: number } | { t: 'input'; data: string } | { t: 'copied'; text: string }
-  | { t: 'selected'; text: string } | { t: 'swipe'; dir: 'next' | 'prev' } | { t: 'link'; url: string } | { t: 'tap' } | { t: 'touched' } | { t: 'focused' }
-  | { t: 'away'; away: boolean } | { t: 'tail'; lines: string[] } | { t: 'text'; base: number; lines: string[] }
+  | { t: 'selected'; text: string } | { t: 'swipe'; dir: 'next' | 'prev' } | { t: 'link'; url: string } | { t: 'image'; path: string; id: number } | { t: 'tap' } | { t: 'touched' } | { t: 'focused' }
+  | { t: 'away'; away: boolean } | { t: 'tail'; lines: string[] } | { t: 'paths'; paths: string[] } | { t: 'text'; base: number; lines: string[] }
 export type BarKey = 'esc' | 'tab' | 'btab' | 'enter' | 'ctrlc' | 'up' | 'down' | 'left' | 'right' | 'home' | 'end' | 'pgup' | 'pgdn'
 
 /** Whether the terminal's WebView is left scrollable. On Android NSH 0.3.0's WebView (WebBox) swallows every finger
@@ -217,8 +217,10 @@ const BOOT = `(function () {
   // A row's text, and where each cell starts in it (a wide character takes two cells and one place in the text).
   function rowOf(y) {
     var l = term.buffer.active.getLine(y), text = '', at = [], c;
-    for (var x = 0; l && x < l.length; x++) { at.push(text.length); c = l.getCell(x); text += c ? c.getChars() || (c.getWidth() ? ' ' : '') : ' '; }
-    return { text: text, at: at, wrapped: !!(l && l.isWrapped) };
+    var written = 0;
+    for (var x = 0; l && x < l.length; x++) { at.push(text.length); c = l.getCell(x); text += c ? c.getChars() || (c.getWidth() ? ' ' : '') : ' '; if (c && c.getChars()) written = text.length; }
+    // written: the text up to its last written cell; a space typed before the terminal's wrap is kept, an empty cell is not.
+    return { text: text, at: at, wrapped: !!(l && l.isWrapped), written: written };
   }
   // Does the text of row y go on in row y + 1? The terminal says when it wrapped it; a TUI wraps by itself, with its
   // indent, at the right edge, and a link's characters are then on both sides of the break.
@@ -226,7 +228,8 @@ const BOOT = `(function () {
     var a = rowOf(y).text.replace(/\\s+$/, ''), n = rowOf(y + 1);
     return n.wrapped || (ending(term.buffer.active.getLine(y)).end >= term.cols - 6 && URLCHAR.test(a[a.length - 1] || ' ') && URLCHAR.test(n.text.replace(/^\\s+/, '')[0] || ' '));
   }
-  function linkInText(c) {
+  // The text around a tap, rows joined as they were written, and where the tap is in it (null: in a row's indent).
+  function around(c) {
     var first = c.row, rows = 0;
     while (first > 0 && rows++ < 8 && flows(first - 1)) first--;
     var text = '', base = 0, y;
@@ -234,23 +237,140 @@ const BOOT = `(function () {
       var r = rowOf(y), piece = r.text;
       var wrapped = r.wrapped || y === first;
       if (!wrapped) {
-        // Only a link goes on across a TUI's break: other text keeps its lines.
-        if (!/https?:\\/\\/\\S*$/.test(text)) { if (y > c.row) break; text = ''; }
+        // Only a link or a path goes on across a TUI's break: other text keeps its lines.
+        if (!/(https?:\\/\\/|[\\/\\\\])\\S*$/.test(text)) { if (y > c.row) break; text = ''; }
         piece = piece.replace(/^\\s+/, '');
       }
       if (y === c.row) {
         var lead = r.text.length - piece.length, i = r.at[c.col] === undefined ? r.text.length : r.at[c.col];
-        if (i < lead) return '';
+        if (i < lead) return null;
         base = text.length + i - lead;
       }
-      text += flows(y) ? piece.replace(/\\s+$/, '') : piece;
+      text += rowOf(y + 1).wrapped ? piece.slice(0, Math.max(0, piece.length - (r.text.length - r.written))) : flows(y) ? piece.replace(/\\s+$/, '') : piece;
       if (y >= c.row && !flows(y)) break;
       if (y - first > 12) break;
     }
+    return { text: text, base: base };
+  }
+  function linkInText(c) {
+    var a = around(c); if (!a) return '';
+    var text = a.text, base = a.base;
     var re = /https?:\\/\\/[^\\s"'<>\\u2500-\\u257f\\u3000-\\u9fff\\uff00-\\uffef]+/g, m;
     while ((m = re.exec(text))) { var url = m[0].replace(/[.,;:!?)\\]]+$/, ''); if (base >= m.index && base < m.index + url.length) return url; }
     return '';
   }
+  // An image's path under a tap: only its shape is judged here, a path that ends in an image type. Which file it is
+  // (a relative one is the terminal's folder's) and whether it may be read, the Companion says (GET /api/image).
+  // A folder's name has no spaces; a file's may (macOS names a screenshot with spaces, its date and its time).
+  // A tap asks the app whether the path is a picture on the computer before anything opens (askTap); the rows on
+  // screen are looked through once a frame at most for the underline (scanPictures).
+  var IMAGE_ABS = /(^|[\\s("'<\\[=:])((?:~|[A-Za-z]:)?(?:[\\/\\\\][^\\s"'<>()\\[\\]{}|\\/\\\\]+)*[\\/\\\\][^"'<>()\\[\\]{}|\\/\\\\\\n]*?\\.(?:png|jpe?g|gif|webp))(?![\\w])/gi;
+  var IMAGE_REL = /(^|[\\s("'<\\[=:])((?:[^\\s"'<>()\\[\\]{}|\\/\\\\:]+[\\/\\\\])*[^\\s"'<>()\\[\\]{}|\\/\\\\:]+\\.(?:png|jpe?g|gif|webp))(?![\\w])/gi;
+  function imageAt(c) {
+    var a = around(c); if (!a) return '';
+    var res = [IMAGE_ABS, IMAGE_REL];
+    for (var k = 0; k < res.length; k++) {
+      var re = res[k], m; re.lastIndex = 0;
+      while ((m = re.exec(a.text))) {
+        var from = m.index + m[1].length, path = m[2];
+        if (a.base >= from && a.base < from + path.length && path.length <= 1024) return path;
+        re.lastIndex = from + 1;
+      }
+    }
+    return '';
+  }
+  // A tap that isn't on anything of the page's own: a click for a program that follows the mouse, and the app's tap.
+  function tapOn(at) {
+    if (term.modes.mouseTrackingMode !== 'none') click(at.x, at.y);
+    post({ t: 'tap' });
+  }
+  // Pictures, as the computer said (POST /api/image/check, through the app): path → { picture, at }. A tap on an
+  // image path waits for the app's answer: a picture, the app opens it; not one (only mentioned, not a picture, not
+  // allowed), the tap goes on as on any text. No answer within 8 s: the tap is dropped.
+  var pictures = {}, pictureCount = 0, waiting = {}, nextAsk = 1;
+  function knew(path, picture) {
+    if (!pictures[path] && ++pictureCount > 500) { pictures = {}; pictureCount = 1; }
+    pictures[path] = { picture: picture, at: Date.now() };
+  }
+  function askTap(path, at) {
+    var id = nextAsk++;
+    waiting[id] = { path: path, x: at.x, y: at.y };
+    setTimeout(function () { delete waiting[id]; }, 8000);
+    post({ t: 'image', path: path, id: id });
+  }
+  function tapAnswered(id, picture) {
+    var w = waiting[id]; if (!w) return;
+    delete waiting[id];
+    knew(w.path, picture); scanSoon();
+    if (!picture) tapOn(w);
+  }
+  // The underline: a line under each picture's path in the rows on screen, in a layer over the text (registerDecoration
+  // draws nothing on a full-screen program's screen, the alternate buffer). Paths not known yet are asked about
+  // together; one in a row written again is asked about again, if its answer is a second old (the agent may have
+  // saved the file since). A path the terminal wrapped onto two rows gets no line; a tap still opens it.
+  var LINKS = /https?:\\/\\/[^\\s"'<>\\u2500-\\u257f\\u3000-\\u9fff\\uff00-\\uffef]+/g;
+  var rowsSeen = {}, rowsCount = 0, toAsk = [], asking = {}, askTimer = 0, scanFrame = 0, layer = null, drawn = '';
+  function pathsIn(text) {
+    var out = [], links = [], m, res = [IMAGE_ABS, IMAGE_REL];
+    if (!/\\.(png|jpe?g|gif|webp)/i.test(text)) return out;
+    for (LINKS.lastIndex = 0; (m = LINKS.exec(text)); ) links.push([m.index, m.index + m[0].length]);
+    for (var k = 0; k < res.length; k++) {
+      var re = res[k]; re.lastIndex = 0;
+      while ((m = re.exec(text))) {
+        var from = m.index + m[1].length, to = from + m[2].length, taken = false;
+        for (var i = 0; i < links.length && !taken; i++) taken = from < links[i][1] && links[i][0] < to;
+        for (i = 0; i < out.length && !taken; i++) taken = from < out[i].to && out[i].from < to;
+        if (!taken && m[2].length <= 1024) out.push({ from: from, to: to, path: m[2] });
+        re.lastIndex = from + 1;
+      }
+    }
+    return out;
+  }
+  function scanSoon() { if (!scanFrame) scanFrame = requestAnimationFrame(scanPictures); }
+  function scanPictures() {
+    scanFrame = 0;
+    var b = term.buffer.active, side = b.type === 'alternate' ? 'a' : 'n', now = Date.now(), lines = [];
+    if (rowsCount > 4000) { rowsSeen = {}; rowsCount = 0; }
+    for (var r = 0; r < term.rows; r++) {
+      var y = b.viewportY + r, row = rowOf(y), key = side + y, changed = rowsSeen[key] !== row.text;
+      if (rowsSeen[key] === undefined) rowsCount++;
+      rowsSeen[key] = row.text;
+      var found = pathsIn(row.text);
+      for (var i = 0; i < found.length; i++) {
+        var f = found[i], known = pictures[f.path];
+        if (!asking[f.path] && (!known || (changed && now - known.at >= 1000))) { asking[f.path] = true; toAsk.push(f.path); }
+        if (known && known.picture) {
+          var x0 = row.at.indexOf(f.from), x1 = row.at.indexOf(f.to - 1), line = b.getLine(y), last = line && line.getCell(x1);
+          if (x0 >= 0 && x1 >= x0) lines.push([r, x0, x1 - x0 + (last && last.getWidth() === 2 ? 2 : 1)]);
+        }
+      }
+    }
+    if (toAsk.length && !askTimer) askTimer = setTimeout(askPaths, 120);
+    drawLines(lines);
+  }
+  function askPaths() {
+    askTimer = 0;
+    var paths = toAsk.splice(0, 64);
+    if (paths.length) post({ t: 'paths', paths: paths });
+    if (toAsk.length) askTimer = setTimeout(askPaths, 120);
+  }
+  function picturesAnswered(found) {
+    for (var p in found) if (Object.prototype.hasOwnProperty.call(found, p)) { delete asking[p]; knew(p, found[p] === true); }
+    scanSoon();
+  }
+  function drawLines(lines) {
+    var screen = term.element && term.element.querySelector('.xterm-screen'); if (!screen) return;
+    var cw = screen.clientWidth / term.cols, ch = screen.clientHeight / term.rows, color = term.options.theme.blue || '#3b82f6';
+    var key = JSON.stringify(lines) + cw + ' ' + ch + color;
+    if (key === drawn) return;
+    drawn = key;
+    if (!layer) { layer = document.createElement('div'); layer.className = 'picture-lines'; layer.style.cssText = 'position:absolute;left:0;top:0;right:0;bottom:0;pointer-events:none;z-index:5'; }
+    if (layer.parentNode !== screen) screen.appendChild(layer);
+    var html = '';
+    for (var i = 0; i < lines.length; i++) html += '<div style="position:absolute;left:' + lines[i][1] * cw + 'px;top:' + ((lines[i][0] + 1) * ch - 2) + 'px;width:' + lines[i][2] * cw + 'px;border-bottom:1.5px solid ' + color + '"></div>';
+    layer.innerHTML = html;
+  }
+  function forgetPictures() { rowsSeen = {}; rowsCount = 0; drawn = ''; scanSoon(); }
   // A link behind text (OSC 8): nothing in the buffer's public API says which cell has one, so note where each was written.
   var linked = [], linking = null;
   function here() { var b = term.buffer.active; return { at: term.registerMarker(0) || { line: b.baseY + b.cursorY }, col: b.cursorX }; }
@@ -439,8 +559,9 @@ const BOOT = `(function () {
         term.clearSelection(); span = null;
         var url = linkAt(cell(start.x, start.y));
         if (url) { post({ t: 'link', url: url }); return; }
-        if (term.modes.mouseTrackingMode !== 'none') click(start.x, start.y);
-        post({ t: 'tap' });
+        var image = imageAt(cell(start.x, start.y));
+        if (image) { askTap(image, start); return; }
+        tapOn(start);
       }
     }, { passive: false });
   }
@@ -529,8 +650,10 @@ const BOOT = `(function () {
     var settle = null;
     term.onScroll(function () { if (!cfg.phone) where(); });
     term.onWriteParsed(function () { follow(); where(); settled(); lift(); redrawn(); });
-    term.buffer.onBufferChange(forgetWheel);
-    term.onRender(edges);
+    term.buffer.onBufferChange(function () { forgetWheel(); forgetPictures(); });
+    term.onRender(function () { edges(); scanSoon(); });
+    term.onScroll(scanSoon);
+    term.onResize(function () { drawn = ''; scanSoon(); });
     function lines(from, to) { var b = term.buffer.active, out = []; for (var i = from; i < to; i++) { var l = b.getLine(i); out.push(l ? l.translateToString(true) : ''); } return out; }
     function settled() {
       clearTimeout(settle);
@@ -572,10 +695,12 @@ const BOOT = `(function () {
     window.addEventListener('message', function (e) {
       if (typeof e.data !== 'string') return;
       var m; try { m = JSON.parse(e.data); } catch (_) { return; }
-      if (m.t === 'reset') { stopGlide(); term.reset(); kitty = []; span = null; linked = []; linking = null; forgetWheel(); }
+      if (m.t === 'reset') { stopGlide(); term.reset(); kitty = []; span = null; linked = []; linking = null; forgetWheel(); pictures = {}; pictureCount = 0; asking = {}; toAsk = []; forgetPictures(); }
+      else if (m.t === 'image' && typeof m.id === 'number') tapAnswered(m.id, m.picture === true);
+      else if (m.t === 'pictures' && m.paths && typeof m.paths === 'object') picturesAnswered(m.paths);
       else if (m.t === 'write') term.write(m.data);
       else if (m.t === 'paste') { forget(); term.paste(m.data); }
-      else if (m.t === 'theme') { term.options.theme = cfg.themes[m.dark ? 'dark' : 'light']; edges(); }
+      else if (m.t === 'theme') { term.options.theme = cfg.themes[m.dark ? 'dark' : 'light']; edges(); scanSoon(); }
       else if (m.t === 'fontSize') setFont(m.size);
       else if (m.t === 'focus') keyboard();
       else if (m.t === 'copy') post({ t: 'copied', text: screenText() });
@@ -627,12 +752,14 @@ export function readPageMessage(data: string): PageMessage | undefined {
   if (m?.t === 'selected' && typeof m.text === 'string') return { t: 'selected', text: m.text }
   if (m?.t === 'swipe' && (m.dir === 'next' || m.dir === 'prev')) return { t: 'swipe', dir: m.dir }
   if (m?.t === 'link' && typeof m.url === 'string' && /^https?:\/\//.test(m.url)) return { t: 'link', url: m.url }
+  if (m?.t === 'image' && typeof m.path === 'string' && m.path && m.path.length <= 1024) return { t: 'image', path: m.path, id: Number.isInteger(m.id) ? m.id : 0 }
   if (m?.t === 'tap') return { t: 'tap' }
   if (m?.t === 'focused') return { t: 'focused' }
   if (m?.t === 'touched') return { t: 'touched' }
   if (m?.t === 'away' && typeof m.away === 'boolean') return { t: 'away', away: m.away }
   const strings = (v: any, max: number) => Array.isArray(v) && v.length <= max && v.every((l: any) => typeof l === 'string')
   if (m?.t === 'tail' && strings(m.lines, 100)) return { t: 'tail', lines: m.lines }
+  if (m?.t === 'paths' && strings(m.paths, 64) && m.paths.every((p: string) => p && p.length <= 1024)) return { t: 'paths', paths: m.paths }
   if (m?.t === 'text' && strings(m.lines, 20000) && Number.isInteger(m.base) && m.base >= 0) return { t: 'text', base: m.base, lines: m.lines }
   return undefined
 }
@@ -659,7 +786,8 @@ export class PageChannel {
   /** A new attachment repaints from scratch. */
   reset() { this.dec = new TextDecoder(); this.queue = [{ t: 'reset' }]; this.schedule() }
   send(message: { t: 'key'; name: BarKey; ctrl?: boolean; shift?: boolean } | { t: 'paste'; data: string } | { t: 'theme'; dark: boolean } | { t: 'fontSize'; size: number } | { t: 'focus' } | { t: 'copy' }
-    | { t: 'bottom' } | { t: 'refit' } | { t: 'text' } | { t: 'mark'; line: number; label: string }) {
+    | { t: 'bottom' } | { t: 'refit' } | { t: 'text' } | { t: 'mark'; line: number; label: string }
+    | { t: 'image'; id: number; picture: boolean } | { t: 'pictures'; paths: Record<string, boolean> }) {
     if (this.open) this.post(JSON.stringify(message))
   }
   private schedule() {

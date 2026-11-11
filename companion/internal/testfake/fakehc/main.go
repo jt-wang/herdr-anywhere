@@ -4,12 +4,18 @@
 package main
 
 import (
+	"bytes"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // spec and reply are testfake.Spec and testfake.Reply.
@@ -23,7 +29,7 @@ type spec struct {
 }
 
 type reply struct {
-	If, Write, Append, Print, Cat string
+	If, Write, Append, Print, Cat, Exec, Fail string
 }
 
 func main() {
@@ -58,7 +64,7 @@ func main() {
 		fill := func(x string) string { return strings.ReplaceAll(x, "{2}", second) }
 		for _, r := range replies {
 			if r.If != "" {
-				if _, err := os.Stat(r.If); err != nil {
+				if _, err := os.Stat(fill(r.If)); err != nil {
 					continue
 				}
 			}
@@ -70,6 +76,14 @@ func main() {
 			}
 			if r.Print != "" {
 				fmt.Println(fill(r.Print))
+			}
+			if r.Fail != "" {
+				b, _ := os.ReadFile(fill(r.Fail))
+				os.Stderr.Write(b)
+				os.Exit(5)
+			}
+			if r.Exec != "" {
+				execOn(r.Exec, os.Args[2:])
 			}
 			if r.Cat != "" {
 				b, err := os.ReadFile(fill(r.Cat))
@@ -98,6 +112,54 @@ func main() {
 		fmt.Print(strings.TrimPrefix(s.Connect, "print:"))
 	}
 	os.Exit(s.Exit)
+}
+
+// execOn is `hc exec --on M --json …`: the program runs here, as if on machine M, whose home is root/M (a machine
+// without one is unknown), and its result is printed as hc prints one (machine.exec's ExecResult): what it wrote as
+// base64, stdout cut at 8 MB.
+func execOn(root string, args []string) {
+	on := ""
+	for len(args) > 0 && strings.HasPrefix(args[0], "--") {
+		switch args[0] {
+		case "--on", "--timeout", "--cwd", "--env":
+			if args[0] == "--on" && len(args) > 1 {
+				on = args[1]
+			}
+			args = args[2:]
+		default:
+			args = args[1:]
+		}
+	}
+	home := filepath.Join(root, on)
+	if st, err := os.Stat(home); on == "" || err != nil || !st.IsDir() || len(args) == 0 {
+		fmt.Fprintln(os.Stderr, `{"error":{"kind":"machine_unknown","message":"unknown machine `+on+`"}}`)
+		os.Exit(4)
+	}
+	cmd := exec.Command(args[0], args[1:]...)
+	cmd.Dir = home
+	cmd.Env = append(os.Environ(), "HOME="+home, "TMPDIR=")
+	var out, errs bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &errs
+	start := time.Now()
+	err := cmd.Run()
+	code := 0
+	var x *exec.ExitError
+	if errors.As(err, &x) {
+		code = x.ExitCode()
+	} else if err != nil {
+		fmt.Fprintln(os.Stderr, `{"error":{"kind":"spawn_failed","message":"no such program"}}`)
+		os.Exit(5)
+	}
+	const max = 8 << 20
+	b := out.Bytes()
+	cut := len(b) > max
+	if cut {
+		b = b[:max]
+	}
+	j, _ := json.Marshal(map[string]any{"code": code, "ms": time.Since(start).Milliseconds(), "signal": nil,
+		"stdout": base64.StdEncoding.EncodeToString(b), "stderr": base64.StdEncoding.EncodeToString(errs.Bytes()),
+		"truncated": cut, "timed_out": false})
+	fmt.Println(string(j))
 }
 
 func add(file, line string) {

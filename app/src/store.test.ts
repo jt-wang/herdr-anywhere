@@ -767,6 +767,23 @@ test('a tab whose root is a pane block with an ended terminal closes, asking ter
   expect(core.doc().spaces[0].tabs.map((t: any) => t.id)).toEqual(['c0'])
 })
 
+test('a tab whose root is a pane block with a terminal herdr-core no longer knows closes, asking terminal.get once', async () => {
+  const core = new FakeCore()
+  const live = core.run({ argv: ['zsh'], labels: { 'herdr.space': 's0', 'herdr.tab': 'c0' } })
+  // No such terminal at all: terminal.get answers not_found, as after the core forgot it.
+  core.docs.set('', { version: 1, value: rootBlockDoc(live.address, 't-gone') })
+  core.holding.add('terminal.get')
+  const { store, advance } = setup(core)
+  await store.connect()
+  advance(6000)
+  store.sync()
+  for (let i = 0; i < 20; i++) { core.release(); await settle(1) }
+  const asked = core.calls.filter((c) => c.method === 'terminal.get' && c.params.terminal === 't-gone').length
+  expect(asked).toBe(1)
+  expect(store.model.tabs().map((t) => t.id)).toEqual(['c0'])
+  expect(core.doc().spaces[0].tabs.map((t: any) => t.id)).toEqual(['c0'])
+})
+
 test('reconcile asks again only on the next loop when closing a pane or placing a terminal changes nothing', async () => {
   const core = new FakeCore()
   const live = core.run({ argv: ['zsh'], labels: { 'herdr.space': 's0', 'herdr.tab': 'c0' } })

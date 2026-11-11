@@ -77,3 +77,45 @@ test('new words for a posted notification replace it without a sound; a closed o
   expect(b.host.call('page.notify', { title: 'Claude Code finished', body: 'later', terminal: 't1', quiet: true })).toBe(false)
   expect(b.posted.length).toBe(2)
 })
+
+// page.copyImage (src/page.ts copyPicture): the browser's own clipboard, as NSH 0.3.0's writeImage writes nothing in a
+// browser. Its bytes as a Blob: the page's CSP blocks fetching a data: URL.
+function clipboard(o: { supports?: (t: string) => boolean; canvas?: boolean } = {}) {
+  const written: { types: string[]; blob: any }[] = []
+  const g = globalThis as any
+  g.ClipboardItem = class { static supports = o.supports; constructor(public items: Record<string, any>) {} }
+  g.navigator = { clipboard: { write: async (items: any[]) => { for (const i of items) for (const [type, blob] of Object.entries(i.items)) written.push({ types: [type], blob }) } } }
+  g.createImageBitmap = o.canvas ? async () => ({ width: 3, height: 2, close() {} }) : undefined
+  g.OffscreenCanvas = o.canvas ? class { constructor(public width: number, public height: number) {} getContext() { return { drawImage() {} } } async convertToBlob(x: any) { return new Blob([new Uint8Array([1, 2, 3])], { type: x.type }) } } : undefined
+  return { written, host: browser().host }
+}
+const PNG = 'data:image/png;base64,iVBORw0KGgo='
+
+test('a picture goes on the clipboard as PNG, from its own bytes', async () => {
+  const c = clipboard()
+  expect(await c.host.call('page.copyImage', { url: PNG })).toBe(true)
+  expect(c.written.map((w) => w.types[0])).toEqual(['image/png'])
+  expect(c.written[0].blob.size).toBe(8)
+  expect(c.written[0].blob.type).toBe('image/png')
+})
+
+test('a JPEG goes as it is where the browser takes it, else drawn as PNG, else not at all', async () => {
+  const jpeg = 'data:image/jpeg;base64,/9j/4AAQ'
+  const takes = clipboard({ supports: (t) => t === 'image/jpeg' })
+  expect(await takes.host.call('page.copyImage', { url: jpeg })).toBe(true)
+  expect(takes.written.map((w) => w.types[0])).toEqual(['image/jpeg'])
+  const drawn = clipboard({ supports: (t) => t === 'image/png', canvas: true })
+  expect(await drawn.host.call('page.copyImage', { url: jpeg })).toBe(true)
+  expect(drawn.written.map((w) => w.types[0])).toEqual(['image/png'])
+  const neither = clipboard({ supports: (t) => t === 'image/png' })
+  expect(await neither.host.call('page.copyImage', { url: jpeg })).toBe(false)
+})
+
+test('no picture, or a browser without the clipboard, copies nothing', async () => {
+  const c = clipboard()
+  expect(await c.host.call('page.copyImage', { url: 'https://example.com/a.png' })).toBe(false)
+  expect(await c.host.call('page.copyImage', {})).toBe(false)
+  ;(globalThis as any).navigator = {}
+  expect(await c.host.call('page.copyImage', { url: PNG })).toBe(false)
+  expect(c.written).toEqual([])
+})
