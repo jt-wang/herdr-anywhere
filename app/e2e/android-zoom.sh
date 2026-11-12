@@ -85,6 +85,7 @@ pinch() { # x y from to: two fingers on a level line through (x, y), from `from`
 for scheme in light dark; do
   "$adb" shell cmd uimode night $([ $scheme = dark ] && echo yes || echo no) >/dev/null
   "$adb" shell am force-stop "$id"
+  "$adb" logcat -c
   "$adb" shell am start -n "$id/com.longbridge.nsh.AppActivity" >/dev/null
   # The box: the zooming scroll view, which stays put while the picture in it zooms (a build from before zoom has
   # only the picture, which is as big as the box until then).
@@ -110,6 +111,14 @@ for scheme in light dark; do
   settle; tap2 $cx $cy; sleep 0.5; settle; shot $scheme-out
   tap2 $((l + w / 4)) $((t + (b - t) / 4)); sleep 0.5; settle; shot $scheme-doubletap
   tap2 $cx $cy; sleep 0.5; settle; shot $scheme-out2
+  # What the zoom did (e2e/picture-app.tsx's "hm-zoom" lines): each double tap, and the last report the scroll view
+  # sent after it, before the next.
+  "$adb" logcat -d | tr -d '\r' | grep -o 'hm-zoom .*' > "$work/$scheme-zoom-trace.txt" || true
+  [ -z "$out" ] || cp "$work/$scheme-zoom-trace.txt" "$out/$scheme-zoom-trace.txt"
+  if [ -s "$work/$scheme-zoom-trace.txt" ]; then
+    awk '/double tap to/ { if (d) print "note: " d " -> last report: " (r ? r : "none"); d = $0; r = "" } /report/ { r = $0 }
+      END { if (d) print "note: " d " -> last report: " (r ? r : "none") }' "$work/$scheme-zoom-trace.txt"
+  else echo "note: no hm-zoom lines in the device's log"; fi
   zoom_checks "$work" $scheme "$box" "$bg"
   if [ -n "$rec" ]; then
     "$adb" shell pkill -INT screenrecord >/dev/null 2>&1 || true; wait $rec 2>/dev/null || true; sleep 1
