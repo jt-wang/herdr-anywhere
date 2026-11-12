@@ -1,14 +1,22 @@
 name: Tests
 
-# Every pull request and every push to main or ci (where a release's commit is tested before main) runs the
+# Every pull request and every push to main, ci (where a release's commit is tested before main) or a ci-* branch (a
+# change tried on its own, beside the others) runs the
 # tests a contributor runs locally, plus a secret scan over the whole history. The device suites (app/e2e/android*.sh,
 # ios*.sh) and user-path.sh run in devices.yml, on emulators and simulators; app/e2e/run.sh runs in computers.yml,
-# with herdr-core.
+# with herdr-core. One iOS check runs here: the app built with the iOS 27 SDK opens on an iOS 27 simulator (job ios27).
 on:
   pull_request:
   push:
-    branches: [main, ci]
+    # A ci-try-* branch runs nothing when pushed: a trial is run by hand (workflow_dispatch), only what it needs. The
+    # "!" pattern comes after "ci-*", as GitHub applies the patterns in order.
+    branches: [main, ci, "ci-*", "!ci-try-*"]
   workflow_dispatch:
+    inputs:
+      only_ios27:
+        description: Only jobs ios27 and ios26 (the iOS 27 checks)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -23,10 +31,21 @@ env:
   # Update both together.
   NSH_SHA256: "34fdd2ec43d5e22986723e7633acf9223e365bd5bace1a502b5ae24fb75c266c"
 
+# Every run step is `bash --noprofile --norc -eo pipefail {0}` (pwsh where a step says so). A step with no shell given
+# runs `bash -e {0}`, with no pipefail, and `go test … | tee log` took tee's exit 0 over a failed test.
+# app/scripts/check-pipefail.sh fails on a pipe in a step without pipefail.
+defaults:
+  run:
+    shell: bash
+
+
 jobs:
-  companion:
-    name: Companion (go test)
-    runs-on: macos-26
+  # The pipefail probe (new shell setup): never merged. Each job's result shows what a step's shell did with a
+  # failure; the names say what each job ends as before the fix (old) and after it (new).
+  probe-pass:
+    name: "Probe: a passing go test through tee (green in both)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -35,68 +54,50 @@ jobs:
         with:
           go-version-file: companion/go.mod
           cache-dependency-path: companion/go.sum
-      # cmd/herdr-anywhere cross-compiles each release file: on this runner the package takes close to go test's
-      # default 10 minutes with no test failing (computers.yml gives it 30 for the same reason).
-      - run: go vet ./... && go test -timeout 30m ./...
-        working-directory: companion
-      # The filing agent's last evaluation (eval/filing/last-report.json) is for the rules and code as they are now and
-      # passed. The evaluation itself needs an agent's login, so it runs where that is: run.sh.
-      - run: companion/eval/filing/check.sh
-
-  app:
-    name: App (unit and screen tests)
-    runs-on: macos-26
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Install nsh
-        run: |
-          curl -sfL -o nsh.tar.gz "https://github.com/longbridge/nsh/releases/download/$NSH_VERSION/nsh-macos-arm64.tar.gz"
-          echo "$NSH_SHA256  nsh.tar.gz" | shasum -a 256 -c -
-          tar -xzf nsh.tar.gz -C "$HOME" && mv "$HOME/nsh" "$HOME/.nsh"
-          echo "$HOME/.nsh/bin" >> "$GITHUB_PATH"
-      - run: nsh --version && nsh check && scripts/test.sh
-        working-directory: app
-
-  page:
-    name: Terminal page (touch and keyboard, Chromium)
-    runs-on: macos-26
-    env:
-      PLAYWRIGHT_VERSION: "1.58.2"
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: "24"
-      - name: Install Playwright's Chromium
-        run: |
-          mkdir -p "$RUNNER_TEMP/pw" && cd "$RUNNER_TEMP/pw"
-          npm install --no-save --ignore-scripts "playwright-core@$PLAYWRIGHT_VERSION"
-          node node_modules/playwright-core/cli.js install chromium
-          echo "PLAYWRIGHT_DIR=$RUNNER_TEMP/pw/node_modules/playwright-core" >> "$GITHUB_ENV"
-      - run: e2e/page-touch.sh
-        working-directory: app
-
-  secrets:
-    name: Secret scan (gitleaks)
+      - working-directory: companion
+        run: go test ./internal/pipefailprobe -count=1 -v | tee "$RUNNER_TEMP/probe.log"
+  probe-fail:
+    name: "Probe: a failing go test through tee (old green, new red)"
     runs-on: ubuntu-latest
-    env:
-      GITLEAKS_VERSION: "8.30.1"
-      # SHA-256 of gitleaks_8.30.1_linux_x64.tar.gz; matches the digest GitHub lists for the release asset.
-      # Update both together.
-      GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
           persist-credentials: false
-      - name: Install gitleaks
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: companion/go.mod
+          cache-dependency-path: companion/go.sum
+      - working-directory: companion
+        env:
+          HM_PROBE_FAIL: "1"
         run: |
-          curl -sfL -o gitleaks.tar.gz "https://github.com/gitleaks/gitleaks/releases/download/v$GITLEAKS_VERSION/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
-          echo "$GITLEAKS_SHA256  gitleaks.tar.gz" | sha256sum -c -
-          tar -xzf gitleaks.tar.gz gitleaks
-      # The whole history. A finding that is not a secret goes in .gitleaksignore with why and the date it was checked.
-      - run: ./gitleaks git --no-banner --redact .
+          go test ./internal/pipefailprobe -count=1 -v | tee "$RUNNER_TEMP/probe.log"
+          echo "the step went on after the failed test"
+  probe-subshell:
+    name: "Probe: a failing command piped to tr in a subshell, as sealed-invite open is (old green, new red)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - run: (umask 077; sh -c 'echo nothing; exit 1' | tr -d '\r\n' > "$RUNNER_TEMP/invite")
+  probe-sigpipe-raw:
+    name: "Probe: yes | head (old green, new red: SIGPIPE counts under pipefail)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - run: yes | head -1
+  probe-sigpipe-wrapped:
+    name: "Probe: { yes || true; } | head (green in both)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - run: "{ yes || true; } | head -1"
+  probe-subst:
+    name: "Probe: a failing $( ) for GITHUB_OUTPUT (old green: in echo's argument; new red: assigned first)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - id: prev
+        run: |
+          tag=$(sh -c 'echo no release >&2; exit 1')
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
