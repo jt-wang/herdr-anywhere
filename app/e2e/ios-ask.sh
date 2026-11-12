@@ -63,7 +63,7 @@ for look in light dark; do
   xcrun simctl terminate "$SIM_UDID" "$id" 2>/dev/null || true
   xcrun simctl launch "$SIM_UDID" "$id" >/dev/null
   # The app is up and paired once the companion logs the phone connected (the first time; then it reconnects).
-  i=0; until grep -q "device .* connected (binary," "$work/serve.log"; do i=$((i + 1)); [ $i -gt 60 ] && { echo "FAIL: the app never connected"; exit 1; }; sleep 1; done
+  i=0; until grep -q "device .* connected (binary," "$work/serve.log"; do i=$((i + 1)); [ $i -gt 60 ] && { echo "FAIL: the app never connected"; echo "serve.log, last lines:"; tail -20 "$work/serve.log" | sed -E 's/#pair=[A-Za-z0-9_-]+/#pair=…/g; s/(code|token)[=: ]+[A-Za-z0-9_-]{8,}/\1=…/g'; exit 1; }; sleep 1; done
   rc=0
   TEST_RUNNER_OUT="${shots:-$work}/ask-$look.txt" TEST_RUNNER_SHOTS="${shots:-$work}/ask-$look" TEST_RUNNER_CARD=$card \
     TEST_RUNNER_SPACEQ="spask$look" TEST_RUNNER_SPACEP="spperm$look" \
