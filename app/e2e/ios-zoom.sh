@@ -63,7 +63,10 @@ for scheme in light dark; do
   sed 's/^/  /' "$work/$scheme.txt" 2>/dev/null || true
   # The shots taken, a failed run's too: they show where it stopped (and a build from before a change, as it was).
   [ -z "$out" ] || for f in "$work/$scheme"-*.png; do [ ! -f "$f" ] || cp "$f" "$out/"; done
-  [ "$rc" = 0 ] || { say "FAIL: xcodebuild test exit $rc"; grep -E "error:|XCTAssert|failed" "$work/test-$scheme.log" | head -8; continue; }
+  # A failed run keeps xcodebuild's own words next to the shots; some failures (a crash, a test that ended at once)
+  # carry no "error:" line, so the last lines are shown too.
+  [ "$rc" = 0 ] || { say "FAIL: xcodebuild test exit $rc"; [ -z "$out" ] || cp "$work/test-$scheme.log" "$out/"
+    grep -iE "error|assert|failed|crash|exit" "$work/test-$scheme.log" | head -12; tail -15 "$work/test-$scheme.log"; continue; }
   grep -q "sheet open after the drags: true" "$work/$scheme.txt" && say "ok: the sheet stays open under the drags" || { say "FAIL: the drags closed the sheet"; continue; }
   box=$(sed -n 's/^box //p' "$work/$scheme.txt")
   bg=$([ $scheme = dark ] && echo '#25272b' || echo '#ffffff') # the sheet's colour (nsh.json popover)
