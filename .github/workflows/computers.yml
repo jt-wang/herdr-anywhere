@@ -7,20 +7,37 @@ name: Computers
 # under Windows' x64 emulation, as Herdr ships no Arm build for Windows yet, and the same for the x64 companion.
 # The Linux and Windows jobs also run the README's and INSTALL.md's install steps for that computer.
 # Runs only in the public repo, where GitHub's runners for public repos are free.
-# It runs on main, on release tags and on the public branch ci, where each release's commit is pushed and
-# must pass before it goes to main.
+# It runs on main, on release tags, on the public branch ci, where each release's commit is pushed and must pass
+# before it goes to main, and on ci-* branches, where a change is tried on its own beside the others.
 on:
   pull_request:
   push:
-    branches: [main, ci]
+    # A ci-try-* branch runs nothing when pushed: a trial is run by hand (workflow_dispatch), only what it needs. The
+    # "!" pattern comes after "ci-*", as GitHub applies the patterns in order.
+    branches: [main, ci, "ci-*", "!ci-try-*"]
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      # A job that passes one run and fails the next needs more runs to show how often and why: this many copies of the
+      # Android × Linux job at once, and no other job.
+      android_linux_repeat:
+        description: "Run only Android app × Linux computer, this many copies at once (0: the usual run)"
+        type: choice
+        options: ["0", "5", "10", "20"]
+        default: "0"
+      # The Android × Linux suite's own self-test (e2e/android.sh): its first tap on the switcher is not sent.
+      android_switcher_selftest:
+        description: "Android × Linux self-test: none, or miss-first (the first tap on the switcher is not sent)"
+        type: choice
+        options: [none, miss-first]
+        default: none
 
 permissions:
   contents: read
 
 concurrency:
-  group: computers-${{ github.ref }}
+  # A run of copies has a group of its own, so it doesn't cancel the branch's usual run, nor that run it.
+  group: computers-${{ github.ref }}${{ (inputs.android_linux_repeat || '0') != '0' && '-repeat-android' || '' }}
   cancel-in-progress: true
 
 env:
@@ -32,34 +49,50 @@ env:
   # for it) is in the app job's matrix.
   NSH_VERSION: "v0.3.0"
 
+# Every run step is `bash --noprofile --norc -eo pipefail {0}` (pwsh where a step says so). A step with no shell given
+# runs `bash -e {0}`, with no pipefail, and `go test … | tee log` took tee's exit 0 over a failed test.
+# app/scripts/check-pipefail.sh fails on a pipe in a step without pipefail.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   companion:
     name: Companion on ${{ matrix.os }}
-    if: github.repository == 'jt-wang/herdr-anywhere'
+    if: github.repository == 'jt-wang/herdr-anywhere' && (inputs.android_linux_repeat || '0') == '0'
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: macos-26
+            timeout: 34
             core: herdr-core-macos-aarch64.tar.gz
             sha256: 77d8af092e25ae650f4424d6dad27514f6916a11d807fb0752858cd27c21e4fc
           # An Intel Mac: the release's amd64 file, its updates and the install steps, on a real Intel processor.
           - os: macos-26-intel
+            timeout: 47
             core: herdr-core-macos-x86_64.tar.gz
             sha256: 15a12b80e93ec4e074dbdb82fa8a66e529857abfbdfb456f94d5116dc438fedc
           - os: ubuntu-latest
+            timeout: 24
             core: herdr-core-linux-x86_64.tar.gz
             sha256: 5b2f97cb4b2a9d7a6b2cc5942628203ed9fbb7cc0c2b4b09ad8a6f5648e246b7
           - os: ubuntu-24.04-arm
+            timeout: 18
             core: herdr-core-linux-aarch64.tar.gz
             sha256: cf33393cf950bb763734dc3e16610ab9daf8492391a4ef0de56026cd7f752853
           - os: windows-latest
+            timeout: 25
             core: herdr-core-windows-x86_64.zip
             sha256: 2e54e0b1dcbd652a7e89b14c588178f8241b9732fdc4e5f2b27208829b0bfbbc
           - os: windows-11-arm
+            timeout: 31
             core: herdr-core-windows-x86_64.zip
             sha256: 2e54e0b1dcbd652a7e89b14c588178f8241b9732fdc4e5f2b27208829b0bfbbc
     runs-on: ${{ matrix.os }}
+    # About twice the matrix entry's longest recent run (at least 10): without it a stuck job holds a runner for 6 hours,
+    # a macOS one of the account's 5.
+    timeout-minutes: ${{ matrix.timeout }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -177,22 +210,26 @@ jobs:
   # drives a POSIX shell, so Windows isn't here yet.
   app:
     name: App against a real core on ${{ matrix.os }}
-    if: github.repository == 'jt-wang/herdr-anywhere'
+    if: github.repository == 'jt-wang/herdr-anywhere' && (inputs.android_linux_repeat || '0') == '0'
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: macos-26
+            timeout: 10
             core: herdr-core-macos-aarch64.tar.gz
             sha256: 77d8af092e25ae650f4424d6dad27514f6916a11d807fb0752858cd27c21e4fc
             nsh: nsh-macos-arm64.tar.gz
             nsh_sha256: 34fdd2ec43d5e22986723e7633acf9223e365bd5bace1a502b5ae24fb75c266c
           - os: ubuntu-latest
+            timeout: 10
             core: herdr-core-linux-x86_64.tar.gz
             sha256: 5b2f97cb4b2a9d7a6b2cc5942628203ed9fbb7cc0c2b4b09ad8a6f5648e246b7
             nsh: nsh-linux-x86_64.tar.gz
             nsh_sha256: 539ecf9d76d156b5afa5a086212f23764bfc3945c7395a2119b73a3c66effed0
     runs-on: ${{ matrix.os }}
+    # About twice the matrix entry's longest recent run (at least 10).
+    timeout-minutes: ${{ matrix.timeout }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -228,8 +265,13 @@ jobs:
   # the companion on the runner, the emulator reaching them at 10.0.2.2. e2e/android.sh pairs by typing the link,
   # opens a terminal, types, and checks notifications and the folder picker (its header says all it does).
   android-linux:
-    name: Android app × Linux computer
+    name: Android app × Linux computer${{ matrix.copy != 0 && format(' (copy {0})', matrix.copy) || '' }}
     if: github.repository == 'jt-wang/herdr-anywhere'
+    strategy:
+      fail-fast: false
+      matrix:
+        # copy 0 is the usual run; a run of copies (android_linux_repeat) is numbered from 1.
+        copy: ${{ fromJSON('{"0":[0],"5":[1,2,3,4,5],"10":[1,2,3,4,5,6,7,8,9,10],"20":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20]}')[inputs.android_linux_repeat || '0'] }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -276,6 +318,8 @@ jobs:
           sudo udevadm trigger --name-match=kvm
       # The same phone as the Mac's test emulator: API 35, Google APIs, a Pixel 6 screen.
       - uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        env:
+          HM_SWITCHER_MISS_FIRST: ${{ inputs.android_switcher_selftest == 'miss-first' && '1' || '' }}
         with:
           api-level: 35
           target: google_apis
@@ -290,7 +334,9 @@ jobs:
           # This runner's emulator can keep covering the screen with "Pixel Launcher isn't responding" (on CI: back
           # three times after Wait, so the link was never typed). hide_error_dialogs skips error dialogs and goes on as
           # if they were answered (checked on API 35: a crash dialog shows without it and not with it). The
-          # app under test still fails its checks if it stops answering.
+          # app under test still fails its checks if it stops answering. WiFi goes off before the suite: the phone
+          # goes out through mobile data alone (app/e2e/android-net.sh says why).
           script: |
             adb -s emulator-5554 shell settings put global hide_error_dialogs 1
+            ANDROID_SERIAL=emulator-5554 sh e2e/android-net.sh --mobile-only
             ANDROID_SERIAL=emulator-5554 e2e/android.sh

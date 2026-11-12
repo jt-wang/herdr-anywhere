@@ -5,7 +5,9 @@
 set -eu
 cd "$(dirname "$0")/.."
 fail=0
+ran=0
 for f in $(find . -name '*.test.ts' -o -name '*.test.tsx' | grep -vE '^\./(e2e|node_modules|dist|android)/|/\.' | sort); do
+  ran=$((ran + 1))
   # A failing file prints all it said: its failure may name no test (a crash, a hang the runner ended), and a filter
   # that matched nothing would end the script here under set -e, before the files after it ran.
   if out=$(nsh test "$f" 2>&1); then
@@ -16,5 +18,7 @@ for f in $(find . -name '*.test.ts' -o -name '*.test.tsx' | grep -vE '^\./(e2e|n
     echo "$out" | sed 's/^/  /'
   fi
 done
+# The list comes through a pipe with no pipefail: a find that fails gives no files, which must not pass.
+[ "$ran" -gt 0 ] || { echo "FAIL: no test files found"; fail=1; }
 for check in scripts/check-*.sh; do "$check" src/ui || fail=1; done
 exit $fail
