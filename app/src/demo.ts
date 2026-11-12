@@ -1,12 +1,14 @@
 // Try it, on the pairing screen: the whole app over a made-up computer that lives in memory on the phone, for anyone
 // without their own computer at hand, App Review too. No pairing, no network, no tunnel, and nothing saved.
 import { Linker, type Link } from './link.ts'
+import { PROGRAMS } from './data/programs.ts'
+import { startable } from './model/programs.ts'
 import { Store } from './store.ts'
 import { t } from './strings/index.ts'
 import { CLAUDE_EDIT_MENU, FakeCore } from './testing/fakecore.ts'
 import { FakeFolders } from './testing/fake-folders.ts'
 
-export type Demo = { link: Link; linker: Linker; store: Store; fetcher: typeof fetch; stop: () => void }
+export type Demo = { link: Link; linker: Linker; store: Store; fetcher: typeof fetch; stop: () => void; /** The sample computer, for tests. */ core: FakeCore }
 
 const ANSWER_FINISHES_MS = 3000
 const CODEX_ASKS_MS = 12000
@@ -39,13 +41,24 @@ export function makeDemo(): Demo {
     later(ANSWER_FINISHES_MS, () => core.terms.get(addr)?.state === 'live' && core.setStatus(addr, 'done', term.status?.app))
   }
   core.onKeys = (addr) => answered(addr)
-  core.onSend = (addr, text) => { core.output(addr, `${text}\r\n`); answered(addr) }
+  // An agent shows what it was told as its own line under its screen (the samples end mid-line), a shell after its prompt.
+  core.onSend = (addr, text) => {
+    core.output(addr, core.terms.get(addr)?.status?.app ? `\r\n\r\n> ${text}` : `${text}\r\n`)
+    answered(addr)
+  }
   // A new agent works for a moment and finishes; a shell has no status, as on a real computer.
   const run = core.run.bind(core)
   core.run = (params) => {
     const term = run(params)
-    const app = params.argv?.[0] === 'codex' ? 'codex' : params.argv?.[0] === 'claude' ? 'claude-code' : ''
+    // The phone starts an agent inside the user's shell, with its task last (model/programs.ts agentArgv).
+    const argv: string[] = params.argv ?? []
+    const cmd = argv.length > 4 && argv[1].startsWith('-') && argv[2].includes('"$@"') ? argv.slice(4) : argv
+    // An agent the new-tab menu offers, reporting its status under the name herdr-core gives it (data/programs.ts match).
+    const p = startable().find((s) => s.run?.[0] === cmd[0])
+    const app = p ? PROGRAMS.programs[p.key].match?.[0] ?? p.key : ''
     if (app) {
+      const task = cmd.length > 1 ? cmd[cmd.length - 1] : ''
+      core.screens.set(term.address, task ? `> ${task}` : '>')
       core.setStatus(term.address, 'working', app)
       later(ANSWER_FINISHES_MS, () => core.terms.get(term.address)?.state === 'live' && core.setStatus(term.address, 'done', app))
     }
@@ -71,7 +84,7 @@ export function makeDemo(): Demo {
   const linker = new Linker({ load: async () => null, save: () => {}, remove: () => {} })
   linker.link.set(link)
   return {
-    link, linker, fetcher, store: new Store({ pipe: () => core }),
+    link, linker, fetcher, core, store: new Store({ pipe: () => core }),
     stop: () => { for (const id of timers) clearTimeout(id); timers.clear() },
   }
 }

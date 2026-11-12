@@ -29,7 +29,7 @@ type spec struct {
 }
 
 type reply struct {
-	If, Write, Append, Print, Cat, Exec, Fail string
+	If, Write, Append, Print, Cat, Exec, Fail, Sleep string
 }
 
 func main() {
@@ -67,6 +67,9 @@ func main() {
 				if _, err := os.Stat(fill(r.If)); err != nil {
 					continue
 				}
+			}
+			if d, err := time.ParseDuration(r.Sleep); err == nil {
+				time.Sleep(d)
 			}
 			if r.Write != "" {
 				_ = os.WriteFile(fill(r.Write), []byte(line), 0o644)
