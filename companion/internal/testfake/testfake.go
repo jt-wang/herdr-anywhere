@@ -161,3 +161,55 @@ func Release(t testing.TB, version string, exit int) []byte {
 	releases[key] = b
 	return b
 }
+
+// ADBSpec is what a fake adb does, for the e2e scripts' helpers (app/e2e/android-lib.sh).
+type ADBSpec struct {
+	// Dumps are the exit codes of the first `shell uiautomator dump` calls (137: killed on the phone); later ones,
+	// and a 0, succeed. A failed dump leaves the last screen, as on a phone.
+	Dumps []int `json:"dumps,omitempty"`
+	// Screens are what `shell cat /sdcard/hm.xml` prints after the first, second, … successful dump; the last repeats.
+	Screens []string `json:"screens,omitempty"`
+	// Calls, when set, is a file each call's arguments are added to, joined by spaces, one line a call.
+	Calls string `json:"calls,omitempty"`
+}
+
+var (
+	adbOnce  sync.Once
+	adbBuilt string
+	adbErr   error
+)
+
+// ADB puts a fake adb in dir, doing what s says, and returns its path. It keeps s and its counts in dir/adb.*.
+func ADB(t testing.TB, dir string, s ADBSpec) string {
+	t.Helper()
+	adbOnce.Do(func() {
+		d, e := os.MkdirTemp("", "fakeadb")
+		if e != nil {
+			adbErr = e
+			return
+		}
+		adbBuilt = filepath.Join(d, "fakeadb"+Ext())
+		if out, e := exec.Command("go", "build", "-o", adbBuilt, "herdr-anywhere/companion/internal/testfake/fakeadb").CombinedOutput(); e != nil {
+			adbErr = &buildError{e, out}
+		}
+	})
+	if adbErr != nil {
+		t.Fatal(adbErr)
+	}
+	b, err := os.ReadFile(adbBuilt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(dir, "adb"+Ext())
+	if err := os.WriteFile(p, b, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	j, _ := json.Marshal(s)
+	if err := os.WriteFile(filepath.Join(dir, "adb.json"), j, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
