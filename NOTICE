@@ -15,10 +15,6 @@ Herdr desktop app (https://github.com/herdrdev/herdr-app), Apache License 2.0
   app/assets/icons/kimi-light.svg is a changed copy of defaults/icons/kimi.svg: the letter's fill is #1b1b1e instead
   of #fff, so it shows on the light theme. The other copied files are unchanged.
 
-Lucide (https://lucide.dev), ISC License, Copyright (c) Lucide Contributors 2022, portions Cole Bemis 2013-2022
-  - the phone's icons in app/assets/phone: ellipsis (more.svg), keyboard, send-horizontal (send.svg), message-square
-    (chat.svg) and brain, and keyboard-down.svg drawn from keyboard (license: app/assets/phone/LICENSE-Lucide.txt)
-
 NSH (https://nsh.dev), Apache License 2.0
   - the runtime that the Android, iOS and web builds embed
 
@@ -64,16 +60,8 @@ The companion (companion/) is built with these Go modules:
   - github.com/mdp/qrterminal/v3, MIT License, Copyright 2019 Mark Percival
   - rsc.io/qr, BSD 3-Clause License, Copyright (c) 2009 The Go Authors
   - golang.org/x/sys and golang.org/x/term, BSD 3-Clause License, Copyright 2009 The Go Authors
-  - modernc.org/sqlite (BSD 3-Clause License, Copyright (c) 2017 The Sqlite Authors), SQLite translated to Go
-    (SQLite is in the public domain), with modernc.org/libc (BSD 3-Clause License, Copyright (c) 2017 The Libc
-    Authors, which carries musl libc, MIT License) and the modules they depend on, listed with their licenses in its
-    LICENSE-3RD-PARTY.md; the chat view reads OpenCode's database with it
   - TailPocket at commit 8ae23dd, MIT License, Copyright (c) 2026 Jingtao Wang;
     its Go packages are copied into third_party/tailpocket-8ae23dd with its LICENSE and NOTICE
   - for serve --tailcat, tailscale.com and github.com/tailscale/tailcat (BSD 3-Clause License, Copyright (c) 2020
     Tailscale Inc & contributors), github.com/tailscale/wireguard-go (MIT License) and gvisor.dev/gvisor
     (Apache License 2.0), with the modules they depend on; each module's license is in its source
-
-How the chat view finds which conversation an OpenCode pane shows (the session id it reports, kept after its turn, and
-its terminal title) follows Heeler (https://github.com/ZingerLittleBee/Heeler, Apache License 2.0); no Heeler code is
-copied.

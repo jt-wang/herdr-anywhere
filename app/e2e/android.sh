@@ -47,7 +47,7 @@ show_terms() {
 }
 cleanup() {
   status=$?
-  [ "$status" -ne 0 ] && { echo "--- exit status $status"; show_terms; }
+  [ "$status" -ne 0 ] && show_terms
   [ -n "${serve_pid:-}" ] && kill "$serve_pid" 2>/dev/null
   "$hc" server stop >/dev/null 2>&1 || true
   chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run"
@@ -58,10 +58,27 @@ serve_pid=$!
 sleep 1
 link=$("$work/herdr-anywhere" pair --url "http://10.0.2.2:$port" 2>/dev/null | grep -o 'http://[^ ]*#pair=[A-Za-z0-9_-]*' | head -1)
 
-# dump, at, not_responding and tap.
-. "$app/e2e/android-lib.sh"
-screen_has() { dump; "$adb" shell cat /sdcard/hm.xml | grep -q "$1"; }
-xml() { dump; "$adb" shell cat /sdcard/hm.xml; }
+# The centre of the view with this resource-id (an NSH testID), from the accessibility tree; an id ending in "-" is a
+# prefix (space-<id>, terminal-<address>).
+at() {
+  case $1 in *-) q="resource-id=\"$1" ;; *) q="resource-id=\"$1\"" ;; esac
+  "$adb" shell uiautomator dump /sdcard/hm.xml >/dev/null 2>&1
+  "$adb" shell cat /sdcard/hm.xml | tr '>' '\n' | grep -F "$q" | head -1 |
+    sed -E 's/.*bounds="\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\]".*/\1 \2 \3 \4/' | awk '{print int(($1+$3)/2), int(($2+$4)/2)}'
+}
+# On a slow emulator Android can cover the app with "<some app> isn't responding" (on CI: "Pixel Launcher
+# isn't responding" hid the pairing screen). Wait is the system's own answer to it; the app under test is not touched.
+not_responding() {
+  w=$(at android:id/aerr_wait); [ -n "$w" ] || return 1
+  echo "note: a system \"isn't responding\" dialog covered the screen; pressed Wait"; "$adb" shell input tap $w; sleep 1
+}
+tap() {
+  xy=""; for _ in 1 2 3 4 5 6 7 8 9 10; do xy=$(at "$1"); [ -n "$xy" ] && break; not_responding; sleep 1; done
+  [ -n "$xy" ] || { echo "FAIL: no view $1 on screen"; exit 1; }
+  "$adb" shell input tap $xy
+}
+screen_has() { "$adb" shell uiautomator dump /sdcard/hm.xml >/dev/null 2>&1; "$adb" shell cat /sdcard/hm.xml | grep -q "$1"; }
+xml() { "$adb" shell uiautomator dump /sdcard/hm.xml >/dev/null 2>&1; "$adb" shell cat /sdcard/hm.xml; }
 
 # Another build of the app, signed with another key, can't be replaced: then it goes first (its data is cleared below
 # either way).
@@ -76,7 +93,7 @@ activity=$("$adb" shell cmd package resolve-activity --brief "$id" | tail -1 | t
 # What the link field holds: pair-link is the field's wrapper, whose own text is empty; the text is its child's
 # (seen in a CI run's screen dump).
 typed() {
-  dump
+  "$adb" shell uiautomator dump /sdcard/hm.xml >/dev/null 2>&1
   "$adb" shell cat /sdcard/hm.xml | tr '>' '\n' | sed -n '/resource-id="pair-link"/,$p' | grep -oE 'text="[^"]+"' | head -1 | sed -E 's/^text="(.*)"$/\1/'
 }
 # adb's input text drops characters on a slow emulator: one CI run typed 21 of the code's 22, and under -gpu swangle
@@ -129,7 +146,7 @@ done
 [ -n "$shot" ] && "$adb" exec-out screencap -p > "$shot"
 if [ -z "$ok" ]; then
   echo "FAIL: not connected over binary within 30 s"
-  dump
+  "$adb" shell uiautomator dump /sdcard/hm.xml >/dev/null 2>&1
   "$adb" shell cat /sdcard/hm.xml | tr '>' '\n' | grep 'resource-id="pair-error"' | sed -E 's/.*text="([^"]*)".*/  phone says: \1/' || true
   grep -vE " GET /assets/" "$work/serve.log" | tail -5 | sed -E 's/token=[^ &]+/token=…/'
   exit 1
@@ -152,7 +169,7 @@ echo "ok: a tap and a drag on the terminal leave the keyboard down"
 tap compose-input
 keyboard_up || { echo "FAIL: a tap on the composer brought no keyboard"; exit 1; }
 # Return in the composer starts a new line, the box grows, and send sends both lines as one.
-height() { dump; "$adb" shell cat /sdcard/hm.xml | tr '>' '\n' | grep 'resource-id="compose-input"' | sed -E 's/.*bounds="\[[0-9]+,([0-9]+)\]\[[0-9]+,([0-9]+)\]".*/\1 \2/' | awk '{print $2-$1}'; }
+height() { "$adb" shell uiautomator dump /sdcard/hm.xml >/dev/null 2>&1; "$adb" shell cat /sdcard/hm.xml | tr '>' '\n' | grep 'resource-id="compose-input"' | sed -E 's/.*bounds="\[[0-9]+,([0-9]+)\]\[[0-9]+,([0-9]+)\]".*/\1 \2/' | awk '{print $2-$1}'; }
 one=$(height)
 "$adb" shell input text "'touch hm-line-one'"
 "$adb" shell input keyevent 66
@@ -165,10 +182,6 @@ tap compose-send
 for _ in $(seq 1 15); do [ -e "$work/home/src/acme-api/hm-line-two" ] && break; sleep 1; done
 [ -e "$work/home/src/acme-api/hm-line-one" ] && [ -e "$work/home/src/acme-api/hm-line-two" ] || { echo "FAIL: two composer lines did not both reach the computer"; exit 1; }
 echo "ok: the composer grew from $one to $two px and sent both lines"
-# Sending leaves the keyboard up for the next message (a box made read-only while it sent lost its focus, and the
-# keyboard went with it: the back key below then left the terminal).
-keyboard_up || { echo "FAIL: the keyboard went down when the composer sent"; exit 1; }
-echo "ok: the keyboard stays up after a send"
 "$adb" shell input keyevent 4
 sleep 1
 # The menu's Type in the terminal brings the keyboard up itself, with it down before (the back key put it away). adb's
@@ -176,7 +189,7 @@ sleep 1
 typein() {
   tap space-more
   sleep 1
-  xy=""; for _ in 1 2 3 4 5; do dump
+  xy=""; for _ in 1 2 3 4 5; do "$adb" shell uiautomator dump /sdcard/hm.xml >/dev/null 2>&1
     xy=$("$adb" shell cat /sdcard/hm.xml | tr '>' '\n' | grep -F 'text="Type in the terminal"' | head -1 | sed -E 's/.*bounds="\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\]".*/\1 \2 \3 \4/' | awk '{print int(($1+$3)/2), int(($2+$4)/2)}')
     [ -n "$xy" ] && break; sleep 1; done
   [ -n "$xy" ] || { echo "FAIL: no Type in the terminal in the menu"; exit 1; }
@@ -201,7 +214,7 @@ for _ in 1 2 3 4 5; do
   ime=$("$adb" shell dumpsys window InputMethod)
   top=$(echo "$ime" | grep -oE ' frame=\[0,[0-9]+\]' | head -1 | grep -oE '[0-9]+\]$' | tr -d ']')
   inset=$(echo "$ime" | grep -oE 'mGivenContentInsets=\[0,[0-9]+\]' | head -1 | grep -oE '[0-9]+\]$' | tr -d ']')
-  dump
+  "$adb" shell uiautomator dump /sdcard/hm.xml >/dev/null 2>&1
   esc=$("$adb" shell cat /sdcard/hm.xml | tr '>' '\n' | grep -F 'resource-id="key-esc"' | sed -E 's/.*bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,([0-9]+)\]".*/\1/')
   [ -n "$esc" ] && [ "$esc" -le $((top + inset)) ] && { above=1; break; }
   sleep 1
@@ -279,7 +292,7 @@ for _ in $(seq 1 10); do "$hc" read "$term" | grep -q 'w600' && break; sleep 1; 
 tap hide-keyboard
 sleep 2
 [ -n "$shot" ] && "$adb" exec-out screencap -p > "${shot%.png}-wrapped.png"
-box=$(dump; "$adb" shell cat /sdcard/hm.xml | tr '>' '\n' | grep -F 'resource-id="terminal-' | head -1 |
+box=$("$adb" shell uiautomator dump /sdcard/hm.xml >/dev/null 2>&1; "$adb" shell cat /sdcard/hm.xml | tr '>' '\n' | grep -F 'resource-id="terminal-' | head -1 |
   sed -E 's/.*bounds="\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\]".*/\1 \2 \3 \4/')
 set -- $box
 # Away from the screen's edges: a drag that starts at the left edge is the system's back gesture.
@@ -291,7 +304,7 @@ sleep 1
 sleep 1
 [ -n "$shot" ] && "$adb" exec-out screencap -p > "${shot%.png}-copy.png"
 # Android 13+ shows what was copied over the bottom left corner, where the composer is, for a few seconds.
-for _ in $(seq 1 20); do dump; "$adb" shell cat /sdcard/hm.xml | grep -q 'clipboard' || break; sleep 1; done
+for _ in $(seq 1 20); do "$adb" shell uiautomator dump /sdcard/hm.xml >/dev/null 2>&1; "$adb" shell cat /sdcard/hm.xml | grep -q 'clipboard' || break; sleep 1; done
 [ -n "$(at compose-input)" ] || { echo "FAIL: no composer after copying; on screen: $("$adb" shell cat /sdcard/hm.xml | grep -oE '(resource-id|text)="[^"]+"' | sort -u | head -30 | tr '\n' ' ')"; exit 1; }
 tap compose-input
 sleep 1
@@ -367,7 +380,7 @@ echo "ok: away from the app, a blocked terminal posts a notification with who, w
 # (not on its way down). Each read starts without the last dump's file, so a dump that fails is not read as the screen.
 shade_row() {
   "$adb" shell rm -f /sdcard/hm.xml
-  dump
+  "$adb" shell uiautomator dump /sdcard/hm.xml >/dev/null 2>&1
   "$adb" shell cat /sdcard/hm.xml 2>/dev/null | tr '>' '\n' | grep -F 'needs you' | head -1 |
     sed -E 's/.*bounds="\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\]".*/\1 \2 \3 \4/' | awk '{print int(($1+$3)/2), int(($2+$4)/2)}'
 }
@@ -468,14 +481,14 @@ started_in /src/gamma-new || { echo "FAIL: the new space did not start in the fo
 # A split on the phone: ⋯ lists it, a warning comes first, then both panes are on the screen. A tap on a pane gives it
 # the row under the panes: the new pane goes into a folder, the old one makes a file, and the file lands outside it.
 tap_text() {
-  xy=""; for _ in 1 2 3 4 5 6 7 8; do dump
+  xy=""; for _ in 1 2 3 4 5 6 7 8; do "$adb" shell uiautomator dump /sdcard/hm.xml >/dev/null 2>&1
     xy=$("$adb" shell cat /sdcard/hm.xml | tr '>' '\n' | grep -F "text=\"$1\"" | head -1 | sed -E 's/.*bounds="\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\]".*/\1 \2 \3 \4/' | awk '{print int(($1+$3)/2), int(($2+$4)/2)}')
     [ -n "$xy" ] && break; sleep 1; done
   [ -n "$xy" ] || { echo "FAIL: nothing says $1 on screen"; exit 1; }
   "$adb" shell input tap $xy
 }
 compose() { tap compose-input; sleep 1; "$adb" shell input text "'$1'"; sleep 1; tap compose-send; sleep 2; }
-terminals() { dump; "$adb" shell cat /sdcard/hm.xml | tr '>' '\n' | grep -c 'resource-id="terminal-' || true; }
+terminals() { "$adb" shell uiautomator dump /sdcard/hm.xml >/dev/null 2>&1; "$adb" shell cat /sdcard/hm.xml | tr '>' '\n' | grep -c 'resource-id="terminal-' || true; }
 sleep 2
 [ "$(terminals)" = 1 ] || { echo "FAIL: one pane expected before the split, saw $(terminals)"; exit 1; }
 tap space-more
