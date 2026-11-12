@@ -93,9 +93,11 @@ final class Notifications: XCTestCase {
         if let n, !tapped {
           shot("update-notification")
           n.tap()
+          sleep(1); shot("after-tap") // what the tap did: the app, an expanded notification, or its Open button
           // On CI a tap on the notification's middle once slid it aside to show its Open button instead (a shot of
           // Notification Center). Then Open, as a person would; said in the results.
           if !app.wait(for: .runningForeground, timeout: 10) {
+            shot("after-tap-10s")
             let open = springboard.buttons["Open"]
             say("tap: the app did not come forward; \(open.exists ? "tapped Open" : "tapped again")")
             if open.exists { open.tap() } else if n.exists { n.tap() }
