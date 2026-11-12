@@ -4,7 +4,8 @@
     python shots-check.py words <folder>        each picture's words, as "<file>\t<line>", read by tesseract or, on a
                                                 Mac without it, by Apple's Vision (desktop-tool.swift scan)
     python shots-check.py qr <picture>          what each QR code on it holds, one per line (for the self-test)
-    python shots-check.py sample <out> <text>   <out>/qr.png holding <text> as a QR code, <out>/words.png showing it
+    python shots-check.py sample <out> <text>   <out>/qr.png holding <text> as a QR code, <out>/words.png showing it,
+                                                <out>/words-grey.png showing it in a field's grey on a phone screen
 
 Never prints what a code holds, except with qr. Needs zxing-cpp and Pillow; videos need ffmpeg.
 """
@@ -15,7 +16,7 @@ import sys
 import tempfile
 
 import zxingcpp
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont, ImageOps
 
 PICTURES = (".png", ".jpg", ".jpeg")
 VIDEOS = (".mp4", ".webm", ".mov")
@@ -78,10 +79,13 @@ def words(folder):
     if not tesseract and sys.platform != "darwin":
         sys.exit("FAIL: no tesseract to read the pictures' words")
     print(f"words read by {'tesseract' if tesseract else 'Vision'}", file=sys.stderr)
+    tmp = tempfile.mkdtemp()
     for path in files(folder, PICTURES):
         if tesseract:
-            out = subprocess.run([tesseract, path, "-", "--psm", "11"], capture_output=True, text=True, check=True).stdout
-            lines = out.splitlines()
+            lines = []
+            for picture, psm in reads(path, tmp):
+                out = subprocess.run([tesseract, picture, "-", "--psm", psm], capture_output=True, text=True, check=True).stdout
+                lines += out.splitlines()
         else:
             out = subprocess.run(["swift", os.path.join(HERE, "desktop-tool.swift"), "scan", path],
                                  capture_output=True, text=True, check=True).stdout
@@ -89,6 +93,22 @@ def words(folder):
         for line in lines:
             if line.strip():
                 print(f"{path}\t{line}")
+    shutil.rmtree(tmp)
+
+
+def reads(path, tmp):
+    """The picture read three ways. As it is, tesseract missed text in a light grey (a field's placeholder, 150 on 255)
+    on a whole phone screen, and the white labels of dark buttons. So also: the parts darker than their surroundings,
+    black on white, read as a page (--psm 11 missed the link there even on a crop of the field alone); and the parts
+    lighter than a dark surrounding. Measured on a pairing screen and on the samples sample() makes."""
+    g = ImageOps.grayscale(Image.open(path))
+    ground = g.filter(ImageFilter.BoxBlur(25))
+    darker = os.path.join(tmp, "darker.png")
+    ImageChops.subtract(ground, g).point(lambda v: 0 if v > 25 else 255).save(darker)
+    lighter = os.path.join(tmp, "lighter.png")
+    on_dark = ground.point(lambda v: 255 if v < 110 else 0)
+    Image.composite(ImageChops.subtract(g, ground), Image.new("L", g.size, 0), on_dark).point(lambda v: 0 if v > 40 else 255).save(lighter)
+    return [(path, "11"), (darker, "3"), (lighter, "11")]
 
 
 def sample(out, text):
@@ -103,6 +123,17 @@ def sample(out, text):
     page = Image.new("RGB", (width, 200), "white")
     ImageDraw.Draw(page).text((40, 70), text, fill="black", font=font)
     page.save(os.path.join(out, "words.png"))
+    # A phone screen with the text in a field, in the grey of its placeholder: tesseract read it only after reads().
+    page = Image.new("RGB", (1206, 2622), (242, 242, 240))
+    draw = ImageDraw.Draw(page)
+    for i, line in enumerate(["Your agents, on your phone", "On the computer", "herdr-anywhere start", "herdr-anywhere pair"]):
+        draw.text((50, 300 + i * 120), line, fill="black", font=ImageFont.load_default(size=44))
+    draw.rounded_rectangle((24, 1100, 1182, 1220), 20, fill="white", outline=(210, 210, 210), width=3)
+    small = ImageFont.load_default(size=36 if draw.textlength(text, font=font) < 1100 else 28)
+    draw.text((50, 1140), text, fill=(150, 150, 150), font=small)
+    draw.rounded_rectangle((24, 1260, 1182, 1380), 20, fill=(30, 30, 30))
+    draw.text((520, 1300), "Pair", fill="white", font=ImageFont.load_default(size=40))
+    page.save(os.path.join(out, "words-grey.png"))
 
 
 def main():

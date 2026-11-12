@@ -79,9 +79,13 @@ cp -R "$app/e2e/ios-uitest" "$work/uitest"
 (cd "$work/uitest" && xcodegen generate --quiet)
 : > "$work/wheels"
 rc=0
-TEST_RUNNER_EVENTS="$work/wheels" TEST_RUNNER_SPACE=spscroll perl -e 'alarm 600; exec @ARGV' xcodebuild test -quiet -project "$work/uitest/KeyboardCheck.xcodeproj" -scheme UITests -only-testing:UITests/Scroll -destination "id=$SIM_UDID" -derivedDataPath "$work/uitest/derived" > "$work/uitest/test.log" 2>&1 || rc=$?
+TEST_RUNNER_EVENTS="$work/wheels" TEST_RUNNER_SPACE=spscroll perl -e 'alarm 600; exec @ARGV' xcodebuild test -quiet -project "$work/uitest/KeyboardCheck.xcodeproj" -scheme UITests -only-testing:UITests/Scroll -destination "id=$SIM_UDID" -derivedDataPath "$work/uitest/derived" -resultBundlePath "$work/uitest/result.xcresult" > "$work/uitest/test.log" 2>&1 || rc=$?
 [ -n "$shot" ] && perl -e 'alarm 40; exec @ARGV' xcrun simctl io "$SIM_UDID" screenshot "${shot%.png}-scroll.png" >/dev/null 2>&1
-if [ "$rc" != 0 ]; then echo "FAIL: the scroll test (xcodebuild test exit $rc)"; grep -E "error:|XCTAssert|failed" "$work/uitest/test.log" | head -8; exit 1; fi
+if [ "$rc" != 0 ]; then
+  echo "FAIL: the scroll test (xcodebuild test exit $rc)"
+  "$app/e2e/ios-xcresult.sh" "$work/uitest/result.xcresult" ${shot:+"${shot%.png}-failure"}
+  exit 1
+fi
 read cols rows half < "$work/wheels.layout"
 # The reports between two marks; a mark carries the terminal's height in points (12 of padding above and below).
 part() { awk -v m="$1" '/^mark /{on = ($2 == m); next} on' "$work/wheels"; }
@@ -98,4 +102,9 @@ if [ "$(part right | grep -c ' right$' || true)" -ge 2 ] && [ "$(part right | gr
 else say "FAIL: a drag in the right panel reached: $(part right | awk '{print $4}' | sort | uniq -c | tr '\n' ';')"; fi
 if [ "$(part flick | grep -c ' ignored$' || true)" = 0 ] && [ "$(part flick | grep -c ' left$' || true)" -ge 6 ]; then say "ok: a flick that ends over the prompt box keeps scrolling ($(part flick | grep -c . ) reports)"
 else say "FAIL: a flick ending over the prompt box: $(part flick | awk '{print $4}' | sort | uniq -c | tr '\n' ';')"; fi
+if [ "$failed" = 1 ]; then
+  # What the program got, in order, and the screens the test kept before and after the first drag.
+  echo "the program's reports and the test's marks:"; head -60 "$work/wheels" | sed 's/^/  /'
+  "$app/e2e/ios-xcresult.sh" "$work/uitest/result.xcresult" ${shot:+"${shot%.png}-test"} all
+fi
 exit $failed

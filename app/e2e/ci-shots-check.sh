@@ -83,6 +83,8 @@ self_test() {
   cp "$t/sample/words.png" "$t/words/"; cp "$t/sample/words.png" "$t/words-bare/"
   case_ "a picture showing the link" fail "$t/words" "$t/s/link"
   case_ "a picture showing the link, no secret file given" fail "$t/words-bare"
+  mkdir -p "$t/words-grey"; cp "$t/sample/words-grey.png" "$t/words-grey/"
+  case_ "a phone screen showing the link in a field's grey, no secret file given" fail "$t/words-grey"
   "$py" "$here/shots-check.py" sample "$t/sample2" "acme-api › tab 2" || return 1
   cp "$t/sample2/words.png" "$t/clean/"; printf 'serve: phone connected over binary\n' > "$t/clean/serve.log"
   case_ "a folder with none of it" pass "$t/clean" "$t/s/link"

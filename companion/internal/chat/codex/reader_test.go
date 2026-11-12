@@ -162,7 +162,7 @@ func TestFind(t *testing.T) {
 		t.Skip("open files are not read on Windows")
 	}
 	home := t.TempDir()
-	day := filepath.Join(home, "sessions", "2026", "11", "12")
+	day := filepath.Join(home, "sessions", "2026", "01", "01")
 	os.MkdirAll(day, 0o755)
 	file := filepath.Join(day, "rollout-2026-01-01T21-00-00-019b796d-d848-7930-b89b-e8779ff67643.jsonl")
 	src, _ := os.ReadFile(filepath.Join("testdata", "codex", "0.167.1", "turns.jsonl"))
@@ -190,7 +190,7 @@ func TestFind(t *testing.T) {
 // root thread among them is the conversation; two roots stay ambiguous.
 func TestFindPicksTheRootThread(t *testing.T) {
 	home := t.TempDir()
-	day := filepath.Join(home, "sessions", "2026", "11", "12")
+	day := filepath.Join(home, "sessions", "2026", "01", "01")
 	os.MkdirAll(day, 0o755)
 	src, _ := os.ReadFile(filepath.Join("testdata", "codex", "0.167.1", "turns.jsonl"))
 	write := func(id, source string) string {

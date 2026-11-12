@@ -82,7 +82,7 @@ func noFile(pid int, why string) string {
 	return why
 }
 
-// startTime is how Claude Code writes procStart: ps's lstart in UTC (17 of 17 running sessions of 2.1.319).
+// startTime is how Claude Code writes procStart: ps's lstart in UTC (as Claude Code 2.1.319 writes it).
 func startTime(pid int) (string, error) {
 	cmd := exec.Command("ps", "-o", "lstart=", "-p", fmt.Sprint(pid))
 	cmd.Env = append(os.Environ(), "TZ=UTC")

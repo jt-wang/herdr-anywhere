@@ -62,7 +62,8 @@ picture() {
   TEST_RUNNER_OUT="$work/picture-$1.txt" TEST_RUNNER_SHOTS="${shots:-$work}/$1" TEST_RUNNER_SIZE="$size" TEST_RUNNER_SPACE="$space" \
     TEST_RUNNER_TERMINAL="$term" TEST_RUNNER_FULL="$full" \
     perl -e 'alarm 600; exec @ARGV' xcodebuild test -quiet -project "$work/uitest/KeyboardCheck.xcodeproj" -scheme UITests \
-    -only-testing:UITests/Picture -destination "id=$SIM_UDID" -derivedDataPath "$work/uitest/derived" > "$work/uitest/test-$1.log" 2>&1 &
+    -only-testing:UITests/Picture -destination "id=$SIM_UDID" -derivedDataPath "$work/uitest/derived" \
+    -resultBundlePath "$work/uitest/result-$1.xcresult" > "$work/uitest/test-$1.log" 2>&1 &
   t=$!
   [ -s "$size" ] || for _ in $(seq 1 120); do
     now=$(L "$hc" get "$term" --json | python3 -c 'import json,sys; t=json.load(sys.stdin); print(t["cols"], t["rows"])')
@@ -71,7 +72,7 @@ picture() {
   done
   rc=0; wait $t || rc=$?
   sed 's/^/  /' "$work/picture-$1.txt" 2>/dev/null || true
-  [ "$rc" = 0 ] && echo "ok: $1" || { echo "FAIL: $1 (xcodebuild test exit $rc)"; grep -E "error:|XCTAssert|failed" "$work/uitest/test-$1.log" | head -8; exit 1; }
+  [ "$rc" = 0 ] && echo "ok: $1" || { echo "FAIL: $1 (xcodebuild test exit $rc)"; "$app/e2e/ios-xcresult.sh" "$work/uitest/result-$1.xcresult" ${shots:+"$shots/$1-failure"}; exit 1; }
 }
 [ -n "$shots" ] && mkdir -p "$shots"
 xcrun simctl ui "$SIM_UDID" appearance light

@@ -523,8 +523,8 @@ func TestFind(t *testing.T) {
 			t.Fatalf("%q %q %v", got, v, err)
 		}
 	})
-	// Claude Code rewrites its pid file in place: a shorter write leaves the old end after it (a stray "}", seen on
-	// 3 of 27 running sessions of 2.1.319 and 2.1.322). The first object is the file; pid and start time still decide.
+	// Claude Code rewrites its pid file in place: a shorter write leaves the old end after it (a stray "}"; Claude Code
+	// 2.1.319 and 2.1.322 both do it). The first object is the file; pid and start time still decide.
 	t.Run("old end after the object", func(t *testing.T) {
 		dir := t.TempDir()
 		pidFile(t, dir, pid, good)
