@@ -36,10 +36,26 @@ export type StoreIO = {
   clearInterval?: typeof clearInterval
   setTimeout?: typeof setTimeout
   now?: () => number
+  /** How long a call to herdr-core waits for its answer (HcClient's default, 10 s, when not set). */
+  callTimeoutMs?: number
+  /** How long a send from the input box goes unanswered before the store asks why (SLOW_SEND_MS when not set). */
+  slowSendMs?: number
   /** Keeps this screen's view (focus, zoom, seen) across launches. */
   load?: (key: string) => Promise<string | null>
   save?: (key: string, value: string) => void
 }
+
+/** A send from the input box unanswered this long is told apart: herdr-core holding it, or a slow line. herdr-core 0.1.20
+ *  answered a program printing all the time within about 3.2 s and refused one still starting at 5 s; only a half-typed
+ *  line in the terminal held it longer (59.2 s). */
+const SLOW_SEND_MS = 5000
+/** How long the question that tells them apart may take: other calls answered in under 2 ms while a send was held. */
+const PROBE_MS = 3000
+
+/** What the input box of a terminal has sent and herdr-core has not answered. `held`, once it has gone unanswered
+ *  SLOW_SEND_MS: `draft` when herdr-core answers other calls at once, so it is holding this one for a line typed in
+ *  the terminal; `line` when it answers nothing else either. `failed` when it did not go: the box takes the text back. */
+export type Sending = { address: string; text: string; held?: 'draft' | 'line'; failed?: boolean }
 
 /** A socket that closes sooner than this after the attempt began, never having opened, was refused. */
 const REFUSED_MS = 3000
@@ -95,6 +111,8 @@ export class Store {
   readonly machines = new Signal<Machine[]>([])
   /** Composer text typed while the line was down: sent, in order, once it is back. */
   readonly pending = new Signal<{ address: string; text: string }[]>([])
+  readonly sending = new Signal<Sending[]>([])
+  private broughtBack = false
   hello?: Hello
   home = ''
   shell = '/bin/zsh'
@@ -115,7 +133,7 @@ export class Store {
   showNames: () => boolean = () => true
 
   private hc?: HcClient
-  private io: Required<Omit<StoreIO, 'load' | 'save'>> & Pick<StoreIO, 'load' | 'save'>
+  private io: Required<Omit<StoreIO, 'load' | 'save' | 'callTimeoutMs' | 'slowSendMs'>> & Pick<StoreIO, 'load' | 'save' | 'callTimeoutMs' | 'slowSendMs'>
   private loop?: ReturnType<typeof setInterval>
   private machineLoop?: ReturnType<typeof setInterval>
   private quietLoop?: ReturnType<typeof setInterval>
@@ -166,10 +184,21 @@ export class Store {
         const sort = await this.io.load('agents.sort')
         if (sort === 'grouped' || sort === 'priority') this.agentList.sort = sort
       }
+      if (!this.broughtBack && this.io.load) {
+        this.broughtBack = true
+        // Sends the app closed on, killed or swiped away while herdr-core held them: herdr-core dropped them with their
+        // sender. Their text goes back to the input box, which says so.
+        let left: Sending[] = []
+        try { left = JSON.parse((await this.io.load('sending')) ?? '[]') } catch {}
+        if (Array.isArray(left) && left.length) {
+          this.sending.set(left.map((x) => ({ address: String(x.address), text: String(x.text), failed: true })))
+          for (const x of left) this.toast({ title: tr('maybeNotSent'), body: tr('sendClosed'), level: 'error', action: { terminal: String(x.address) } })
+        }
+      }
       this.agentList.onPersist = () => {
         this.io.save?.('agents.changed', JSON.stringify(this.agentList.changed))
       }
-      const hc = new HcClient(this.io.pipe())
+      const hc = new HcClient(this.io.pipe(), { timeoutMs: this.io.callTimeoutMs })
       this.hc = hc
       hc.onClose = (r) => this.lost(r)
       hc.onHeard = () => { this.heardAt = this.io.now() }
@@ -293,9 +322,9 @@ export class Store {
     })
   }
 
-  call<T = any>(method: string, params: object = {}): Promise<T> {
+  call<T = any>(method: string, params: object = {}, opts: { timeoutMs?: number } = {}): Promise<T> {
     if (!this.hc) return Promise.reject(new HcError(tr('disconnected'), 'disconnected'))
-    return this.hc.call<T>(method, params)
+    return this.hc.call<T>(method, params, opts)
   }
 
   private async readEnv() {
@@ -750,11 +779,44 @@ export class Store {
   }
 
   /** The phone's composer: the text, pasted into the pane and submitted with Enter (herdr-core's terminal.send, with
-   *  `force` so it also reaches an agent that asked for text). Typed while the line is down, it waits as pending. */
+   *  `force` so it also reaches an agent that asked for text). Typed while the line is down, it waits as pending.
+   *  No time limit: herdr-core (from 0.1.20) answers once a person sends or clears what they typed in that terminal, up
+   *  to 60 s after their last key by default, set per computer, and says nothing of it while it waits. It ends with
+   *  the answer or when the line goes; then herdr-core drops it, its sender gone. */
   async compose(addr: string, text: string) {
+    // One at a time: herdr-core runs each send it is given, so a second while the first is held would arrive too.
+    if (this.sending.get().some((x) => x.address === addr && !x.failed)) return
     if (this.conn.get() !== 'ready' || !this.hc) { this.pending.set([...this.pending.get(), { address: addr, text }]); return }
-    await this.call('terminal.send', { terminal: addr, text, force: true })
+    const mark = (patch: Partial<Sending> | null) => this.sending.set(this.sending.get().flatMap((x) =>
+      x.address !== addr ? [x] : patch ? [{ ...x, ...patch }] : []))
+    this.sending.set([...this.sending.get().filter((x) => x.address !== addr), { address: addr, text }])
+    this.keepSending()
+    const slow = this.io.slowSendMs ?? SLOW_SEND_MS
+    let going = true
+    const ask = () => {
+      if (!going) return
+      void this.call('server.status', {}, { timeoutMs: Math.min(PROBE_MS, slow) })
+        .then(() => 'draft' as const, () => 'line' as const)
+        .then((held) => { if (going) { mark({ held }); timer = setTimeout(ask, slow) } })
+    }
+    let timer = setTimeout(ask, slow)
+    try {
+      await this.call('terminal.send', { terminal: addr, text, force: true }, { timeoutMs: 0 })
+      going = false
+      mark(null)
+      this.keepSending()
+    } catch (e) {
+      going = false
+      mark({ failed: true })
+      throw e
+    } finally { going = false; clearTimeout(timer) }
   }
+
+  /** The input box has taken back the text of a send that failed. */
+  forget(addr: string) { this.sending.set(this.sending.get().filter((x) => x.address !== addr)); this.keepSending() }
+
+  /** What is sending, kept across launches: the input box gets back what the app closed on. */
+  private keepSending() { this.io.save?.('sending', JSON.stringify(this.sending.get().map(({ address, text }) => ({ address, text })))) }
 
   /** Sends what the composer attaches to the computer (link.ts); the screens that start the store set it. */
   files?: FileApi
@@ -779,7 +841,7 @@ export class Store {
         // again would run it twice.
         const first = this.pending.get()[0]
         this.pending.set(this.pending.get().slice(1))
-        await this.call('terminal.send', { terminal: first.address, text: first.text, force: true })
+        await this.call('terminal.send', { terminal: first.address, text: first.text, force: true }, { timeoutMs: 0 })
           .catch(() => this.toast({ title: tr('sendUnsure', { text: first.text }), level: 'error' }))
       }
     } finally { this.flushing = false }
