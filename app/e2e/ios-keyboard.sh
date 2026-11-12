@@ -24,6 +24,7 @@ id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$a
 port=7691
 while nc -z 127.0.0.1 "$port" 2>/dev/null; do port=$((port + 1)); done
 work=$(mktemp -d)
+: > "$work/started" # what e2e/ios-failure-logs.sh keeps is from after this
 (cd "$app/../companion" && go build -o "$work/herdr-anywhere" ./cmd/herdr-anywhere)
 run=$(mktemp -d /tmp/hmXXXX)
 mkdir -p "$work/sam/src/acme-api" "$work/state" "$work/config" "$work/data"
@@ -96,6 +97,7 @@ if [ "$rc" != 0 ]; then
   # The screen's elements around the tap on the space, as the test noted them (OpenSpace.swift).
   [ -n "$shot" ] && { mkdir -p "${shot%.png}-failure"; for f in "$work"/typein.txt-*.txt; do [ -f "$f" ] && cp "$f" "${shot%.png}-failure/${f##*/typein.txt-}"; done; } || true
   "$app/e2e/ios-xcresult.sh" "$work/uitest/result.xcresult" ${shot:+"${shot%.png}-failure"} all
+  [ -n "$shot" ] && "$app/e2e/ios-failure-logs.sh" "$work/started" "$work/serve.log" "${shot%.png}-failure" || true
   exit 1
 fi
 echo "PASS: Type in the terminal brings the keyboard up, also after the key bar's hide button; typing straight into the terminal sends what was typed"
