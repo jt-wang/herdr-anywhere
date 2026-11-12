@@ -332,6 +332,7 @@ mount(() => (
       if (url.includes('/api/file/link')) { const { path } = JSON.parse(init.body); fileAsks.push(`link ${path}`); void Storage.setItem('fake-file-asks', JSON.stringify(fileAsks)); return answer(200, { url: `/api/file?path=${encodeURIComponent(path)}&terminal=t1&key=k1` }) }
       if (url.includes('/api/file/check')) {
         const { paths } = JSON.parse(init.body)
+        fileAsks.push(`check ${paths.join(' ')}`); void Storage.setItem('fake-file-asks', JSON.stringify(fileAsks))
         return answer(200, { files: paths.map((p: string) => { const f = chatAnswer.files?.[p]; return f ? { asked: p, path: `/work/acme/${p}`, name: p.split('/').pop(), kind: f.kind, size: f.size } : { asked: p, why: 'missing' } }) })
       }
       if (url.includes('/api/file?')) {
