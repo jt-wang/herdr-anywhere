@@ -7,6 +7,7 @@ import { SocketPipe, socketUrl, type Enc } from './hc/ws.ts'
 import { Signal } from './store.ts'
 import type { FolderApi, Listing, Missing } from './model/folders.ts'
 import { t as tr, type Key } from './strings/index.ts'
+import type { ChatAnswer, ChatApi, ChatChange, ChatPicture, ChatRead, ChatRun, ChatSetup } from './model/chat.ts'
 
 /** `via: 'tailpocket'`: the computer is reached through TailPocket, which keeps its own link (with the phone's key).
  *  `via: 'demo'`: Try it's made-up computer (demo.ts). */
@@ -253,6 +254,81 @@ export function folderApi(linker: Linker, fetcher: typeof fetch = fetch): Folder
   }
 }
 
+/** The chat view's calls (GET /api/chat/{terminal}, companion/internal/server/chat.go). A companion from before them
+ *  answers 404: no terminal has a chat there. A network failure throws, so an open view can say it is offline. */
+/** The images of a turn or step as sent: { id, source }, or an id alone from a Companion from before sources. */
+const pictures = (x: unknown): ChatPicture[] => !Array.isArray(x) ? [] : x.flatMap((p: any): ChatPicture[] =>
+  typeof p === 'string' ? [{ id: p }]
+    : typeof p?.id === 'string' ? [{ id: p.id, ...(typeof p.source === 'string' && p.source ? { source: p.source } : {}) }] : [])
+
+export function chatApi(linker: Linker, fetcher: typeof fetch = fetch): ChatApi {
+  const call = async (path: string) => {
+    const r = await fetcher(`${await linker.baseUrl()}${path}`, { headers: { authorization: `Bearer ${linker.link.get()?.token ?? ''}` } })
+    return { r, body: (await r.json().catch(() => ({}))) as any }
+  }
+  return {
+    async get(address) {
+      const { r, body } = await call(`/api/chat/${encodeURIComponent(address)}`)
+      if (!r.ok || !body || typeof body.chat !== 'boolean') return { chat: false }
+      if (Array.isArray(body.turns)) for (const turn of body.turns) if (turn?.images) turn.images = pictures(turn.images)
+      return body as ChatAnswer
+    },
+    async step(address, id) {
+      const { r, body } = await call(`/api/chat/${encodeURIComponent(address)}/steps/${encodeURIComponent(id)}`)
+      if (!r.ok || typeof body?.input !== 'string') return null
+      const images = pictures(body.images), run = runOf(body.run), change = changeOf(body.change), read = readOf(body.read)
+      return { input: body.input, output: String(body.output ?? ''), ...(images.length ? { images } : {}), ...(run ? { run } : {}), ...(change ? { change } : {}), ...(read ? { read } : {}) }
+    },
+    async image(address, id) {
+      const { r, body } = await call(`/api/chat/${encodeURIComponent(address)}/images/${encodeURIComponent(id)}`)
+      return r.ok && typeof body?.url === 'string' && body.url.startsWith('data:image/') ? body.url : null
+    },
+    async files(address, paths) {
+      if (!paths.length) return []
+      const r = await fetcher(`${await linker.baseUrl()}/api/file/check`, { method: 'POST', body: JSON.stringify({ terminal: address, paths }),
+        headers: { authorization: `Bearer ${linker.link.get()?.token ?? ''}`, 'content-type': 'application/json' } })
+      const body = (await r.json().catch(() => ({}))) as any
+      if (!r.ok || !Array.isArray(body?.files)) return []
+      const kinds = ['video', 'pdf', 'text', 'image', 'other']
+      return body.files.filter((f: any) => f && !f.why && typeof f.asked === 'string' && typeof f.path === 'string' && typeof f.name === 'string' && kinds.includes(f.kind) && typeof f.size === 'number')
+        .map((f: any) => ({ asked: f.asked, path: f.path, name: f.name, kind: f.kind, size: f.size }))
+    },
+    async fileLink(address, path) {
+      const base = await linker.baseUrl()
+      const r = await fetcher(`${base}/api/file/link`, { method: 'POST', body: JSON.stringify({ terminal: address, path }),
+        headers: { authorization: `Bearer ${linker.link.get()?.token ?? ''}`, 'content-type': 'application/json' } })
+      const body = (await r.json().catch(() => ({}))) as any
+      return r.ok && typeof body?.url === 'string' && body.url.startsWith('/api/file?') ? base + body.url : null
+    },
+    async fileText(address, path, max) {
+      const r = await fetcher(`${await linker.baseUrl()}/api/file?path=${encodeURIComponent(path)}&terminal=${encodeURIComponent(address)}`,
+        { headers: { authorization: `Bearer ${linker.link.get()?.token ?? ''}`, range: `bytes=0-${max - 1}` } })
+      return r.ok ? await r.text() : null
+    },
+    async setups() {
+      const { r, body } = await call('/api/chat-setups')
+      return r.ok && Array.isArray(body?.setups) ? body.setups.map(setupOf).filter((x: ChatSetup | null): x is ChatSetup => !!x) : []
+    },
+    async setSetup(agent, on, force) {
+      const r = await fetcher(`${await linker.baseUrl()}/api/chat-setups/${encodeURIComponent(agent)}${force ? '?force=1' : ''}`,
+        { method: on ? 'PUT' : 'DELETE', headers: { authorization: `Bearer ${linker.link.get()?.token ?? ''}` } })
+      const setup = setupOf(await r.json().catch(() => null)) ?? undefined
+      if (r.ok) return { result: 'ok', setup }
+      if (r.status === 409) return { result: setup?.state === 'no-agent' ? 'no-agent' : 'changed', setup }
+      return { result: 'failed', setup }
+    },
+  }
+}
+
+const SETUP_STATES = ['no-agent', 'absent', 'installed', 'old', 'changed']
+/** A setup as the computer sent it; a state this app doesn't know reads as one it can't act on. */
+function setupOf(x: any): ChatSetup | null {
+  if (!x || typeof x.agent !== 'string' || !x.agent || typeof x.file !== 'string') return null
+  return { agent: x.agent, name: typeof x.name === 'string' && x.name ? x.name : x.agent, file: x.file,
+    ...(typeof x.reload === 'string' && x.reload ? { reload: x.reload } : {}), version: Number(x.version) || 0,
+    state: SETUP_STATES.includes(x.state) ? x.state : 'no-agent' }
+}
+
 /** A picture a terminal shows, read on the computer (GET /api/image): `path` is where it is there. */
 export type Picture = { path: string; url: string }
 // The computer's reasons (image.go `why`) said in the phone's language; the rest come down to "can't read it".
@@ -350,4 +426,22 @@ export function fileApi(linker: Linker, fetcher: typeof fetch = fetch): FileApi 
       return landed(r.status, body, file.name)
     },
   }
+}
+
+// A step's details as the computer could tell them (companion/internal/chat/chat.go: Run, Change, Read); anything not
+// in that shape is left out, and the step shows its raw input and output instead.
+const num = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) ? x : undefined)
+function runOf(x: any): ChatRun | undefined {
+  if (!x || typeof x.command !== 'string' || typeof x.output !== 'string') return undefined
+  return { command: x.command, failed: x.failed === true, ...(num(x.code) ? { code: x.code } : {}), output: x.output, lines: num(x.lines) ?? 0 }
+}
+function changeOf(x: any): ChatChange | undefined {
+  if (!x || typeof x.file !== 'string' || !Array.isArray(x.hunks)) return undefined
+  const hunks = x.hunks.filter((h: any) => h && num(h.oldStart) !== undefined && num(h.newStart) !== undefined && Array.isArray(h.lines) && h.lines.every((l: unknown) => typeof l === 'string'))
+    .map((h: any) => ({ oldStart: h.oldStart, newStart: h.newStart, lines: h.lines }))
+  return { file: x.file, added: num(x.added) ?? 0, deleted: num(x.deleted) ?? 0, hunks, ...(x.cut === true ? { cut: true } : {}) }
+}
+function readOf(x: any): ChatRead | undefined {
+  if (!x || typeof x.file !== 'string' || num(x.from) === undefined || num(x.count) === undefined || num(x.total) === undefined) return undefined
+  return { file: x.file, from: x.from, count: x.count, total: x.total }
 }

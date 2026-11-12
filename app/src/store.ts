@@ -16,6 +16,7 @@ import type { Restart } from './restart.ts'
 import { t as tr, type Key } from './strings/index.ts'
 import { readMenu, type Menu } from './model/menu.ts'
 import { spaceMarks } from './model/marks.ts'
+import type { ChatApi } from './model/chat.ts'
 
 /** The herdr-core label that pins a terminal's agent to the top of the agent lists (Herdr 0.1.12 and later). */
 const PIN_LABEL = 'herdr.pinned'
@@ -620,6 +621,12 @@ export class Store {
     return all.find((n) => this.program(terminalOf(n)).agent && this.term(terminalOf(n))?.reported) ?? all.find((n) => n.id === c.focused) ?? all[0]
   }
 
+  /** An agent: it reports its status, or runs an agent program that reports none (OpenCode before 2.2, see agents()). */
+  isAgent(addr: string | undefined): boolean {
+    const p = this.program(addr)
+    return p.agent || AGENT_KEYS.has(p.key)
+  }
+
   statusOf(addr: string | undefined) {
     return addr ? this.model.status(addr) : undefined
   }
@@ -751,6 +758,12 @@ export class Store {
 
   /** Sends what the composer attaches to the computer (link.ts); the screens that start the store set it. */
   files?: FileApi
+  /** The chat view's calls (link.ts chatApi); none: no pane has a chat. */
+  chat?: ChatApi
+  /** Whether an agent's pane opens in its chat view: the view picked last, kept with the phone's settings. */
+  chatFirst = { get: () => false, set: (_v: boolean) => {} }
+  /** The agents whose chat setup the phone has asked about once by itself, kept with the phone's settings. */
+  chatSetupAsked = { has: (_agent: string) => false, add: (_agent: string) => {} }
   /** Reads a picture a terminal shows (link.ts imageApi); set as `files` is. */
   images?: ImageApi
   /** The picture whose path was tapped in a terminal, shown in its sheet (ui/picture-sheet.tsx) until closed. */

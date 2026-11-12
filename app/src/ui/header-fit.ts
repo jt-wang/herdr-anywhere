@@ -22,3 +22,10 @@ export function showsAWord(full: string, lines: { text: string }[], width?: numb
 export function headerChipTight(scale: number): boolean {
   return scale >= 1.25
 }
+
+/** Whether the title got the width it takes on one line (`natural`, measured apart from the header) or was cut ("Clau…").
+ *  When it was and others are waiting, "+N waiting ›" gives way to "+N ›" so the agent's name gets the room. Widths,
+ *  not `onTextLayout`'s lines: with those, Android at 360 dp kept "+1 waiting ›" beside a title drawn as "Clau…". */
+export function titleWhole(natural: number, shown: number): boolean {
+  return shown + 0.1 >= natural
+}

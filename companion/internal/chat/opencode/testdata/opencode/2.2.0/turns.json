@@ -1,0 +1,386 @@
+{
+ "sessions": [
+  {
+   "id": "ses_486922732ffe1Oe1UHic1xuAFb",
+   "directory": "/work/acme",
+   "title": "I'll list the files.",
+   "version": "2.2.0",
+   "time_created": 1767268800732,
+   "time_updated": 1767268819816
+  }
+ ],
+ "messages": [
+  {
+   "id": "msg_b796dd8d0001WGyFI8fRykpF0q",
+   "session_id": "ses_486922732ffe1Oe1UHic1xuAFb",
+   "type": "user",
+   "seq": 4,
+   "time_created": 1767268800790,
+   "time_updated": 1767268800790,
+   "data": {
+    "time": {
+     "created": 1767268800790
+    },
+    "text": "LIST the files here",
+    "files": [],
+    "agents": []
+   }
+  },
+  {
+   "id": "msg_b796dd921001pvRja6X5u2oFjw",
+   "session_id": "ses_486922732ffe1Oe1UHic1xuAFb",
+   "type": "assistant",
+   "seq": 5,
+   "time_created": 1767268800805,
+   "time_updated": 1767268800921,
+   "data": {
+    "time": {
+     "created": 1767268800805,
+     "streamed": 1767268800828,
+     "completed": 1767268800920
+    },
+    "agent": "build",
+    "model": {
+     "id": "gpt-5.5",
+     "providerID": "fake",
+     "variant": "default"
+    },
+    "content": [
+     {
+      "type": "text",
+      "text": "I'll list the files.",
+      "native": {
+       "itemId": "item_fake_1_0"
+      }
+     },
+     {
+      "type": "tool",
+      "id": "call_fake_list",
+      "name": "shell",
+      "executed": false,
+      "native": {
+       "itemId": "item_fake_1_1"
+      },
+      "state": {
+       "status": "completed",
+       "input": {
+        "command": "ls"
+       },
+       "content": [
+        {
+         "type": "text",
+         "text": "notes.txt\nshot.png\ntodo.txt\n"
+        }
+       ],
+       "metadata": {
+        "status": "completed",
+        "truncated": false,
+        "exit": 0
+       }
+      },
+      "time": {
+       "created": 1767268800822,
+       "ran": 1767268800824,
+       "completed": 1767268800918
+      }
+     }
+    ],
+    "finish": "tool-calls",
+    "native": {
+     "responseId": "resp_fake_1"
+    },
+    "cost": 0,
+    "tokens": {
+     "input": 10,
+     "output": 5,
+     "reasoning": 0,
+     "cache": {
+      "read": 0,
+      "write": 0
+     }
+    }
+   }
+  },
+  {
+   "id": "msg_b796dd9a1001QyBAVJXF18O0bB",
+   "session_id": "ses_486922732ffe1Oe1UHic1xuAFb",
+   "type": "assistant",
+   "seq": 16,
+   "time_created": 1767268800932,
+   "time_updated": 1767268800944,
+   "data": {
+    "time": {
+     "created": 1767268800932,
+     "streamed": 1767268800943,
+     "completed": 1767268800943
+    },
+    "agent": "build",
+    "model": {
+     "id": "gpt-5.5",
+     "providerID": "fake",
+     "variant": "default"
+    },
+    "content": [
+     {
+      "type": "text",
+      "text": "There are two files here.",
+      "native": {
+       "itemId": "item_fake_3_0"
+      }
+     }
+    ],
+    "finish": "stop",
+    "native": {
+     "responseId": "resp_fake_3"
+    },
+    "cost": 0,
+    "tokens": {
+     "input": 10,
+     "output": 5,
+     "reasoning": 0,
+     "cache": {
+      "read": 0,
+      "write": 0
+     }
+    }
+   }
+  },
+  {
+   "id": "msg_b796dd9b10020Rbjq3FeGHtM31",
+   "session_id": "ses_486922732ffe1Oe1UHic1xuAFb",
+   "type": "idle",
+   "seq": 21,
+   "time_created": 1767268800945,
+   "time_updated": 1767268800946,
+   "data": {
+    "time": {
+     "created": 1767268800945
+    },
+    "outcome": "succeeded"
+   }
+  },
+  {
+   "id": "msg_b796dfdf8001aJVu3vd0Xhz5x0",
+   "session_id": "ses_486922732ffe1Oe1UHic1xuAFb",
+   "type": "user",
+   "seq": 25,
+   "time_created": 1767268810270,
+   "time_updated": 1767268810271,
+   "data": {
+    "time": {
+     "created": 1767268810270
+    },
+    "text": "EDIT a file for me",
+    "files": [],
+    "agents": []
+   }
+  },
+  {
+   "id": "msg_b796dfe2400155ptufZ6pOKTEI",
+   "session_id": "ses_486922732ffe1Oe1UHic1xuAFb",
+   "type": "assistant",
+   "seq": 26,
+   "time_created": 1767268810283,
+   "time_updated": 1767268810310,
+   "data": {
+    "time": {
+     "created": 1767268810283,
+     "streamed": 1767268810300,
+     "completed": 1767268810309
+    },
+    "agent": "build",
+    "model": {
+     "id": "gpt-5.5",
+     "providerID": "fake",
+     "variant": "default"
+    },
+    "content": [
+     {
+      "type": "tool",
+      "id": "call_fake_edit",
+      "name": "patch",
+      "executed": false,
+      "native": {
+       "itemId": "item_fake_4_0"
+      },
+      "state": {
+       "status": "completed",
+       "input": {
+        "patchText": "*** Begin Patch\n*** Add File: hello.txt\n+hello\n*** End Patch\n"
+       },
+       "content": [
+        {
+         "type": "text",
+         "text": "Success. Updated the following files:\nA hello.txt"
+        }
+       ],
+       "metadata": {
+        "files": [
+         {
+          "file": "hello.txt",
+          "patch": "Index: /work/acme/hello.txt\n===================================================================\n--- /work/acme/hello.txt\n+++ /work/acme/hello.txt\n@@ -0,0 +1,1 @@\n+hello\n",
+          "status": "added",
+          "additions": 1,
+          "deletions": 0
+         }
+        ],
+        "truncated": false
+       }
+      },
+      "time": {
+       "created": 1767268810295,
+       "ran": 1767268810298,
+       "completed": 1767268810308
+      }
+     }
+    ],
+    "finish": "tool-calls",
+    "native": {
+     "responseId": "resp_fake_4"
+    },
+    "cost": 0,
+    "tokens": {
+     "input": 10,
+     "output": 5,
+     "reasoning": 0,
+     "cache": {
+      "read": 0,
+      "write": 0
+     }
+    }
+   }
+  },
+  {
+   "id": "msg_b796dfe4f001yaGp55iEGQ1e8M",
+   "session_id": "ses_486922732ffe1Oe1UHic1xuAFb",
+   "type": "assistant",
+   "seq": 33,
+   "time_created": 1767268810325,
+   "time_updated": 1767268810337,
+   "data": {
+    "time": {
+     "created": 1767268810325,
+     "streamed": 1767268810335,
+     "completed": 1767268810336
+    },
+    "agent": "build",
+    "model": {
+     "id": "gpt-5.5",
+     "providerID": "fake",
+     "variant": "default"
+    },
+    "content": [
+     {
+      "type": "text",
+      "text": "I wrote hello.txt.",
+      "native": {
+       "itemId": "item_fake_5_0"
+      }
+     }
+    ],
+    "finish": "stop",
+    "native": {
+     "responseId": "resp_fake_5"
+    },
+    "cost": 0,
+    "tokens": {
+     "input": 10,
+     "output": 5,
+     "reasoning": 0,
+     "cache": {
+      "read": 0,
+      "write": 0
+     }
+    }
+   }
+  },
+  {
+   "id": "msg_b796dfe62001lT0u4nhXYs4Rmf",
+   "session_id": "ses_486922732ffe1Oe1UHic1xuAFb",
+   "type": "idle",
+   "seq": 38,
+   "time_created": 1767268810338,
+   "time_updated": 1767268810338,
+   "data": {
+    "time": {
+     "created": 1767268810338
+    },
+    "outcome": "succeeded"
+   }
+  },
+  {
+   "id": "msg_b796e2336001bFJwAYxKM15Lae",
+   "session_id": "ses_486922732ffe1Oe1UHic1xuAFb",
+   "type": "user",
+   "seq": 42,
+   "time_created": 1767268819793,
+   "time_updated": 1767268819794,
+   "data": {
+    "time": {
+     "created": 1767268819793
+    },
+    "text": "HELLO again",
+    "files": [],
+    "agents": []
+   }
+  },
+  {
+   "id": "msg_b796e2357001QZOmeR9wAmY3F5",
+   "session_id": "ses_486922732ffe1Oe1UHic1xuAFb",
+   "type": "assistant",
+   "seq": 43,
+   "time_created": 1767268819802,
+   "time_updated": 1767268819817,
+   "data": {
+    "time": {
+     "created": 1767268819802,
+     "streamed": 1767268819815,
+     "completed": 1767268819816
+    },
+    "agent": "build",
+    "model": {
+     "id": "gpt-5.5",
+     "providerID": "fake",
+     "variant": "default"
+    },
+    "content": [
+     {
+      "type": "text",
+      "text": "Hello from the fake model.",
+      "native": {
+       "itemId": "item_fake_6_0"
+      }
+     }
+    ],
+    "finish": "stop",
+    "native": {
+     "responseId": "resp_fake_6"
+    },
+    "cost": 0,
+    "tokens": {
+     "input": 10,
+     "output": 5,
+     "reasoning": 0,
+     "cache": {
+      "read": 0,
+      "write": 0
+     }
+    }
+   }
+  },
+  {
+   "id": "msg_b796e236a002LiCA0BFmdDCd60",
+   "session_id": "ses_486922732ffe1Oe1UHic1xuAFb",
+   "type": "idle",
+   "seq": 48,
+   "time_created": 1767268819818,
+   "time_updated": 1767268819819,
+   "data": {
+    "time": {
+     "created": 1767268819818
+    },
+    "outcome": "succeeded"
+   }
+  }
+ ]
+}
