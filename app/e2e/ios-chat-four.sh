@@ -47,7 +47,10 @@ mkdir -p "$work/h" "$work/state" "$work/config" "$work/data" "$work/claude" "$wo
 placeholder=$(cat "$app/e2e/pair.ts")
 # herdr-core gives every terminal the environment of what started it: the agents' folders are set here, for the
 # fakes and for the Companion's readers alike.
+# HERDR_ANYWHERE_AUTOSTART_NAME: a pair or start that finds no serve makes this run's own login entry, never the
+# person's (a fake HOME alone still reaches the real launchctl).
 L() { env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin HOME="$work/h" SHELL=/bin/zsh TERM=xterm-256color \
+  HERDR_ANYWHERE_AUTOSTART_NAME="hm-e2e-ios-chat-four" \
   LANG=en_US.UTF-8 HC_SESSION="hmchat4-$$" HC_SOCKET="" XDG_STATE_HOME="$work/state" XDG_CONFIG_HOME="$work/config" \
   XDG_DATA_HOME="$work/data" XDG_RUNTIME_DIR="$run" CLAUDE_CONFIG_DIR="$work/claude" CODEX_HOME="$work/codex" \
   PI_CODING_AGENT_DIR="$work/pi" "$@"; }

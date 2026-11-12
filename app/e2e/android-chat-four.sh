@@ -38,7 +38,10 @@ step="building the fakes"
 # herdr-core gives every terminal the environment of what started it: the agents' folders are set here, for the
 # fakes and for the Companion's readers alike.
 clean() {
+  # HERDR_ANYWHERE_AUTOSTART_NAME: a pair or start that finds no serve makes this run's own login entry, never the
+  # person's (a fake HOME alone still reaches the real launchctl).
   env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin HOME="$work/u" SHELL=/bin/zsh TERM=xterm-256color LANG=en_US.UTF-8 \
+    HERDR_ANYWHERE_AUTOSTART_NAME="hm-e2e-android-chat-four" \
     HC_SESSION="hmac4-$$" HC_SOCKET="" XDG_STATE_HOME="$work/state" XDG_CONFIG_HOME="$work/config" XDG_DATA_HOME="$work/data" XDG_RUNTIME_DIR="$run" \
     CLAUDE_CONFIG_DIR="$work/claude" CODEX_HOME="$work/codex" PI_CODING_AGENT_DIR="$work/pi" "$@"
 }
