@@ -40,7 +40,7 @@ cleanup() {
   HC_SESSION="hmtc-$$" HC_SOCKET="" HOME="$work/home" XDG_RUNTIME_DIR="$run" "$hc" server stop >/dev/null 2>&1 || true
   chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run" "$state"
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT; trap 'exit 130' INT; trap 'exit 143' TERM
 
 # Tailcat's pairing window lasts 2 minutes, so the app is built and installed before it opens, and the invite goes
 # into the app's storage (ios-e2e.tsx reads it there). A second build with the invite in it took over 2 minutes on CI.
