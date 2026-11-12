@@ -217,7 +217,13 @@ jobs:
               mkdir -p "$OUT/picture" "$OUT/glyphs" "$OUT/kitty"
               fresh; $s picture e2e/android-picture.sh "$APK" "$COMPANION" "$OUT/picture"
               fresh; $s glyphs e2e/android-glyphs.sh "$APK" "$OUT/glyphs/shot.png"
-              fresh; $s kitty e2e/android-kitty.sh "$APK" "$COMPANION" "$OUT/kitty" ;;
+              fresh; $s kitty e2e/android-kitty.sh "$APK" "$COMPANION" "$OUT/kitty"
+              # The same with the previous release's app, for screenshots of how it was; it does not fail the job.
+              prev="${{ needs.build.outputs.prev }}"
+              mkdir -p "$RUNNER_TEMP/prev" "$OUT/kitty-before"
+              (cd "$RUNNER_TEMP/prev" && gh release download "$prev" --repo "$GITHUB_REPOSITORY" -p SHA256 -p Herdr-Anywhere.apk &&
+                grep '  Herdr-Anywhere.apk$' SHA256 | sha256sum -c -)
+              fresh; HM_KITTY_BEFORE=1 $s kitty-before e2e/android-kitty.sh "$RUNNER_TEMP/prev/Herdr-Anywhere.apk" "$COMPANION" "$OUT/kitty-before" ;;
           esac
           $s --finish
       - name: Check what is uploaded
