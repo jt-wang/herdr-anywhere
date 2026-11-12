@@ -41,46 +41,69 @@ companion_start "$work/serve.log" sk "$bin" serve --listen "127.0.0.1:$port" --h
 invite=$(sk "$bin" pair --url "http://10.0.2.2:$port" --state "$work/companion" 2>/dev/null | grep -o 'http://[^ ]*#pair=[A-Za-z0-9_-]*' | head -1)
 [ -n "$invite" ] || { echo "FAIL: no invite"; exit 1; }
 
-# 360 dp wide: the density that makes the screen's width 360 dp.
-px=$("$adb" shell wm size | tr -d '\r' | tail -1 | awk '{print $NF}' | cut -dx -f1)
-"$adb" shell wm density $((px * 160 / 360)) >/dev/null
 "$adb" shell cmd uimode night no >/dev/null
 "$adb" uninstall "$id" >/dev/null 2>&1 || true
 "$adb" install "$apk" >/dev/null
 "$adb" shell pm grant "$id" android.permission.POST_NOTIFICATIONS >/dev/null 2>&1 || true
-"$adb" shell am start -W -n "$id/.MainActivity" >/dev/null
-"$app/e2e/android-type-link.sh" "$invite"
-tap pair
-
 shown() { # ID SECONDS: the view shows within SECONDS
   end=$(($(date +%s) + $2))
   while [ "$(date +%s)" -lt "$end" ]; do [ -n "$(at "$1")" ] && return 0; sleep 1; done
   return 1
 }
+# Paired at the emulator's own density, as the other suites: at 360 dp the keyboard the link leaves up covered Pair,
+# and the tap paired nothing (the first CI runs). The pairing screen shows the link, so no screenshot of it.
+"$adb" shell am start -W -n "$id/.MainActivity" >/dev/null
+"$app/e2e/android-type-link.sh" "$invite"
+tap pair
+shown "sub-$sk_kid1" 60 || {
+  echo "FAIL: not paired, or home does not list the sub-agent $sk_kid1, 60 s after Pair; on screen:"
+  dump; "$adb" shell cat /sdcard/hm.xml 2>/dev/null | tr '>' '\n' | grep -oE 'resource-id="[^"]+"' | head -30 | sed 's/^/  /'
+  grep -vE " GET /assets/" "$work/serve.log" | tail -8 | sed -E 's/(token|pair)=[^ &]+/\1=…/g; s/^/  /'
+  exit 1
+}
+# Then 360 dp wide (the density that makes the screen's width 360 dp), the app opened again: it stays paired.
+px=$("$adb" shell wm size | tr -d '\r' | tail -1 | awk '{print $NF}' | cut -dx -f1)
+"$adb" shell wm density $((px * 160 / 360)) >/dev/null
+"$adb" shell am force-stop "$id"; sleep 1
+"$adb" shell am start -W -n "$id/.MainActivity" >/dev/null
 shot() { "$adb" exec-out screencap -p > "$out/$theme-$1.png"; }
 home() { # back to home, where the sub-agent's row is: Back while it isn't (Back on home would leave the app)
   for _ in 1 2 3 4; do [ -n "$(at "sub-$kid")" ] && return 0; "$adb" shell input keyevent KEYCODE_BACK; sleep 1.5; done
   shown "sub-$kid" 10
 }
+# A step that did not come: the screen as it was, the ids on it, and what herdr-core and the Companion had then.
+fail() {
+  echo "FAIL: $theme: $1"
+  # Not on the pairing screen: it shows the link, and the upload check would then drop every file.
+  [ -n "$(at pair-link)" ] || "$adb" exec-out screencap -p > "$out/$theme-fail.png" || true
+  echo "on screen:"; dump; "$adb" shell cat /sdcard/hm.xml 2>/dev/null | tr '>' '\n' | grep -oE '(resource-id|text)="[^"]+"' | grep -vE 'pair=|herdr[0-9]:|token=' | head -40 | sed 's/^/  /'
+  echo "herdr-core:"; sk "$sk_hc" ls --json | python3 -c 'import json,sys; [print("  ", t["address"], t.get("parent"), t["state"], t.get("labels")) for t in json.load(sys.stdin)["terminals"]]' || true
+  echo "the Companion's log ends:"; grep -vE " GET /assets/" "$work/serve.log" | tail -8 | sed -E 's/(token|pair)=[^ &]+/\1=…/g; s/^/  /'
+  exit 1
+}
 failed=0
 keep() { # THEME KID
   theme=$1 kid=$2
-  shown "sub-$kid" 60 || { echo "FAIL: $theme: home does not list the sub-agent $kid"; exit 1; }
+  shown "sub-$kid" 60 || fail "home does not list the sub-agent $kid"
   sleep 1; shot 1-home
   tap "sub-$kid"
-  shown peek-keep 15 || { echo "FAIL: $theme: the sub-agent's row opened no peek"; shot 2-peek; exit 1; }
+  # A first tap that opens nothing is said, and tapped again, to tell a lost tap from a row that opens nothing.
+  shown peek-keep 5 || { echo "NOTE: $theme: the first tap on the row opened nothing in 5 s; tapping again"; [ -z "$(at "sub-$kid")" ] || tap "sub-$kid"; }
+  shown peek-keep 15 || fail "the sub-agent's row opened no peek"
   sleep 1; shot 2-peek
   tap peek-keep
   shown "terminal-$kid" 15 && kept=shown || kept="not shown"
   sleep 2; shot 3-kept
-  home || { echo "FAIL: $theme: no way back to home"; exit 1; }
+  home || fail "no way back to home"
   tap "sub-$kid"
   sleep 3
   if [ -n "$(at peek-keep)" ]; then second=peek; elif [ -n "$(at "terminal-$kid")" ]; then second=tab; else second=neither; fi
   shot 4-second-tap
   # As before the fix: the peek again, and Keep once more.
   if [ "$second" = peek ]; then tap peek-keep; sleep 3; fi
-  if shown switcher 10; then tap switcher; sleep 2; shot 5-switcher; fi
+  # The switcher is on the space's page: before the fix Keep left the app on home, so the space is opened first.
+  shown switcher 5 || { [ -z "$(at space-spsk)" ] || tap space-spsk; }
+  if shown switcher 10; then tap switcher; sleep 2; shot 5-switcher; else echo "$theme: no switcher"; fi
   sleep 2
   tabs=$(sk_tabs "$kid"); state=$(sk_state "$kid")
   echo "$theme: after Keep its tab $kept; tapping its row again opened: $second; tabs for it in the shared layout: $tabs; it is $state"
