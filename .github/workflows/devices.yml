@@ -6,11 +6,15 @@ name: Devices
 # screenshots and logs after app/e2e/ci-shots-check.sh has painted over every QR code and found no pairing secret;
 # the check first proves on a real pairing link that it finds one.
 # Android: API 35 emulators on Linux runners (app/e2e/ci/android-up.sh). iOS: iOS 26.5 simulators on macOS runners
-# (app/e2e/ci/ios-up.sh); the app is built for the simulator, unsigned.
-# It runs on main, on release tags and on the public branch ci, where each release's commit must pass before main.
+# (app/e2e/ci/ios-up.sh); the app is built for the simulator, unsigned. Group ios-onerror-27 runs the onError suite
+# again with Xcode 27.0 on iOS 27.0, the SDK the TestFlight builds use; only when a dispatch names it.
+# It runs on main, on release tags, on the public branch ci, where each release's commit must pass before main, and
+# on ci-* branches, where a change is tried on its own beside the others. Each branch has its own concurrency group.
 on:
   push:
-    branches: [main, ci]
+    # A ci-try-* branch runs nothing when pushed: a trial is run by hand (workflow_dispatch), only what it needs. The
+    # "!" pattern comes after "ci-*", as GitHub applies the patterns in order.
+    branches: [main, ci, "ci-*", "!ci-try-*"]
     tags: ["v*"]
   workflow_dispatch:
     inputs:
@@ -32,22 +36,91 @@ on:
         type: choice
         options: ["0", "1", "2", "3", "4", "5"]
         default: "0"
+      # The iOS scroll suite's own self-test (e2e/ios-tui-scroll.sh): miss-first taps beside the space first, so the
+      # suite must fail with its record of the screen and a second tap; slow-terminal looks for the terminal only from
+      # 5 s after the tap, so it must pass with no second tap. Meant with ios_main_repeat; a push never sets it.
+      ios_scroll_selftest:
+        description: "iOS scroll suite self-test: none, miss-first (must fail, with its record) or slow-terminal (must pass)"
+        type: choice
+        options: ["none", "miss-first", "slow-terminal"]
+        default: "none"
+      # The iOS pictures suite's self-test (e2e/ios-picture.sh): the dark run's first tap lands beside the path
+      # (miss-first) or is never made (no-tap-first), so the suite must fail with its record of that tap; no-tap-first
+      # also shows the app's UIKit log with no touch for it and touches for the second tap (e2e/ios-touch-log.sh).
+      # Meant with ios_b_repeat; a push never sets it.
+      ios_picture_selftest:
+        description: "iOS pictures suite self-test: none, miss-first or no-tap-first (must fail, with its record)"
+        type: choice
+        options: ["none", "miss-first", "no-tap-first"]
+        default: "none"
+      # The tap that opens a space from home, in the keyboard and pictures suites (OpenSpace.swift): miss-first makes
+      # the first one land beside the space, so both must fail with their record of it and a second tap. A push never
+      # sets it.
+      ios_open_space_selftest:
+        description: "iOS open-the-space self-test (keyboard, pictures): none or miss-first (both must fail, with their record)"
+        type: choice
+        options: ["none", "miss-first"]
+        default: "none"
+      # How often the upload check's OCR misses the self-test's grey link on a Linux runner (ci-shots-check.sh
+      # --probe-grey); only that job runs.
+      ocr_probe:
+        description: "Only measure how often the upload check misses a link in a field's grey on a Linux runner"
+        type: boolean
+        default: false
+      # Some of the suite groups and not the others (app/e2e/ci/groups.sh has the names and what each runs).
+      groups:
+        description: "Only these groups, by commas or spaces (empty: all but ios-onerror-27): ios-main ios-b ios-onerror ios-onerror-27 android-main android-panes android-tunnel android-notify android-progress android-picture android-update remote-picture user-path"
+        type: string
+        default: ""
 
 permissions:
   contents: read
 
 concurrency:
-  # A run of copies has a group of its own, so it doesn't cancel the branch's usual run, nor that run it.
-  group: devices-${{ github.ref }}${{ ((inputs.ios_main_repeat || '0') != '0' || (inputs.ios_b_repeat || '0') != '0') && '-repeat' || '' }}
+  # A run of copies has a group of its own, so it doesn't cancel the branch's usual run, nor that run it; copies of
+  # the main group and of the b group apart, as a run has only one of them (ios_main_repeat wins over ios_b_repeat).
+  # So does each scroll self-test, the pictures self-test, the open-the-space one, the OCR probe and a run of some groups.
+  group: devices-${{ github.ref }}${{ (inputs.ios_main_repeat || '0') != '0' && '-repeat-a' || (inputs.ios_b_repeat || '0') != '0' && '-repeat-b' || '' }}${{ (inputs.ios_scroll_selftest || 'none') != 'none' && format('-{0}', inputs.ios_scroll_selftest) || '' }}${{ (inputs.ios_picture_selftest || 'none') != 'none' && '-picture-selftest' || '' }}${{ (inputs.ios_open_space_selftest || 'none') != 'none' && '-open-space-selftest' || '' }}${{ inputs.ocr_probe && '-ocr-probe' || '' }}${{ inputs.groups && '-groups' || '' }}
   cancel-in-progress: true
 
 env:
   ANDROID_SERIAL: emulator-5554
 
 jobs:
+  # Which groups this run takes: all on a push; a dispatch may name some (groups) or run copies of one iOS group.
+  plan:
+    name: Which suite groups run
+    if: github.repository == 'jt-wang/herdr-anywhere' && !inputs.ocr_probe
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      ios: ${{ steps.groups.outputs.ios }}
+      android: ${{ steps.groups.outputs.android }}
+      update: ${{ steps.groups.outputs.update }}
+      remote: ${{ steps.groups.outputs.remote }}
+      user_path: ${{ steps.groups.outputs.user_path }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: groups
+        env:
+          HM_GROUPS: ${{ inputs.groups }}
+          MAIN_REPEAT: ${{ inputs.ios_main_repeat || '0' }}
+          B_REPEAT: ${{ inputs.ios_b_repeat || '0' }}
+        run: |
+          # Every script's trap on INT or TERM ends it (a cancelled or timed-out job sends one), and the check finds one that doesn't.
+          sh app/e2e/ci/traps.sh --self-test
+          sh app/e2e/ci/traps.sh
+          sh app/e2e/ci/groups.sh --self-test
+          sh app/e2e/ci/groups.sh "$HM_GROUPS" "$MAIN_REPEAT" "$B_REPEAT" > "$RUNNER_TEMP/groups"
+          cat "$RUNNER_TEMP/groups"
+          cat "$RUNNER_TEMP/groups" >> "$GITHUB_OUTPUT"
+
   build:
     name: Build the APK and the Linux companion
-    if: github.repository == 'jt-wang/herdr-anywhere' && (inputs.ios_main_repeat || '0') == '0' && (inputs.ios_b_repeat || '0') == '0'
+    needs: plan
+    if: needs.plan.outputs.android != '[]' || needs.plan.outputs.remote == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     outputs:
@@ -75,6 +148,8 @@ jobs:
           cp app/android/build/Herdr.apk "$RUNNER_TEMP/build/"
           (cd companion && CGO_ENABLED=0 go build -buildvcs=false -trimpath -ldflags="-s -w" -o "$RUNNER_TEMP/build/herdr-anywhere-linux-amd64" ./cmd/herdr-anywhere)
           "$RUNNER_TEMP/build/herdr-anywhere-linux-amd64" --version
+      - name: The suites' start and stop of their Companion (e2e/companion.sh)
+        run: sh app/e2e/companion.sh --self-test "$RUNNER_TEMP/build/herdr-anywhere-linux-amd64"
       - run: app/e2e/ci/tools.sh shots
       - name: Check what is uploaded
         run: |
@@ -90,7 +165,8 @@ jobs:
   # as 9.9.9, that one under another key, the previous release's APK built from its tag, and the companions.
   build-update:
     name: Build the update test's files
-    if: github.repository == 'jt-wang/herdr-anywhere' && (inputs.ios_main_repeat || '0') == '0' && (inputs.ios_b_repeat || '0') == '0'
+    needs: plan
+    if: needs.plan.outputs.update == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -127,30 +203,19 @@ jobs:
           path: ${{ runner.temp }}/update
           retention-days: 1
 
+  # android.sh in the light theme runs in computers.yml's android-linux. android-typing.sh stays on a Mac: it needs
+  # Gboard with pinyin added as its second language, which is set by hand in Gboard's settings.
   android:
-    name: Android ${{ matrix.name }}
-    needs: build
+    name: Android ${{ fromJSON('{"main":"main (dark)","panes":"switcher, width, mouse, scrolling","tunnel":"Tailcat, background, reconnect","notify":"languages and notifications","progress":"progress page","picture":"pictures and letters"}')[matrix.key] }}
+    needs: [plan, build]
+    if: needs.plan.outputs.android != '[]'
     runs-on: ubuntu-latest
     timeout-minutes: 75
     strategy:
       fail-fast: false
       matrix:
-        include:
-          # android.sh in the light theme runs in computers.yml's android-linux.
-          - name: main (dark)
-            key: main
-          - name: switcher, width, mouse, scrolling
-            key: panes
-          - name: Tailcat, background, reconnect
-            key: tunnel
-          - name: languages and notifications
-            key: notify
-          - name: progress page
-            key: progress
-          - name: pictures and letters
-            key: picture
-          # android-typing.sh stays on a Mac: it needs Gboard with pinyin added as its second language, which is set by
-          # hand in Gboard's settings.
+        # The groups' keys (app/e2e/ci/groups.sh): main, panes, tunnel, notify, progress, picture.
+        key: ${{ fromJSON(needs.plan.outputs.android) }}
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -281,7 +346,8 @@ jobs:
   # A picture on another machine, read through hc over `docker exec` into a container with no network.
   remote-picture:
     name: A picture on another machine (docker)
-    needs: build
+    needs: [plan, build]
+    if: needs.plan.outputs.remote == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -323,7 +389,8 @@ jobs:
   # INSTALL.md's Mac steps from a folder of release files with no Go on the path, then start through Tailcat and a code.
   user-path:
     name: Install steps from the release files (Mac)
-    if: github.repository == 'jt-wang/herdr-anywhere' && (inputs.ios_main_repeat || '0') == '0' && (inputs.ios_b_repeat || '0') == '0'
+    needs: plan
+    if: needs.plan.outputs.user_path == 'true'
     runs-on: macos-26
     timeout-minutes: 30
     steps:
@@ -361,16 +428,19 @@ jobs:
           retention-days: 7
 
   ios:
-    name: iOS ${{ matrix.key == 'a' && 'main, keyboard, letters, languages, scrolling' || 'Tailcat, pictures' }}${{ matrix.copy != 0 && format(' (copy {0})', matrix.copy) || '' }}
-    if: github.repository == 'jt-wang/herdr-anywhere'
-    runs-on: macos-26
+    name: iOS ${{ fromJSON('{"a":"main, keyboard, letters, languages, scrolling","b":"Tailcat, pictures","onerror":"an error the JS does not catch","onerror27":"an error the JS does not catch (iOS 27)"}')[matrix.key] }}${{ matrix.copy != 0 && format(' (copy {0})', matrix.copy) || '' }}
+    needs: plan
+    if: needs.plan.outputs.ios != '[]'
+    # xcode-27 is the runner image with Xcode 27 and the iOS 27 simulators (as tests.yml's ios27).
+    runs-on: ${{ matrix.key == 'onerror27' && 'xcode-27' || 'macos-26' }}
     timeout-minutes: 75
     strategy:
       fail-fast: false
       matrix:
-        # a: main, keyboard, letters, languages, scrolling; b: Tailcat, pictures. copy 0 is the usual run; a run of
-        # copies (ios_main_repeat or ios_b_repeat) has only that group, numbered from 1.
-        key: ${{ fromJSON(inputs.ios_main_repeat != '0' && inputs.ios_main_repeat && '["a"]' || inputs.ios_b_repeat != '0' && inputs.ios_b_repeat && '["b"]' || '["a", "b"]') }}
+        # a: main, keyboard, letters, languages, scrolling (group ios-main); b: Tailcat, pictures (ios-b); onerror: an
+        # error the app's JS doesn't catch (ios-onerror); onerror27: the same on iOS 27 (ios-onerror-27). copy 0 is the
+        # usual run; a run of copies (ios_main_repeat or ios_b_repeat) has only that group, numbered from 1.
+        key: ${{ fromJSON(needs.plan.outputs.ios) }}
         copy: ${{ fromJSON('{"0":[0],"1":[1],"2":[1,2],"3":[1,2,3],"4":[1,2,3,4],"5":[1,2,3,4,5]}')[inputs.ios_main_repeat != '0' && inputs.ios_main_repeat || inputs.ios_b_repeat != '0' && inputs.ios_b_repeat || '0'] }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -389,8 +459,17 @@ jobs:
           python-version: "3.13"
       - run: app/e2e/ci/tools.sh core nsh zsh ios shots
       - run: app/e2e/ci/ios-up.sh
+        env:
+          HM_XCODE: ${{ matrix.key == 'onerror27' && '/Applications/Xcode_27.0.app' || '' }}
+          HM_IOS: ${{ matrix.key == 'onerror27' && 'iOS 27.0' || '' }}
       - name: Suites
         working-directory: app
+        env:
+          HM_SCROLL_MISS_FIRST: ${{ inputs.ios_scroll_selftest == 'miss-first' && '1' || '' }}
+          HM_SCROLL_SLOW_TERM: ${{ inputs.ios_scroll_selftest == 'slow-terminal' && '1' || '' }}
+          HM_PICTURE_MISS_FIRST: ${{ inputs.ios_picture_selftest == 'miss-first' && '1' || '' }}
+          HM_PICTURE_NO_TAP_FIRST: ${{ inputs.ios_picture_selftest == 'no-tap-first' && '1' || '' }}
+          HM_MISS_SPACE: ${{ inputs.ios_open_space_selftest == 'miss-first' && '1' || '' }}
         run: |
           s=e2e/ci/suite.sh
           case "${{ matrix.key }}" in
@@ -407,6 +486,10 @@ jobs:
               mkdir -p "$OUT/picture"
               $s ios-tailcat e2e/ios-tailcat.sh "$OUT/tailcat.png"
               $s ios-picture e2e/ios-picture.sh "$OUT/picture" ;;
+            onerror)
+              $s ios-onerror e2e/ios-onerror.sh "$OUT/onerror.png" ;;
+            onerror27)
+              $s ios-onerror e2e/ios-onerror.sh "$OUT/onerror27.png" ;;
           esac
           $s --finish
       - name: Check what is uploaded
@@ -417,9 +500,19 @@ jobs:
           (cd companion && CGO_ENABLED=0 go build -buildvcs=false -o "$RUNNER_TEMP/check/herdr-anywhere" ./cmd/herdr-anywhere)
           app/e2e/ci-shots-check.sh --self-test "$RUNNER_TEMP/check/herdr-anywhere"
           app/e2e/ci-shots-check.sh "$OUT"
+          # A failure folder's names are made fit for the upload; checked here, as one bad name loses the whole artifact.
+          sh app/e2e/ios-xcresult.sh --self-test
+          # The suites' "app:" lines are the app's own, not log stream's header that repeats the words.
+          sh app/e2e/app-lines.sh --self-test
+          # A failed suite's Companion log and the simulator's crash reports from the suite, and only those.
+          sh app/e2e/ios-failure-logs.sh --self-test
       - name: Shut the simulator
         if: always()
-        run: '[ -z "${SIM_UDID:-}" ] || { xcrun simctl shutdown "$SIM_UDID"; xcrun simctl delete "$SIM_UDID"; }'
+        # A suite may have shut it already (ios-onerror.sh does, as its last step); shutting a shut one fails.
+        run: |
+          [ -n "${SIM_UDID:-}" ] || exit 0
+          if xcrun simctl list devices booted | grep -q "$SIM_UDID"; then xcrun simctl shutdown "$SIM_UDID"; fi
+          xcrun simctl delete "$SIM_UDID"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always() && steps.check.outcome == 'success'
         with:
@@ -428,6 +521,22 @@ jobs:
           retention-days: 7
 
   # What a phone gets back over Tailcat when it can't connect (tailcat_lost_probe_test.go); only when asked for.
+  ocr-probe:
+    name: Upload check, a grey link read on a Linux runner
+    if: github.repository == 'jt-wang/herdr-anywhere' && github.event_name == 'workflow_dispatch' && inputs.ocr_probe
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: app/e2e/ci/tools.sh shots
+      - run: app/e2e/ci-shots-check.sh --probe-grey 40
+      # The same with the CPU kept busy, a loop per core: with 3 per core, 40 links took over 25 minutes. Each link
+      # prints its line as it goes, and the step has its own time limit, so a slow one still leaves numbers.
+      - run: app/e2e/ci-shots-check.sh --probe-grey 10 "$(nproc)"
+        timeout-minutes: 40
+
   tailcat-probe:
     name: Tailcat, what a phone sees when it can't connect
     if: github.repository == 'jt-wang/herdr-anywhere' && github.event_name == 'workflow_dispatch' && inputs.probe
