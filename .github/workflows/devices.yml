@@ -6,7 +6,8 @@ name: Devices
 # screenshots and logs after app/e2e/ci-shots-check.sh has painted over every QR code and found no pairing secret;
 # the check first proves on a real pairing link that it finds one.
 # Android: API 35 emulators on Linux runners (app/e2e/ci/android-up.sh). iOS: iOS 26.5 simulators on macOS runners
-# (app/e2e/ci/ios-up.sh); the app is built for the simulator, unsigned.
+# (app/e2e/ci/ios-up.sh); the app is built for the simulator, unsigned. Job ios27 runs the main suite again with Xcode
+# 27.0 on iOS 27.0, the SDK the TestFlight builds use.
 # It runs on main, on release tags, on the public branch ci, where each release's commit must pass before main, and
 # on ci-* branches, where a change is tried on its own beside the others. Each branch has its own concurrency group.
 on:
@@ -467,6 +468,60 @@ jobs:
         if: always() && steps.check.outcome == 'success'
         with:
           name: ios-${{ matrix.key }}${{ matrix.copy != 0 && format('-{0}', matrix.copy) || '' }}
+          path: ${{ runner.temp }}/out
+          retention-days: 7
+
+  # The main suite (pairing, the connection, home) built with Xcode 27.0 and run on iOS 27.0: iOS 27 ends the launch of
+  # an app built with its SDK that has no scene, which the iOS 26.5 jobs above can't see (TestFlight 0.1.24).
+  ios27:
+    name: iOS 27 main
+    if: github.repository == 'jt-wang/herdr-anywhere' && !inputs.ocr_probe && (inputs.ios_main_repeat || '0') == '0' && (inputs.ios_b_repeat || '0') == '0'
+    runs-on: xcode-27
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Paths
+        run: |
+          echo "OUT=$RUNNER_TEMP/out" >> "$GITHUB_ENV"
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: companion/go.mod
+          cache-dependency-path: companion/go.sum
+      # fb-idb 1.1.7 stops at start on Python 3.14 ("There is no current event loop"); 3.13 runs it.
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - run: app/e2e/ci/tools.sh core nsh zsh ios shots
+      - run: app/e2e/ci/ios-up.sh
+        env:
+          HM_XCODE: /Applications/Xcode_27.0.app
+          HM_IOS: iOS 27.0
+      - name: Suites
+        working-directory: app
+        run: |
+          s=e2e/ci/suite.sh
+          $s ios e2e/ios.sh "$OUT/ios27.png"
+          $s --finish
+      - name: Check what is uploaded
+        id: check
+        if: always()
+        run: |
+          mkdir -p "$OUT" "$RUNNER_TEMP/check"
+          (cd companion && CGO_ENABLED=0 go build -buildvcs=false -o "$RUNNER_TEMP/check/herdr-anywhere" ./cmd/herdr-anywhere)
+          app/e2e/ci-shots-check.sh --self-test "$RUNNER_TEMP/check/herdr-anywhere"
+          app/e2e/ci-shots-check.sh "$OUT"
+          sh app/e2e/ios-xcresult.sh --self-test
+          sh app/e2e/app-lines.sh --self-test
+          sh app/e2e/ios-failure-logs.sh --self-test
+      - name: Shut the simulator
+        if: always()
+        run: '[ -z "${SIM_UDID:-}" ] || { xcrun simctl shutdown "$SIM_UDID"; xcrun simctl delete "$SIM_UDID"; }'
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always() && steps.check.outcome == 'success'
+        with:
+          name: ios27
           path: ${{ runner.temp }}/out
           retention-days: 7
 
