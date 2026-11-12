@@ -9,16 +9,34 @@ import TailPocketNSH
 import UIKit
 import UniformTypeIdentifiers
 
+// iOS 27 ends the launch of an app built with the iOS 27 SDK that makes its window here, without a scene (crash in
+// _UIApplicationEvaluateRuntimeIssueForNoSceneLifecycleAdoption, TestFlight 0.1.24 on iOS 27.2.1): the window comes
+// from SceneDelegate, named in Info.plist's UIApplicationSceneManifest (project.yml). e2e/ios-scene.sh checks a build.
 @main
 final class AppDelegate: UIResponder, UIApplicationDelegate {
+  // The scene's window too, for code that still asks the app delegate for its window.
   var window: UIWindow?
 
   func application(_ application: UIApplication, didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
     hideWebKeyboardBar()
-    window = UIWindow(frame: UIScreen.main.bounds)
-    window?.rootViewController = AppController()
-    window?.makeKeyAndVisible()
     return true
+  }
+
+  func application(_ application: UIApplication, configurationForConnecting session: UISceneSession, options: UIScene.ConnectionOptions) -> UISceneConfiguration {
+    UISceneConfiguration(name: "Default Configuration", sessionRole: session.role)
+  }
+}
+
+final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
+  var window: UIWindow?
+
+  func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options: UIScene.ConnectionOptions) {
+    guard let scene = scene as? UIWindowScene else { return }
+    let window = UIWindow(windowScene: scene)
+    window.rootViewController = AppController()
+    self.window = window
+    (UIApplication.shared.delegate as? AppDelegate)?.window = window
+    window.makeKeyAndVisible()
   }
 }
 
@@ -59,7 +77,8 @@ final class AppController: UIViewController, UIDocumentPickerDelegate, QLPreview
     super.viewDidLoad()
     app.frame = view.bounds
     app.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-    app.onError = { message in NSLog("nsh error: %@", message) }
+    // No app.onError: nsh 0.3.0 frees the handler as it is set, so the first JS error the app does not catch would
+    // crash it (e2e/ios-onerror.sh). nsh writes those errors to the log itself.
     view.addSubview(app)
     tailPocket = TailPocketNsh.attach(app)
     app.handle("page.pickFiles") { [weak self] data, reply in
