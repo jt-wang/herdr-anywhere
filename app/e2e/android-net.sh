@@ -40,22 +40,33 @@ mobile_ready() {
 # WiFi off, then up to $1 seconds (180) for mobile data alone, validated and the default; says how long it took.
 # On CI, a disable sent in the first second after boot was undone when the phone switched WiFi on a few seconds later,
 # so it is sent again while WiFi is listed. Mobile data stayed away for over two minutes on some runs, with WiFi off or
-# on; with none 60 s on, it is turned off and on once, and what the phone says of its radio is printed.
+# on, the radio in service and mobile data on, but no data connection ever set up (mDataConnectionState -1). With none
+# 60 s on, mobile data is turned off and on once; with none 100 s on, airplane mode goes on and off once.
 mobile_only() {
   "$adb" shell svc wifi disable
-  i=0; kicked=
+  i=0; kick=0
   while [ "$i" -lt "${1:-180}" ]; do
     n=$("$adb" shell dumpsys connectivity 2>/dev/null | tr -d '\r' | net_read)
     printf '%s\n' "$n" | mobile_ready && {
       echo "the phone goes out through mobile data alone, WiFi off ($i s):"; printf '%s\n' "$n" | sed 's/^/    /'; return 0; }
     case $n in *": WIFI"*) "$adb" shell svc wifi disable ;; esac
-    case $kicked$n in *": MOBILE"*) ;; *) [ "$i" -lt 60 ] || {
-      kicked=1; echo "no mobile data $i s after WiFi was turned off; it is turned off and on. The radio:"; radio
-      "$adb" shell svc data disable; "$adb" shell svc data enable; } ;; esac
+    case $n in *": MOBILE"*) ;; *)
+      if [ "$kick" = 0 ] && [ "$i" -ge 60 ]; then
+        kick=1; echo "no mobile data $i s after WiFi was turned off; mobile data is turned off and on. The radio:"; radio
+        "$adb" shell svc data disable; "$adb" shell svc data enable
+      elif [ "$kick" = 1 ] && [ "$i" -ge 100 ]; then
+        kick=2; echo "no mobile data $i s after WiFi was turned off; airplane mode goes on and off. The radio:"; radio
+        "$adb" shell cmd connectivity airplane-mode enable; ${net_sleep:-sleep} 2
+        "$adb" shell cmd connectivity airplane-mode disable
+      fi ;;
+    esac
     ${net_sleep:-sleep} 1; i=$((i + 1))
   done
   echo "FAIL: ${1:-180} s after WiFi was turned off, mobile data is not the phone's validated default network:"; nets
   echo "  the radio:"; radio
+  echo "  the radio log, mobile data lines (last 20):"
+  "$adb" shell logcat -b radio -d 2>/dev/null | tr -d '\r' | grep -i -E 'data ?network|setupdata|dataprofile|apn|datacall' |
+    tail -20 | cut -c1-300 | sed 's/^/    /' || true
   return 1
 }
 # What the phone's telephony service says of its radio (TelephonyRegistry's dump): service and data connection state.
@@ -93,26 +104,33 @@ no default network'
   # mobile_only against a made-up phone: each dumpsys is a second; what it shows depends on $plan and on what was sent.
   #   late-wifi: WiFi comes up 2 s in whatever was sent before, and goes once a disable is sent after; mobile data from 3 s.
   #   stuck-data: no WiFi; mobile data only after it was turned off and on.  no-data: no WiFi and never mobile data.
+  #   stuck-radio: no WiFi; mobile data only after airplane mode went on and off.
+  # Each of the two is done once: $st/kicks counts mobile data turned on, $st/flights airplane mode turned off.
   st=$(mktemp -d) || exit 1
   trap 'rm -rf "${st:?}"' EXIT; trap 'exit 1' INT TERM
   fake_adb() {
     shift
     case "$*" in
       'svc wifi disable') [ "$(cat "$st/t")" -ge 2 ] && : > "$st/wifi-off" ;;
-      'svc data enable') : > "$st/data-kicked" ;;
+      'svc data enable') : > "$st/data-kicked"; echo x >> "$st/kicks" ;;
+      'cmd connectivity airplane-mode disable') : > "$st/flown"; echo x >> "$st/flights" ;;
       'dumpsys connectivity')
         t=$(cat "$st/t"); echo $((t + 1)) > "$st/t"
         def=none; w=; m=
         if [ "$plan" = late-wifi ] && [ "$t" -ge 2 ] && [ ! -e "$st/wifi-off" ]; then w=$wifi; def=100; fi
-        if { [ "$plan" = late-wifi ] && [ "$t" -ge 3 ]; } || { [ "$plan" = stuck-data ] && [ -e "$st/data-kicked" ]; }; then
+        if { [ "$plan" = late-wifi ] && [ "$t" -ge 3 ]; } || { [ "$plan" = stuck-data ] && [ -e "$st/data-kicked" ]; } ||
+           { [ "$plan" = stuck-radio ] && [ -e "$st/flown" ]; }; then
           m=$mob_default; [ -n "$w" ] || def=101; fi
         printf '%s\n' "Active default network: $def" ${w:+"$w"} ${m:+"$m"} ;;
     esac
   }
-  run() { plan=$1; rm -f "$st/wifi-off" "$st/data-kicked"; echo 0 > "$st/t"; adb=fake_adb net_sleep=: mobile_only "$2" > "$st/out"; }
+  run() { plan=$1; rm -f "$st/wifi-off" "$st/data-kicked" "$st/flown"; : > "$st/kicks"; : > "$st/flights"; echo 0 > "$st/t"; adb=fake_adb net_sleep=: mobile_only "$2" > "$st/out"; }
   run late-wifi 20 || { echo "FAIL: android-net self-test: WiFi up after the first disable kept it on:"; cat "$st/out"; exit 1; }
   run stuck-data 120 || { echo "FAIL: android-net self-test: mobile data that comes only once turned off and on:"; cat "$st/out"; exit 1; }
+  run stuck-radio 180 || { echo "FAIL: android-net self-test: mobile data that comes only after airplane mode:"; cat "$st/out"; exit 1; }
+  [ "$(wc -l < "$st/kicks")" -eq 1 ] || { echo "FAIL: android-net self-test: mobile data turned off and on $(wc -l < "$st/kicks" | tr -d ' ') times, not once"; exit 1; }
   run no-data 120 && { echo "FAIL: android-net self-test: ready without mobile data"; exit 1; }
+  [ "$(($(wc -l < "$st/kicks"))) $(($(wc -l < "$st/flights")))" = "1 1" ] || { echo "FAIL: android-net self-test: without mobile data, turned off and on $(wc -l < "$st/kicks" | tr -d ' ') times and airplane mode $(wc -l < "$st/flights" | tr -d ' ') times, not once each"; exit 1; }
   grep -q '^FAIL: 120 s after' "$st/out" || { echo "FAIL: android-net self-test: no FAIL line without mobile data:"; cat "$st/out"; exit 1; }
   echo "PASS: android-net self-test"
 fi
