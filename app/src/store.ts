@@ -15,6 +15,7 @@ import { activity } from './model/answers.ts'
 import type { Restart } from './restart.ts'
 import { t as tr, type Key } from './strings/index.ts'
 import { readMenu, type Menu } from './model/menu.ts'
+import type { Step } from './model/ask.ts'
 import { spaceMarks } from './model/marks.ts'
 import type { ChatApi } from './model/chat.ts'
 
@@ -445,19 +446,30 @@ export class Store {
     const looking = (a: string) => this.appActive && this.viewingTab && visible.has(a)
     let changed = this.dirty
     this.dirty = false
-    for (const t of this.terms.list()) {
+    for (const t0 of this.terms.list()) {
+      // Codex says done: whether it waits on "Implement this plan?" is on its screen only. Its word waits for that read.
+      if (t0.reported && t0.status?.app === 'codex' && t0.status.state === 'done' && !this.planSeen.has(t0.status)) {
+        if (this.firstSync) this.planQuiet.add(t0.address)
+        void this.readPlan(t0)
+        continue
+      }
+      const t = this.asShown(t0)
+      // The plan's dialog closed with "No, stay in Plan mode": Codex says idle, and nothing finished.
+      if (t !== t0) this.planWaits.add(t.address)
+      else if (this.planWaits.delete(t.address) && t.status?.state === 'idle') this.planQuiet.add(t.address)
       const word = t.reported && t.status?.state ? t.status.state : undefined
       const prev = this.model.agents.get(t.address)?.word
       if (!this.model.setWord(t.address, word, t.status?.app ?? undefined, looking(t.address))) { this.ringAgain(t); continue }
       this.rung.delete(t.address)
       changed = true
-      if (this.firstSync) continue
+      if (this.firstSync || this.planQuiet.delete(t.address)) continue
       const sub = !!t.parent && this.model.paneOf(t.address) === undefined
       const kind = this.model.alertFor(t.address, sub, prev, word, looking(t.address))
       if (kind) this.ring(kind, t)
     }
     if (this.appActive && this.viewingTab && this.model.markSeen([...visible])) changed = true
-    for (const t of this.terms.list()) {
+    for (const t0 of this.terms.list()) {
+      const t = this.asShown(t0)
       const blocked = t.state === 'live' && t.reported && t.status?.state === 'blocked'
       if (blocked && !this.menus.has(t.address)) { this.menus.set(t.address, undefined); void this.readChoices(t.address, 3) }
       else if (!blocked && this.menus.delete(t.address)) { this.menuTries.delete(t.address); changed = true }
@@ -599,7 +611,40 @@ export class Store {
   // ---- what the screens show ---------------------------------------------------------------------
 
   term(addr: string | undefined) {
-    return addr ? this.terms.get(addr) : undefined
+    const t = addr ? this.terms.get(addr) : undefined
+    return t && this.asShown(t)
+  }
+
+  /** Codex's done reports, read on its screen (readPlan): true when it waits on "Implement this plan?". */
+  private planSeen = new WeakMap<object, boolean>()
+  private planReading = new WeakSet<object>()
+  /** Terminals whose next word is set without an alert: read at the first pass, as every other one then; or their
+   *  plan's dialog was closed. */
+  private planQuiet = new Set<string>()
+  /** Terminals shown waiting on "Implement this plan?". */
+  private planWaits = new Set<string>()
+
+  /** A terminal as the screens show it: a Codex waiting on "Implement this plan?" is blocked on a permission for
+   *  the plan, as Claude Code reports its own (status kind "permission", msg "approve plan"). */
+  private asShown(t: Term): Term {
+    const st = t.status
+    if (!st || st.app !== 'codex' || st.state !== 'done' || this.planSeen.get(st) !== true) return t
+    return { ...t, status: { ...st, state: 'blocked', kind: 'permission', msg: 'approve plan' } }
+  }
+
+  /** Reads a Codex's screen once per done report for "Implement this plan?" (Codex 0.167.1 reports done meanwhile,
+   *  and its status and events say nothing else after a finished turn, measured), then passes again. */
+  private async readPlan(t: Term) {
+    const st = t.status!
+    if (this.planReading.has(st)) return
+    this.planReading.add(st)
+    let menu: Menu | undefined
+    try { menu = readMenu('codex', (await this.call<{ text: string }>('terminal.read', { terminal: t.address, lines: 0 })).text ?? '') } catch {}
+    const plan = menu?.question === 'Implement this plan?'
+    this.planSeen.set(st, plan)
+    if (plan && this.terms.get(t.address)?.status === st) { this.menus.set(t.address, menu); this.menuTries.set(t.address, 0) }
+    this.dirty = true
+    this.sync()
   }
 
   program(addr: string | undefined): Program {
@@ -679,7 +724,7 @@ export class Store {
     const focusedPane = this.viewingTab ? this.model.focusedPane() : undefined
     for (const s of this.model.spaces) for (const [ti, c] of s.tabs.entries()) for (const n of panes(c.root)) {
       const a = terminalOf(n)
-      const t = a ? this.terms.get(a) : undefined
+      const t = a ? this.term(a) : undefined
       const st = a ? this.model.status(a) : undefined
       if (!a || !t || t.state !== 'live') continue
       const p = this.program(a)
@@ -752,6 +797,30 @@ export class Store {
   async answer(addr: string, a: { keys: string[] }, text?: string) {
     await this.call('terminal.keys', { terminal: addr, keys: a.keys })
     if (text !== undefined) await this.call('terminal.send', { terminal: addr, text, force: true })
+  }
+
+  /** A decision card's tap (model/ask.ts): its keys and text in order, then the screen read again until it shows
+   *  something else, 5 times 400 ms apart at most. 'moved': the agent went on (another screen, or not blocked any
+   *  more); 'same': the screen didn't change, and the card stays as it was. */
+  async press(addr: string, steps: Step[]): Promise<'moved' | 'same'> {
+    const before = JSON.stringify(this.menus.get(addr) ?? null)
+    for (const st of steps) {
+      if ('keys' in st) await this.call('terminal.keys', { terminal: addr, keys: st.keys })
+      else await this.call('terminal.send', { terminal: addr, text: st.text, force: true })
+    }
+    for (let i = 0; i < 5; i++) {
+      await new Promise((r) => this.io.setTimeout(r, 400))
+      if (!this.menus.has(addr)) return 'moved'
+      let menu: Menu | undefined
+      try { menu = readMenu(this.terms.get(addr)?.status?.app, (await this.call<{ text: string }>('terminal.read', { terminal: addr, lines: 0 })).text ?? '') } catch { continue }
+      if (!this.menus.has(addr)) return 'moved'
+      if (JSON.stringify(menu ?? null) === before) continue
+      this.menus.set(addr, menu)
+      if (!menu) void this.readChoices(addr, 3)
+      this.bump()
+      return 'moved'
+    }
+    return 'same'
   }
 
   /** The blocked agent's choices as its screen shows them, when its layout is known (model/menu.ts). */

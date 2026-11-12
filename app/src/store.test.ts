@@ -4,6 +4,7 @@ import { t as tr } from './strings/index.ts'
 import { FakeCore, settle } from './testing/fakecore.ts'
 import { panes, terminalOf } from './model/layout.ts'
 import { spaceActiveTab } from './model/model.ts'
+import * as CX from './testing/screens/codex-0.167.1.ts'
 
 /** Waits for a condition the store reaches on its own timers, up to 5 s: a fixed wait failed while the computer was busy. */
 async function until(ok: () => boolean) {
@@ -1071,4 +1072,48 @@ test('an agent that rang costs nothing on later passes until what it says change
   await settle()
   expect(told.length).toBe(1)
   expect(told[0].startsWith('ran the tests and fixed one')).toBe(true)
+})
+
+// Codex 0.167.1 ends a plan with "Implement this plan?" and reports done meanwhile, as after any turn
+// (its status and events are the same after both, measured): only its screen tells them apart. The phone reads it when Codex says done.
+test("Codex's 'Implement this plan?' waits on you though Codex reports done: it rings as needing you, once", async () => {
+  const { core, store } = setup()
+  const rung: string[] = []
+  store.onAlert = (k) => rung.push(k)
+  await store.connect()
+  const r = await store.newSpace({ argv: ['codex'] })
+  await settle()
+  core.setStatus(r.terminal, 'working', 'codex')
+  await settle()
+  core.screens.set(r.terminal, CX.PLAN)
+  core.setStatus(r.terminal, 'done', 'codex')
+  await until(() => rung.length > 0)
+  await settle(10)
+  expect(rung).toEqual(['blocked'])
+  expect(store.statusOf(r.terminal)).toBe('blocked')
+  expect([store.term(r.terminal)?.status?.state, store.term(r.terminal)?.status?.kind, store.term(r.terminal)?.status?.msg]).toEqual(['blocked', 'permission', 'approve plan'])
+  expect(store.menuFor(r.terminal)?.question).toBe('Implement this plan?')
+  // 3 closes it: Codex reports idle, and nothing waits any more.
+  core.screens.set(r.terminal, CX.DONE)
+  core.setStatus(r.terminal, 'idle', 'codex')
+  await settle(10)
+  expect(store.term(r.terminal)?.status?.state).toBe('idle')
+  expect(store.menuFor(r.terminal)).toBe(undefined)
+  expect(rung).toEqual(['blocked'])
+})
+
+test('an ordinary done from Codex still rings as done', async () => {
+  const { core, store } = setup()
+  const rung: string[] = []
+  store.onAlert = (k) => rung.push(k)
+  await store.connect()
+  const r = await store.newSpace({ argv: ['codex'] })
+  await settle()
+  core.setStatus(r.terminal, 'working', 'codex')
+  await settle()
+  core.screens.set(r.terminal, CX.DONE)
+  core.setStatus(r.terminal, 'done', 'codex')
+  await until(() => rung.length > 0)
+  expect(rung).toEqual(['done'])
+  expect(store.term(r.terminal)?.status?.state).toBe('done')
 })

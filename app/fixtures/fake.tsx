@@ -170,8 +170,23 @@ const pressed: [string, string[]][] = []
 core.onKeys = (addr, keys) => {
   pressed.push([addr, keys])
   void Storage.setItem('fake-keys', JSON.stringify(pressed))
+  if (flowed(addr, { keys })) return
   const st = core.terms.get(addr)?.status
   if (st?.state === 'blocked') core.setStatus(addr, 'working', st.app)
+}
+// An agent that goes on through several screens, as Claude Code does through a call's questions: `app.host.send(
+// 'fake.flow', { address, steps: [{ keys: ['2'], screen }, { text: 'mine', screen }, { keys: ['1'], state: 'working' }] })`.
+// Keys or text that match the next step show its screen, the agent still blocked unless the step says another state.
+const flows = new Map<string, { keys?: string[]; text?: string; screen?: string; state?: string }[]>()
+host.on('fake.flow', (d: any) => { flows.set(d.address, [...d.steps]) })
+function flowed(addr: string, got: { keys?: string[]; text?: string }): boolean {
+  const step = flows.get(addr)?.[0]
+  if (!step || JSON.stringify(step.keys ?? null) !== JSON.stringify(got.keys ?? null) || (step.text ?? null) !== (got.text ?? null)) return false
+  flows.get(addr)!.shift()
+  if (step.screen !== undefined) core.screens.set(addr, step.screen)
+  const st = core.terms.get(addr)?.status
+  if (step.state) core.setStatus(addr, step.state, st?.app)
+  return true
 }
 // A test moves an agent to another state: `app.host.send('fake.status', { address, state })`.
 host.on('fake.status', (d: any) => {
@@ -202,7 +217,8 @@ async function chat(url: string) {
 }
 // The computer's chat setups (GET /api/chat-setups, PUT/DELETE /api/chat-setups/{agent}): `params.setups` (JSON), else
 // none. Install over a "changed" file without ?force=1 is refused (409); each ask is recorded in `fake-setup-asks` as
-// "METHOD path".
+// "METHOD path". As the Companion, which reads the file at each ask (internal/chat/pi/reader.go), a chat answer of
+// setup-needed for that agent turns setup-not-loaded once it is installed, and back once it is removed.
 let setups: any[] = params.setups ? JSON.parse(params.setups) : []
 const setupAsks: string[] = []
 function chatSetups(url: string, init: any) {
@@ -217,6 +233,10 @@ function chatSetups(url: string, init: any) {
   const force = /[?&]force=1/.test(path)
   if (setups[i].state === 'no-agent' || (setups[i].state === 'changed' && !force)) return answer(409, setups[i])
   setups[i] = { ...setups[i], state: method === 'PUT' ? 'installed' : 'absent' }
+  if (chatAnswer.setup === agent) {
+    if (method === 'PUT' && chatAnswer.unknown === 'setup-needed') chatAnswer = { ...chatAnswer, unknown: 'setup-not-loaded' }
+    if (method === 'DELETE' && chatAnswer.unknown === 'setup-not-loaded') chatAnswer = { ...chatAnswer, unknown: 'setup-needed' }
+  }
   return answer(200, setups[i])
 }
 // Another Herdr screen pins or unpins an agent: `app.host.send('fake.label', { address, labels: { 'herdr.pinned': '1' } })`.
@@ -229,7 +249,7 @@ host.on('fake.hold', (d: any) => core.holding.add(d.method))
 host.on('fake.release', () => { core.holding.clear(); core.release() })
 // Text the app sent (`terminal.send`), where a test reads it (`app.storage()['fake-sent']`).
 const sent: [string, string, boolean][] = []
-core.onSend = (addr, text, force) => { sent.push([addr, text, force]); void Storage.setItem('fake-sent', JSON.stringify(sent)) }
+core.onSend = (addr, text, force) => { sent.push([addr, text, force]); void Storage.setItem('fake-sent', JSON.stringify(sent)); flowed(addr, { text }) }
 // What came to POST /api/files: its name, its machine, its size.
 const put: [string, string, number][] = []
 const landed = (q: URLSearchParams, size: number) => {
