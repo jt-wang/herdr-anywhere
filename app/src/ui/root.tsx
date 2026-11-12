@@ -23,6 +23,7 @@ import { APP_VERSION, installProblem, Updates } from '../updates.ts'
 import { CHANNEL } from '../channel.ts'
 import { t } from '../strings/index.ts'
 import { restartFor } from '../restart.ts'
+import { setDiag } from '../diag.ts'
 
 export type RootDeps = {
   linker: Linker
@@ -94,6 +95,8 @@ function Connected(props: { deps: RootDeps; store: Store; link: Link; unpaired: 
   const folders = folderApi(deps.linker, deps.fetcher)
   store.files = fileApi(deps.linker, deps.fetcher)
   store.chat = chatApi(deps.linker, deps.fetcher)
+  // MEASURE, not to merge: diagnostics as requests the Companion logs (/hm-e2e/...), as ios-e2e.tsx sends them.
+  setDiag((what, f) => { void deps.linker.baseUrl().then((b) => (deps.fetcher ?? fetch)(`${b}/hm-e2e/${what}/` + Object.entries(f).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('/'))).catch(() => {}) })
   store.chatFirst = { get: () => deps.prefs.prefs.get().chatFirst, set: (v) => deps.prefs.set({ chatFirst: v }) }
   store.chatSetupAsked = {
     has: (agent) => deps.prefs.prefs.get().chatSetupAsked.includes(agent),

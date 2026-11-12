@@ -1072,3 +1072,37 @@ test('an agent that rang costs nothing on later passes until what it says change
   expect(told.length).toBe(1)
   expect(told[0].startsWith('ran the tests and fixed one')).toBe(true)
 })
+
+test('a Companion restarted on the computer: the phone retries at 1, 2, 4, 8, then every 15 s, and is back at the first retry after it is up', async () => {
+  // Down for 12 s (as chat-behind's shots stop one Companion and start another on the same port and state).
+  let now = 1_000_000
+  let upAt = 0
+  const core = new FakeCore()
+  let first = true
+  const pipe = () => {
+    if (first) { first = false; return core }
+    if (now >= upAt) return new FakeCore()
+    const c = new FakeCore()
+    c.send = () => { c.drop('network') } // refused: nothing listens on the port
+    return c
+  }
+  const timers: { f: () => void; ms: number }[] = []
+  const store = new Store({ pipe, now: () => now, setInterval: (() => 0) as any, clearInterval: (() => {}) as any,
+    setTimeout: ((f: () => void, ms: number) => { timers.push({ f, ms }); return 0 }) as any })
+  await store.connect()
+  core.drop('closed')
+  await settle()
+  upAt = now + 12_000
+  const waits: number[] = []
+  while (store.conn.get() !== 'ready' && waits.length < 20) {
+    const t = timers.shift()!
+    waits.push(t.ms); now += t.ms
+    t.f()
+    await settle(20)
+  }
+  expect(store.conn.get()).toBe('ready')
+  expect(waits).toEqual([1000, 2000, 4000, 8000])
+  // In 90 s down it would try 9 times: 1 + 2 + 4 + 8 + 15 × 5 = 90.
+  const schedule = [1, 2, 4, 8, 16, 32, 64, 128, 256].map((s) => Math.min(s * 1000, 15_000))
+  expect(schedule.reduce((a, b) => a + b, 0)).toBe(90_000)
+})
