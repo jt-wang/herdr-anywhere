@@ -141,10 +141,19 @@ compose() {
   fail "could not type '$1' into the composer"
 }
 # With an if, not an &&: a function whose last command is a failed && returns 1, which ends the script under set -e.
-# backs counts the Backs it sent: one sent as the keyboard goes by itself could reach the app and close the pane, so
-# when the chat view is gone after a prompt, sent() says how many there were (0: the app closed it).
+# One Back, then up to 3 s for the keyboard to go; a second only when it is still up then. Two Backs a second apart
+# closed the pane: on CI the chat view was gone after a prompt each time two had been sent (Pi, OpenCode), as the
+# keyboard still read as shown a second after the first. backs counts them, for sent() to say when the view is gone.
 backs=0
-keys_down() { for _ in 1 2; do if "$adb" shell dumpsys input_method | grep -q 'mInputShown=true'; then "$adb" shell input keyevent KEYCODE_BACK; backs=$((backs + 1)); sleep 1; fi; done; }
+shown() { "$adb" shell dumpsys input_method | grep -q 'mInputShown=true'; }
+keys_down() {
+  for n in 1 2; do
+    if shown; then "$adb" shell input keyevent KEYCODE_BACK; backs=$((backs + 1)); else return 0; fi
+    for _ in 1 2 3 4 5 6; do sleep 0.5; if ! shown; then return 0; fi; done
+    if [ "$n" = 1 ]; then echo "note: the keyboard still up 3 s after a Back; a second Back"; fi
+  done
+  return 0
+}
 # A prompt sent from the composer; the chat shows it as the newest turn, finished.
 sent() {
   tap_last compose-input; compose "$1"; tap_last 'compose-send"'; b=$backs; keys_down
