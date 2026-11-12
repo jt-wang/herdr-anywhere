@@ -11,6 +11,8 @@
 # log (e2e/ios-touch-log.sh) must show no touch then and touches for the second tap.
 # HM_PICTURE_LOOP=N: after the light run, N more runs, dark and light by turns, each counted: how often the first tap
 # on the path after an appearance switch opens nothing (Devices' ios_picture_selftest=loop, with no Tailcat suite).
+# In a loop a first tap on the space that opened nothing is counted and its touch log kept, and the run goes on.
+# HM_TOUCH_WINDOW=off builds the test app without its touch-noting window (e2e/ios-touch-app.sh), to compare.
 # SIM_UDID is required, so the run never lands on another simulator. Needs go, nsh, hc, xcodegen and Xcode.
 set -eu
 : "${SIM_UDID:?set SIM_UDID to the simulator to use}"
@@ -82,6 +84,7 @@ picture() {
   space_miss=""; [ "$1" = light ] && space_miss=${HM_MISS_SPACE:-}
   TEST_RUNNER_OUT="$work/picture-$n.txt" TEST_RUNNER_SHOTS="${shots:-$work}/$n" TEST_RUNNER_SIZE="$size" TEST_RUNNER_SPACE="$space" \
     TEST_RUNNER_TERMINAL="$term" TEST_RUNNER_FULL="$full" TEST_RUNNER_SWITCHED="$switched" TEST_RUNNER_MISS_FIRST="$miss" TEST_RUNNER_NO_TAP_FIRST="$no_tap" TEST_RUNNER_MISS_SPACE="$space_miss" \
+    TEST_RUNNER_SPACE_MISS_NOTED="${HM_PICTURE_LOOP:+1}" \
     perl -e 'alarm 600; exec @ARGV' xcodebuild test -quiet -project "$work/uitest/KeyboardCheck.xcodeproj" -scheme UITests \
     -only-testing:UITests/Picture -destination "id=$SIM_UDID" -derivedDataPath "$work/uitest/derived" \
     -resultBundlePath "$work/uitest/result-$n.xcresult" > "$work/uitest/test-$n.log" 2>&1 &
@@ -90,6 +93,11 @@ picture() {
   rc=0; wait $t || rc=$?
   { kill "$touchlog"; wait "$touchlog"; } 2>/dev/null || true; touchlog=
   sed 's/^/  /' "$work/picture-$n.txt" 2>/dev/null || true
+  # A loop's first tap on the space that opened nothing: counted by the loop, with its touch log, and the run goes on.
+  if grep -q "the first tap on the space opened nothing" "$work/picture-$n.txt" 2>/dev/null; then
+    [ -n "$shots" ] && mkdir -p "$shots/$n-space"
+    "$app/e2e/ios-touch-log.sh" "$work/picture-$n.txt" "$work/uikit-$n.log" ${shots:+"$shots/$n-space"}
+  fi
   [ "$rc" = 0 ] && { echo "ok: $n"; return; }
   echo "FAIL: $n (xcodebuild test exit $rc)"
   echo "the app's lines (each space it opened, in the Companion's log; e2e/ios-touch-app.sh):"
@@ -109,6 +117,7 @@ if [ -n "${HM_PICTURE_LOOP:-}" ]; then
   # switched, the app brought back by the test, and its first tap on the path (the space is open from the first run).
   # Each round goes on whatever the last did; the suite fails if any round did, after all of them.
   cr=$(cat "$size"); i=0 missed=0 failed=0
+  grep -q "the first tap on the space opened nothing" "$work/picture-light.txt" && echo "the light run's first tap on the space opened nothing"
   while [ "$i" -lt "$HM_PICTURE_LOOP" ]; do
     i=$((i + 1)); [ $((i % 2)) = 1 ] && look=dark || look=light
     appearance "$look"

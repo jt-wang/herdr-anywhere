@@ -25,6 +25,12 @@ on:
         type: choice
         options: ["0", "5", "10", "20"]
         default: "0"
+      # The Android × Linux suite's own self-test (e2e/android.sh): its first tap on the switcher is not sent.
+      android_switcher_selftest:
+        description: "Android × Linux self-test: none, or miss-first (the first tap on the switcher is not sent)"
+        type: choice
+        options: [none, miss-first]
+        default: none
 
 permissions:
   contents: read
@@ -305,6 +311,8 @@ jobs:
           sudo udevadm trigger --name-match=kvm
       # The same phone as the Mac's test emulator: API 35, Google APIs, a Pixel 6 screen.
       - uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        env:
+          HM_SWITCHER_MISS_FIRST: ${{ inputs.android_switcher_selftest == 'miss-first' && '1' || '' }}
         with:
           api-level: 35
           target: google_apis
