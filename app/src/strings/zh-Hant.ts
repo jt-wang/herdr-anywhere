@@ -107,7 +107,7 @@ export const zhHant: Table = {
   programExited: '程式已結束。', terminalClosed: '終端機已關閉。',
   terminalLost: '電腦重新啟動過，這個終端機已經不在了。', terminalFinished: '這個終端機已結束。',
   terminalEnded: '終端機已結束（{reason}）。',
-  terminalPageFailed: '終端機沒有載入。', tryAgain: '重試',
+  terminalLoading: '終端機還在載入…', tryAgain: '重試',
   nameNeedsYou: '{name} 在等你', nameFinished: '{name} 已完成',
   titleNeedsYou: '「{name}」在等你', titleFinished: '「{name}」已完成',
   layoutChanged: '版面在別處變更了', layoutChangedBody: '現在顯示的是另一個畫面的版面。',
