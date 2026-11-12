@@ -2,7 +2,6 @@
 import { cleanup, platform, Scroll, signal, Text, View } from 'nsh'
 import { AlertDialog } from 'nsh/base'
 import { explain, type Store } from '../store.ts'
-import type { ChatSetup } from '../model/chat.ts'
 import { agentsLine, parseAgents, pickLine, switchLine, type AgentChoice } from '../model/progress.ts'
 import { busyWord, runUpdate, useUpdates } from './update.tsx'
 import { APP_VERSION, type Updates } from '../updates.ts'
@@ -38,60 +37,6 @@ function Fact(props: { label: string; value: string; under?: string; dot?: strin
         <If when={props.under}><Text class="text-[12px] text-sidebar-foreground text-right">{props.under}</Text></If>
       </View>
     </View>
-  )
-}
-
-/** One row per agent on the computer whose chat needs a small file (ChatSetup): on or off, Install or Remove at any
- *  time. Remove asks first; a file someone changed is replaced or removed only when the person says so. */
-function ChatSetupRows(props: { store: Store }) {
-  const chat = props.store.chat
-  const setups = signal<ChatSetup[]>([])
-  const busy = signal('')
-  const load = () => { if (chat) void chat.setups().then((x) => setups.set(x), () => {}) }
-  load()
-  const put = (x: ChatSetup) => setups.set(setups().map((y) => (y.agent === x.agent ? x : y)))
-  const set = async (x: ChatSetup, on: boolean) => {
-    if (!on) {
-      const r = await AlertDialog.show({ title: t('setupRemoveTitle', { name: x.name }), description: t('setupRemoveBody', { name: x.name }),
-        actions: [{ id: 'cancel', label: t('cancel'), role: 'cancel' }, { id: 'remove', label: t('setupRemove'), role: 'destructive' }] })
-      if (r !== 'remove') return
-    }
-    busy.set(x.agent)
-    try {
-      let r = await chat!.setSetup(x.agent, on)
-      if (r.result === 'changed') {
-        const a = await AlertDialog.show({ title: t('setupChangedTitle'), description: t('setupChangedBody', { file: x.file }),
-          actions: [{ id: 'keep', label: t('setupKeep'), role: 'cancel' }, { id: 'go', label: on ? t('setupReplace') : t('setupRemove'), role: on ? undefined : 'destructive' }] })
-        if (a === 'go') r = await chat!.setSetup(x.agent, on, true)
-      }
-      if (r.setup) put(r.setup)
-      if (r.result === 'failed') props.store.toast({ title: t('setupFailed'), level: 'error' })
-    } catch {
-      props.store.toast({ title: t('setupFailed'), level: 'error' })
-    } finally {
-      busy.set('')
-    }
-  }
-  const shown = () => setups().filter((x) => x.state !== 'no-agent')
-  const detail = (x: ChatSetup) => (x.state === 'installed' || x.state === 'old' ? t('setupOn') : x.state === 'changed' ? t('setupChanged') : t('setupOff', { name: x.name }))
-  return (
-    <If when={shown().length}>
-      <SectionLabel label={t('chatSection')} />
-      <Each of={shown()} key={(x) => x.agent}>{(x) => (
-        <Row label={t('setupRow', { name: x().name })} detail={detail(x())} testID={`setup-${x().agent}`}>
-          <If when={x().state === 'absent' || x().state === 'old' || x().state === 'changed'}>
-            <View role="button" testID={`setup-${x().agent}-install`} disabled={busy() === x().agent} onPress={() => void set(x(), true)} class="px-2.5 py-1 rounded-[6px] bg-muted active:bg-accent">
-              <Text class="text-[12px] text-foreground">{t('setupInstall')}</Text>
-            </View>
-          </If>
-          <If when={x().state !== 'absent'}>
-            <View role="button" testID={`setup-${x().agent}-remove`} disabled={busy() === x().agent} onPress={() => void set(x(), false)} class="px-2.5 py-1 rounded-[6px] bg-muted active:bg-accent">
-              <Text class="text-[12px] text-destructive">{t('setupRemove')}</Text>
-            </View>
-          </If>
-        </Row>
-      )}</Each>
-    </If>
   )
 }
 
@@ -306,7 +251,6 @@ export function SettingsScreen(props: { updates?: Updates; store: Store; prefs: 
             </If>
           </Row>
         </If>
-        <ChatSetupRows store={props.store} />
         {/* Experimental and off by default. */}
         <SectionLabel label={t('experimental')} />
         <Row label={t('progressPage')} detail={p().progressFirst && p().progressAgent ? `${t('progressPageDetail')} · ${t('progressBy', { agent: p().progressAgent })}` : t('progressPageDetail')}>

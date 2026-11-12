@@ -34,7 +34,9 @@ test('startable agents come first in herdr order', () => {
 
 test('an agent runs in a shell that stays after it exits, the task last', () => {
   expect(agentArgv(['claude'], ' fix it ', undefined, '/bin/zsh')).toEqual(['/bin/zsh', '-ic', '"$@"; exec "$0" -i', '/bin/zsh', 'claude', 'fix it'])
-  expect(agentArgv(['codex'], '', 'vps', '/bin/zsh')).toEqual(['sh', '-c', '"$@"; exec "${SHELL:-sh}" -i', 'sh', 'codex'])
+  // Another machine's agent starts in that machine's own interactive shell, as the menu's probe asked it there: an
+  // agent on a PATH only ~/.zshrc sets is listed and starts (measured over ssh with sshd, zsh and omp).
+  expect(agentArgv(['codex'], '', 'vps', '/bin/zsh')).toEqual(['sh', '-c', 'exec "${SHELL:-sh}" -ic \'"$@"; exec "$0" -i\' "${SHELL:-sh}" "$@"', 'sh', 'codex'])
   expect(agentArgv(undefined, 'x', undefined, '/bin/zsh')).toBe(undefined)
 })
 
@@ -49,4 +51,13 @@ test('an icon herdr tints is one colour, drawn in the text colour; the others ke
 test('Kimi Code reports itself as kimi-code and shows as Kimi, with its icon (measured with Kimi 2.4.1)', () => {
   const p = programOf('kimi-code', ['kimi'])
   expect([p.key, p.name, p.icon, p.agent]).toEqual(['kimi', 'Kimi', 'kimi', true])
+})
+
+test('Oh My Pi reports itself as omp and shows as Oh My Pi, with its icon, in the new-tab menu (measured with omp 18.18.3 in herdr-core 0.1.20)', () => {
+  const p = programOf('omp', ['/bin/zsh'])
+  expect([p.key, p.name, p.icon, p.agent]).toEqual(['omp', 'Oh My Pi', 'omp', true])
+  expect(key(undefined, ['omp'])).toBe('omp')
+  expect(key('oh-my-pi', [])).toBe('omp')
+  expect(key('pi', [])).toBe('pi')
+  expect(startable().some((s) => s.key === 'omp' && s.run!.join(' ') === 'omp')).toBe(true)
 })

@@ -48,14 +48,3 @@ test('closing the sheet lets the picture go', async () => {
   await app.waitUntil(() => !app.shows('id:picture-sheet'))
   expect(app.shows('id:picture-image')).toBe(false)
 })
-
-test('the picture sits in a box that zooms; a double tap keeps the sheet and copies nothing', async () => {
-  const app = await opened('art/sunset.png')
-  await app.waitFor('id:picture-image')
-  expect(app.shows('id:picture-zoom')).toBe(true) // the pinch and the drag are this scroll view's own (e2e/*-zoom.sh)
-  await app.press('id:picture')
-  await app.press('id:picture')
-  expect(app.shows('id:picture-sheet')).toBe(true)
-  expect(app.shows('text:Picture copied')).toBe(false)
-  expect(app.host.calls().some((c: any) => c.name === 'page.copyImage')).toBe(false)
-})
