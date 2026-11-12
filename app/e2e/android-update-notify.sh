@@ -60,7 +60,8 @@ tap_where() {
 }
 wait_for() { for _ in $(seq 1 "$2"); do xml | grep -qF "$1" && return 0; sleep 1; done; echo "FAIL: \"$1\" did not show within $2 s"; words; exit 1; }
 snap() { [ -n "$shot" ] && "$adb" exec-out screencap -p > "$shot/$1.png" || true; }
-posted() { "$adb" shell dumpsys notification --noredact | grep -cE "NotificationRecord.*pkg=$id .*tag=new-version" || true; }
+records() { "$adb" shell dumpsys notification --noredact | grep -E "NotificationRecord.*pkg=$id .*tag=new-version" || true; }
+posted() { records | grep -c . || true; }
 # The phone in the background reads the computer again once it is back: the Companion restarted with what it found.
 restart() {
   companion_stop "$state" || exit 1
@@ -109,12 +110,15 @@ wait_for 'resource-id="update-banner"' 60
 wait_for "Version $new is available" 10
 snap home
 echo "ok: its tap opened home with the notice"
+gone=""; for _ in $(seq 1 15); do [ "$(posted)" = 0 ] && { gone=1; break; }; sleep 1; done
+[ -n "$gone" ] || { echo "FAIL: the notification is still listed after its tap:"; records | cut -c1-240; exit 1; }
+echo "ok: the tap took the notification away"
 
 echo "--- the same version is told once"
 "$adb" shell input keyevent KEYCODE_HOME
 sleep 3
 restart "$new"
 sleep 30
-[ "$(posted)" = 0 ] || { echo "FAIL: $new was posted again"; exit 1; }
+[ "$(posted)" = 0 ] || { echo "FAIL: $new was posted again:"; records | cut -c1-240; exit 1; }
 echo "ok: nothing more for $new"
 echo PASS
