@@ -47,7 +47,7 @@ cleanup() {
   for a in $(panes); do "$H" kill "$a" >/dev/null 2>&1 || true; done
   "$H" server stop >/dev/null 2>&1 || true
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT; trap 'exit 130' INT; trap 'exit 143' TERM
 printf '%s\n' "$AGENT" > "$out/agent.txt"
 python3 -I "$here/score.py" --run-inputs > "$out/run-inputs.txt"  # the rules and code this run works with
 printf '%s\n' "$LABEL" > "$out/label.txt"

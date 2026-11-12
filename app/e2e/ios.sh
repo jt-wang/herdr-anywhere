@@ -28,7 +28,7 @@ cleanup() {
   printf "%s\n" "$placeholder" > "$app/e2e/pair.ts"
   chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run"
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT; trap 'exit 130' INT; trap 'exit 143' TERM
 (
   export HC_SESSION="hmios-$$" HC_SOCKET="" HOME="$work/home" SHELL=/bin/zsh
   export XDG_STATE_HOME="$work/state" XDG_CONFIG_HOME="$work/config" XDG_DATA_HOME="$work/data" XDG_RUNTIME_DIR="$run"
