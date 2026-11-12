@@ -172,16 +172,18 @@ func (s *Service) Chat(addr string) Answer {
 		return Answer{Chat: true, Unknown: NoMatch}
 	}
 	open := len(turns) > 0 && turns[len(turns)-1].End == "open"
+	// Behind: the screen and the record disagree on whether a turn runs. What the record has still goes with it, so
+	// the phone shows the turns, marked as updating, and never an empty page while an agent works long.
 	switch state {
 	case unreported:
 		// Nothing on the screen to check the record against: the record says whether the turn is open.
 	case "working", "blocked":
 		if !open {
-			return Answer{Chat: true, Unknown: Behind}
+			return Answer{Chat: true, Unknown: Behind, Turns: turns}
 		}
 	case "done", "idle", "error":
 		if open {
-			return Answer{Chat: true, Unknown: Behind}
+			return Answer{Chat: true, Unknown: Behind, Turns: turns}
 		}
 	default:
 		return Answer{Chat: true, Unknown: NoStatus}

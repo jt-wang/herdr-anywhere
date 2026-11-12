@@ -529,6 +529,17 @@ export class Store {
   private reconcile(live: Map<string, Term>): boolean {
     const now = this.io.now()
     let changed = false
+    // A sub-agent in more than one pane: up to 0.1.26 every Keep of it added another tab. Its first pane stays and the
+    // others go, without ending it: herdr-app keeps one pane per terminal (window.rs `keep_terminal`).
+    const shown = new Set<string>()
+    for (const c of [...this.model.tabs()]) for (const n of panes(c.root)) {
+      const a = terminalOf(n)
+      if (!a || !live.get(a)?.parent) continue
+      if (!shown.has(a)) { shown.add(a); continue }
+      if (!this.slots.get(machineOfAddress(a) ?? '')?.available) continue
+      this.model.removePane(n.id)
+      changed = true
+    }
     // Panes whose terminal is gone: ask whether it ended (it may be on its way back after a core restart).
     for (const c of this.model.tabs()) for (const n of panes(c.root)) {
       const a = terminalOf(n)
@@ -1103,8 +1114,10 @@ export class Store {
     if (this.model.unsettle(id)) this.changed()
   }
 
-  /** A sub-agent (no pane) becomes a tab of its own in its parent's space. */
+  /** A sub-agent (no pane) becomes a tab of its own in its parent's space; one that has a tab already is shown there
+   *  (herdr-app window.rs `keep_terminal`). */
   async keepTerminal(addr: string) {
+    if (this.focusTerminal(addr)) return
     const t = this.terms.get(addr)
     if (!t) return
     const parentPane = t.parent ? this.model.paneOf(t.parent) : undefined

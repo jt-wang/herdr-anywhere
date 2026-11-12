@@ -320,6 +320,43 @@ test('a sub-agent kept from peek becomes a tab of its own beside its parent', as
   expect(store.model.paneOf(kid.address) !== undefined).toBe(true)
 })
 
+test('keeping a sub-agent that already has a tab goes to that tab and makes no other', async () => {
+  const { core, store } = setup()
+  await store.connect()
+  const r = await store.newSpace({ argv: ['claude'] })
+  const kid = core.run({ argv: ['codex'], parent: r.terminal })
+  await settle()
+  await store.keepTerminal(kid.address)
+  await settle()
+  const pane = store.model.paneOf(kid.address)!
+  store.focusTerminal(r.terminal)
+  const labels = core.calls.filter((c) => c.method === 'terminal.label').length
+  await store.keepTerminal(kid.address)
+  await store.keepTerminal(kid.address)
+  await settle()
+  const s = store.model.space(r.space)!
+  expect(s.tabs.length).toBe(2)
+  expect(core.doc().spaces[0].tabs.length).toBe(2)
+  expect(core.calls.filter((c) => c.method === 'terminal.label').length).toBe(labels)
+  expect(store.model.focusedPane()).toBe(pane)
+})
+
+test('a sub-agent kept as a tab more than once before keeps its first tab; the copies go from the shared layout and it keeps running', async () => {
+  const core = new FakeCore()
+  const doc = { spaces: [] as any[] }
+  core.addSpace(doc, 'sp1', '/Users/sam/src/api', '', [{ id: 'tb1', argv: ['claude'] }])
+  const kid = core.run({ argv: ['codex'], parent: 't1', keep: true, labels: { 'herdr.space': 'sp1', 'herdr.tab': 'tb4' } })
+  const tab = (id: string, pane: string) => ({ id, name: '', root: { id: pane, type: 'block', content: { terminal: kid.address } } })
+  doc.spaces[0].tabs.push(tab('tb2', 'p2'), tab('tb3', 'p3'), tab('tb4', 'p4'))
+  core.docs.set('', { value: doc, version: 1 })
+  const { store } = setup(core)
+  await store.connect()
+  await until(() => core.doc().spaces[0].tabs.length === 2)
+  expect(store.model.space('sp1')!.tabs.map((c) => c.id)).toEqual(['tb1', 'tb2'])
+  expect(core.doc().spaces[0].tabs.map((c: any) => c.id)).toEqual(['tb1', 'tb2'])
+  expect(core.calls.some((c) => c.method === 'terminal.kill')).toBe(false)
+})
+
 test('a computer that forgot this phone stops the retries and asks to pair again, connected or not', async () => {
   const { core, store, timers } = setup()
   await store.connect()
