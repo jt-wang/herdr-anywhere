@@ -465,7 +465,7 @@ func transcript(t *testing.T, dir, project, id string) string {
 	return p
 }
 
-const sid = "0ff888dd-6fdf-48a6-a0c3-f255c5328133"
+const sid = "00000000-0000-4000-8000-0000000000aa"
 
 func miss(t *testing.T, err error) string {
 	t.Helper()
@@ -735,5 +735,34 @@ func TestChangeStopsAtMaxLines(t *testing.T) {
 	// A failed edit changed nothing: no change shown.
 	if _, c, _ := shaped("Edit", nil, res, true, "String not found"); c != nil {
 		t.Fatalf("a failed edit shows a change: %+v", c)
+	}
+}
+
+// A message taken while the agent worked is a step of the turn, where it was taken; the agent's own reminders and
+// other senders' notices of the same kind (queued_command) are not.
+func TestQueuedMessagesAreSteps(t *testing.T) {
+	queued := func(id, prompt, extra string) string {
+		return fmt.Sprintf(`{"type":"attachment","uuid":%q,"timestamp":"2026-01-01T12:00:21.000Z","attachment":{"type":"queued_command","prompt":%q,"commandMode":"prompt"%s}}`, id, prompt, extra)
+	}
+	ts := turns(t,
+		prompt("p1", "WORK please"),
+		use("a1", "m1", "toolu_1", "Bash", `{"command":"make"}`),
+		result("r1", "toolu_1", "ok"),
+		queued("q1", "ALSO the fonts", `,"humanTurn":true,"origin":{"kind":"human"}`),
+		queued("q2", "a reminder only the model sees", `,"isMeta":true,"origin":{"kind":"human"}`),
+		queued("q3", "<task-notification>done</task-notification>", `,"origin":{"kind":"task-notification"}`),
+		say("a2", "m2", "Done.", "end_turn"),
+	)
+	if len(ts) != 1 {
+		t.Fatalf("want one turn, got %d", len(ts))
+	}
+	var yours []string
+	for _, s := range ts[0].Steps {
+		if s.Kind == chat.StepYou {
+			yours = append(yours, s.Title)
+		}
+	}
+	if !reflect.DeepEqual(yours, []string{"ALSO the fonts"}) || ts[0].Steps[len(ts[0].Steps)-1].Kind != chat.StepYou || ts[0].Reply != "Done." {
+		t.Fatalf("steps %+v, reply %q", ts[0].Steps, ts[0].Reply)
 	}
 }

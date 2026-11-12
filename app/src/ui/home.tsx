@@ -23,7 +23,8 @@ import icon from '../../assets/brand/herdr-anywhere.png'
 export type HomeActions = {
   openSpace: (spaceId: string) => void
   openAgent: (a: AgentInfo) => void
-  peek: (address: string) => void
+  /** A sub-agent's row: its tab if it was kept as one, else a peek at it. */
+  openSub: (address: string) => void
   newMenu: () => void
   /** A new tab in this space, in its folder (sheets.tsx); starting it opens the space. */
   addAgent: (spaceId: string) => void
@@ -167,7 +168,7 @@ function AgentRows(props: { store: Store; agents: () => AgentInfo[]; full?: bool
         <AgentRow store={s} a={a()} full={props.full} testID={`${props.idPrefix}-${a().address}`}
           class={`mx-2 ${props.full ? 'pl-2' : 'pl-9'} pr-2 min-h-9 py-1.5 justify-center rounded-[8px] active:bg-sidebar-accent`}
           subPrefix="sub" subClass={`mx-2 ${props.full ? 'pl-7' : 'pl-14'} pr-2`}
-          onPress={() => props.actions.openAgent(a())} onLongPress={() => void menu(a())} onSub={props.actions.peek} />
+          onPress={() => props.actions.openAgent(a())} onLongPress={() => void menu(a())} onSub={props.actions.openSub} />
         <If when={props.actions.doing?.(a().address)}>{(d) => (
           <View testID={`doing-${a().address}`} class={`mx-2 ${props.full ? 'pl-[30px]' : 'pl-[58px]'} pr-2 pb-1.5 -mt-1`}>
             <Text class="text-[12px] text-chart-1" numberOfLines={1}>{t('doingLine', { task: d().outcome })}</Text>
