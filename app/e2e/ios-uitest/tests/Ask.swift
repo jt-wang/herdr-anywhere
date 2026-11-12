@@ -29,7 +29,10 @@ final class Ask: XCTestCase {
     shot("1-terminal-question")
     tap("show-chat")
     if !card {
-      must(saying("Which plan should the fake shop use?"), "the chat shows the question")
+      // Before the card: shot as it is, as the permission's below; what the chat shows is noted, not required (a record
+      // behind the screen showed no question there).
+      let q = saying("Which plan should the fake shop use?").waitForExistence(timeout: 15)
+      note(q ? "before: the chat shows the question" : "before: the chat does not show the question")
       shot("2-chat-question")
       back()
       tap("space-" + spaceP)

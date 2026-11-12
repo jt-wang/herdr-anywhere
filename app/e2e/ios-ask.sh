@@ -12,9 +12,11 @@ app=$(cd "$(dirname "$0")/.." && pwd)
 shots=${1:-}
 hc=$(command -v hc || echo "$HOME/.local/bin/hc")
 id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$app/nsh.json")
+sh "$app/e2e/ios-connect-wait.sh" --self-test || exit 1
 card=no; [ -f "$app/src/ui/ask-card.tsx" ] && card=yes
 port=7795; while nc -z 127.0.0.1 "$port" 2>/dev/null; do port=$((port + 1)); done
 work=$(mktemp -d); run=$(mktemp -d /tmp/hiXXXX); state=$(mktemp -d /tmp/hitcXXXX)
+: > "$work/started"
 mkdir -p "$work/h/src" "$work/state" "$work/config" "$work/data" "$work/claude" "$work/bin"
 (cd "$app/../companion" && CGO_ENABLED=0 go build -buildvcs=false -o "$work/herdr-anywhere" ./cmd/herdr-anywhere)
 (cd "$app/e2e/fake-ask" && GO111MODULE=off go build -o "$work/bin/claude" main.go)
@@ -63,7 +65,7 @@ for look in light dark; do
   xcrun simctl terminate "$SIM_UDID" "$id" 2>/dev/null || true
   xcrun simctl launch "$SIM_UDID" "$id" >/dev/null
   # The app is up and paired once the companion logs the phone connected (the first time; then it reconnects).
-  i=0; until grep -q "device .* connected (binary," "$work/serve.log"; do i=$((i + 1)); [ $i -gt 60 ] && { echo "FAIL: the app never connected"; echo "serve.log, last lines:"; tail -20 "$work/serve.log" | sed -E 's/#pair=[A-Za-z0-9_-]+/#pair=…/g; s/(code|token)[=: ]+[A-Za-z0-9_-]{8,}/\1=…/g'; exit 1; }; sleep 1; done
+  "$app/e2e/ios-connect-wait.sh" "$SIM_UDID" "$id" "$work/serve.log" "$work/started" ${shots:+"$shots/connect-failure"} || exit 1
   rc=0
   TEST_RUNNER_OUT="${shots:-$work}/ask-$look.txt" TEST_RUNNER_SHOTS="${shots:-$work}/ask-$look" TEST_RUNNER_CARD=$card \
     TEST_RUNNER_SPACEQ="spask$look" TEST_RUNNER_SPACEP="spperm$look" \
