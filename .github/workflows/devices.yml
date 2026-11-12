@@ -437,7 +437,7 @@ jobs:
           retention-days: 7
 
   ios:
-    name: iOS ${{ fromJSON('{"a":"main, keyboard, letters, languages, scrolling","b":"Tailcat, pictures","onerror":"an error the JS does not catch","onerror27":"an error the JS does not catch (iOS 27)","kitty":"Oh My Pi's pictures"}')[matrix.key] }}${{ matrix.copy != 0 && format(' (copy {0})', matrix.copy) || '' }}
+    name: iOS ${{ fromJSON('{"a":"main, keyboard, letters, languages, scrolling","b":"Tailcat, pictures","onerror":"an error the JS does not catch","onerror27":"an error the JS does not catch (iOS 27)","kitty":"Oh My Pi pictures"}')[matrix.key] }}${{ matrix.copy != 0 && format(' (copy {0})', matrix.copy) || '' }}
     needs: plan
     if: needs.plan.outputs.ios != '[]'
     # xcode-27 is the runner image with Xcode 27 and the iOS 27 simulators (as tests.yml's ios27).
