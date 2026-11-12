@@ -118,13 +118,7 @@ installed_before=$(version)
 pid_before=$serve_pid
 
 "$adb" shell am start -W -n "$id/.MainActivity" >/dev/null
-tap pair-link
-rest=$invite
-while [ -n "$rest" ]; do
-  piece=$(printf %s "$rest" | cut -c1-80); rest=$(printf %s "$rest" | cut -c81-)
-  "$adb" shell input text "'$piece'" < /dev/null
-  sleep 0.5
-done
+"$(dirname "$0")/android-type-link.sh" "$invite"
 tap pair
 
 echo "--- nothing goes to GitHub until the person says yes"

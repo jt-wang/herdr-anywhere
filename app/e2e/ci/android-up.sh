@@ -28,13 +28,16 @@ until booted; do
   [ "$(date +%s)" -lt "$end" ] || { echo "FAIL: the emulator did not boot in 900 s"; "$adb" devices; tail -40 "$RUNNER_TEMP/emulator.log"; exit 1; }
   sleep 5
 done
+# A minute for the phone to settle, as the Mac's release runs wait: without it the first suite after boot failed to
+# pair or to show its terminal in three jobs, and the suites after it in the same job passed.
+sleep 60
 for s in window_animation_scale transition_animation_scale animator_duration_scale; do "$adb" shell settings put global $s 0; done
 "$adb" shell settings put global hide_error_dialogs 1
 "$adb" shell cmd uimode night no >/dev/null
 "$adb" shell settings put system font_scale 1.0
 size=$("$adb" shell wm size | tr -d '\r' | tail -1); dpi=$("$adb" shell wm density | tr -d '\r' | tail -1)
 night=$("$adb" shell cmd uimode night | tr -d '\r'); font=$("$adb" shell settings get system font_scale | tr -d '\r')
-echo "booted: Android $("$adb" shell getprop ro.build.version.release | tr -d '\r'); $size, $dpi, $night, font_scale $font"
+echo "booted: Android $("$adb" shell getprop ro.build.version.release | tr -d '\r'), $("$adb" shell getprop ro.build.fingerprint | tr -d '\r'); $size, $dpi, $night, font_scale $font"
 [ "$size" = "Physical size: 1080x2400" ] && [ "$dpi" = "Physical density: 420" ] && [ "$night" = "Night mode: no" ] && [ "$font" = 1.0 ] ||
   { echo "FAIL: the screen is not 1080x2400 at 420 dpi, light, font scale 1"; exit 1; }
 # What keyboard this image has: android-typing.sh needs Gboard.

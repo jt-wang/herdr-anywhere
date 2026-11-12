@@ -21,6 +21,8 @@ work=$(mktemp -d); run=$(mktemp -d /tmp/hmXXXX); state=$(mktemp -d /tmp/hmtyXXXX
 (cd "$app/../companion" && go build -o "$work/herdr-anywhere" ./cmd/herdr-anywhere)
 mkdir -p "$work/home/src/acme-api" "$work/state" "$work/config" "$work/data"
 : > "$work/home/.zshrc"
+# Ubuntu's /etc/zsh/zshrc runs compinit, which can stop at a y/n question and eat what is typed first.
+echo skip_global_compinit=1 > "$work/home/.zshenv"
 export HC_SESSION="hmty-$$" HC_SOCKET="" HOME="$work/home" SHELL=/bin/zsh
 export XDG_STATE_HOME="$work/state" XDG_CONFIG_HOME="$work/config" XDG_DATA_HOME="$work/data" XDG_RUNTIME_DIR="$run" GIT_CONFIG_GLOBAL="$work/home/.gitconfig"
 raw="$work/home/src/acme-api/hm-raw"
@@ -63,9 +65,7 @@ fails=0
 check() { if [ "$2" = "$3" ]; then echo "ok: $1"; else echo "FAIL: $1: got $2, wanted $3"; fails=$((fails + 1)); fi; }
 
 "$adb" shell am start -W -n "$id/.MainActivity" >/dev/null
-tap pair-link
-rest=$invite
-while [ -n "$rest" ]; do "$adb" shell input text "'$(printf %s "$rest" | cut -c1-80)'" < /dev/null; rest=$(printf %s "$rest" | cut -c81-); sleep 0.5; done
+"$(dirname "$0")/android-type-link.sh" "$invite"
 tap pair
 tap space-spty
 for _ in $(seq 1 30); do [ -e "$raw" ] && break; sleep 1; done

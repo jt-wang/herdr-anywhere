@@ -15,6 +15,8 @@ port=7791; while nc -z 127.0.0.1 "$port" 2>/dev/null; do port=$((port + 1)); don
 work=$(mktemp -d); run=$(mktemp -d /tmp/hmXXXX); state=$(mktemp -d /tmp/hmtcXXXX)
 mkdir -p "$work/home" "$work/state" "$work/config" "$work/data"
 : > "$work/home/.zshrc"
+# Ubuntu's /etc/zsh/zshrc runs compinit, which can stop at a y/n question and eat what is typed first.
+echo skip_global_compinit=1 > "$work/home/.zshenv"
 # docker finds its daemon by this home's settings, before HOME is the fake one.
 [ -z "${HM_PICTURE_IMAGE:-}" ] || export DOCKER_HOST="${DOCKER_HOST:-$(docker context inspect --format '{{.Endpoints.docker.Host}}')}"
 # The emulator console wants the token in the real home (adb emu reads ~/.emulator_console_auth_token).
@@ -72,15 +74,7 @@ say() { echo "$1"; case $1 in FAIL*) failed=1;; esac; }
 has() { xml | grep -qF "$1"; }
 
 "$adb" shell am start -W -n "$id/.MainActivity" >/dev/null
-# A slow emulator can drop typed characters: check the field holds the whole invite, else clear it and type again.
-for try in 1 2 3; do
-  tap pair-link; sleep 1
-  "$adb" shell input keyevent 123 $(seq 1 ${#invite} | sed 's/.*/67/') < /dev/null
-  rest=$invite
-  while [ -n "$rest" ]; do "$adb" shell input text "'$(printf %s "$rest" | cut -c1-40)'" < /dev/null; rest=$(printf %s "$rest" | cut -c41-); sleep 0.5; done
-  has "$invite" && break
-  [ $try = 3 ] && { echo "FAIL: the invite didn't go in whole"; exit 1; }
-done
+"$(dirname "$0")/android-type-link.sh" "$invite"
 tap pair
 tap "space-$space"
 wait_for "terminal-$term"; set -- $B; left=$1; top=$2; right=$3; bottom=$4

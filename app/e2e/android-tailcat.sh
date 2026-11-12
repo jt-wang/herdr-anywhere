@@ -81,20 +81,8 @@ tap() {
 screen_has() { "$adb" shell uiautomator dump /sdcard/hm.xml >/dev/null 2>&1; "$adb" shell cat /sdcard/hm.xml | grep -q "$1"; }
 
 "$adb" shell am start -W -n "$id/.MainActivity" >/dev/null
+"$(dirname "$0")/android-type-link.sh" "$invite"
 started=$(date +%s)
-tap pair-link
-# One long `adb shell input text` keeps only its first ~200 characters (208 of 529 in this field, 204 in
-# Chrome's URL bar); in 80-character pieces the field holds all 529.
-rest=$invite
-while [ -n "$rest" ]; do
-  piece=$(printf %s "$rest" | cut -c1-80); rest=$(printf %s "$rest" | cut -c81-)
-  "$adb" shell input text "'$piece'" < /dev/null
-  sleep 0.5
-done
-"$adb" shell uiautomator dump /sdcard/hm.xml >/dev/null 2>&1
-typed=$("$adb" shell cat /sdcard/hm.xml | tr '>' '\n' | grep -A3 -F 'resource-id="pair-link"' | grep -F 'class="android.widget.EditText"' |
-  sed -E 's/.* text="([^"]*)".*/\1/' | head -1)
-[ "$typed" = "$invite" ] || { echo "FAIL: the field holds ${#typed} of the invite's ${#invite} characters"; exit 1; }
 tap pair
 
 ok=""

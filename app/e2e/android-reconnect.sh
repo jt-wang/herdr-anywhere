@@ -77,13 +77,7 @@ wait_for() { # text, seconds
   return 1
 }
 type_invite() {
-  tap pair-link
-  rest=$1
-  while [ -n "$rest" ]; do
-    piece=$(printf %s "$rest" | cut -c1-80); rest=$(printf %s "$rest" | cut -c81-)
-    "$adb" shell input text "'$piece'" < /dev/null
-    sleep 0.5
-  done
+  "$(dirname "$0")/android-type-link.sh" "$1"
   tap pair
 }
 # shot <name>: the screen in the light and the dark theme, and every text on it.
