@@ -29,6 +29,7 @@ work=$(mktemp -d)
 . "$app/e2e/adb-note.sh"
 . "$app/e2e/android-ime-down.sh"
 sh "$app/e2e/android-ime-down.sh" --self-test || exit 1
+sh "$app/e2e/android-net.sh" --self-test || exit 1
 adb_note "$adb" "$work/adb-failed"
 (cd "$app/../companion" && go build -o "$work/herdr-anywhere" ./cmd/herdr-anywhere)
 run=$(mktemp -d /tmp/hmXXXX)
@@ -140,8 +141,8 @@ reach() {
     *) echo "no answer ($(printf '%s' "$r" | tr '\n' ' ' | cut -c1-80))" ;;
   esac
 }
-# The phone's networks as Android sees them: which is the default, and each one's kind and state.
-nets() { "$adb" shell dumpsys connectivity 2>/dev/null | tr -d '\r' | grep -E "Active default network|NetworkAgentInfo[{]" | cut -c1-160 | head -4 | sed 's/^/    /'; }
+# The phone's networks: nets.
+. "$app/e2e/android-net.sh"
 # CI logs are public: no invite secret or token in what is printed.
 mask() { sed -E 's/#pair=[A-Za-z0-9_-]+/#pair=…/g; s/token=[^ &"]+/token=…/g; s/"code":"[^"]*"/"code":"…"/g'; }
 echo "before Pair: the phone to the Companion: $(reach); the emulator up $("$adb" shell cat /proc/uptime | tr -d '\r' | cut -d' ' -f1) s; its networks:"
