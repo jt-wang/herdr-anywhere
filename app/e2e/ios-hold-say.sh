@@ -9,7 +9,8 @@
 say() {
   awk -F'\t' '
     FILENAME == ARGV[1] && / tapping the space \(round / { n++; sub(/.*\(round /, ""); sub(/\)$/, ""); asked[n] = $0 }
-    FILENAME == ARGV[1] && / (hold [0-9.]+ s|drift [0-9]+ pt): opened/ { r++; got[r] = ($0 ~ /opened nothing/) ? "opened nothing" : "opened" }
+    FILENAME == ARGV[1] && / (hold [0-9.]+ s|drift [0-9]+ pt): (opened|the space.s menu opened)/ { r++
+      got[r] = ($0 ~ /opened nothing/) ? "opened nothing" : ($0 ~ /menu opened/) ? "opened the space menu (a long press)" : "opened" }
     FILENAME == ARGV[2] && /\(tapping the space \(round / { k++; held[k] = "no touch event"
       if (match($0, /UIKit held it [0-9]+ ms/)) held[k] = "UIKit held it " substr($0, RSTART + 14, RLENGTH - 14) }
     FILENAME == ARGV[2] && k && !(k in busy) && /app window: phase=began / && match($0, / busy=[0-9]+ms/) {
@@ -50,8 +51,11 @@ EON
     app window: phase=began sent=began sent-view=none busy=400ms at=(201,172) view=NshView@0x1#space-spios
     app window: phase=cancelled sent=cancelled sent-view=none +230ms began-view=NshView@0x1#space-spios
 EOR
+  printf '%s\n' "10:00:05.000 +5.0 s load 9 tapping the space (round 2, drift 0 pt)" \
+    "10:00:06.000 +6.0 s load 9 drift 0 pt: the space's menu opened (a long press)" >> "$t/notes2"
   say "$t/notes2" "$t/report2" > "$t/said2"
-  [ "$(cat "$t/said2")" = "  round 1, drift 4 pt: UIKit held it 230 ms, busy 400 ms, opened nothing" ] ||
+  [ "$(cat "$t/said2")" = "  round 1, drift 4 pt: UIKit held it 230 ms, busy 400 ms, opened nothing
+  round 2, drift 0 pt: not in the report, opened the space menu (a long press)" ] ||
     { echo "FAIL: ios-hold-say self-test: a drift press said: $(cat "$t/said2")"; fail=1; }
   say "$t/notes" "$t/report" > "$t/said"
   printf '%s\n' "  round 1, hold 0.05 s: UIKit held it 61 ms, opened" "  round 1, hold 0.16 s: UIKit held it 168 ms, opened nothing" \
