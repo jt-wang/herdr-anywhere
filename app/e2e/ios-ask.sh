@@ -46,7 +46,8 @@ for look in light dark; do
     "$work/bin/claude" "$app/e2e/files/ask/permission.json" >/dev/null
 done
 companion_start "$work/serve.log" L "$work/herdr-anywhere" serve --listen "127.0.0.1:$port" --hc "$hc" --state "$state" || exit 1
-link=$(L "$work/herdr-anywhere" pair --url "http://127.0.0.1:$port" --state "$state" 2>/dev/null | grep -o 'http://[^ ]*#pair=[A-Za-z0-9_-]*' | head -1)
+# The link is built into the app, and the build can take longer than the default 10 minutes (the Companion then says 410).
+link=$(L "$work/herdr-anywhere" pair --ttl 60m --url "http://127.0.0.1:$port" --state "$state" 2>/dev/null | grep -o 'http://[^ ]*#pair=[A-Za-z0-9_-]*' | head -1)
 [ -n "$link" ] || { echo "FAIL: no pairing link"; exit 1; }
 printf "export const COMPANION: number = 0\nexport const PAIR: string = '%s'\n" "$link" > "$app/e2e/pair.ts"
 "$app/ios/build.sh" ios-e2e.tsx simulator > "$work/build.log" 2>&1 || { tail -20 "$work/build.log"; echo "FAIL: ios/build.sh"; exit 1; }
