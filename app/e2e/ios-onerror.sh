@@ -57,27 +57,42 @@ xcrun simctl boot "$SIM_UDID" 2>/dev/null || true
 xcrun simctl bootstatus "$SIM_UDID" -b >/dev/null
 xcrun simctl uninstall "$SIM_UDID" "$id" 2>/dev/null || true
 xcrun simctl install "$SIM_UDID" "$app/ios/build/Herdr.app"
-xcrun simctl launch "$SIM_UDID" "$id" >/dev/null
+# simctl launch prints "<id>: <pid>" once the process is there. Reading launchd's list after it instead missed the
+# app on CI: it was gone (thrown and crashed) before the list came back.
+launched=$(xcrun simctl launch "$SIM_UDID" "$id" 2>&1) || { echo "FAIL: the app did not start: $launched"; exit 1; }
+before=${launched##*: }
+case $before in ''|*[!0-9]*) echo "FAIL: the app did not start: simctl launch said '$launched'"; exit 1 ;; esac
+echo "  launched: pid $before"
 
 screen() { perl -e 'alarm 60; exec @ARGV' idb ui describe-all --udid "$SIM_UDID" 2>/dev/null; }
 # The app's process, as launchd lists it in the simulator ("-" or nothing once it has quit).
 pid() { xcrun simctl spawn "$SIM_UDID" launchctl list 2>/dev/null | awk -v id="UIKitApplication:$id" 'index($3, id) == 1 {print $1}'; }
+# The same, read twice 2 s apart when the first read is not the launched one, so one slow read is not a quit.
+pid_now() { p=$(pid); [ "$p" = "$before" ] || { sleep 2; p=$(pid); }; echo "$p"; }
 # Given a screenshot, a failure keeps the Companion's log and the simulator's crash reports beside it.
 keep() { [ -n "$shot" ] && [ -x "$app/e2e/ios-failure-logs.sh" ] && "$app/e2e/ios-failure-logs.sh" "$work/started" "$work/serve.log" "${shot%.png}-failure" || true; }
-# The app's process is not the one launched: it quit (on a slow computer, before home even lists the space).
+# The app's process is not the one launched: it quit (on a slow computer, before home even lists the space). Where
+# this computer keeps the simulator's crash reports; the simulator wrote one 47 s after the crash on CI, so wait.
 quit() {
   echo "FAIL: the app quit after a JS error nothing caught (pid $before at launch, '${1}' now)"
-  grep ' /hm-e2e/throwing ' "$work/serve.log" | head -1 | sed 's/^/  app: /'
-  # Where this computer keeps the simulator's crash reports.
-  find "$HOME/Library/Logs/DiagnosticReports" -name 'Herdr-*.ips' -newer "$work/started" 2>/dev/null | sed 's/^/  crash report: /'
+  grep ' /hm-e2e/throwing \| disconnected ' "$work/serve.log" | head -2 | sed 's/^/  Companion: /'
+  reports=""
+  for _ in $(seq 1 24); do
+    reports=$(find "$HOME/Library/Logs/DiagnosticReports" -maxdepth 1 -name 'Herdr-*.ips' -newer "$work/started" 2>/dev/null)
+    [ -n "$reports" ] && break
+    sleep 5
+  done
+  if [ -n "$reports" ]; then
+    echo "$reports" | sed 's/^/  crash report: /'
+    for f in $reports; do grep -o '"type" *: *"[A-Z_]*"\|nsh_app_set_error_handlers' "$f" | sort -u | sed 's/^/    /'; done
+  else
+    echo "  no crash report from the app within 120 s; launchd lists it as: '$(xcrun simctl spawn "$SIM_UDID" launchctl list 2>/dev/null | grep "UIKitApplication:$id")'"
+  fi
   keep; exit 1
 }
-before=""
-for _ in $(seq 1 10); do before=$(pid); case $before in ''|-|0) sleep 1 ;; *) break ;; esac; done
-case $before in ''|-|0) echo "FAIL: launchd lists no process for the app after its launch"; keep; exit 1 ;; esac
 ok=""
 for _ in $(seq 1 40); do
-  now=$(pid); [ "$now" = "$before" ] || quit "$now"
+  now=$(pid_now); [ "$now" = "$before" ] || quit "$now"
   if grep -q "device .* connected (binary," "$work/serve.log" && screen | grep -q '"AXLabel":"acme-api"'; then ok=1; break; fi
   sleep 1
 done
@@ -89,7 +104,7 @@ fi
 for _ in $(seq 1 30); do grep -q ' /hm-e2e/throwing ' "$work/serve.log" && break; sleep 1; done
 grep -q ' /hm-e2e/throwing ' "$work/serve.log" || { echo "FAIL: the app's timer never ran (no /hm-e2e/throwing in the Companion's log)"; keep; exit 1; }
 sleep 5
-after=$(pid)
+after=$(pid_now)
 [ -n "$shot" ] && perl -e 'alarm 40; exec @ARGV' xcrun simctl io "$SIM_UDID" screenshot "$shot" >/dev/null 2>&1
 [ "$after" = "$before" ] || quit "$after"
 grep ' /hm-e2e/throwing ' "$work/serve.log" | head -1 | sed 's/^/  app: /'
@@ -97,7 +112,14 @@ echo "ok: the app is still running 5 s after the error (pid $after)"
 cp -R "$app/e2e/ios-uitest" "$work/uitest"
 (cd "$work/uitest" && xcodegen generate --quiet)
 rc=0
-TEST_RUNNER_SPACE=sperror perl -e 'alarm 300; exec @ARGV' xcodebuild test -quiet -project "$work/uitest/KeyboardCheck.xcodeproj" -scheme UITests -only-testing:UITests/OnError -destination "id=$SIM_UDID" -derivedDataPath "$work/uitest/derived" > "$work/uitest/test.log" 2>&1 || rc=$?
-if [ "$rc" != 0 ]; then echo "FAIL: the tap after the error (xcodebuild test exit $rc)"; grep -E "error:|XCTAssert|failed" "$work/uitest/test.log" | head -8; keep; exit 1; fi
+TEST_RUNNER_SPACE=sperror TEST_RUNNER_OUT="$work/onerror.txt" perl -e 'alarm 300; exec @ARGV' xcodebuild test -quiet -project "$work/uitest/KeyboardCheck.xcodeproj" -scheme UITests -only-testing:UITests/OnError -destination "id=$SIM_UDID" -derivedDataPath "$work/uitest/derived" -resultBundlePath "$work/uitest/result.xcresult" > "$work/uitest/test.log" 2>&1 || rc=$?
+sed 's/^/  /' "$work/onerror.txt" 2>/dev/null || true
+if [ "$rc" != 0 ]; then
+  echo "FAIL: the tap after the error (xcodebuild test exit $rc)"
+  # xcodebuild -quiet leaves the failure's message out of its log; the result bundle has it (e2e/ios-xcresult.sh).
+  [ -n "$shot" ] && { mkdir -p "${shot%.png}-failure"; cp "$work/uitest/test.log" "${shot%.png}-failure/xctest.log.txt"; } || true
+  [ -x "$app/e2e/ios-xcresult.sh" ] && "$app/e2e/ios-xcresult.sh" "$work/uitest/result.xcresult" ${shot:+"${shot%.png}-failure"} all
+  keep; exit 1
+fi
 echo "ok: after the error a tap on the space opens its terminal"
 echo PASS
