@@ -49,13 +49,21 @@ func (g *AutostartGuard) Check() []string {
 		return nil
 	}
 	var bad []string
-	mine := &autostart.Service{Name: g.own, Home: g.home}
-	if _, err := os.Stat(mine.Path()); err == nil {
-		bad = append(bad, fmt.Sprintf("the run's own entry was written in the account's home (%s, now deleted): pair, start or stop ran with the real HOME", mine.Path()))
+	// The run's own entry is unloaded by name, wherever its file is: Linux's Remove looks for the unit in the home
+	// it is given first, and the run's was in a home of its own.
+	switch runtime.GOOS {
+	case "darwin":
+		exec.Command("launchctl", "bootout", fmt.Sprintf("gui/%d/%s", os.Getuid(), g.own)).Run()
+	case "linux":
+		exec.Command("systemctl", "--user", "disable", "--now", g.own+".service").Run()
 	}
-	mine.Remove()
+	mine := (&autostart.Service{Name: g.own, Home: g.home}).Path()
+	if _, err := os.Stat(mine); err == nil {
+		bad = append(bad, fmt.Sprintf("the run's own entry was written in the account's home (%s, now deleted): pair, start or stop ran with the real HOME", mine))
+		os.Remove(mine)
+	}
 	if home, err := os.UserHomeDir(); err == nil && home != g.home {
-		(&autostart.Service{Name: g.own, Home: home}).Remove()
+		os.Remove((&autostart.Service{Name: g.own, Home: home}).Path())
 	}
 	if now := stamp(g.file); now != g.stamp {
 		bad = append(bad, fmt.Sprintf("the person's entry %s changed: %s before, %s after", g.file, g.stamp, now))
