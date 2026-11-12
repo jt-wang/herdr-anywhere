@@ -13,7 +13,7 @@ shots=$2; mkdir -p "$shots"
 adb="${ANDROID_HOME:-$HOME/Library/Android/sdk}/platform-tools/adb"
 id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$app/nsh.json")
 font0=$("$adb" shell settings get system font_scale | tr -d '\r'); case $font0 in null|'') font0=1.0;; esac
-trap '"$adb" shell settings put system font_scale "$font0"' EXIT INT TERM
+trap '"$adb" shell settings put system font_scale "$font0"' EXIT; trap 'exit 130' INT; trap 'exit 143' TERM
 
 xml() { "$adb" shell uiautomator dump /sdcard/hm.xml >/dev/null 2>&1; "$adb" shell cat /sdcard/hm.xml; }
 # The bounds (left top right bottom) of the view with this resource-id; an id ending in "-" is a prefix.
