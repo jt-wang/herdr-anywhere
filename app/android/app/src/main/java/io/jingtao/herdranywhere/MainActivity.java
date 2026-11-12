@@ -65,14 +65,17 @@ public class MainActivity extends Activity {
    *  channel as it was first made, so a change needs a new id (Signal's NotificationChannels does the same). */
   private static final String OLD_NEEDS_YOU = "needs-you", OLD_FINISHED = "finished";
   private static final String TERMINAL = "terminal";
+  /** A new version's notification (src/updates.ts): its tap opens home, where the notice is. */
+  private static final String HOME = "home";
   private static final int ASK = 1, PICK = 2;
 
   private NshView view;
   private final CoroutineScope scope = CoroutineScopeKt.MainScope();
   private TailPocketBridge tailPocket;
   private boolean front;
-  /** A tapped notification's terminal, until the app is listening (it asks page.front once it starts). */
-  private String opening;
+  /** What a tapped notification opens ({terminal} or {home: true}), until the app is listening (it asks page.front
+   *  once it starts). */
+  private Map<String, Object> opening;
   private NshHostReply asking, picking;
   private int pickLimit = 9;
   private boolean keepAlive;
@@ -86,7 +89,7 @@ public class MainActivity extends Activity {
     setContentView(view);
     tailPocket = TailPocketNsh.INSTANCE.attach(view, scope);
     channels();
-    opening = terminalOf(getIntent());
+    opening = openedBy(getIntent());
     view.handle("page.front", (data, reply) -> {
       reply.resolve(front);
       runOnUiThread(this::flushOpening);
@@ -154,6 +157,7 @@ public class MainActivity extends Activity {
     nm.deleteNotificationChannel(OLD_NEEDS_YOU);
     nm.deleteNotificationChannel(OLD_FINISHED);
     nm.createNotificationChannel(KeepAlive.channel(this));
+    nm.createNotificationChannel(Updated.channel(this));
   }
 
   /** Sound and pop-up with Herdr's sound. Made the first time over an older version, it keeps what the person chose on
@@ -209,6 +213,7 @@ public class MainActivity extends Activity {
     if (front || !(a.get("title") instanceof String) || !"granted".equals(permission())) return false;
     String terminal = a.get(TERMINAL) instanceof String ? (String) a.get(TERMINAL) : "";
     String body = a.get("body") instanceof String ? (String) a.get("body") : null;
+    if ("update".equals(a.get("kind"))) return notifyUpdate((String) a.get("title"), body);
     boolean done = "done".equals(a.get("kind"));
     // New words for the notification of this terminal (src/page.ts notifyFromPage): only onto one still shown, silently.
     boolean quiet = Boolean.TRUE.equals(a.get("quiet"));
@@ -231,6 +236,20 @@ public class MainActivity extends Activity {
         .setOnlyAlertOnce(quiet)
         .build();
     getSystemService(NotificationManager.class).notify(terminal, 1, n);
+    return true;
+  }
+
+  /** A new version: on the updates channel, one at a time (a newer version replaces it), and its tap opens home. */
+  private boolean notifyUpdate(String title, String body) {
+    Intent tap = new Intent(this, MainActivity.class).putExtra(HOME, true).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
+    Notification n = new Notification.Builder(this, Updated.CHANNEL)
+        .setSmallIcon(R.drawable.ic_notify)
+        .setContentTitle(title)
+        .setContentText(body)
+        .setContentIntent(PendingIntent.getActivity(this, 3, tap, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT))
+        .setAutoCancel(true)
+        .build();
+    getSystemService(NotificationManager.class).notify(Updated.AVAILABLE, 1, n);
     return true;
   }
 
@@ -448,22 +467,24 @@ public class MainActivity extends Activity {
     }
   }
 
-  private static String terminalOf(Intent intent) {
-    String t = intent == null ? null : intent.getStringExtra(TERMINAL);
-    return t == null || t.isEmpty() ? null : t;
+  private static Map<String, Object> openedBy(Intent intent) {
+    if (intent == null) return null;
+    if (intent.getBooleanExtra(HOME, false)) return Collections.singletonMap(HOME, true);
+    String t = intent.getStringExtra(TERMINAL);
+    return t == null || t.isEmpty() ? null : Collections.singletonMap(TERMINAL, t);
   }
 
   private void flushOpening() {
     if (opening == null) return;
-    view.send("page.open", Collections.singletonMap(TERMINAL, opening));
+    view.send("page.open", opening);
     opening = null;
   }
 
   @Override
   protected void onNewIntent(Intent intent) {
     super.onNewIntent(intent);
-    String t = terminalOf(intent);
-    if (t != null) view.send("page.open", Collections.singletonMap(TERMINAL, t));
+    Map<String, Object> o = openedBy(intent);
+    if (o != null) view.send("page.open", o);
   }
 
   @Override

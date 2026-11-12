@@ -120,3 +120,35 @@ test("a notification is titled with the row's main text in the language's quotes
   expect(await titleOf('twins', 't1', 'ru')).toBe('«fix login» ждёт вас')
   expect(await titleOf('busy', 't2')).toBe('Codex needs you')
 })
+
+const CURRENT = JSON.stringify({ version: '0.1.5', latest: '0.1.5', canUpdate: true, autoUpdate: false, checks: 'on' })
+const updates = (info: string) => open('./fixtures/fake.tsx', {
+  platform: 'android',
+  host: { params: { scene: 'busy', info, updateEveryMs: '200' }, handlers: { 'page.front': true, 'page.notify': true, 'page.notifications': 'granted', 'page.notifyChannels': () => CHANNELS, 'page.openChannel': true } },
+})
+
+test("a release the computer finds while the app is away posts one notification of its own kind; its tap opens home with the notice", async () => {
+  const app = await updates(CURRENT)
+  await app.waitFor('id:settings')
+  await app.press('id:settings')
+  await app.waitFor('id:auto-update')
+  await app.host.send('page.front', { front: false })
+  await app.host.send('fake.latest', { version: '9.0.0' })
+  await app.waitUntil(() => calls(app, 'page.notify').length === 1)
+  expect(calls(app, 'page.notify')[0]).toEqual({ title: 'Herdr Anywhere 9.0.0 is available', body: 'Tap to update the computer from your phone', terminal: null, kind: 'update', quiet: false })
+  await app.host.send('page.front', { front: true })
+  await app.host.send('page.open', { home: true })
+  await app.waitFor('id:update-banner')
+  await app.host.send('page.front', { front: false })
+  await app.wait(800)
+  expect(calls(app, 'page.notify').length).toBe(1)
+})
+
+test('away from the app, nothing is posted for a release the person did not let the computer look for', async () => {
+  const app = await updates(JSON.stringify({ version: '0.1.5', latest: '0.1.5', canUpdate: true, autoUpdate: false, checks: 'off' }))
+  await app.waitFor('text:Needs you')
+  await app.host.send('page.front', { front: false })
+  await app.host.send('fake.latest', { version: '9.0.0' })
+  await app.wait(800)
+  expect(calls(app, 'page.notify')).toEqual([])
+})

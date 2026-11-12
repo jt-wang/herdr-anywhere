@@ -40,6 +40,8 @@ export type RootDeps = {
   opensSettings?: boolean
   /** TailPocket, in the phone apps: pairing by the invite `serve --tailcat` shows, and the tunnel the Linker uses. */
   tunnel?: Tunnel
+  /** How often a connected phone reads the computer's answer about new versions again: an hour; a test's is short. */
+  updateEveryMs?: number
 }
 
 type Route = { name: 'home' } | { name: 'space'; id: string } | { name: 'settings' } | { name: 'progress' } | { name: 'task'; id: string }
@@ -103,6 +105,10 @@ function Connected(props: { deps: RootDeps; store: Store; link: Link; unpaired: 
   const updates = new Updates({
     baseUrl: () => deps.linker.baseUrl(), token: () => deps.linker.link.get()?.token ?? '', conn: store.conn, fetcher: deps.fetcher ?? fetch,
     os: platform.os, channel: CHANNEL, appVersion: APP_VERSION, toast: (t) => store.toast(t), install: installApp,
+    front: () => store.appActive,
+    told: { get: () => deps.prefs.prefs.get().toldUpdate, set: (v) => deps.prefs.set({ toldUpdate: v }) },
+    dismissed: () => deps.prefs.prefs.get().dismissedUpdate,
+    notify: (n) => notifyFromPage({ ...n, kind: 'update' }), everyMs: deps.updateEveryMs,
   })
   updates.start()
   const offInstall = followInstallFailures((m) => store.toast({ title: t('couldntUpdateApp'), body: installProblem(m), level: 'error' }))
@@ -121,7 +127,7 @@ function Connected(props: { deps: RootDeps; store: Store; link: Link; unpaired: 
     const terminal = progress.paneFor(a.task)
     alerts.ring(a.kind === 'wait' ? 'blocked' : 'done', { id: 0, title: a.title, body: a.body, level: 'info', action: terminal ? { terminal } : undefined }, store.appActive)
   }
-  const offPage = followPage({ front: (f) => { store.appActive = f; if (f) void updates.inFront() }, open: (a) => openTerminal(a) })
+  const offPage = followPage({ front: (f) => { store.appActive = f; if (f) void updates.inFront() }, open: (a) => openTerminal(a), home: () => nav.popToRoot() })
   const offConn = store.conn.sub((c) => { if (c === 'unpaired') props.unpaired() })
   const conn = useSignal(store.conn)
   effect(() => keepAlive(wantsKeepAlive(conn(), prefs().stayConnected)))

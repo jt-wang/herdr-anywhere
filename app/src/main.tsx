@@ -18,8 +18,9 @@ const io = {
 }
 const DEVICE: Record<string, string> = { ios: platform.idiom === 'pad' ? 'iPad' : 'iPhone', android: 'Android phone', web: 'Browser' }
 
-/** `pairLink`: a link (or a TailPocket invite) to pair with at once, as a web page opened at a link does. */
-export function start(o: { pairLink?: string; opensSettings?: boolean } = {}) {
+/** `pairLink`: a link (or a TailPocket invite) to pair with at once, as a web page opened at a link does.
+ *  `updateEveryMs`: how often a connected phone reads the computer's answer about new versions (an hour; an e2e's is short). */
+export function start(o: { pairLink?: string; opensSettings?: boolean; updateEveryMs?: number } = {}) {
   void pageAddress().then((page) => mount(() => (
     <Root deps={{
       linker: new Linker({ ...io, tunnel }),
@@ -31,6 +32,7 @@ export function start(o: { pairLink?: string; opensSettings?: boolean } = {}) {
       pairLinkUsed: dropPairFromPage,
       opensSettings: o.opensSettings,
       tunnel,
+      updateEveryMs: o.updateEveryMs,
     }} />
   )))
 }

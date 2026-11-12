@@ -24,7 +24,7 @@ import { SAMPLE_PICTURE } from './picture.ts'
 const putAway = Keyboard.dismiss
 let keyboardAway = 0
 let checkPosts = 0
-let said: { checks?: string; autoUpdate?: boolean } = {} // what the phone told the computer, as the computer would answer it
+let said: { checks?: string; autoUpdate?: boolean; latest?: string } = {} // what the phone told the computer, as the computer would answer it
 Keyboard.dismiss = () => { void Storage.setItem('keyboard-away', String(++keyboardAway)); putAway() }
 
 const scene = String((host.params as any)?.scene ?? 'busy')
@@ -202,7 +202,8 @@ async function chat(url: string) {
 }
 // The computer's chat setups (GET /api/chat-setups, PUT/DELETE /api/chat-setups/{agent}): `params.setups` (JSON), else
 // none. Install over a "changed" file without ?force=1 is refused (409); each ask is recorded in `fake-setup-asks` as
-// "METHOD path".
+// "METHOD path". As the Companion, which reads the file at each ask (internal/chat/pi/reader.go), a chat answer of
+// setup-needed for that agent turns setup-not-loaded once it is installed, and back once it is removed.
 let setups: any[] = params.setups ? JSON.parse(params.setups) : []
 const setupAsks: string[] = []
 function chatSetups(url: string, init: any) {
@@ -217,12 +218,19 @@ function chatSetups(url: string, init: any) {
   const force = /[?&]force=1/.test(path)
   if (setups[i].state === 'no-agent' || (setups[i].state === 'changed' && !force)) return answer(409, setups[i])
   setups[i] = { ...setups[i], state: method === 'PUT' ? 'installed' : 'absent' }
+  if (chatAnswer.setup === agent) {
+    if (method === 'PUT' && chatAnswer.unknown === 'setup-needed') chatAnswer = { ...chatAnswer, unknown: 'setup-not-loaded' }
+    if (method === 'DELETE' && chatAnswer.unknown === 'setup-not-loaded') chatAnswer = { ...chatAnswer, unknown: 'setup-needed' }
+  }
   return answer(200, setups[i])
 }
 // Another Herdr screen pins or unpins an agent: `app.host.send('fake.label', { address, labels: { 'herdr.pinned': '1' } })`.
 host.on('fake.label', (d: any) => core.label(d.address, d.labels))
 // A test drops the line: `app.host.send('fake.drop', {})`; the computer then stops answering.
 host.on('fake.drop', () => core.drop('network'))
+// The computer's daily check finds a release: `app.host.send('fake.latest', { version: '9.0.0' })`; the phone hears
+// of it the next time it reads /api/info (`host.params.updateEveryMs` makes that soon).
+host.on('fake.latest', (d: any) => { said = { ...said, latest: d.version } })
 // herdr-core holds a method's answers until released, as it holds terminal.send for a half-typed line:
 // `app.host.send('fake.hold', { method })`, then `app.host.send('fake.release', {})`.
 host.on('fake.hold', (d: any) => core.holding.add(d.method))
@@ -318,6 +326,7 @@ mount(() => (
     prefs: new PrefStore(io),
     makeStore: (l) => tapPicture(counted(new Store({ pipe: pipe(l), tunnelled: () => l.link.get()?.via === 'tailpocket', slowSendMs: params.slowSendMs ? Number(params.slowSendMs) : undefined }))),
     device: 'Test phone',
+    updateEveryMs: params.updateEveryMs ? Number(params.updateEveryMs) : undefined,
     tunnel: params.via === 'tailpocket' ? fakeTunnel : undefined,
     pairLink: opened || scene === 'relaunch-forgotten' ? String((host.params as any)?.link) : undefined,
     // Recorded where a test can read it: the app's own storage.
