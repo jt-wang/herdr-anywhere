@@ -14,6 +14,7 @@ set -eu
 : "${SIM_UDID:?set SIM_UDID to the simulator to use}"
 : "${HM_TEST_OMP:?set HM_TEST_OMP to Oh My Pi 18.13.3 (app/e2e/ci/tools.sh omp)}"
 app=$(cd "$(dirname "$0")/.." && pwd)
+sh "$app/e2e/ios-connect-wait.sh" --self-test || exit 1
 shots=${1:-}
 hc=${HM_TEST_HC:-$(command -v hc || echo "$HOME/.local/bin/hc")}
 id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$app/nsh.json")
@@ -52,12 +53,13 @@ EOF
 # autostart entry, if pair or serve ever makes one, is the test's own: launchd labels are per user, not per HOME.
 L() { HERDR_ANYWHERE_AUTOSTART_NAME="hm-test-ioskitty-$$" HC_SESSION="hmioskitty-$$" HC_SOCKET="" HOME="$work/u" SHELL=/bin/zsh PATH="$work/bin:$PATH" XDG_STATE_HOME="$work/state" \
   XDG_CONFIG_HOME="$work/config" XDG_DATA_HOME="$work/data" XDG_RUNTIME_DIR="$run" "$@"; }
-serve_pid="" model_pid="" test_pid=""
+serve_pid="" model_pid="" test_pid="" tail_pid=""
 cleanup() {
   status=$?
   trap - EXIT INT TERM HUP
   set +e
   [ -z "$test_pid" ] || { kill "$test_pid"; wait "$test_pid"; } 2>/dev/null || true
+  [ -z "$tail_pid" ] || kill "$tail_pid" 2>/dev/null
   xcrun simctl ui "$SIM_UDID" appearance light >/dev/null 2>&1
   [ -z "$serve_pid" ] || { pkill -P "$serve_pid" 2>/dev/null; kill "$serve_pid" 2>/dev/null; }
   [ -z "$model_pid" ] || kill "$model_pid" 2>/dev/null
@@ -97,22 +99,19 @@ xcrun simctl bootstatus "$SIM_UDID" -b >/dev/null
 xcrun simctl ui "$SIM_UDID" appearance light
 xcrun simctl uninstall "$SIM_UDID" "$id" 2>/dev/null || true
 xcrun simctl install "$SIM_UDID" "$built"
-connected() { grep -c "device .* connected (binary," "$work/serve.log" || true; }
-# Waits for one more connection than before and says how long it took. Up to 120 s: the app as of rc-0.2.0 did not
-# connect within 60 s once on a CI runner (load near 100), and that run kept no screenshot to say why; this one does.
+# The app connects to this run's Companion (e2e/ios-connect-wait.sh), up to 120 s: a CI runner near load 100 once took
+# over 60. Opened again, it waits on a copy of the log from the launch on, as the first connect is in the log already.
+# No screenshot on a miss: the app not yet paired can show the pairing link, which must not be uploaded.
 launch() {
-  n=$(connected)
+  log=$work/serve.log
+  if [ -n "$tail_pid" ] || grep -q "device .* connected (binary," "$log"; then
+    log=$work/serve-again.log; tail -n 0 -F "$work/serve.log" > "$log" 2>/dev/null & tail_pid=$!
+    sleep 0.5
+  fi
   xcrun simctl launch "$SIM_UDID" "$id" >/dev/null
-  i=0; until [ "$(connected)" -gt "$n" ]; do
-    i=$((i + 1))
-    if [ $i -gt 120 ]; then
-      echo "FAIL: the app never connected (120 s); the Companion's last lines:"; tail -15 "$work/serve.log" | sed 's/#pair=[^ ]*/#pair=…/; s/^/  /'
-      [ -z "$shots" ] || { mkdir -p "$shots/failure"; perl -e 'alarm 40; exec @ARGV' xcrun simctl io "$SIM_UDID" screenshot "$shots/failure/not-connected.png" >/dev/null 2>&1 || true; }
-      exit 1
-    fi
-    sleep 1
-  done
-  echo "the app connected $i s after it was started"
+  HM_CONNECT_WAIT=${HM_CONNECT_WAIT:-120} "$app/e2e/ios-connect-wait.sh" "$SIM_UDID" "$id" "$log" "$work/started" ${shots:+"$shots/connect-failure"} || exit 1
+  [ -z "$tail_pid" ] || { kill "$tail_pid"; wait "$tail_pid"; } 2>/dev/null || true
+  tail_pid=""
 }
 launch
 cp -R "$app/e2e/ios-uitest" "$work/uitest"
@@ -138,7 +137,10 @@ open_pane() { # N
 close_pane() { # N
   : > "$work/done-$1"
   rc=0; wait "$test_pid" || rc=$?; test_pid=""
-  [ $rc = 0 ] || { echo "FAIL: the UI test ended with $rc"; sed 's/^/  /' "$work/kitty-$1.txt" 2>/dev/null || true; exit 1; }
+  [ $rc = 0 ] && return 0
+  # Before the pictures the run is there for its screenshots, taken by now: what the UI test found is only noted.
+  if [ "${HM_KITTY_BEFORE:-}" = 1 ]; then echo "before: the UI test ended with $rc"; sed 's/^/  /' "$work/kitty-$1.txt" 2>/dev/null || true; return 0; fi
+  echo "FAIL: the UI test ended with $rc"; sed 's/^/  /' "$work/kitty-$1.txt" 2>/dev/null || true; exit 1
 }
 failed=0
 say() { echo "$1"; case $1 in FAIL*) failed=1;; esac; }
