@@ -506,7 +506,11 @@ jobs:
           sh app/e2e/ios-failure-logs.sh --self-test
       - name: Shut the simulator
         if: always()
-        run: '[ -z "${SIM_UDID:-}" ] || { xcrun simctl shutdown "$SIM_UDID"; xcrun simctl delete "$SIM_UDID"; }'
+        # A suite may have shut it already (ios-onerror.sh does, as its last step); shutting a shut one fails.
+        run: |
+          [ -n "${SIM_UDID:-}" ] || exit 0
+          if xcrun simctl list devices booted | grep -q "$SIM_UDID"; then xcrun simctl shutdown "$SIM_UDID"; fi
+          xcrun simctl delete "$SIM_UDID"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always() && steps.check.outcome == 'success'
         with:
