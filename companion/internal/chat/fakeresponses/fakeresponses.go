@@ -12,6 +12,7 @@
 //	THINK  a reasoning summary, then a sentence
 //	LOOK   a look at shot.png, then a sentence
 //	RENDER a sentence naming the files it made: a video and a PDF, by paths in the session's folder
+//	WORK   three commands of 6 s each, a sentence before each, then a sentence: time to send a message while it works
 //
 // Anything else gets "OK.". Each step is a call of the tools the request offers: Codex's (exec_command, apply_patch,
 // view_image), OpenCode 1's (bash, apply_patch, read with filePath), OpenCode 2's (shell, patch, read with path) or
@@ -159,12 +160,14 @@ var scripts = map[string][]step{
 		{say: "Added two lines to notes.txt."}},
 	"BREAK": {{run: "echo checking; echo 'one test failed' >&2; exit 3", id: "call_fake_break"},
 		{say: "The check failed with code 3."}},
-	"THINK":  {{think: "Weighing two plans: the short one first.", say: "The short plan is better."}},
-	"LOOK":   {{look: "shot.png", id: "call_fake_look"}, {say: "It is a blue square."}},
+	"THINK": {{think: "Weighing two plans: the short one first.", say: "The short plan is better."}},
+	"LOOK":  {{look: "shot.png", id: "call_fake_look"}, {say: "It is a blue square."}},
+	"WORK": {{say: "Step one.", run: "python3 -c 'import time; time.sleep(6)'", id: "call_fake_w1"}, {say: "Step two.", run: "python3 -c 'import time; time.sleep(6)'", id: "call_fake_w2"},
+		{say: "Step three.", run: "python3 -c 'import time; time.sleep(6)'", id: "call_fake_w3"}, {say: "All three steps are done."}},
 	"RENDER": {{say: "Rendered `renders/demo.mp4` (3 s). The guide is in docs/guide.pdf."}},
 }
 
-var word = regexp.MustCompile(`\b(HELLO|LIST|EDIT|CHANGE|BREAK|THINK|LOOK|RENDER)\b`)
+var word = regexp.MustCompile(`\b(HELLO|LIST|EDIT|CHANGE|BREAK|THINK|LOOK|RENDER|WORK)\b`)
 
 // Server answers POST /v1/responses as a stream. Requests lists what it was asked, for a test to look at.
 type Server struct {

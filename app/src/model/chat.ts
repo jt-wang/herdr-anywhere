@@ -2,7 +2,7 @@
 // The phone knows nothing of any agent: the computer finds the record, reads it, and says when it is not sure.
 import { formats, t } from '../strings/index.ts'
 
-export type ChatStep = { id: string; kind: 'read' | 'edit' | 'run' | 'search' | 'web' | 'agent' | 'note' | 'think' | 'other' | string; title: string
+export type ChatStep = { id: string; kind: 'read' | 'edit' | 'run' | 'search' | 'web' | 'agent' | 'note' | 'think' | 'you' | 'other' | string; title: string
   /** The record says it failed (a command's exit code, a refused call). */
   failed?: boolean
   /** The lines an edit added and removed. */
@@ -121,7 +121,7 @@ const span = (secs: number) => {
 
 /** The one line a finished turn's steps fold behind. */
 export function foldLine(turn: ChatTurn): string {
-  const n = t('chatSteps', { n: turn.steps.length })
+  const n = t('chatSteps', { n: turn.steps.filter((x) => x.kind !== 'you').length })
   return turn.secs ? `${t('chatWorked', { time: span(turn.secs) })} · ${n}` : n
 }
 
@@ -130,6 +130,13 @@ export function shows(turn: ChatTurn, expanded: boolean): { fold: boolean; steps
   if (!turn.steps.length) return { fold: false, steps: false }
   if (turn.end === 'open') return { fold: false, steps: true }
   return { fold: true, steps: expanded }
+}
+
+/** What you said while the agent worked (steps of kind `you`): shown above a closed fold line, so a finished turn
+ *  doesn't hide it; in its place among the steps once they show. */
+export function outsideFold(turn: ChatTurn, expanded: boolean): ChatStep[] {
+  const s = shows(turn, expanded)
+  return s.fold && !s.steps ? turn.steps.filter((x) => x.kind === 'you') : []
 }
 
 /** How often an open chat view asks again: while the agent works or waits on you, its record grows; an agent that
