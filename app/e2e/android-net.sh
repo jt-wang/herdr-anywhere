@@ -5,6 +5,7 @@
 # WiFi without internet, and its Tailcat suites reached neither the computer nor Tailcat's relays.
 # Sourced with $adb set: nets prints them. The lines are read in the form of Android 15's NetworkAgentInfo.toString
 # (AOSP packages/modules/Connectivity): " lastValidated <time>" is there only while the network is validated.
+#        e2e/android-net.sh --mobile-only [seconds]    WiFi off, and waits for mobile data (mobile_only)
 #        e2e/android-net.sh --self-test    reads made-up dumpsys lines and checks what it makes of them
 net_read() {
   awk '
@@ -26,6 +27,31 @@ net_read() {
 }
 nets() { "$adb" shell dumpsys connectivity 2>/dev/null | tr -d '\r' | net_read | sed 's/^/    /'; }
 
+# The emulator's WiFi is simulated by another program (netsim). On CI it has failed three ways: WiFi up without
+# internet for a whole job (every Tailcat suite reached nothing), its link to the emulator broken under a 100 MB
+# upload and the emulator gone with it, and, by the look of two runs where the phone's pair request never reached the
+# computer, WiFi without internet before mobile data was up. Mobile data goes through the emulator's own network,
+# which reaches this computer at 10.0.2.2 and the internet. So the suites turn WiFi off and wait for mobile data.
+# mobile_ready: whether net_read's lines (on stdin) have mobile data the default and validated, and no WiFi.
+mobile_ready() {
+  awk '/^network [0-9]+: WIFI/ { wifi = 1 } /^network [0-9]+: MOBILE[^,]* CONNECTED, validated,.*, the default$/ { ok = 1 }
+    END { exit !(ok && !wifi) }'
+}
+# WiFi off, then up to $1 seconds (120) for mobile data alone, validated and the default; says how long it took.
+mobile_only() {
+  "$adb" shell svc wifi disable
+  i=0
+  while [ "$i" -lt "${1:-120}" ]; do
+    "$adb" shell dumpsys connectivity 2>/dev/null | tr -d '\r' | net_read | mobile_ready && {
+      echo "the phone goes out through mobile data alone, WiFi off ($i s):"; nets; return 0; }
+    sleep 1; i=$((i + 1))
+  done
+  echo "FAIL: ${1:-120} s after WiFi was turned off, mobile data is not the phone's validated default network:"; nets
+  return 1
+}
+
+# e2e/android-net.sh --mobile-only [seconds]: mobile_only, with adb from the PATH (ANDROID_SERIAL picks the phone).
+if [ "${1:-}" = --mobile-only ]; then adb=${adb:-adb}; mobile_only "${2:-120}"; exit; fi
 if [ "${1:-}" = --self-test ]; then
   # Two networks, WiFi the default and validated, mobile data not; each listed twice, as dumpsys does in its sections.
   # The day in created= is DAY: only the time of day is read.
@@ -41,5 +67,13 @@ network 101: MOBILE[LTE] CONNECTED, not validated, up since 00:57:37'
   want='network 100: WIFI CONNECTED, not validated, up since 00:57:24
 no default network'
   [ "$got" = "$want" ] || { printf 'FAIL: android-net self-test: WiFi without internet read as\n%s\n' "$got"; exit 1; }
+  # Ready for the suites only with mobile data the default and validated, and WiFi gone.
+  mob_default=$(printf '%s\n' "$mobile" | sed 's/ created 8 / created 8 firstValidated 9 lastValidated 10 /')
+  ready() { printf '%s\n' "$@" | net_read | mobile_ready; }
+  ready 'Active default network: 100' "$wifi" "$mob_default" && { echo "FAIL: android-net self-test: ready with WiFi up and the default"; exit 1; }
+  ready 'Active default network: 101' "$wifi" "$mob_default" && { echo "FAIL: android-net self-test: ready with WiFi still up"; exit 1; }
+  ready 'Active default network: 101' "$mobile" && { echo "FAIL: android-net self-test: ready with mobile data not validated"; exit 1; }
+  ready 'Active default network: none' && { echo "FAIL: android-net self-test: ready with no network"; exit 1; }
+  ready 'Active default network: 101' "$mob_default" || { echo "FAIL: android-net self-test: not ready with mobile data alone, validated, the default"; exit 1; }
   echo "PASS: android-net self-test"
 fi

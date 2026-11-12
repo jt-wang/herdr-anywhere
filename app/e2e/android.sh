@@ -408,7 +408,23 @@ posted() { "$adb" shell dumpsys notification --noredact | grep -A40 "pkg=$id" | 
 record() { "$adb" shell dumpsys notification --noredact | grep -E "NotificationRecord.*pkg=$id .*tag=$term .*$1" >/dev/null; }
 asked=""
 for _ in $(seq 1 15); do posted "android.text=String \(Which port\?" && posted "^acme-api › " && { asked=1; break; }; sleep 1; done
-[ -n "$asked" ] || { echo "FAIL: no notification with what it asks, then where it is"; "$adb" shell dumpsys notification --noredact | grep -A40 "pkg=$id" | grep -E "android\.(title|text)|channel" | head -6; exit 1; }
+# On a miss (once in 20 copies on CI, with sh hm-ask.sh run and only the connection's own notification up): whether it
+# comes later and when, whether the phone was still connected, what herdr-core says of the terminal, and the app's log.
+# The run fails either way.
+no_ask() {
+  echo "FAIL: no notification with what it asks, then where it is"
+  "$adb" shell dumpsys notification --noredact | grep -A40 "pkg=$id" | grep -E "android\.(title|text)|channel" | head -6
+  later="not in 45 s more"
+  for i in $(seq 1 45); do posted "android.text=String \(Which port\?" && { later="it came $((15 + i)) s after the question"; break; }; sleep 1; done
+  echo "  later: $later"
+  echo "  the Companion's log on the phone's connection:"
+  grep -E "device .* (connected|disconnected|no answer)| /api/ws " "$work/serve.log" | tail -8 | mask | sed 's/^/    /'
+  echo "  herdr-core on $term: $("$hc" ls --json 2>/dev/null | python3 -c 'import json,sys; t=[x for x in json.load(sys.stdin)["terminals"] if x["address"]==sys.argv[1]]; print(json.dumps(t[0])[:400] if t else "not listed")' "$term" 2>&1)"
+  echo "  the app's process: $("$adb" shell pidof "$id" | tr -d '\r')"
+  "$adb" logcat -d -v time -t 400 2>/dev/null | grep -iE "$id|nsh|ActivityManager.*(Killing|freez|cached)" | tail -20 | mask | sed 's/^/    logcat: /'
+  exit 1
+}
+[ -n "$asked" ] || no_ask
 posted "android.title=String \(.* needs you\)" || { echo "FAIL: the notification does not say who needs you"; exit 1; }
 record "importance=4 .*channel=agent-needs-you" || { echo "FAIL: a question is not on the agent-needs-you channel (heads-up)"; exit 1; }
 [ -n "$shot" ] && "$adb" exec-out screencap -p > "${shot%.png}-notification.png"

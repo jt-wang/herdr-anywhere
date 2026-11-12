@@ -51,7 +51,6 @@ echo "booted: Android $("$adb" shell getprop ro.build.version.release | tr -d '\
   { echo "FAIL: the screen is not 1080x2400 at 420 dpi, light, font scale 1"; exit 1; }
 # What keyboard this image has: android-typing.sh needs Gboard.
 echo "keyboards: $("$adb" shell ime list -s | tr -d '\r' | tr '\n' ' ')"
-# The phone's networks once it has settled: on one job the phone had WiFi without internet, and every Tailcat suite
-# after it failed to reach the computer (android-net.sh).
+# WiFi off: the suites go out through mobile data alone (android-net.sh says why).
 . "$here/../android-net.sh"
-echo "networks:"; nets || true # pipefail: a failed dumpsys only leaves the list short
+mobile_only 120
