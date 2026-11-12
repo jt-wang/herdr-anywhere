@@ -1,9 +1,0 @@
-[
-  {"id": "", "from": "you", "said": "LIST the files here",
-   "steps": [{"id": "", "kind": "note", "title": "I'll list the files."}, {"id": "", "kind": "run", "title": "ls"}],
-   "reply": "There are two files here.", "end": "done"},
-  {"id": "", "from": "you", "said": "EDIT a file for me",
-   "steps": [{"id": "", "kind": "edit", "title": "hello.txt", "added": 1}],
-   "reply": "I wrote hello.txt.", "end": "done"},
-  {"id": "", "from": "you", "said": "HELLO again", "steps": [], "reply": "Hello from the fake model.", "end": "done"}
-]

@@ -66,7 +66,7 @@ export function newerOrSame(version: string, min: string): boolean {
   return true
 }
 
-type Pending = { resolve: (v: any) => void; reject: (e: Error) => void; timer?: ReturnType<typeof setTimeout> }
+type Pending = { resolve: (v: any) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }
 
 export class HcClient {
   onClose?: (reason: string) => void
@@ -106,16 +106,14 @@ export class HcClient {
     })
   }
 
-  /** `timeoutMs` 0: no time limit; the call ends with its answer or when the line goes. */
-  call<T = any>(method: string, params: object = {}, opts: { timeoutMs?: number } = {}): Promise<T> {
+  call<T = any>(method: string, params: object = {}): Promise<T> {
     if (this.closed) return Promise.reject(new HcError('connection lost', 'disconnected'))
     const id = this.nextId++
-    const ms = opts.timeoutMs ?? this.timeoutMs
     return new Promise<T>((resolve, reject) => {
-      const timer = ms > 0 ? setTimeout(() => {
+      const timer = setTimeout(() => {
         this.pending.delete(id)
         reject(new HcError(`${method} timed out`, 'timeout'))
-      }, ms) : undefined
+      }, this.timeoutMs)
       this.pending.set(id, { resolve, reject, timer })
       this.send(0, DATA, enc.encode(JSON.stringify({ jsonrpc: '2.0', id, method, params })))
     })
