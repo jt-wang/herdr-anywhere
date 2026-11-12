@@ -12,7 +12,7 @@ set -eu
 apk=$1; shot=${2:-}
 app=$(cd "$(dirname "$0")/.." && pwd)
 adb="${ANDROID_HOME:-$HOME/Library/Android/sdk}/platform-tools/adb"
-hc=$(command -v hc || echo "$HOME/.local/bin/hc")
+hc=${HM_TEST_HC:-$(command -v hc || echo "$HOME/.local/bin/hc")}
 id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$app/nsh.json")
 [ "$("$adb" shell wm size | tail -1 | awk '{print $NF}')" = 1080x2400 ] && [ "$("$adb" shell wm density | tail -1 | awk '{print $NF}')" = 420 ] \
   || { echo "FAIL: the screen is not 1080x2400 at 420 dpi, where this script knows Gboard's keys"; exit 1; }
