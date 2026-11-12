@@ -189,3 +189,32 @@ func TestFindPaneReadsOnlyPisSessions(t *testing.T) {
 		t.Fatalf("outside: %v", err)
 	}
 }
+
+// A message taken while Pi worked (after a tool's result, the turn open) is a step of that turn; one sent after the
+// turn stopped opens a turn of its own (queued.jsonl, recorded: steered after step two, a follow-up after the end).
+func TestSteeredMessageStaysInTheTurn(t *testing.T) {
+	const queued = "testdata/pi/1.4.0/queued.jsonl"
+	ts, err := (&Reader{}).Turns(queued)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ts) != 2 || ts[0].End != "done" || ts[0].Steps[4].Kind != chat.StepYou || ts[1].Said != "then say thanks" {
+		t.Fatalf("turns %+v", ts)
+	}
+	// The same record with the turn stopped at step two (stopReason aborted): the message after it is a new turn.
+	b, _ := os.ReadFile(queued)
+	lines := strings.Split(string(b), "\n")
+	if !strings.Contains(lines[7], `"Step two."`) || !strings.Contains(lines[9], `"ALSO keep the old colors"`) {
+		t.Fatal("queued.jsonl is not as this test expects")
+	}
+	lines[7] = strings.Replace(lines[7], `"stopReason":"toolUse"`, `"stopReason":"aborted"`, 1)
+	p := filepath.Join(t.TempDir(), "s.jsonl")
+	os.WriteFile(p, []byte(strings.Join(lines, "\n")), 0o644)
+	ts, err = (&Reader{}).Turns(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ts) != 3 || ts[0].End != "stopped" || ts[1].Said != "ALSO keep the old colors" {
+		t.Fatalf("after a stopped turn: %+v", ts)
+	}
+}

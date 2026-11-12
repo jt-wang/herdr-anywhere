@@ -129,9 +129,11 @@ func (r run) session(t *testing.T, prompts []string) string {
 	return files[0]
 }
 
-// scrub: the run's folders become /work.
+// scrub: the run's folders become /work, and the computer's home /home (Pi's screen writes where Pi is installed into
+// the system prompt it records).
 func scrub(t *testing.T, b []byte, root string) []byte {
 	real, _ := filepath.EvalSymlinks(root)
+	home, _ := os.UserHomeDir()
 	var out bytes.Buffer
 	for _, line := range strings.Split(strings.TrimRight(string(b), "\n"), "\n") {
 		if !json.Valid([]byte(line)) {
@@ -142,6 +144,9 @@ func scrub(t *testing.T, b []byte, root string) []byte {
 			if r != "" {
 				s = strings.ReplaceAll(s, r, "/work")
 			}
+		}
+		if home != "" && home != "/" {
+			s = strings.ReplaceAll(s, home+"/", "/home/")
 		}
 		out.WriteString(s + "\n")
 	}

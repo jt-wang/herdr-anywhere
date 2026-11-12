@@ -22,7 +22,7 @@ case ${1:-} in
     # nsh test signs its APK with apksigner, which needs a JDK (the same one android/build.sh uses).
     export JAVA_HOME="${JAVA_HOME:-/Applications/Android Studio.app/Contents/jbr/Contents/Home}"
     px=$("$adb" shell wm size | tail -1 | awk '{print $NF}' | cut -dx -f1)
-    trap '"$adb" shell wm density reset; "$adb" shell settings put system font_scale 1.0' EXIT INT TERM
+    trap '"$adb" shell wm density reset; "$adb" shell settings put system font_scale 1.0' EXIT; trap 'exit 130' INT; trap 'exit 143' TERM
     for dp in 360 411; do "$adb" shell wm density $((px * 160 / dp)); sleep 3; run "android-${dp}dp" --target android; done
     "$adb" shell wm density $((px * 160 / 360)); "$adb" shell settings put system font_scale 2.0; sleep 3
     run android-360dp-largest-text --target android ;;
@@ -35,7 +35,7 @@ case ${1:-} in
     xcrun simctl boot "$udid" 2>/dev/null || true
     xcrun simctl bootstatus "$udid" -b >/dev/null
     xcrun simctl install "$udid" ios/build/Herdr.app
-    trap 'xcrun simctl ui "$udid" content_size large' EXIT INT TERM
+    trap 'xcrun simctl ui "$udid" content_size large' EXIT; trap 'exit 130' INT; trap 'exit 143' TERM
     name=$(xcrun simctl list devices | grep "$udid" | sed -E 's/^ *(.*) \(.*/\1/' | tr ' ()' '-__' | tr -s '_-')
     for size in large accessibility-extra-extra-extra-large; do
       xcrun simctl ui "$udid" content_size "$size"
