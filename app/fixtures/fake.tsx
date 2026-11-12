@@ -182,7 +182,8 @@ host.on('fake.status', (d: any) => {
 // The computer's chat answer for every terminal (GET /api/chat/…): `params.chat` (JSON), else none; a test changes it
 // with `app.host.send('fake.chat', answer)`, or makes the computer unreachable with `{ offline: true }`. Each ask is
 // recorded in `fake-chat-asks`; a step's details are "input of <id>" and "output of <id>" (with an image when the id
-// ends in "img"), unless the answer's `details` has the id; and "gone" is gone. Every image is a one-pixel PNG.
+// ends in "img"), unless the answer's `details` has the id; and "gone" is gone. Every image is a one-pixel PNG. An
+// answer with `slow` is replied that many ms after the ask.
 const PIXEL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
 let chatAnswer: any = params.chat ? JSON.parse(params.chat) : { chat: false }
 const chatAsks: string[] = []
@@ -195,7 +196,12 @@ async function chat(url: string) {
   if (chatAnswer.offline) throw new Error('unreachable')
   if (/\/images\/[^/?]+$/.test(path)) return answer(200, { url: PIXEL })
   const step = /\/steps\/([^/?]+)$/.exec(path)
-  if (!step) return answer(200, chatAnswer)
+  if (!step) {
+    // An answer with `slow` (ms) is the one current when asked, replied that much later, as a busy computer does.
+    const now = chatAnswer
+    if (now.slow) await new Promise((r) => setTimeout(r, now.slow))
+    return answer(200, now)
+  }
   const id = decodeURIComponent(step[1])
   if (chatAnswer.details?.[id]) return answer(200, chatAnswer.details[id])
   return id === 'gone' ? answer(404, { error: 'no such step' })

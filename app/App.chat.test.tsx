@@ -244,6 +244,48 @@ test('what was opened stays open when the view asks again and a turn is added', 
   expect(app.texts()).toContain('input of toolu_2')
 })
 
+// A busy computer answers late: an answer asked before the turn ended, replied after a newer one, doesn't put the view
+// back to before (seen in CI: chat asks of 2 to 7.6 s, six at once).
+test('an answer that comes back after a newer one is not shown over it', async () => {
+  const working = { ...ask[0], ask: undefined }
+  const app = await pane({ status: 'working', chat: JSON.stringify({ chat: true, turns: [...turns, working] }) })
+  await app.press('id:show-chat')
+  await app.waitFor('text:pick a color')
+  await app.host.send('fake.chat', { chat: true, turns: [...turns, working], slow: 8000 })
+  await app.clock.runFor(3100)
+  expect(asks(app).filter((x) => x === '/api/chat/t1').length).toBeGreaterThan(1)
+  await app.host.send('fake.chat', { chat: true, turns: [...turns, { ...working, end: 'done', reply: 'Blue it is.' }] })
+  await app.clock.runFor(500)
+  await app.host.send('fake.status', { address: 't1', state: 'done' })
+  await app.clock.runFor(2000)
+  await app.waitFor('text:Blue it is.')
+  // The old answer lands about 6 s later; the next ask would put things right again, so each second is looked at.
+  const seen: string[] = []
+  for (let i = 0; i < 10; i++) {
+    await app.clock.runFor(1000)
+    seen.push(app.texts().includes('Blue it is.') && !app.texts().includes('Working…') ? 'new' : 'old')
+  }
+  expect(seen).toEqual(Array(10).fill('new'))
+})
+
+// A moment of doubt (here the agent's status not known for one ask) shows why instead of the turns; once the
+// turns are back, what was opened is open again.
+test('what was opened stays open after the computer was not sure for a moment', async () => {
+  const app = await pane({ status: 'working', chat: JSON.stringify({ chat: true, turns: [...turns, ask[0]] }) })
+  await app.press('id:show-chat')
+  await app.press('id:fold-u1')
+  await app.press('id:step-toolu_2')
+  await app.waitFor('text:input of toolu_2')
+  await app.host.send('fake.chat', { chat: true, unknown: 'no-status' })
+  for (let i = 0; i < 10 && app.count('id:chat-unknown') === 0; i++) await app.clock.runFor(1000)
+  expect(app.count('id:chat-unknown')).toBe(1)
+  await app.host.send('fake.chat', { chat: true, turns: [...turns, ask[0]] })
+  for (let i = 0; i < 10 && app.count('id:fold-u1') === 0; i++) await app.clock.runFor(1000)
+  await app.clock.runFor(500)
+  expect(app.count('id:step-toolu_1')).toBe(1)
+  expect(app.texts()).toContain('input of toolu_2')
+})
+
 test('a record falling behind for a moment keeps the turns up with "Updating…" at the end, and what was opened stays open', async () => {
   const app = await pane({ status: 'working', chat: JSON.stringify({ chat: true, turns: [...turns, ask[0]] }) })
   await app.press('id:show-chat')
