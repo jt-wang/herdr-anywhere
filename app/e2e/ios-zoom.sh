@@ -47,7 +47,9 @@ for scheme in light dark; do
   xcrun simctl terminate "$SIM_UDID" "$id" 2>/dev/null || true
   xcrun simctl launch "$SIM_UDID" "$id" >/dev/null
   rec=""
-  if [ $scheme = light ] && [ -n "$out" ]; then xcrun simctl io "$SIM_UDID" recordVideo --force "$out/zoom-ios.mp4" > "$out/record.log" 2>&1 & rec=$!; fi
+  # ZOOM_VIDEO=0: no recording. On a CI Mac it slowed the light run (the one recorded) until a step failed or hung,
+  # a different step each time, while the dark run passed; the video was thrown away there anyway.
+  if [ $scheme = light ] && [ -n "$out" ] && [ "${ZOOM_VIDEO:-1}" != 0 ]; then xcrun simctl io "$SIM_UDID" recordVideo --force "$out/zoom-ios.mp4" > "$out/record.log" 2>&1 & rec=$!; fi
   rc=0
   TEST_RUNNER_OUT="$work/$scheme.txt" TEST_RUNNER_SHOTS="$work/$scheme" TEST_RUNNER_BUNDLE=$id TEST_RUNNER_CHAT=${CHAT:-} \
     perl -e 'alarm 600; exec @ARGV' xcodebuild test -quiet -project "$work/uitest/KeyboardCheck.xcodeproj" -scheme UITests \
@@ -63,7 +65,10 @@ for scheme in light dark; do
   sed 's/^/  /' "$work/$scheme.txt" 2>/dev/null || true
   # The shots taken, a failed run's too: they show where it stopped (and a build from before a change, as it was).
   [ -z "$out" ] || for f in "$work/$scheme"-*.png; do [ ! -f "$f" ] || cp "$f" "$out/"; done
-  [ "$rc" = 0 ] || { say "FAIL: xcodebuild test exit $rc"; grep -E "error:|XCTAssert|failed" "$work/test-$scheme.log" | head -8; continue; }
+  # A failed run keeps xcodebuild's own words next to the shots; some failures (a crash, a test that ended at once)
+  # carry no "error:" line, so the last lines are shown too.
+  [ "$rc" = 0 ] || { say "FAIL: xcodebuild test exit $rc"; [ -z "$out" ] || cp "$work/test-$scheme.log" "$out/"
+    grep -iE "error|assert|failed|crash|exit" "$work/test-$scheme.log" | head -12; tail -15 "$work/test-$scheme.log"; continue; }
   grep -q "sheet open after the drags: true" "$work/$scheme.txt" && say "ok: the sheet stays open under the drags" || { say "FAIL: the drags closed the sheet"; continue; }
   box=$(sed -n 's/^box //p' "$work/$scheme.txt")
   bg=$([ $scheme = dark ] && echo '#25272b' || echo '#ffffff') # the sheet's colour (nsh.json popover)

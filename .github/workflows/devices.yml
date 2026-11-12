@@ -502,11 +502,10 @@ jobs:
             zoom)
               mkdir -p "$OUT/zoom" "$OUT/zoom-chat"
               $s zoom-package sh -c 'e2e/zoom-package.sh ios-simulator "$RUNNER_TEMP/zoom-term" && CHAT=1 e2e/zoom-package.sh ios-simulator "$RUNNER_TEMP/zoom-chat"'
-              $s zoom e2e/ios-zoom.sh "$RUNNER_TEMP/zoom-term/Herdr zoom check.app" "$OUT/zoom"
-              CHAT=1 $s zoom-chat e2e/ios-zoom.sh "$RUNNER_TEMP/zoom-chat/Herdr zoom check.app" "$OUT/zoom-chat"
-              # The recordings stay on the runner: a Mac runner has no ffmpeg, and the upload check fails any video
-              # it can't read (ci-shots-check.sh).
-              rm -f "$OUT"/zoom*/zoom-ios.mp4 ;;
+              # No recording (ZOOM_VIDEO=0): it slowed the recorded light run until a step failed or hung, and a Mac
+              # runner has no ffmpeg for the upload check (ci-shots-check.sh) to read the video with anyway.
+              ZOOM_VIDEO=0 $s zoom e2e/ios-zoom.sh "$RUNNER_TEMP/zoom-term/Herdr zoom check.app" "$OUT/zoom"
+              ZOOM_VIDEO=0 CHAT=1 $s zoom-chat e2e/ios-zoom.sh "$RUNNER_TEMP/zoom-chat/Herdr zoom check.app" "$OUT/zoom-chat" ;;
             onerror27)
               $s ios-onerror e2e/ios-onerror.sh "$OUT/onerror27.png" ;;
           esac
