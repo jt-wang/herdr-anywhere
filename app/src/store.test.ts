@@ -853,12 +853,14 @@ test('an agent that rang costs nothing on later passes until what it says change
   expect(told[0].startsWith('ran the tests and fixed one')).toBe(true)
 })
 
-test("a terminal's Kitty pictures are kept for it while the app runs; the 8 terminals opened last keep theirs", () => {
+test("a terminal's Kitty pictures are kept for it while the app runs; the 4 terminals opened last keep theirs", () => {
   const { store } = setup()
   const a = store.picturesOf('box/t1')
   expect(store.picturesOf('box/t1')).toBe(a)
-  for (let i = 2; i <= 9; i++) store.picturesOf(`box/t${i}`)
+  const two = store.picturesOf('box/t2')
+  for (let i = 3; i <= 5; i++) store.picturesOf(`box/t${i}`)
   expect(store.picturesOf('box/t1') === a).toBe(false)
-  const nine = store.picturesOf('box/t9')
-  expect(store.picturesOf('box/t9')).toBe(nine)
+  const five = store.picturesOf('box/t5')
+  expect(store.picturesOf('box/t5')).toBe(five)
+  expect(store.picturesOf('box/t2') === two).toBe(false)
 })

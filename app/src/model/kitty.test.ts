@@ -118,3 +118,12 @@ test('the images kept stay under the limit: the one used longest ago goes first'
   for (const id of [1, 2, 3]) few.take(`\x1b_Ga=T,f=100,i=${id},U=1,c=2,r=1;${png}\x1b\\`)
   expect(few.all().map((i) => i.id).sort((a, b) => a - b)).toEqual([2, 3])
 })
+
+test('by default a terminal keeps two of the largest pictures omp sends (1568 by 1045, 4,365,212 base64 characters)', () => {
+  // omp scales a picture to at most 1568 px a side; this size is what it sent for a 3000 by 2000 one in a wide terminal.
+  const head = (read.live.join('').match(/i=12372580,m=1;([^\x1b]*)/) as RegExpMatchArray)[1].slice(0, 32)
+  const png = head + 'A'.repeat(4365212 - head.length)
+  const k = new KittyImages()
+  for (const id of [1, 2, 3]) k.take(`\x1b_Ga=T,f=100,i=${id},U=1,c=60,r=20,q=2;${png}\x1b\\`)
+  expect(k.all().map((i) => i.id)).toEqual([2, 3])
+})

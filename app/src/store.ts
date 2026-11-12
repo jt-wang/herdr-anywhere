@@ -696,12 +696,12 @@ export class Store {
 
   private pictures = new Map<string, KittyImages>()
   /** A terminal's Kitty pictures (model/kitty.ts), kept while the app runs: herdr-core sends a pane opened again as one
-   *  screen of placeholders, without them. The 8 terminals opened last keep theirs. */
+   *  screen of placeholders, without them. The 4 terminals opened last keep theirs, each up to its limit there. */
   picturesOf(addr: string) {
     const k = this.pictures.get(addr) ?? new KittyImages()
     this.pictures.delete(addr)
     this.pictures.set(addr, k)
-    while (this.pictures.size > 8) this.pictures.delete(this.pictures.keys().next().value!)
+    while (this.pictures.size > 4) this.pictures.delete(this.pictures.keys().next().value!)
     return k
   }
 

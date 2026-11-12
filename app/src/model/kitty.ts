@@ -38,7 +38,9 @@ export class KittyImages {
   private held = ''
   private incoming?: Incoming
   private clock = 0
-  constructor(private limits: KittyLimits = { chars: 4 << 20, count: 32 }) {}
+  // Two of the largest pictures omp sends (1568 by 1045 px, 4.37M base64 characters each). The page holds the open
+  // terminal's pictures: in headless Chromium the first of these added 57 MB, each one after it 4 to 12 MB.
+  constructor(private limits: KittyLimits = { chars: 9_000_000, count: 32 }) {}
 
   /** The terminal's text with the graphics commands taken out, the pictures that can be drawn now, and those gone. */
   take(chunk: string): Taken {
