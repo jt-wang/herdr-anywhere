@@ -59,7 +59,8 @@ final class AppController: UIViewController, UIDocumentPickerDelegate, QLPreview
     super.viewDidLoad()
     app.frame = view.bounds
     app.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-    app.onError = { message in NSLog("nsh error: %@", message) }
+    // No app.onError: nsh 0.3.0 frees the handler as it is set, so the first JS error the app does not catch would
+    // crash it (e2e/ios-onerror.sh). nsh writes those errors to the log itself.
     view.addSubview(app)
     tailPocket = TailPocketNsh.attach(app)
     app.handle("page.pickFiles") { [weak self] data, reply in

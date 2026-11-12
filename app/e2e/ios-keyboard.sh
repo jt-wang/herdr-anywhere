@@ -11,6 +11,8 @@
 # backspace, a lowercase letter after "teh " (the keyboard switched Shift on there by itself), and no
 # form bar (˄ ˅ Done) over the keyboard. Its build and result stay in the run's temporary folder.
 # Usage: SIM_UDID=<udid> e2e/ios-keyboard.sh [screenshot.png]
+# HM_MISS_SPACE=1 is a self-test: the first tap on the space misses, so the test must fail with its record of that
+# tap (e2e/ios-uitest/tests/OpenSpace.swift) and a second one.
 # SIM_UDID is required, so the run never lands on another simulator. Needs go, nsh, hc, idb, xcodegen and Xcode.
 set -eu
 : "${SIM_UDID:?set SIM_UDID to the simulator to use}"
@@ -22,6 +24,7 @@ id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$a
 port=7691
 while nc -z 127.0.0.1 "$port" 2>/dev/null; do port=$((port + 1)); done
 work=$(mktemp -d)
+: > "$work/started" # what e2e/ios-failure-logs.sh keeps is from after this
 (cd "$app/../companion" && go build -o "$work/herdr-anywhere" ./cmd/herdr-anywhere)
 run=$(mktemp -d /tmp/hmXXXX)
 mkdir -p "$work/sam/src/acme-api" "$work/state" "$work/config" "$work/data"
@@ -84,14 +87,17 @@ screen | grep -q '"AXIdentifier":"pair"\|"AXUniqueId":"pair"' && { echo "FAIL: t
 cp -R "$app/e2e/ios-uitest" "$work/uitest"
 (cd "$work/uitest" && xcodegen generate --quiet)
 rc=0
-TEST_RUNNER_OUT="$work/typein.txt" TEST_RUNNER_RAW="$work/sam/src/acme-api/hm-raw" perl -e 'alarm 600; exec @ARGV' xcodebuild test -quiet -project "$work/uitest/KeyboardCheck.xcodeproj" -scheme UITests -only-testing:UITests/TypeIn -destination "id=$SIM_UDID" -derivedDataPath "$work/uitest/derived" -resultBundlePath "$work/uitest/result.xcresult" > "$work/uitest/test.log" 2>&1 || rc=$?
+TEST_RUNNER_OUT="$work/typein.txt" TEST_RUNNER_MISS_SPACE="${HM_MISS_SPACE:-}" TEST_RUNNER_RAW="$work/sam/src/acme-api/hm-raw" perl -e 'alarm 600; exec @ARGV' xcodebuild test -quiet -project "$work/uitest/KeyboardCheck.xcodeproj" -scheme UITests -only-testing:UITests/TypeIn -destination "id=$SIM_UDID" -derivedDataPath "$work/uitest/derived" -resultBundlePath "$work/uitest/result.xcresult" > "$work/uitest/test.log" 2>&1 || rc=$?
 [ -n "$shot" ] && perl -e 'alarm 40; exec @ARGV' xcrun simctl io "$SIM_UDID" screenshot "${shot%.png}-keyboard.png" >/dev/null 2>&1
 sed 's/^/  /' "$work/typein.txt" 2>/dev/null || true
 [ -n "$shot" ] && { cp "$work/typein-terminal.png" "${shot%.png}-terminal.png" 2>/dev/null; cp "$work/uitest/test.log" "${shot%.png}-xctest.log" 2>/dev/null; } || true
 if [ "$rc" != 0 ]; then
   echo "FAIL: the keyboard test (xcodebuild test exit $rc)"
   # Every screenshot the test kept: the menu before and after each tap, and XCTest's own at the failure.
+  # The screen's elements around the tap on the space, as the test noted them (OpenSpace.swift).
+  [ -n "$shot" ] && { mkdir -p "${shot%.png}-failure"; for f in "$work"/typein.txt-*.txt; do [ -f "$f" ] && cp "$f" "${shot%.png}-failure/${f##*/typein.txt-}"; done; } || true
   "$app/e2e/ios-xcresult.sh" "$work/uitest/result.xcresult" ${shot:+"${shot%.png}-failure"} all
+  [ -n "$shot" ] && "$app/e2e/ios-failure-logs.sh" "$work/started" "$work/serve.log" "${shot%.png}-failure" || true
   exit 1
 fi
 echo "PASS: Type in the terminal brings the keyboard up, also after the key bar's hide button; typing straight into the terminal sends what was typed"
