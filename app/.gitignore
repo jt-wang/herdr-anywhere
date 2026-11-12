@@ -4,4 +4,6 @@ e2e/lab/
 e2e/progress/
 android/.kotlin/
 .site-shots.tsx
+e2e/out/
+src/ui/terminal-page.before.ts
 .zoom-check.tsx
