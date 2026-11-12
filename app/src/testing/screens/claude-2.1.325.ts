@@ -224,3 +224,64 @@ ${RULE46}
 Enter to select · Tab/Arrow keys to navigate ·
 ctrl+g to edit in Vim · Esc to cancel
 `
+
+// Three questions in one call (then two more in a second call): the first, its cursor on the first option. Claude Code
+// stays blocked through all three, its report the same; only the screen moves on.
+export const THREE_Q1 = `
+❯ QTHREE please
+${RULE46}
+←  ☐ Shelf  ☐ Color  ☐ Count  ✔ Submit  →
+
+Which shelf should the fake lamp go on?
+
+❯ 1. Top shelf
+     Seen first
+  2. Bottom shelf
+     Near the floor
+  3. Type something.
+${RULE46}
+  4. Chat about this
+
+Enter to select · Tab/Arrow keys to navigate ·
+Esc to cancel
+`
+
+// The same question, ↓ pressed: only the cursor moved.
+export const THREE_Q1_DOWN = `
+❯ QTHREE please
+${RULE46}
+←  ☐ Shelf  ☐ Color  ☐ Count  ✔ Submit  →
+
+Which shelf should the fake lamp go on?
+
+  1. Top shelf
+     Seen first
+❯ 2. Bottom shelf
+     Near the floor
+  3. Type something.
+${RULE46}
+  4. Chat about this
+
+Enter to select · Tab/Arrow keys to navigate ·
+Esc to cancel
+`
+
+// 1 picked: the second of the three.
+export const THREE_Q2 = `
+❯ QTHREE please
+${RULE46}
+←  ☒ Shelf  ☐ Color  ☐ Count  ✔ Submit  →
+
+Which color should the fake lamp be?
+
+❯ 1. Amber
+     Warm light
+  2. White
+     Plain light
+  3. Type something.
+${RULE46}
+  4. Chat about this
+
+Enter to select · Tab/Arrow keys to navigate ·
+Esc to cancel
+`
