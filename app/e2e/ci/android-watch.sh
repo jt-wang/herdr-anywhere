@@ -46,7 +46,8 @@ watch() { # folder, emulator log, logcat
       lost=""; noted=""
       continue
     fi
-    [ -n "$lost" ] || lost=$(date +%s)
+    # Gone at two polls in a row at least: a blip seen by one poll is not, even when that poll ran slow (a busy runner).
+    [ -n "$lost" ] || { lost=$(date +%s); continue; }
     [ -z "$noted" ] && [ $(($(date +%s) - lost)) -ge "$grace" ] || continue
     noted=1; n=$((n + 1))
     [ "$n" -le 3 ] && note "$folder/lost-$n.txt" "$s (for $(($(date +%s) - lost)) s)" "$elog" "$logcat"
@@ -55,29 +56,51 @@ watch() { # folder, emulator log, logcat
 
 self_test() {
   local t fail=0; t=$(mktemp -d)
-  echo device > "$t/state"
   # A made-up secret, made here each run (a fixed one in this file reads as a real key to a secret scanner).
   local fake; fake=$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')
   printf 'emulator: INFO: boot completed\nemulator: link http://192.0.2.1:1/#pair=%s\n' "$fake" > "$t/emulator.log"
   # Where the emulator keeps its crash reports, as it says at start; one report there, whose bytes stay out.
   printf 'INFO         | Storing crashdata in: %s, detection is enabled for process: 1\n' "$t/emu-crash-1.db" >> "$t/emulator.log"
   mkdir -p "$t/emu-crash-1.db/completed"; printf 'dump-bytes-%s' "$fake" > "$t/emu-crash-1.db/completed/a1b2.dmp"
-  # A stand-in adb: the state in $t/state, and a phone log of a few lines a call.
+  # The phone's state as the stand-in adb gives it, written whole (a reader never finds it empty, which it would take
+  # for the phone gone).
+  state() { local n; n=$(mktemp "$t/state.XXXXXX") && printf '%s\n' "$1" > "$n" && mv "$n" "$t/state"; }
+  state device
+  # A stand-in adb: the state in $t/state, each state it gave in $t/polls (one line a poll), and a phone log of a few
+  # lines a call. State "blip" is offline for exactly one poll, then the phone is back (adb root's blip).
   fake_adb() {
     case $1 in
-      get-state) cat "$t/state" ;;
+      get-state) local s; s=$(cat "$t/state")
+        [ "$s" = blip ] && { s="error: device offline"; state device; }
+        echo "$s" >> "$t/polls"; echo "$s" ;;
       devices) echo "List of devices attached" ;;
       logcat) [ "$(cat "$t/state")" = device ] || return 1; echo "01-01 12:00:00.000 I hm: phone log line"; echo "01-01 12:00:00.100 I hm: token=$fake"; sleep 0.3 ;;
     esac
   }
   adb=fake_adb
+  # Each step waits for what it needs to have happened (polls the watcher made, a note written), never a set time,
+  # so a slow machine only makes it slower. A note is written within the poll that finds the phone gone, so one
+  # more poll after its file is there means it is complete.
+  : > "$t/polls"
+  polls() { wc -l < "$t/polls" | tr -d ' '; }
+  upto() { # what, then a test; 120 s at most
+    local what=$1 i=0; shift
+    until "$@"; do i=$((i + 1)); [ "$i" -gt 1200 ] && { echo "FAIL: self-test: waited 120 s for $what"; fail=1; return 1; }; sleep 0.1; done
+  }
+  polled() { [ "$(polls)" -ge "$1" ]; }
+  noted() { [ -e "$1" ] || return 1; [ -n "$n_after" ] || n_after=$(($(polls) + 1)); polled "$n_after"; }
+  has() { grep -qF "$2" "$1" 2>/dev/null; }
   HM_WATCH_EVERY=0.2 HM_WATCH_GRACE=1 watch "$t/out" "$t/emulator.log" "$t/logcat.txt" & local w=$!
-  sleep 1.5
-  echo "error: device offline" > "$t/state"; sleep 0.3; echo device > "$t/state"; sleep 1.5  # adb root's blip
+  upto "three polls with the phone there" polled 3
+  state blip; local n=$(polls)
+  upto "two polls after the blip" polled $((n + 2))
   [ -e "$t/out/lost-1.txt" ] && { echo "FAIL: self-test: a note while the phone was there, or for a blip"; fail=1; }
-  echo "error: device offline" > "$t/state"; sleep 3
-  echo device > "$t/state"; sleep 1.5
-  echo "error: device 'emulator-5554' not found" > "$t/state"; sleep 3
+  state "error: device offline"
+  n_after=; upto "the first note" noted "$t/out/lost-1.txt"
+  state device
+  upto "the note that the phone is back" has "$t/out/lost-1.txt" "back after"
+  state "error: device 'emulator-5554' not found"
+  n_after=; upto "the second note" noted "$t/out/lost-2.txt"
   kill "$w"; wait "$w" 2>/dev/null
   local one="$t/out/lost-1.txt" two="$t/out/lost-2.txt"
   for want in "adb lost the phone: error: device offline" "== free -m" "== qemu" "emulator: INFO: boot completed" "I hm: phone log line" "back after"; do
