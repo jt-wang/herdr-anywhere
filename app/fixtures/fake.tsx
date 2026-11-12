@@ -13,7 +13,7 @@ import { host, Keyboard, mount, Storage } from 'nsh'
 import { Linker, type Route, type Tunnel } from '../src/link.ts'
 import { PrefStore } from '../src/prefs.ts'
 import { Store } from '../src/store.ts'
-import { rowKeys } from '../src/ui/pane-bar.tsx'
+import { choiceRow, rowKeys } from '../src/ui/pane-bar.tsx'
 import { Root } from '../src/ui/root.tsx'
 import { CLAUDE_EDIT_MENU, FakeCore, type FakeTab } from '../src/testing/fakecore.ts'
 import { FakeFolders } from '../src/testing/fake-folders.ts'
@@ -183,11 +183,25 @@ function flowed(addr: string, got: { keys?: string[]; text?: string }): boolean 
   const step = flows.get(addr)?.[0]
   if (!step || JSON.stringify(step.keys ?? null) !== JSON.stringify(got.keys ?? null) || (step.text ?? null) !== (got.text ?? null)) return false
   flows.get(addr)!.shift()
-  if (step.screen !== undefined) core.screens.set(addr, step.screen)
+  if (step.screen !== undefined) redraw(addr, step.screen)
   const st = core.terms.get(addr)?.status
   if (step.state) core.setStatus(addr, step.state, st?.app)
   return true
 }
+// The program draws a new screen, as a real one does when its menu moves on: viewers attached get it redrawn.
+function redraw(addr: string, screen: string) {
+  core.screens.set(addr, screen)
+  core.output(addr, `\x1b[H\x1b[2J${screen.replace(/\n/g, '\r\n')}`)
+}
+// Someone at the computer answers in the terminal: the screen changes, the agent still blocked and its report the
+// same: `app.host.send('fake.screen', { address, screen })`. The terminal's web page doesn't run in these tests, so
+// nothing attaches to take those bytes: the store hears of them as the terminal view's stream would tell it
+// (store.attach; store.test.ts has the stream itself). A flow's screens (the phone's own keys) don't: where no
+// terminal is attached, as on the home page, no bytes come.
+host.on('fake.screen', (d: any) => {
+  redraw(d.address, d.screen)
+  if (!core.viewers(d.address)) for (const st of stores) (st as any).drawn?.(d.address)
+})
 // A test moves an agent to another state: `app.host.send('fake.status', { address, state })`.
 host.on('fake.status', (d: any) => {
   if (typeof d.screen === 'string') core.screens.set(d.address, d.screen)
@@ -322,9 +336,17 @@ for (const k of rowKeys('keys')) {
   Object.defineProperty(k, 'label', { get: () => { void Storage.setItem('fake-row-draws', String(++rowDraws)); return label } })
 }
 
+// How many choice buttons were made, where a test reads it (`app.storage()['fake-choice-draws']`): a button made
+// again while a finger is on it loses that press.
+let choiceDraws = 0
+const button = choiceRow.button.bind(choiceRow)
+choiceRow.button = (...a) => { void Storage.setItem('fake-choice-draws', String(++choiceDraws)); return button(...a) }
+
 // How many times the agents list was worked out, where a test reads it (`app.storage()['fake-views']`): the screens
 // should share one per change, however many rows show it.
+const stores: Store[] = []
 function counted(store: Store) {
+  stores.push(store)
   let views = 0
   const view = store.agentList.view.bind(store.agentList)
   store.agentList.view = (...a) => { void Storage.setItem('fake-views', String(++views)); return view(...a) }
