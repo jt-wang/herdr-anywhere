@@ -241,6 +241,8 @@ export class FakeCore implements Pipe {
       case 'terminal.label': {
         const t = term(pr.terminal)
         if (!t) return fail('not_found', `no terminal "${pr.terminal}"`)
+        // Held, the labels change only when the answer goes: a slow line, where the phone waits for both.
+        if (this.holding.has('terminal.label')) { this.held.push(() => { this.label(t.address, pr.labels); this.out(0, DATA, JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: t })) }); return }
         this.label(t.address, pr.labels)
         return ok(t)
       }

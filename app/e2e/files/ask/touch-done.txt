@@ -1,0 +1,11 @@
+❯ TOUCH a file
+
+⏺ Making an empty file
+  ⎿  $ touch made-by-fake.txt
+     (No output)
+
+⏺ Made the empty file.
+
+──────────────────────────────────────────────
+❯
+──────────────────────────────────────────────
