@@ -4,10 +4,12 @@
 package chat
 
 import (
+	"bufio"
 	"bytes"
 	"errors"
 	"fmt"
 	"io"
+	"iter"
 	"os"
 	"regexp"
 	"strconv"
@@ -33,7 +35,7 @@ type Turn struct {
 // Step is one line: its kind and a short title. Its details are fetched only when the phone asks (Detail).
 type Step struct {
 	ID    string `json:"id"`
-	Kind  string `json:"kind"` // read, edit, run, search, web, agent, note, think, other
+	Kind  string `json:"kind"` // read, edit, run, search, web, agent, note, think, other, you (StepYou)
 	Title string `json:"title"`
 	// Failed: the record says the step failed (a command's exit code, a refused or rejected call).
 	Failed bool `json:"failed,omitempty"`
@@ -41,6 +43,11 @@ type Step struct {
 	Added   int `json:"added,omitempty"`
 	Deleted int `json:"deleted,omitempty"`
 }
+
+// StepYou is a step that is a message the person sent while the agent worked, which the agent took between two
+// steps of the same turn (Claude Code's queued messages, Codex's and Pi's steering, OpenCode's queued prompts). Its
+// Title is the whole message.
+const StepYou = "you"
 
 // Ask is a question the agent asked and nobody has answered yet.
 type Ask struct {
@@ -113,6 +120,10 @@ const (
 	MaxTurns       = 30
 	// MaxTail is how much of a session file is read, from its end.
 	MaxTail = 4 << 20
+	// MaxBack is how far back from a record's end Start looks for its last turn's first line, when the last MaxTail
+	// bytes don't hold it: a Claude Code record whose turn ran large tool outputs had its last prompt 6.1 MB from the
+	// end, its longest line 2.3 MB.
+	MaxBack = 32 << 20
 )
 
 // Reader is one agent's: where its session record is and what it says.
@@ -192,47 +203,6 @@ func Cut(s string, n int) string {
 	return s[:i] + "…"
 }
 
-// TailLines reads a JSON Lines file's last MaxTail bytes: its whole lines, and whether the window starts at the file's
-// start. A line being written (no newline yet) is left for the next read.
-func TailLines(path string) (ls [][]byte, from0 bool, err error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, false, err
-	}
-	defer f.Close()
-	st, err := f.Stat()
-	if err != nil {
-		return nil, false, err
-	}
-	start := st.Size() - MaxTail
-	if start < 0 {
-		start = 0
-	}
-	buf := make([]byte, st.Size()-start)
-	if _, err := f.ReadAt(buf, start); err != nil && err != io.EOF {
-		return nil, false, err
-	}
-	if start > 0 {
-		i := bytes.IndexByte(buf, '\n')
-		if i < 0 {
-			return nil, false, Formatf("a line over %d bytes", MaxTail)
-		}
-		buf = buf[i+1:]
-	}
-	// The last line is complete only with its newline; one being written is left for the next read.
-	if j := bytes.LastIndexByte(buf, '\n'); j >= 0 {
-		buf = buf[:j]
-	} else {
-		buf = nil
-	}
-	for _, l := range bytes.Split(buf, []byte{'\n'}) {
-		if len(bytes.TrimSpace(l)) > 0 {
-			ls = append(ls, l)
-		}
-	}
-	return ls, start == 0, nil
-}
-
 var hunkHead = regexp.MustCompile(`^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@`)
 
 // DiffHunks: a unified diff's hunks, MaxChangeLines lines at most (cut: there were more).
@@ -258,4 +228,128 @@ func DiffHunks(diff string) (hunks []Hunk, cut bool) {
 		h.Lines = append(h.Lines, l)
 	}
 	return hunks, false
+}
+
+// Start is where a reader reads a record from: its last MaxTail bytes, or further back to the start of the last line
+// that begins a turn, when that line is older; never more than MaxBack from the end. A turn's first line is a line
+// holding mark (as the record writes it, so the same words quoted inside a tool's output, escaped, don't match) that
+// isStart accepts. from0: reading starts at the file's start. The file is searched backwards a chunk at a time; only
+// a line holding mark is read whole.
+func Start(path string, mark []byte, isStart func([]byte) bool) (off int64, from0 bool, err error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return 0, false, err
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil {
+		return 0, false, err
+	}
+	size := st.Size()
+	tail := max(size-MaxTail, 0)
+	floor := max(size-MaxBack, 0)
+	const chunk = 1 << 20
+	buf := make([]byte, chunk+len(mark))
+	for end := size; end > floor; {
+		from := max(end-chunk, floor)
+		n := int(min(end+int64(len(mark)), size) - from) // overlapping the next chunk, for a mark across the two
+		if _, err := f.ReadAt(buf[:n], from); err != nil && err != io.EOF {
+			return 0, false, err
+		}
+		for b := buf[:n]; ; {
+			i := bytes.LastIndex(b, mark)
+			if i < 0 {
+				break
+			}
+			b = b[:i]
+			if line, at, err := lineAt(f, size, from+int64(i)); err == nil && isStart(line) {
+				return min(at, tail), min(at, tail) == 0, nil
+			}
+		}
+		end = from
+	}
+	return tail, tail == 0, nil
+}
+
+// lineAt reads the whole line holding the byte at pos, and where it starts.
+func lineAt(f *os.File, size, pos int64) ([]byte, int64, error) {
+	var b [4096]byte
+	start := pos
+	for start > 0 {
+		from := max(start-int64(len(b)), 0)
+		n, err := f.ReadAt(b[:start-from], from)
+		if err != nil && err != io.EOF {
+			return nil, 0, err
+		}
+		if i := bytes.LastIndexByte(b[:n], '\n'); i >= 0 {
+			start = from + int64(i) + 1
+			break
+		}
+		start = from
+	}
+	r := bufio.NewReader(io.NewSectionReader(f, start, size-start))
+	line, err := r.ReadBytes('\n')
+	if err != nil {
+		return nil, 0, err // no newline: the line is still being written
+	}
+	return line[:len(line)-1], start, nil
+}
+
+// Lines is EachLine as a loop: for l := range Lines(path, off, &err) { … }. err is set when reading fails.
+func Lines(path string, off int64, err *error) iter.Seq[[]byte] {
+	return func(yield func([]byte) bool) {
+		e := EachLine(path, off, func(l []byte) error {
+			if !yield(l) {
+				return errStop
+			}
+			return nil
+		})
+		if e != nil && e != errStop {
+			*err = e
+		}
+	}
+}
+
+var errStop = errors.New("stop")
+
+// EachLine calls fn with each whole line from off: a line off cuts into is skipped (unless off is 0 or follows a
+// newline), and one still being written (no newline yet) is left for the next read. One line at a time is held, so
+// a reader's memory is its longest line, not what it reads.
+func EachLine(path string, off int64, fn func([]byte) error) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	cut := false
+	if off > 0 {
+		var b [1]byte
+		if _, err := f.ReadAt(b[:], off-1); err != nil {
+			return err
+		}
+		cut = b[0] != '\n'
+	}
+	r := bufio.NewReaderSize(io.NewSectionReader(f, off, st.Size()-off), 64<<10)
+	for {
+		line, err := r.ReadBytes('\n')
+		if err == io.EOF {
+			return nil // the end, or a line being written
+		}
+		if err != nil {
+			return err
+		}
+		if cut {
+			cut = false
+			continue
+		}
+		if l := bytes.TrimSpace(line); len(l) > 0 {
+			if err := fn(l); err != nil {
+				return err
+			}
+		}
+	}
 }
