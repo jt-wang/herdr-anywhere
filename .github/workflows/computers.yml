@@ -357,7 +357,9 @@ jobs:
       - run: app/e2e/ci/tools.sh core opencode
       - name: OpenCode's wheel by column
         working-directory: companion
+        # shell: bash adds pipefail, so a failed test fails the step through tee; without it the step took tee's exit 0.
         # A skip (no OPENCODE_LIVE) would pass with nothing measured, so it fails here.
+        shell: bash
         run: |
           go test ./internal/server -run TestLiveOpenCodeWheelColumns -count=1 -v | tee "$RUNNER_TEMP/wheel.log"
-          ! grep -q -- '--- SKIP' "$RUNNER_TEMP/wheel.log"
+          if grep -q -- '--- SKIP' "$RUNNER_TEMP/wheel.log"; then echo "FAIL: the test was skipped"; exit 1; fi
