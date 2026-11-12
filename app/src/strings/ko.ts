@@ -107,7 +107,7 @@ export const ko: Table = {
   programExited: '프로그램이 종료되었어요.', terminalClosed: '터미널이 닫혔어요.',
   terminalLost: '컴퓨터가 다시 시작되어 이 터미널이 사라졌어요.', terminalFinished: '이 터미널은 종료되었어요.',
   terminalEnded: '터미널이 종료되었어요({reason}).',
-  terminalPageFailed: '터미널을 불러오지 못했어요.', tryAgain: '다시 시도',
+  terminalLoading: '터미널을 아직 불러오는 중이에요…', tryAgain: '다시 시도',
   nameNeedsYou: '{name} 응답 필요', nameFinished: '{name} 완료',
   titleNeedsYou: '‘{name}’ 응답 필요', titleFinished: '‘{name}’ 완료',
   layoutChanged: '다른 곳에서 레이아웃이 바뀌었어요', layoutChangedBody: '다른 화면의 레이아웃을 표시해요.',
