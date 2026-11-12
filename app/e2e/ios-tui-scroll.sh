@@ -11,7 +11,7 @@ set -eu
 : "${SIM_UDID:?set SIM_UDID to the simulator to use}"
 app=$(cd "$(dirname "$0")/.." && pwd)
 shot=${1:-}
-hc=${HM_TEST_HC:-$(command -v hc || echo "$HOME/.local/bin/hc")}
+hc=$(command -v hc || echo "$HOME/.local/bin/hc")
 id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$app/nsh.json")
 
 port=7691
@@ -21,10 +21,12 @@ work=$(mktemp -d)
 run=$(mktemp -d /tmp/hmXXXX)
 mkdir -p "$work/sam/src/acme-api" "$work/state" "$work/config" "$work/data"
 : > "$work/sam/.zshrc"
+placeholder=$(cat "$app/e2e/pair.ts")
 cleanup() {
   [ -n "${serve_pid:-}" ] && kill "$serve_pid" 2>/dev/null
   # The same session the core was started in below, or `server stop` finds no core and leaves its holder running.
   HC_SESSION="hmios-$$" HC_SOCKET="" HOME="$work/sam" XDG_RUNTIME_DIR="$run" "$hc" server stop >/dev/null 2>&1 || true
+  printf "%s\n" "$placeholder" > "$app/e2e/pair.ts"
   chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run"
   xcrun simctl shutdown "$SIM_UDID" 2>/dev/null || true
 }
@@ -44,15 +46,14 @@ until curl -fsS "http://127.0.0.1:$port/api/info" >/dev/null 2>&1; do
 done
 link=$(HERDR_ANYWHERE_STATE="$work/companion" "$work/herdr-anywhere" pair --url "http://127.0.0.1:$port" 2>/dev/null | grep -o 'http://[^ ]*#pair=[A-Za-z0-9_-]*' | head -1)
 [ -n "$link" ] || { echo "pair printed no link" >&2; exit 1; }
-# The app is built from a copy of app/ whose terminal page also tells the program when the page got each touch (a
-# "touch" line in the program's file, e2e/touch-times.ts); app/ itself is not changed.
-printf "export const PAIR: string = '%s'\n" "$link" > "$work/pair.ts"
-built=$("$app/e2e/ios-touch-app.sh" "$work" "$work/pair.ts" input) || exit 1
+printf "export const PAIR: string = '%s'\n" "$link" > "$app/e2e/pair.ts"
+"$app/ios/build.sh" ios-e2e.tsx simulator >/dev/null 2>&1 || { echo "FAIL: ios/build.sh"; exit 1; }
+printf "%s\n" "$placeholder" > "$app/e2e/pair.ts"
 
 xcrun simctl boot "$SIM_UDID" 2>/dev/null || true
 xcrun simctl bootstatus "$SIM_UDID" -b >/dev/null
 xcrun simctl uninstall "$SIM_UDID" "$id" 2>/dev/null || true
-xcrun simctl install "$SIM_UDID" "$built"
+xcrun simctl install "$SIM_UDID" "$app/ios/build/Herdr.app"
 # Herdr's alert sounds ship with the app, where the app's asset: URIs look (next to its bundle, as nsh build lays out).
 container=$(xcrun simctl get_app_container "$SIM_UDID" "$id")
 for s in request done; do
@@ -78,23 +79,15 @@ cp -R "$app/e2e/ios-uitest" "$work/uitest"
 (cd "$work/uitest" && xcodegen generate --quiet)
 : > "$work/wheels"
 rc=0
-TEST_RUNNER_EVENTS="$work/wheels" TEST_RUNNER_SPACE=spscroll perl -e 'alarm 600; exec @ARGV' xcodebuild test -quiet -project "$work/uitest/KeyboardCheck.xcodeproj" -scheme UITests -only-testing:UITests/Scroll -destination "id=$SIM_UDID" -derivedDataPath "$work/uitest/derived" -resultBundlePath "$work/uitest/result.xcresult" > "$work/uitest/test.log" 2>&1 || rc=$?
+TEST_RUNNER_EVENTS="$work/wheels" TEST_RUNNER_SPACE=spscroll perl -e 'alarm 600; exec @ARGV' xcodebuild test -quiet -project "$work/uitest/KeyboardCheck.xcodeproj" -scheme UITests -only-testing:UITests/Scroll -destination "id=$SIM_UDID" -derivedDataPath "$work/uitest/derived" > "$work/uitest/test.log" 2>&1 || rc=$?
 [ -n "$shot" ] && perl -e 'alarm 40; exec @ARGV' xcrun simctl io "$SIM_UDID" screenshot "${shot%.png}-scroll.png" >/dev/null 2>&1
-if [ "$rc" != 0 ]; then
-  echo "FAIL: the scroll test (xcodebuild test exit $rc)"
-  "$app/e2e/ios-xcresult.sh" "$work/uitest/result.xcresult" ${shot:+"${shot%.png}-failure"}
-  exit 1
-fi
+if [ "$rc" != 0 ]; then echo "FAIL: the scroll test (xcodebuild test exit $rc)"; grep -E "error:|XCTAssert|failed" "$work/uitest/test.log" | head -8; exit 1; fi
 read cols rows half < "$work/wheels.layout"
 # The reports between two marks; a mark carries the terminal's height in points (12 of padding above and below).
-part() { awk -v m="$1" '/^mark /{on = ($2 == m); next} on && !/^touch /' "$work/wheels"; }
+part() { awk -v m="$1" '/^mark /{on = ($2 == m); next} on' "$work/wheels"; }
 height=$(awk '/^mark drag/{print $3; exit}' "$work/wheels")
 failed=0
 say() { echo "$1"; case $1 in FAIL*) failed=1;; esac; }
-echo "when the page got each gesture's touches (ms from the touch's own time: event time/time the page got to it; hold: the"
-echo "page's 450 ms hold timer ran, which turns a drag into selecting words):"
-awk '/^mark /{m = $2; next} /^touch /{sub(/^touch /, ""); print "  " m ": " $0}' "$work/wheels"
-grep -q '^touch ' "$work/wheels" || say "FAIL: the page sent no touch times (e2e/touch-times.ts)"
 finger=$(python3 -c "import sys; h=float(sys.argv[1]); print(round(0.35*h/((h-24)/int(sys.argv[2])), 1))" "$height" "$rows")
 n=$(part drag | grep -c . || true); want=$(python3 -c "import sys; print(int(float(sys.argv[1])//3))" "$finger")
 if [ "$n" -ge $((want - 1)) ] && [ "$n" -le $((want + 1)) ]; then say "ok: a drag of $finger rows sends $n reports, one per 3 rows"; else say "FAIL: a drag of $finger rows sent $n reports (one per 3 rows is $want): $(part drag | tr '\n' ';')"; fi
@@ -105,9 +98,4 @@ if [ "$(part right | grep -c ' right$' || true)" -ge 2 ] && [ "$(part right | gr
 else say "FAIL: a drag in the right panel reached: $(part right | awk '{print $4}' | sort | uniq -c | tr '\n' ';')"; fi
 if [ "$(part flick | grep -c ' ignored$' || true)" = 0 ] && [ "$(part flick | grep -c ' left$' || true)" -ge 6 ]; then say "ok: a flick that ends over the prompt box keeps scrolling ($(part flick | grep -c . ) reports)"
 else say "FAIL: a flick ending over the prompt box: $(part flick | awk '{print $4}' | sort | uniq -c | tr '\n' ';')"; fi
-if [ "$failed" = 1 ]; then
-  # What the program got, in order, and the screens the test kept before and after the first drag.
-  echo "the program's reports and the test's marks:"; head -60 "$work/wheels" | sed 's/^/  /'
-  "$app/e2e/ios-xcresult.sh" "$work/uitest/result.xcresult" ${shot:+"${shot%.png}-test"} all
-fi
 exit $failed
