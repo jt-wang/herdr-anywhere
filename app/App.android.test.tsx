@@ -152,3 +152,16 @@ test('away from the app, nothing is posted for a release the person did not let 
   await app.wait(800)
   expect(calls(app, 'page.notify')).toEqual([])
 })
+
+test('a menu puts the keyboard away as it opens, before its item opens another screen', async () => {
+  // The menu is a window of its own: a keyboard put away only once a picked item had opened Settings came back over
+  // Settings when the menu's window closed (android.sh, the Android × Linux suite).
+  const app = await android()
+  await app.waitFor('text:Needs you')
+  await app.press('id:space-sp2')
+  await app.waitFor('id:terminal-t3')
+  const before = Number(app.storage()['keyboard-away'] ?? 0)
+  await app.press('id:space-more')
+  await app.waitFor('id:menu')
+  await app.waitUntil(() => Number(app.storage()['keyboard-away'] ?? 0) === before + 1)
+})
