@@ -33,8 +33,11 @@ runs:
       env:
         DEVELOPER_DIR: ${{ inputs.xcode }}/Contents/Developer
       run: |
-        echo "FAIL: this diagnostic run requires the existing NativeShell cache"
-        exit 1
+        rustup toolchain install "$(app/ios/nsh-patches/key.sh | awk '{print $4}')" --profile minimal \
+          --target aarch64-apple-ios --target aarch64-apple-ios-sim
+        start=$(date +%s)
+        app/ios/nsh-patches/build-nsh-ios.sh "$RUNNER_TEMP/nsh-src" "$RUNNER_TEMP/nsh-ios"
+        echo "NativeShell built in $(( $(date +%s) - start )) s"
     - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       if: steps.cache.outputs.cache-hit != 'true'
       with:

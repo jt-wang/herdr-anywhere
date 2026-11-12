@@ -246,13 +246,6 @@ class ExpiryTest(unittest.TestCase):
                 self.assertFalse(expiry.calibrate(PID, out))
             samples.assert_not_called()
 
-    def test_workflow_cache_miss_does_not_build(self):
-        action = (HERE.parents[1] / '.github/actions/nsh-ios/action.yml').read_text()
-        miss = action.split('- name: Build it (none in the cache)', 1)[1].split('- uses: actions/cache/save', 1)[0]
-        self.assertNotIn('rustup toolchain install', miss)
-        self.assertNotIn('build-nsh-ios.sh', miss)
-        self.assertIn('exit 1', miss)
-
     def test_calibration_precedes_xctest_and_debug_is_unfiltered(self):
         source = (HERE / 'ios-chat-four.sh').read_text()
         marker = 'ios-background-expiry.py" calibrate'
