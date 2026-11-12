@@ -43,6 +43,12 @@ export type StoreIO = {
   /** Keeps this screen's view (focus, zoom, seen) across launches. */
   load?: (key: string) => Promise<string | null>
   save?: (key: string, value: string) => void
+  /** How long the line may take to answer when the app comes back to the front (BACK_PROBE_MS when not set). */
+  probeMs?: number
+  /** Drops the tunnel the pipes use, so the next pipe opens a new one (Linker.renew). */
+  renew?: () => void
+  /** Told how long each check of the line when back in the front took, and whether it was answered (for e2e/ios-resume.sh). */
+  onProbe?: (ms: number, answered: boolean) => void
 }
 
 /** A send from the input box unanswered this long is told apart: herdr-core holding it, or a slow line. herdr-core 0.1.20
@@ -51,6 +57,8 @@ export type StoreIO = {
 const SLOW_SEND_MS = 5000
 /** How long the question that tells them apart may take: other calls answered in under 2 ms while a send was held. */
 const PROBE_MS = 3000
+/** How long a line, back from the background, may take to answer before it counts as gone. */
+const BACK_PROBE_MS = 3000
 
 /** What the input box of a terminal has sent and herdr-core has not answered. `held`, once it has gone unanswered
  *  SLOW_SEND_MS: `draft` when herdr-core answers other calls at once, so it is holding this one for a line typed in
@@ -74,6 +82,7 @@ export const LOST_TEXT: Record<string, Key> = {
   tunnel: 'lostTunnel',
   'no-answer': 'lostNoAnswer',
   'binary-unsupported': 'lostSlower',
+  stale: 'lostReconnecting',
 }
 
 /** Tiny observable so views can follow the store without knowing NSH (and tests can run without a screen). */
@@ -210,6 +219,7 @@ export class Store {
       await this.refreshMachines()
       await Promise.all(this.machineNames().map((m) => this.readDoc(m)))
       this.retry = 0
+      this.staleRetried = false
       this.firstSync = true
       this.sync()
       this.conn.set('ready')
@@ -289,14 +299,39 @@ export class Store {
     this.lostWhy.set(why)
     this.error.set(LOST_TEXT[why] ? tr(LOST_TEXT[why]) : plain ? tr('lostNetwork') : tr('lostReason', { reason }))
     if (this.retrying) return
-    // Back off like the desktop's 1 s retry, capped so a phone in a tunnel doesn't spin.
-    const wait = Math.min(1000 * 2 ** this.retry, 15000)
-    this.retry++
+    // A line or tunnel left over from before the app was in the background says nothing about the computer: try again
+    // at once, once. Otherwise back off like the desktop's 1 s retry, capped so a phone in a tunnel doesn't spin.
+    const now = why === 'stale' && !this.staleRetried
+    if (now) this.staleRetried = true
+    const wait = now ? 0 : Math.min(1000 * 2 ** this.retry, 15000)
+    if (!now) this.retry++
     this.retrying = true
     this.io.setTimeout(() => {
       this.retrying = false
       if (this.wantConnected && !this.hc) this.connect().catch(() => { if (this.wantConnected && !this.hc) this.lost('retry failed') })
     }, wait)
+  }
+
+  private staleRetried = false
+
+  /** The app is back in the front (ios/Sources/App.swift). The line may have died while the app was suspended, with no
+   *  close to say so, and the quiet check would take 15 s to notice: ask it something now. A line that answers is kept;
+   *  one that doesn't is dropped with its tunnel and a new one opened at once. A line already down tries again now. */
+  foreground() {
+    const hc = this.hc
+    if (!hc || this.conn.get() !== 'ready') return this.reconnectNow()
+    const asked = this.io.now()
+    hc.call('machine.list', {}, { timeoutMs: this.io.probeMs ?? BACK_PROBE_MS }).then(() => {
+      this.heardAt = this.io.now()
+      this.io.onProbe?.(this.heardAt - asked, true)
+    }, () => {
+      this.io.onProbe?.(this.io.now() - asked, false)
+      if (this.hc !== hc) return
+      hc.onClose = () => {}
+      hc.close()
+      this.io.renew?.()
+      this.lost('stale')
+    })
   }
 
   /** Try again now (the network came back, the app came to the front). */

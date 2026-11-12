@@ -1,6 +1,6 @@
 // The app: pairing on first launch, then home ⇄ space ⇄ settings over one live store, with alerts and sheets
 // over every screen.
-import { cleanup, colorScheme, computed, effect, Keyboard, platform, safeAreaInsets, setColorScheme, signal, Storage, Text, Video, View } from 'nsh'
+import { cleanup, colorScheme, computed, effect, host, Keyboard, platform, safeAreaInsets, setColorScheme, signal, Storage, Text, Video, View } from 'nsh'
 import { createNavStack, NavPage, NavStack } from 'nsh/base'
 import type { ViewSwitchProps } from './view-switch.tsx'
 import type { Store } from '../store.ts'
@@ -83,6 +83,8 @@ function AlertSounds(props: { alerts: Alerts }) {
 
 function Connected(props: { deps: RootDeps; store: Store; link: Link; unpaired: () => void; leaveDemo?: () => void }) {
   const { store, deps } = props
+  // Back from the background (ios/Sources/App.swift sends it): the line may have died while the app was suspended.
+  if (host.available()) { const back = host.on('app.foreground', () => store.foreground()); cleanup(() => back.remove()) }
   const startOn = props.deps.prefs.prefs.get()
   const first: Route = startOn.progressFirst && startOn.homeView !== 'agents' ? { name: 'progress' } : { name: 'home' }
   const nav = createNavStack<Route>(props.deps.opensSettings ? [first, { name: 'settings' }] : [first])
