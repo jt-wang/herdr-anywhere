@@ -56,6 +56,12 @@ on:
         type: choice
         options: ["none", "miss-first"]
         default: "none"
+      # How often the upload check's OCR misses the self-test's grey link on a Linux runner (ci-shots-check.sh
+      # --probe-grey); only that job runs.
+      ocr_probe:
+        description: "Only measure how often the upload check misses a link in a field's grey on a Linux runner"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -63,8 +69,8 @@ permissions:
 concurrency:
   # A run of copies has a group of its own, so it doesn't cancel the branch's usual run, nor that run it; copies of
   # the main group and of the b group apart, as a run has only one of them (ios_main_repeat wins over ios_b_repeat).
-  # So does each scroll self-test, the pictures self-test and the open-the-space one.
-  group: devices-${{ github.ref }}${{ (inputs.ios_main_repeat || '0') != '0' && '-repeat-a' || (inputs.ios_b_repeat || '0') != '0' && '-repeat-b' || '' }}${{ (inputs.ios_scroll_selftest || 'none') != 'none' && format('-{0}', inputs.ios_scroll_selftest) || '' }}${{ (inputs.ios_picture_selftest || 'none') != 'none' && '-picture-selftest' || '' }}${{ (inputs.ios_open_space_selftest || 'none') != 'none' && '-open-space-selftest' || '' }}
+  # So does each scroll self-test, the pictures self-test, the open-the-space one and the OCR probe.
+  group: devices-${{ github.ref }}${{ (inputs.ios_main_repeat || '0') != '0' && '-repeat-a' || (inputs.ios_b_repeat || '0') != '0' && '-repeat-b' || '' }}${{ (inputs.ios_scroll_selftest || 'none') != 'none' && format('-{0}', inputs.ios_scroll_selftest) || '' }}${{ (inputs.ios_picture_selftest || 'none') != 'none' && '-picture-selftest' || '' }}${{ (inputs.ios_open_space_selftest || 'none') != 'none' && '-open-space-selftest' || '' }}${{ inputs.ocr_probe && '-ocr-probe' || '' }}
   cancel-in-progress: true
 
 env:
@@ -73,7 +79,7 @@ env:
 jobs:
   build:
     name: Build the APK and the Linux companion
-    if: github.repository == 'jt-wang/herdr-anywhere' && (inputs.ios_main_repeat || '0') == '0' && (inputs.ios_b_repeat || '0') == '0'
+    if: github.repository == 'jt-wang/herdr-anywhere' && (inputs.ios_main_repeat || '0') == '0' && (inputs.ios_b_repeat || '0') == '0' && !inputs.ocr_probe
     runs-on: ubuntu-latest
     timeout-minutes: 30
     outputs:
@@ -116,7 +122,7 @@ jobs:
   # as 9.9.9, that one under another key, the previous release's APK built from its tag, and the companions.
   build-update:
     name: Build the update test's files
-    if: github.repository == 'jt-wang/herdr-anywhere' && (inputs.ios_main_repeat || '0') == '0' && (inputs.ios_b_repeat || '0') == '0'
+    if: github.repository == 'jt-wang/herdr-anywhere' && (inputs.ios_main_repeat || '0') == '0' && (inputs.ios_b_repeat || '0') == '0' && !inputs.ocr_probe
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -349,7 +355,7 @@ jobs:
   # INSTALL.md's Mac steps from a folder of release files with no Go on the path, then start through Tailcat and a code.
   user-path:
     name: Install steps from the release files (Mac)
-    if: github.repository == 'jt-wang/herdr-anywhere' && (inputs.ios_main_repeat || '0') == '0' && (inputs.ios_b_repeat || '0') == '0'
+    if: github.repository == 'jt-wang/herdr-anywhere' && (inputs.ios_main_repeat || '0') == '0' && (inputs.ios_b_repeat || '0') == '0' && !inputs.ocr_probe
     runs-on: macos-26
     timeout-minutes: 30
     steps:
@@ -388,7 +394,7 @@ jobs:
 
   ios:
     name: iOS ${{ matrix.key == 'a' && 'main, keyboard, letters, languages, scrolling' || 'Tailcat, pictures' }}${{ matrix.copy != 0 && format(' (copy {0})', matrix.copy) || '' }}
-    if: github.repository == 'jt-wang/herdr-anywhere'
+    if: github.repository == 'jt-wang/herdr-anywhere' && !inputs.ocr_probe
     runs-on: macos-26
     timeout-minutes: 75
     strategy:
@@ -463,6 +469,18 @@ jobs:
           retention-days: 7
 
   # What a phone gets back over Tailcat when it can't connect (tailcat_lost_probe_test.go); only when asked for.
+  ocr-probe:
+    name: Upload check, a grey link read on a Linux runner
+    if: github.repository == 'jt-wang/herdr-anywhere' && github.event_name == 'workflow_dispatch' && inputs.ocr_probe
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: app/e2e/ci/tools.sh shots
+      - run: app/e2e/ci-shots-check.sh --probe-grey 40
+
   tailcat-probe:
     name: Tailcat, what a phone sees when it can't connect
     if: github.repository == 'jt-wang/herdr-anywhere' && github.event_name == 'workflow_dispatch' && inputs.probe
