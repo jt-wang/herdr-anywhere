@@ -7,10 +7,11 @@ name: Devices
 # the check first proves on a real pairing link that it finds one.
 # Android: API 35 emulators on Linux runners (app/e2e/ci/android-up.sh). iOS: iOS 26.5 simulators on macOS runners
 # (app/e2e/ci/ios-up.sh); the app is built for the simulator, unsigned.
-# It runs on main, on release tags and on the public branch ci, where each release's commit must pass before main.
+# It runs on main, on release tags, on the public branch ci, where each release's commit must pass before main, and
+# on ci-* branches, where a change is tried on its own beside the others. Each branch has its own concurrency group.
 on:
   push:
-    branches: [main, ci]
+    branches: [main, ci, "ci-*"]
     tags: ["v*"]
   workflow_dispatch:
     inputs:
@@ -32,13 +33,22 @@ on:
         type: choice
         options: ["0", "1", "2", "3", "4", "5"]
         default: "0"
+      # The iOS scroll suite's own self-test (e2e/ios-tui-scroll.sh): miss-first taps beside the space first, so the
+      # suite must fail with its record of the screen and a second tap; slow-terminal looks for the terminal only from
+      # 5 s after the tap, so it must pass with no second tap. Meant with ios_main_repeat; a push never sets it.
+      ios_scroll_selftest:
+        description: "iOS scroll suite self-test: none, miss-first (must fail, with its record) or slow-terminal (must pass)"
+        type: choice
+        options: ["none", "miss-first", "slow-terminal"]
+        default: "none"
 
 permissions:
   contents: read
 
 concurrency:
   # A run of copies has a group of its own, so it doesn't cancel the branch's usual run, nor that run it.
-  group: devices-${{ github.ref }}${{ ((inputs.ios_main_repeat || '0') != '0' || (inputs.ios_b_repeat || '0') != '0') && '-repeat' || '' }}
+  # So does each scroll self-test.
+  group: devices-${{ github.ref }}${{ ((inputs.ios_main_repeat || '0') != '0' || (inputs.ios_b_repeat || '0') != '0') && '-repeat' || '' }}${{ (inputs.ios_scroll_selftest || 'none') != 'none' && format('-{0}', inputs.ios_scroll_selftest) || '' }}
   cancel-in-progress: true
 
 env:
@@ -391,6 +401,9 @@ jobs:
       - run: app/e2e/ci/ios-up.sh
       - name: Suites
         working-directory: app
+        env:
+          HM_SCROLL_MISS_FIRST: ${{ inputs.ios_scroll_selftest == 'miss-first' && '1' || '' }}
+          HM_SCROLL_SLOW_TERM: ${{ inputs.ios_scroll_selftest == 'slow-terminal' && '1' || '' }}
         run: |
           s=e2e/ci/suite.sh
           case "${{ matrix.key }}" in
