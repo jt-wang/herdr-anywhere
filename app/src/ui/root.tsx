@@ -4,7 +4,7 @@ import { cleanup, colorScheme, computed, effect, Keyboard, platform, safeAreaIns
 import { createNavStack, NavPage, NavStack } from 'nsh/base'
 import type { ViewSwitchProps } from './view-switch.tsx'
 import type { Store } from '../store.ts'
-import { fileApi, folderApi, imageApi, parseInvite, type Link, type Linker, type Tunnel } from '../link.ts'
+import { chatApi, fileApi, folderApi, imageApi, parseInvite, type Link, type Linker, type Tunnel } from '../link.ts'
 import type { PrefStore } from '../prefs.ts'
 import { Alerts, type AlertKind } from '../alerts.ts'
 import { followInstallFailures, installApp, allowNotifications, followPage, keepAlive, notifications, notifyFromPage, wantsKeepAlive } from '../page.ts'
@@ -55,7 +55,7 @@ function Toasts(props: { store: Store; open: (terminal: string) => void }) {
           <View class={`w-2 h-2 rounded-full ${t().level === 'error' ? 'bg-chart-2' : 'bg-chart-3'}`} />
           <View class="flex-1">
             <Text class="text-[14px] font-medium text-foreground" numberOfLines={1}>{t().title}</Text>
-            <If when={t().body}><Text class="text-[12px] text-muted-foreground" numberOfLines={3}>{t().body}</Text></If>
+            <If when={t().body}><Text class="text-[12px] text-muted-foreground" numberOfLines={2}>{t().body}</Text></If>
           </View>
         </View>
       )}</Each>
@@ -93,6 +93,12 @@ function Connected(props: { deps: RootDeps; store: Store; link: Link; unpaired: 
   const peeking = signal<string | null>(null)
   const folders = folderApi(deps.linker, deps.fetcher)
   store.files = fileApi(deps.linker, deps.fetcher)
+  store.chat = chatApi(deps.linker, deps.fetcher)
+  store.chatFirst = { get: () => deps.prefs.prefs.get().chatFirst, set: (v) => deps.prefs.set({ chatFirst: v }) }
+  store.chatSetupAsked = {
+    has: (agent) => deps.prefs.prefs.get().chatSetupAsked.includes(agent),
+    add: (agent) => { const was = deps.prefs.prefs.get().chatSetupAsked; if (!was.includes(agent)) deps.prefs.set({ chatSetupAsked: [...was, agent] }) },
+  }
   store.images = imageApi(deps.linker, deps.fetcher)
   const updates = new Updates({
     baseUrl: () => deps.linker.baseUrl(), token: () => deps.linker.link.get()?.token ?? '', conn: store.conn, fetcher: deps.fetcher ?? fetch,

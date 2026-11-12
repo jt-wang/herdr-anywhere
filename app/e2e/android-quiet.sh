@@ -11,7 +11,7 @@ app=$(cd "$(dirname "$0")/.." && pwd)
 apk=${1:-$app/android/build/Herdr.apk}
 shot=${2:-}
 adb="${ANDROID_HOME:-$HOME/Library/Android/sdk}/platform-tools/adb"
-hc=$(command -v hc || echo "$HOME/.local/bin/hc")
+hc=${HM_TEST_HC:-$(command -v hc || echo "$HOME/.local/bin/hc")}
 id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$app/nsh.json")
 
 port=7691
@@ -82,20 +82,8 @@ tap() {
 screen_has() { "$adb" shell uiautomator dump /sdcard/hm.xml >/dev/null 2>&1; "$adb" shell cat /sdcard/hm.xml | grep -q "$1"; }
 
 "$adb" shell am start -W -n "$id/.MainActivity" >/dev/null
+"$(dirname "$0")/android-type-link.sh" "$invite"
 started=$(date +%s)
-tap pair-link
-# One long `adb shell input text` keeps only its first ~200 characters (208 of 529 in this field, 204 in
-# Chrome's URL bar); in 80-character pieces the field holds all 529.
-rest=$invite
-while [ -n "$rest" ]; do
-  piece=$(printf %s "$rest" | cut -c1-80); rest=$(printf %s "$rest" | cut -c81-)
-  "$adb" shell input text "'$piece'" < /dev/null
-  sleep 0.5
-done
-"$adb" shell uiautomator dump /sdcard/hm.xml >/dev/null 2>&1
-typed=$("$adb" shell cat /sdcard/hm.xml | tr '>' '\n' | grep -A3 -F 'resource-id="pair-link"' | grep -F 'class="android.widget.EditText"' |
-  sed -E 's/.* text="([^"]*)".*/\1/' | head -1)
-[ "$typed" = "$invite" ] || { echo "FAIL: the field holds ${#typed} of the invite's ${#invite} characters"; exit 1; }
 tap pair
 
 ok=""
@@ -148,7 +136,7 @@ if [ -n "${HM_UPLOAD_MB:-}" ]; then
   t0=$(date +%s)
   got=""; for _ in $(seq 1 600); do
     for f in "$work"/home/.cache/herdr-anywhere/uploads/*/"$big"; do
-      [ -f "$f" ] && screen_has "$big" && [ "$(stat -f %z "$f")" = "$(stat -f %z "$work/$big")" ] && { got=$f; break 2; }
+      [ -f "$f" ] && screen_has "$big" && [ "$(wc -c < "$f")" = "$(wc -c < "$work/$big")" ] && { got=$f; break 2; }
     done
     sleep 1
   done
@@ -169,7 +157,6 @@ case_() {
   eval "$stop"
   e1=$(ends)
   fine=""; for _ in $(seq 1 30); do [ "$(connects)" -gt "$c0" ] && { fine=1; break; }; sleep 1; done
-  t=$SECONDS
   # No new socket is fine only if the companion never ended the old one.
   [ "$e1" = "$e0" ] && [ -z "$fine" ] && fine=kept
   "$hc" send --force "$term" "echo marker-$name" >/dev/null 2>&1 || true

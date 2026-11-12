@@ -31,7 +31,7 @@ func helpCommands(t *testing.T, args []string, prefix ...string) []string {
 // The Companion's commands are exactly these: a command added or brought back
 // shows up here first. Each one listed also runs (it isn't an unknown command).
 func TestTheCompanionHasExactlyTheseCommands(t *testing.T) {
-	want := []string{"devices", "install-dialog", "language", "pair", "progress", "revoke", "serve", "start", "stop", "track", "update"}
+	want := []string{"chat-setup", "devices", "install-dialog", "language", "pair", "progress", "revoke", "serve", "start", "stop", "track", "update"}
 	if got := helpCommands(t, []string{"--help"}, "herdr-anywhere"); !reflect.DeepEqual(got, want) {
 		t.Fatalf("herdr-anywhere --help lists %v, want %v", got, want)
 	}
