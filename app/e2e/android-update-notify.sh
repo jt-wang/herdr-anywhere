@@ -34,7 +34,7 @@ work=$(mktemp -d); run=$(mktemp -d /tmp/hmXXXX); state=$(mktemp -d /tmp/hmtcXXXX
 mkdir -p "$work/h/src/acme-api" "$work/state" "$work/config" "$work/data"
 : > "$work/h/.zshrc"
 echo skip_global_compinit=1 > "$work/h/.zshenv"
-export HC_SESSION="hmupdn-$$" HC_SOCKET="" HOME="$work/h" SHELL=/bin/zsh
+export HC_SESSION="hmupdn-$$" HC_SOCKET="" HOME="$work/h" SHELL=/bin/zsh HERDR_ANYWHERE_AUTOSTART_NAME=hm-e2e-updnotify
 export XDG_STATE_HOME="$work/state" XDG_CONFIG_HOME="$work/config" XDG_DATA_HOME="$work/data" XDG_RUNTIME_DIR="$run"
 export GIT_CONFIG_GLOBAL="$work/h/.gitconfig"
 "$hc" run --bg --keep --cwd "$work/h/src/acme-api" --label herdr.space=spupdn --label herdr.tab=tbupdn >/dev/null
@@ -105,13 +105,21 @@ fi
 [ "$n" -gt 0 ] || { echo "FAIL: no notification of $new within 90 s"; tail -5 "$work/serve.log" | mask; exit 1; }
 wait_for "Herdr Anywhere $new is available" 10
 echo "ok: one notification: Herdr Anywhere $new is available"
+# The record's object id: the same one after the tap is one not taken away, another one a second post.
+first=$(records | grep -oE 'NotificationRecord\(0x[0-9a-f]+' | head -1)
 tap_where "text=\"Herdr Anywhere $new is available\""
 wait_for 'resource-id="update-banner"' 60
 wait_for "Version $new is available" 10
 snap home
 echo "ok: its tap opened home with the notice"
 gone=""; for _ in $(seq 1 15); do [ "$(posted)" = 0 ] && { gone=1; break; }; sleep 1; done
-[ -n "$gone" ] || { echo "FAIL: the notification is still listed after its tap:"; records | cut -c1-240; exit 1; }
+if [ -z "$gone" ]; then
+  now=$(records | grep -oE 'NotificationRecord\(0x[0-9a-f]+' | head -1)
+  [ "$now" = "$first" ] && echo "FAIL: the notification is still listed after its tap (the same record, $first)" ||
+    echo "FAIL: after its tap the notification was posted again ($first, then $now)"
+  "$adb" shell dumpsys notification --noredact | grep -A12 "tag=new-version" | head -30
+  exit 1
+fi
 echo "ok: the tap took the notification away"
 
 echo "--- the same version is told once"

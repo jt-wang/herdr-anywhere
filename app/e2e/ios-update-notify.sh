@@ -29,7 +29,7 @@ mkdir -p "$work/h/src/acme-api" "$work/state" "$work/config" "$work/data"
 : > "$work/h/.zshrc"
 placeholder=$(cat "$app/e2e/pair.ts")
 L() { env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin HOME="$work/h" SHELL=/bin/zsh TERM=xterm-256color \
-  LANG=en_US.UTF-8 HC_SESSION="hmiosnote-$$" HC_SOCKET="" XDG_STATE_HOME="$work/state" XDG_CONFIG_HOME="$work/config" \
+  LANG=en_US.UTF-8 HC_SESSION="hmiosnote-$$" HC_SOCKET="" HERDR_ANYWHERE_AUTOSTART_NAME=hm-e2e-iosnotify XDG_STATE_HOME="$work/state" XDG_CONFIG_HOME="$work/config" \
   XDG_DATA_HOME="$work/data" XDG_RUNTIME_DIR="$run" "$@"; }
 . "$app/e2e/companion.sh"  # companion_start, companion_stop
 cleanup() {
@@ -83,7 +83,8 @@ uitest() { # NAME: runs testNAME, its words to $out/NAME.txt
     perl -e 'alarm 3000; exec @ARGV' xcodebuild test -quiet -project "$work/uitest/KeyboardCheck.xcodeproj" -scheme UITests \
     -only-testing:"UITests/Notifications/test$2" -destination "id=$SIM_UDID" -derivedDataPath "$work/uitest/derived" > "$work/uitest-$1.log" 2>&1 || rc=$?
   sed 's/^/  /' "$out/$1.txt" 2>/dev/null || true
-  [ "$rc" = 0 ] || { echo "FAIL: $1: xcodebuild test exit $rc"; grep -E "error:|XCTAssert|failed" "$work/uitest-$1.log" | head -8; exit 1; }
+  cp "$work/uitest-$1.log" "$out/$1-xcodebuild.log" 2>/dev/null || true
+  [ "$rc" = 0 ] || { echo "FAIL: $1: xcodebuild test exit $rc; the test log ends:"; tail -25 "$work/uitest-$1.log" | cut -c1-240; exit 1; }
 }
 
 fresh
