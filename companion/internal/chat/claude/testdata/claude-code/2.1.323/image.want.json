@@ -1,0 +1,16 @@
+[
+  {
+    "id": "",
+    "from": "you",
+    "said": "HELLO, what is in this picture?",
+    "images": [
+      {
+        "id": ".1",
+        "source": "/tmp/claude/-work-acme/25cd1dcc-4dba-4b8e-935f-f70ee690dd3d/images/1.png"
+      }
+    ],
+    "steps": [],
+    "reply": "Hello from the fake model.",
+    "end": "done"
+  }
+]
