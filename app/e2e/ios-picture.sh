@@ -65,7 +65,15 @@ xcrun simctl install "$SIM_UDID" "$built"
 xcrun simctl launch "$SIM_UDID" "$id" >/dev/null
 
 # The app is up and paired once the companion logs the phone connected.
-i=0; until grep -q "device .* connected (binary," "$work/serve.log"; do i=$((i + 1)); [ $i -gt 60 ] && { echo "FAIL: the app never connected"; exit 1; }; sleep 1; done
+# When it doesn't: whether the app still runs, the Companion's last lines, and the folder ios-failure-logs.sh fills.
+never_connected() {
+  echo "FAIL: the app never connected"
+  echo "  the app's process: $(xcrun simctl spawn "$SIM_UDID" launchctl list 2>/dev/null | grep -F "$id" || echo "not running")"
+  echo "  the Companion's last lines:"; tail -10 "$work/serve.log" | sed 's/^/    /'
+  [ -z "$shots" ] || { mkdir -p "$shots/connect-failure"; "$app/e2e/ios-failure-logs.sh" "$work/started" "$work/serve.log" "$shots/connect-failure"; }
+  exit 1
+}
+i=0; until grep -q "device .* connected (binary," "$work/serve.log"; do i=$((i + 1)); [ $i -gt 60 ] && never_connected; sleep 1; done
 cp -R "$app/e2e/ios-uitest" "$work/uitest"
 (cd "$work/uitest" && xcodegen generate --quiet)
 size_now() { L "$hc" get "$term" --json | python3 -c 'import json,sys; t=json.load(sys.stdin); print(t["cols"], t["rows"])'; }
