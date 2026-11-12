@@ -8,6 +8,8 @@
 set -eu
 : "${ANDROID_SERIAL:?set ANDROID_SERIAL to the device to use}"
 adb="${ANDROID_HOME:-$HOME/Library/Android/sdk}/platform-tools/adb"
+. "$(dirname "$0")/adb-note.sh"; adb_note "$adb"  # a failed adb call is written down and shown if the suite fails
+trap 'adb_exit $?' EXIT
 me=$(id -un)
 real_home=$(eval echo "~$me")
 dir=${RUNNER_TEMP:-${TMPDIR:-/tmp}}/hm-clip-$me
