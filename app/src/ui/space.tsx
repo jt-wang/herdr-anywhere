@@ -20,6 +20,7 @@ import { ChatView } from './chat.tsx'
 import { startable } from '../model/programs.ts'
 import type { TerminalSession } from './terminal-session.ts'
 import type { TypeIn } from '../prefs.ts'
+import { diag } from '../diag.ts'
 
 export type SpaceActions = {
   back: () => void
@@ -150,9 +151,17 @@ function PhoneSpace(props: { store: Store; spaceId: string; tab: Tab; actions: S
     if (key === asked) return
     const moved = key.split(' ')[0] !== asked.split(' ')[0]
     asked = key
-    if (moved) untracked(() => { chat.on.set(s.chatFirst.get()); chat.avail.set(false) })
+    if (moved) untracked(() => {
+      // An open view closed with no tap: what the pane was then (src/diag.ts).
+      if (!key && chat.on() && chat.avail()) diag('chat-closed', { addr: a ?? '', agent: String(!!a && s.isAgent(a)), program: a ? s.program(a).key : '', chat: String(!!s.chat) })
+      chat.on.set(s.chatFirst.get()); chat.avail.set(false)
+    })
     if (!key) return
-    void s.chat!.get(a!).then((r) => { if (asked === key) chat.avail.set(r.chat) }, () => {})
+    void s.chat!.get(a!).then((r) => {
+      if (asked !== key) return
+      if (!r.chat && untracked(() => chat.on() && chat.avail())) diag('chat-gone', { addr: a!, agent: String(s.isAgent(a)), program: s.program(a).key })
+      chat.avail.set(r.chat)
+    }, () => {})
   })
   return (
     <View class="flex-1 bg-background">
