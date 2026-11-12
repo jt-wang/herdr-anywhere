@@ -9,11 +9,18 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 ios="$root/ios"
 entry=${1:-App.tsx}
 sdk=${2:-simulator}
+# NativeShell is nsh v0.3.0 with ios/nsh-patches' upstream fixes, built by ios/nsh-patches/build-nsh-ios.sh into
+# $NSH_IOS_EMBED (default: this Mac's cache). Its nsh-build.txt must name those patches, so no app is built on a
+# NativeShell without them (the one in ~/.nsh has none of #1014).
+embed=${NSH_IOS_EMBED:-$HOME/Library/Caches/herdr-anywhere/nsh-ios}
+want=$("$ios/nsh-patches/key.sh")
+[ "$(cat "$embed/nsh-build.txt" 2>/dev/null)" = "$want" ] || {
+  echo "ios/build.sh: no NativeShell built as '$want' in $embed; run app/ios/nsh-patches/build-nsh-ios.sh <nsh source> $embed" >&2; exit 1; }
 "$root/scripts/tailpocket.sh" apple >/dev/null
 # TailPocket's NSH package takes NativeShell from beside its Package.swift (left out of the repository).
 nshpkg="$root/../third_party/tailpocket-8ae23dd/sdk/apple/NSH"
 rm -rf "$nshpkg/NativeShell.xcframework"
-cp -R "$HOME/.nsh/embed/ios/NativeShell.xcframework" "$nshpkg/"
+cp -R "$embed/NativeShell.xcframework" "$nshpkg/"
 rm -rf "$ios/nsh"
 (cd "$root" && nsh build "$entry" --release --out "$ios/nsh" >/dev/null)
 rm -f "$ios/nsh/bundle.js" "$ios/nsh/bundle.js.map" # the app runs the bytecode

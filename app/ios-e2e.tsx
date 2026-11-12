@@ -8,6 +8,13 @@ import { Storage } from 'nsh'
 import { start } from './src/main.tsx'
 import { OPEN_SETTINGS_ON_LAUNCH } from './e2e/open-settings.ts'
 import { PAIR } from './e2e/pair.ts'
+import { setDiag } from './src/diag.ts'
+
+// Each diagnostic (src/diag.ts) as a request the Companion's log shows: /hm-e2e/<what>/<field>=<value>/…
+setDiag((what, fields) => {
+  const path = [what, ...Object.entries(fields).map(([k, v]) => `${k}=${encodeURIComponent(v)}`)].join('/')
+  try { void fetch(`${new URL(PAIR).origin}/hm-e2e/${path}`).catch(() => {}) } catch { /* a placeholder PAIR: no origin */ }
+})
 
 void Promise.all([Storage.getItem('e2e-launches'), Storage.getItem('e2e-pair'), Storage.getItem('e2e-open-settings')]).then(
   ([n, pair, opens]) => {
