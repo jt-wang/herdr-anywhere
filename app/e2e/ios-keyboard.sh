@@ -15,6 +15,9 @@
 # tap (e2e/ios-uitest/tests/OpenSpace.swift) and a second one.
 # HM_HOLD_SWEEP=1 runs e2e/ios-uitest/tests/Hold.swift instead of the keyboard test: presses on the space held for
 # several lengths, each with how long UIKit held it and whether the space opened (e2e/ios-hold-say.sh).
+# HM_SPACE_PRESS=drift runs Drift.swift instead: presses on the space that move 0, 2, 4 or 8 points down before the
+# lift. HM_SPACE_PRESS=busy: presses with no move, and the test app keeps its main thread busy 0, 150, 400 or 800 ms
+# after each begins (e2e/ios-touch-app.sh, HM_TOUCH_BUSY_MS).
 # SIM_UDID is required, so the run never lands on another simulator. Needs go, nsh, hc, idb, xcodegen and Xcode.
 set -eu
 : "${SIM_UDID:?set SIM_UDID to the simulator to use}"
@@ -69,7 +72,9 @@ link=$(HERDR_ANYWHERE_STATE="$work/companion" "$work/herdr-anywhere" pair --url 
 # Built from a copy of app/ that also asks the Companion for /hm-e2e/openSpace/… each time it opens a space
 # (e2e/ios-touch-app.sh), for a failure to tell a tap on the space the app never got from one it got late.
 printf "export const PAIR: string = '%s'\n" "$link" > "$work/pair.ts"
-built=$("$app/e2e/ios-touch-app.sh" "$work" "$work/pair.ts" none) || exit 1
+press=${HM_SPACE_PRESS:-} busy=""
+case $press in '') ;; drift) ;; busy) busy=0,150,400,800 ;; *) echo "FAIL: HM_SPACE_PRESS is drift or busy, not $press"; exit 2 ;; esac
+built=$(HM_TOUCH_BUSY_MS=$busy "$app/e2e/ios-touch-app.sh" "$work" "$work/pair.ts" none) || exit 1
 
 xcrun simctl boot "$SIM_UDID" 2>/dev/null || true
 xcrun simctl bootstatus "$SIM_UDID" -b >/dev/null
@@ -99,16 +104,19 @@ screen | grep -q '"AXIdentifier":"pair"\|"AXUniqueId":"pair"' && { echo "FAIL: t
 cp -R "$app/e2e/ios-uitest" "$work/uitest"
 (cd "$work/uitest" && xcodegen generate --quiet)
 sh "$app/e2e/ios-touch-log.sh" --self-test || exit 1
-[ "${HM_HOLD_SWEEP:-}" = 1 ] && { sh "$app/e2e/ios-hold-say.sh" --self-test || exit 1; }
+{ [ "${HM_HOLD_SWEEP:-}" = 1 ] || [ -n "$press" ]; } && { sh "$app/e2e/ios-hold-say.sh" --self-test || exit 1; }
 # The app's UIKit event dispatch while the test runs: whether a tap on the space reached the app at all.
 "$app/e2e/ios-touch-log.sh" --start "$SIM_UDID" "$work/uikit.log" & touchlog=$!
 rc=0 test=TypeIn limit=600
 [ "${HM_HOLD_SWEEP:-}" = 1 ] && test=Hold limit=900 # 35 presses, each up to 8 s with the way back
-TEST_RUNNER_OUT="$work/typein.txt" TEST_RUNNER_MISS_SPACE="${HM_MISS_SPACE:-}" TEST_RUNNER_RAW="$work/sam/src/acme-api/hm-raw" perl -e 'alarm shift; exec @ARGV' "$limit" xcodebuild test -quiet -project "$work/uitest/KeyboardCheck.xcodeproj" -scheme UITests -only-testing:"UITests/$test" -destination "id=$SIM_UDID" -derivedDataPath "$work/uitest/derived" -resultBundlePath "$work/uitest/result.xcresult" > "$work/uitest/test.log" 2>&1 || rc=$?
+drifts="" rounds=""  # Drift.swift's own (Hold.swift keeps its own)
+[ "$press" = drift ] && test=Drift limit=900 drifts=0,2,4,8 rounds=6  # 24 presses
+[ "$press" = busy ] && test=Drift limit=900 drifts=0 rounds=16  # 16 presses, 4 for each busy time
+TEST_RUNNER_DRIFTS=$drifts TEST_RUNNER_ROUNDS=$rounds TEST_RUNNER_OUT="$work/typein.txt" TEST_RUNNER_MISS_SPACE="${HM_MISS_SPACE:-}" TEST_RUNNER_RAW="$work/sam/src/acme-api/hm-raw" perl -e 'alarm shift; exec @ARGV' "$limit" xcodebuild test -quiet -project "$work/uitest/KeyboardCheck.xcodeproj" -scheme UITests -only-testing:"UITests/$test" -destination "id=$SIM_UDID" -derivedDataPath "$work/uitest/derived" -resultBundlePath "$work/uitest/result.xcresult" > "$work/uitest/test.log" 2>&1 || rc=$?
 { kill "$touchlog"; wait "$touchlog"; } 2>/dev/null || true; touchlog=
 [ -n "$shot" ] && perl -e 'alarm 40; exec @ARGV' xcrun simctl io "$SIM_UDID" screenshot "${shot%.png}-keyboard.png" >/dev/null 2>&1
 sed 's/^/  /' "$work/typein.txt" 2>/dev/null || true
-if [ "$test" = Hold ]; then
+if [ "$test" = Hold ] || [ "$test" = Drift ]; then
   # Kept either way: each press's lines in the app's log (ios-touch-log.sh), in <screenshot>-holds/.
   [ -n "$shot" ] && mkdir -p "${shot%.png}-holds"
   "$app/e2e/ios-touch-log.sh" "$work/typein.txt" "$work/uikit.log" ${shot:+"${shot%.png}-holds"} > "$work/holds.txt"

@@ -57,11 +57,13 @@ on:
       # The tap that opens a space from home, in the keyboard and pictures suites (OpenSpace.swift): miss-first makes
       # the first one land beside the space, so both must fail with their record of it and a second tap. hold-sweep
       # runs Hold.swift in place of the keyboard test: presses on the space held for several lengths, each with how
-      # long UIKit held it and whether it opened (e2e/ios-hold-say.sh). A push never sets it.
+      # long UIKit held it and whether it opened (e2e/ios-hold-say.sh). drift: Drift.swift instead, presses that move
+      # 0, 2, 4 or 8 points before the lift; busy: presses whose start keeps the test app's main thread busy 0, 150,
+      # 400 or 800 ms. A push never sets it.
       ios_open_space_selftest:
-        description: "iOS open-the-space self-test (keyboard, pictures): none, miss-first (both must fail, with their record), or hold-sweep (keyboard: presses held for several lengths)"
+        description: "iOS open-the-space self-test (keyboard, pictures): none, miss-first (both must fail, with their record), hold-sweep (keyboard: presses held for several lengths), drift (presses that move a little) or busy (a busy main thread after the press)"
         type: choice
-        options: ["none", "miss-first", "hold-sweep"]
+        options: ["none", "miss-first", "hold-sweep", "drift", "busy"]
         default: "none"
       # How often the upload check's OCR misses the self-test's grey link on a Linux runner (ci-shots-check.sh
       # --probe-grey); only that job runs.
@@ -467,6 +469,7 @@ jobs:
           HM_PICTURE_LOOP: ${{ inputs.ios_picture_selftest == 'loop' && '10' || '' }}
           HM_MISS_SPACE: ${{ inputs.ios_open_space_selftest == 'miss-first' && '1' || '' }}
           HM_HOLD_SWEEP: ${{ inputs.ios_open_space_selftest == 'hold-sweep' && '1' || '' }}
+          HM_SPACE_PRESS: ${{ (inputs.ios_open_space_selftest == 'drift' || inputs.ios_open_space_selftest == 'busy') && inputs.ios_open_space_selftest || '' }}
         run: |
           s=e2e/ci/suite.sh
           case "${{ matrix.key }}" in

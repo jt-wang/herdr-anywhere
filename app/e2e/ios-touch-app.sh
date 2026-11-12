@@ -7,6 +7,8 @@
 set -eu
 folder=$1; pair=$2; via=$3
 case $via in input|label|none) ;; *) echo "FAIL: ios-touch-app.sh: VIA is input, label or none, not $via" >&2; exit 2 ;; esac
+busy=${HM_TOUCH_BUSY_MS:-}
+case $busy in *[!0-9,]*) echo "FAIL: ios-touch-app.sh: HM_TOUCH_BUSY_MS is numbers and commas, not $busy" >&2; exit 2 ;; esac
 app=$(cd "$(dirname "$0")/.." && pwd)
 tree="$folder/tree"
 rm -rf "${tree:?}"; mkdir -p "$tree"
@@ -41,7 +43,11 @@ swift="$tree/app/ios/Sources/App.swift"
 [ "$(grep -cE 'UIWindow\((windowScene: scene|frame: UIScreen\.main\.bounds)\)' "$swift")" = 1 ] ||
   { echo "FAIL: App.swift has changed: no single place the window is made, for e2e/ios-touch-window.swift" >&2; exit 1; }
 sed -E 's/UIWindow\((windowScene: scene|frame: UIScreen\.main\.bounds)\)/HMTouchWindow(\1)/' "$swift" > "$swift.new" && mv "$swift.new" "$swift"
-cat "$app/e2e/ios-touch-window.swift" >> "$swift"
+# HM_TOUCH_BUSY_MS (milliseconds, comma-separated): the main thread kept busy that long after a touch begins on a
+# space's row on home, the n-th such touch taking the n-th number (ios-touch-window.swift, busyMs).
+[ "$(grep -c '^  static let busyMs: \[Int\] = \[\]$' "$app/e2e/ios-touch-window.swift")" = 1 ] ||
+  { echo "FAIL: ios-touch-window.swift has changed: no single busyMs to fill" >&2; exit 1; }
+sed "s/^  static let busyMs: \[Int\] = \[\]$/  static let busyMs: [Int] = [$busy]/" "$app/e2e/ios-touch-window.swift" >> "$swift"
 "$tree/app/ios/build.sh" ios-e2e.tsx simulator > "$folder/touch-app-build.log" 2>&1 ||
   { tail -20 "$folder/touch-app-build.log" >&2; echo "FAIL: ios/build.sh (the copy with e2e/touch-times.ts)" >&2; exit 1; }
 echo "$tree/app/ios/build/Herdr.app"

@@ -18,6 +18,10 @@ final class HMTouchWindow: UIWindow {
     init(_ touch: UITouch, _ timer: Timer) { self.touch = touch; self.timer = timer; view = touch.view; last = HMTouchWindow.watching(touch, view: touch.view) }
   }
   private var watched: [ObjectIdentifier: Watch] = [:]
+  /** How long the main thread is kept busy right after a touch begins on a space's row on home, the n-th such touch
+   *  taking the n-th number, round and round; none when empty. e2e/ios-touch-app.sh fills it from HM_TOUCH_BUSY_MS. */
+  static let busyMs: [Int] = []
+  private var rowTouches = 0
 
   override func sendEvent(_ event: UIEvent) {
     // Each touch's phase and view as the event came in, before UIKit hands it on: a touch that comes in "cancelled" was
@@ -30,7 +34,15 @@ final class HMTouchWindow: UIWindow {
     guard event.type == .touches, let touches = event.allTouches else { return }
     for touch in touches where touch.phase == .began || touch.phase == .ended || touch.phase == .cancelled {
       let id = ObjectIdentifier(touch)
-      var extra = ""
+      var extra = "", busy = ""
+      if touch.phase == .began, !HMTouchWindow.busyMs.isEmpty, touch.view?.accessibilityIdentifier?.hasPrefix("space-") == true {
+        let ms = HMTouchWindow.busyMs[rowTouches % HMTouchWindow.busyMs.count]
+        rowTouches += 1
+        busy = " busy=\(ms)ms"
+        // Busy, not asleep: the main thread does nothing else until then, as when the app has work of its own.
+        let until = Date().addingTimeInterval(Double(ms) / 1000)
+        while Date() < until {}
+      }
       if touch.phase == .began {
         watched[id]?.timer.invalidate()
         let timer = Timer(timeInterval: 0.05, target: self, selector: #selector(look(_:)), userInfo: id, repeats: true)
@@ -41,7 +53,7 @@ final class HMTouchWindow: UIWindow {
         extra = " +\(Int(Date().timeIntervalSince(w.began) * 1000))ms began-view=\(HMTouchWindow.name(w.view)) began-view-in-window=\(HMTouchWindow.inWindow(w.view))"
       }
       // sent=… and the times first: the system's log cuts a long line at about 1 kB, and the lists come after.
-      NSLog("%@", HMTouchWindow.line(touch, in: self, first: (sent[id] ?? "sent=none") + extra))
+      NSLog("%@", HMTouchWindow.line(touch, in: self, first: (sent[id] ?? "sent=none") + busy + extra))
     }
   }
 
