@@ -85,6 +85,23 @@ L() { env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin
   LANG=en_US.UTF-8 HC_SESSION="hmresume-$$" HC_SOCKET="" XDG_STATE_HOME="$work/state" XDG_CONFIG_HOME="$work/config" \
   XDG_DATA_HOME="$work/data" XDG_RUNTIME_DIR="$run" CLAUDE_CONFIG_DIR="$work/claude" "$@"; }
 serve_pid=; guard_pid=; test_pid=; was_look=
+# The companion, found by its --state folder (it runs a few processes below the one started): TERM, then it must be gone
+# and its port free within 5 s, or the run fails (AGENTS.md); one still there is killed so none is left behind. On a CI
+# runner (devices.yml, group ios-resume), killing the shell that started it and that shell's children left it serving
+# the phone for minutes: the final check saw no banner, and the job waited on its output until its time limit.
+companion_pids() { pgrep -f "herdr-anywhere serve.* --state $state" || true; }
+stop_companion() {
+  pids=$(companion_pids)
+  [ -n "$pids" ] && kill $pids 2>/dev/null
+  i=0; while [ $i -lt 50 ] && { [ -n "$(companion_pids)" ] || nc -z 127.0.0.1 "$port" 2>/dev/null; }; do sleep 0.1; i=$((i + 1)); done
+  left=$(companion_pids)
+  if [ -n "$left" ]; then
+    kill -9 $left 2>/dev/null
+    echo "FAIL: the companion still ran 5 s after TERM (pid $(echo $left))"; return 1
+  fi
+  if nc -z 127.0.0.1 "$port" 2>/dev/null; then echo "FAIL: port $port still answers with the companion gone"; return 1; fi
+  return 0
+}
 cleanup() {
   status=$?
   trap - EXIT INT TERM HUP
@@ -92,7 +109,10 @@ cleanup() {
   [ -n "$was_look" ] && xcrun simctl ui "$SIM_UDID" appearance "$was_look" && echo "appearance back to $(xcrun simctl ui "$SIM_UDID" appearance)"
   [ -n "$guard_pid" ] && kill "$guard_pid" 2>/dev/null
   [ -n "$test_pid" ] && kill "$test_pid" 2>/dev/null
-  [ -n "$serve_pid" ] && { pkill -P "$serve_pid" 2>/dev/null; kill "$serve_pid" 2>/dev/null; }
+  if [ -n "$serve_pid" ]; then
+    stop_companion || status=1
+    pkill -P "$serve_pid" 2>/dev/null; kill "$serve_pid" 2>/dev/null
+  fi
   L "$hc" server stop >/dev/null 2>&1
   [ -s "$work/serve.log" ] && sed -E "$mask" "$work/serve.log" > "$out/companion.log"
   xcrun simctl uninstall "$SIM_UDID" "$id" 2>/dev/null
@@ -143,13 +163,13 @@ xcodebuild build-for-testing -quiet -project "$work/uitest/KeyboardCheck.xcodepr
   -derivedDataPath "$work/uitest/derived" > "$work/uitest/build.log" 2>&1 || { tail -20 "$work/uitest/build.log"; echo "FAIL: UITests build"; exit 1; }
 
 L "$hc" run --bg --keep --cwd "$work/h/src/acme-api" --name claude --label herdr.space=spresume --label herdr.tab=tbresume \
-  python3 "$app/e2e/fake-claude.py" "$fixtures/image.jsonl" >/dev/null
+  python3 "$app/e2e/fake-claude.py" "$fixtures/image.jsonl" >/dev/null 2>"$work/hc-run.log" || { cat "$work/hc-run.log"; echo "FAIL: hc run"; exit 1; }
 # Each line of the companion's log stamped with this Mac's clock, to the millisecond, as the UITest stamps its own.
 stamp() { perl -MTime::HiRes=time -ne 'BEGIN { $| = 1 } printf "%.3f %s", time, $_'; }
 if [ "$pairing" = tailcat ]; then
-  (L "$work/herdr-anywhere" serve --tailcat --listen "127.0.0.1:$port" --hc "$hc" --state "$state" 2>&1 | stamp > "$work/serve.log") &
+  (L "$work/herdr-anywhere" serve --tailcat --listen "127.0.0.1:$port" --hc "$hc" --state "$state" 2>&1 | stamp >> "$work/serve.log") 2>>"$work/serve-shell.log" &
 else
-  (L "$work/herdr-anywhere" serve --listen "127.0.0.1:$port" --hc "$hc" --state "$state" 2>&1 | stamp > "$work/serve.log") &
+  (L "$work/herdr-anywhere" serve --listen "127.0.0.1:$port" --hc "$hc" --state "$state" 2>&1 | stamp >> "$work/serve.log") 2>>"$work/serve-shell.log" &
 fi
 serve_pid=$!
 ready=.; [ "$pairing" = tailcat ] && ready='listening on Tailcat'
@@ -179,8 +199,9 @@ test_pid=$!
 stopped=
 while kill -0 "$test_pid" 2>/dev/null; do
   if [ -z "$stopped" ] && [ -e "$screen.stop" ]; then
-    stopped=1; pkill -P "$serve_pid" 2>/dev/null; kill "$serve_pid" 2>/dev/null
+    stopped=1
     perl -MTime::HiRes=time -e 'printf "%.3f companion stopped by the script\n", time' >> "$work/serve.log"
+    stop_companion || exit 1
   fi
   sleep 0.2
 done
@@ -190,7 +211,8 @@ xcrun simctl terminate "$SIM_UDID" "$id" 2>/dev/null || true
 probes_of "$store" > "$out/probes.txt" || true
 cat "$out/probes.txt" >> "$screen"
 timeline "$screen" "$work/serve.log" > "$out/timeline.txt"
-sed 's/^/  /' "$out/timeline.txt" | tail -60
+# The screen's lines, and the companion's about the phone's line (not each request of the chat page).
+grep -vE ' (GET|POST) ' "$out/timeline.txt" | sed 's/^/  /' | tail -80
 [ "$rc" = 0 ] || { echo "FAIL: the UITest's own checks failed (exit $rc)"; grep -E "error:|XCTAssert|failed" "$work/uitest/test.log" | head -8; exit 1; }
 if [ "${HM_RESUME_EXPECT:-}" = calm ]; then
   [ "${LANG_TAG:-en}" = en ] || { echo "FAIL: HM_RESUME_EXPECT=calm reads the English banner; LANG_TAG is ${LANG_TAG}"; exit 1; }

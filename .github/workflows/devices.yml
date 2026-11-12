@@ -434,8 +434,8 @@ jobs:
     if: needs.plan.outputs.ios != '[]'
     # xcode-27 is the runner image with Xcode 27 and the iOS 27 simulators (as tests.yml's ios27).
     runs-on: ${{ matrix.key == 'onerror27' && 'xcode-27' || 'macos-26' }}
-    # resume: four runs of about 8 minutes after the build (a run is 4 to 5 minutes on a Mac mini, the UITests' build
-    # each time on top), so about twice that.
+    # resume: on this runner the tools and simulator took 5 minutes, the app's build 9 and one Tailcat run 10.5, so
+    # four runs come to about 56 minutes; 100 is a little under twice that.
     timeout-minutes: ${{ matrix.key == 'resume' && 100 || 75 }}
     strategy:
       fail-fast: false
