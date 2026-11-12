@@ -480,6 +480,8 @@ jobs:
           persist-credentials: false
       - run: app/e2e/ci/tools.sh shots
       - run: app/e2e/ci-shots-check.sh --probe-grey 40
+      # The same with the CPU kept busy, 3 loops per core.
+      - run: app/e2e/ci-shots-check.sh --probe-grey 40 "$(( $(nproc) * 3 ))"
 
   tailcat-probe:
     name: Tailcat, what a phone sees when it can't connect

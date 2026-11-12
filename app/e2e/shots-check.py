@@ -82,7 +82,7 @@ def words(folder):
     tesseract = shutil.which("tesseract")
     if not tesseract and sys.platform != "darwin":
         sys.exit("FAIL: no tesseract to read the pictures' words")
-    print(f"words read by {'tesseract' if tesseract else 'Vision'}", file=sys.stderr)
+    print(f"words read by {'tesseract' if tesseract else 'Vision'}; {machine()}", file=sys.stderr)
     tmp = tempfile.mkdtemp()
 
     def read(path, picture):
@@ -116,6 +116,22 @@ def words(folder):
                 last = g
         shutil.rmtree(frames)
     shutil.rmtree(tmp)
+
+
+def machine():
+    """What the words were read on, for a check that misses words once to be lined up with the runs that don't: the
+    tesseract, the CPU, its load and the threads tesseract may take."""
+    version = "?"
+    if shutil.which("tesseract"):
+        out = subprocess.run(["tesseract", "--version"], capture_output=True, text=True)
+        version = ((out.stdout or out.stderr).splitlines() or ["?"])[0]
+    cpu = ""
+    try:
+        cpu = next((l.split(":", 1)[1].strip() for l in open("/proc/cpuinfo") if l.startswith("model name")), "")
+    except OSError:
+        cpu = subprocess.run(["sysctl", "-n", "machdep.cpu.brand_string"], capture_output=True, text=True).stdout.strip()
+    load = " ".join(f"{v:.1f}" for v in os.getloadavg())
+    return f"{version}, {cpu}, {os.cpu_count()} cpus, load {load}, OMP_THREAD_LIMIT={os.environ.get('OMP_THREAD_LIMIT', 'unset')}"
 
 
 def reads(path, tmp):
