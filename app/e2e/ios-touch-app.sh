@@ -13,14 +13,15 @@ rsync -a --exclude /ios/build --exclude /ios/nsh --exclude /android "$app/" "$tr
 ln -s "$app/../third_party" "$tree/third_party"
 cp "$pair" "$tree/app/e2e/pair.ts"
 # And a request to the Companion each time the app opens a space (the copy's root.tsx), which its log shows as
-# "GET /hm-e2e/openSpace/ID/<the top route>": the test can tell a tap that never reached the app from one that did and
-# opened nothing. Not a console.log: NSH's iOS runtime keeps those to itself (a run caught none on the app's stdout,
+# "GET /hm-e2e/openSpace/ID/<the app's Date.now(), ms>/<the top route>": the test can tell a tap that never reached
+# the app from one that did and opened nothing, and one that reached it late (the Companion logs a request once it is
+# done, and on CI a request to it took up to 3 s). Not a console.log: NSH's iOS runtime keeps those to itself (a run caught none on the app's stdout,
 # its stderr or the simulator's log).
 root="$tree/app/src/ui/root.tsx"
 [ "$(grep -c '^  const openSpace = (id: string) => {$' "$root")" = 1 ] ||
   { echo "FAIL: root.tsx has changed: no single openSpace for the log line" >&2; exit 1; }
 sed 's/^  const openSpace = (id: string) => {$/&\
-    fetch(new URL(hmPair).origin + "\/hm-e2e\/openSpace\/" + id + "\/" + encodeURIComponent(JSON.stringify(nav.routes().at(-1)))).catch(() => {})/' "$root" > "$root.new" && mv "$root.new" "$root"
+    fetch(new URL(hmPair).origin + "\/hm-e2e\/openSpace\/" + id + "\/" + Date.now() + "\/" + encodeURIComponent(JSON.stringify(nav.routes().at(-1)))).catch(() => {})/' "$root" > "$root.new" && mv "$root.new" "$root"
 echo "import { PAIR as hmPair } from '../../e2e/pair.ts'" >> "$root"
 page="$tree/app/src/ui/terminal-page.ts"
 [ "$(grep -c '<script>window.__terminal=' "$page")" = 1 ] ||

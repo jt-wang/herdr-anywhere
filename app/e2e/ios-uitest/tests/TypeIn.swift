@@ -10,7 +10,8 @@ final class TypeIn: XCTestCase {
     clock.dateFormat = "HH:mm:ss.SSS"
     // The time of day too, to line up with the script's and the Companion's lines.
     func note(_ s: String) {
-      lines.append(clock.string(from: Date()) + String(format: " +%.1f s ", Date().timeIntervalSince(start)) + s)
+      let since = String(format: "+%.1f s", Date().timeIntervalSince(start))
+      lines.append([clock.string(from: Date()), since, runnerLoad(), s].joined(separator: " "))
       try? (lines.joined(separator: "\n") + "\n").write(toFile: out, atomically: true, encoding: .utf8)
     }
     let app = XCUIApplication(bundleIdentifier: "io.jingtao.herdranywhere")

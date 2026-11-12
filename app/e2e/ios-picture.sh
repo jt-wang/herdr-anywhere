@@ -17,6 +17,7 @@ id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$a
 port=7691; while nc -z 127.0.0.1 "$port" 2>/dev/null; do port=$((port + 1)); done
 work=$(mktemp -d)
 : > "$work/started" # what e2e/ios-failure-logs.sh keeps is from after this
+"$app/e2e/ios-failure-logs.sh" --sample-load "$work/load.txt" >/dev/null 2>&1 & # the machine's load, kept with a failure
 (cd "$app/../companion" && go build -o "$work/herdr-anywhere" ./cmd/herdr-anywhere)
 run=$(mktemp -d /tmp/hmXXXX)
 mkdir -p "$work/home" "$work/state" "$work/config" "$work/data"
@@ -58,7 +59,10 @@ xcrun simctl launch "$SIM_UDID" "$id" >/dev/null
 i=0; until grep -q "device .* connected (binary," "$work/serve.log"; do i=$((i + 1)); [ $i -gt 60 ] && { echo "FAIL: the app never connected"; exit 1; }; sleep 1; done
 cp -R "$app/e2e/ios-uitest" "$work/uitest"
 (cd "$work/uitest" && xcodegen generate --quiet)
-size="$work/size"; before=$(L "$hc" get "$term" --json | python3 -c 'import json,sys; t=json.load(sys.stdin); print(t["cols"], t["rows"])')
+size_now() { L "$hc" get "$term" --json | python3 -c 'import json,sys; t=json.load(sys.stdin); print(t["cols"], t["rows"])'; }
+. "$app/e2e/ios-size-wait.sh"
+sh "$app/e2e/ios-size-wait.sh" --self-test || exit 1
+size="$work/size"; before=$(size_now)
 # Each run: the XCUITest taps; meanwhile the terminal's size, once the phone has set it, goes to $size for it.
 # The time of the appearance switch just before, for the test to say how long after it the tap came.
 appearance() { xcrun simctl ui "$SIM_UDID" appearance "$1"; switched=$(python3 -c 'import time; print(time.time())'); }
@@ -72,11 +76,7 @@ picture() {
     -only-testing:UITests/Picture -destination "id=$SIM_UDID" -derivedDataPath "$work/uitest/derived" \
     -resultBundlePath "$work/uitest/result-$1.xcresult" > "$work/uitest/test-$1.log" 2>&1 &
   t=$!
-  [ -s "$size" ] || for _ in $(seq 1 120); do
-    now=$(L "$hc" get "$term" --json | python3 -c 'import json,sys; t=json.load(sys.stdin); print(t["cols"], t["rows"])')
-    [ "$now" != "$before" ] && { sleep 2; L "$hc" get "$term" --json | python3 -c 'import json,sys; t=json.load(sys.stdin); print(t["cols"], t["rows"])' > "$size"; break; }
-    kill -0 $t 2>/dev/null || break; sleep 1
-  done
+  [ -s "$size" ] || size_wait "$before" "$size" "$t"
   rc=0; wait $t || rc=$?
   sed 's/^/  /' "$work/picture-$1.txt" 2>/dev/null || true
   [ "$rc" = 0 ] && { echo "ok: $1"; return; }
