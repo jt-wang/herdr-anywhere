@@ -4,7 +4,7 @@
 import { cleanup, effect, Image, Keyboard, Scroll, signal, Text, untracked, Video, View } from 'nsh'
 import { Sheet, TextView } from 'nsh/base'
 import type { Store } from '../store.ts'
-import { changeRows, clockText, pathsIn, sizeText, foldLine, refreshEvery, shows, unknownText, type ChatAnswer, type ChatSetup, type ChatChange, type ChatDetail, type ChatFile, type ChatPicture, type ChatRun, type ChatStep, type ChatTurn } from '../model/chat.ts'
+import { changeRows, clockText, pathsIn, sizeText, foldLine, outsideFold, refreshEvery, shows, unknownText, type ChatAnswer, type ChatSetup, type ChatChange, type ChatDetail, type ChatFile, type ChatPicture, type ChatRun, type ChatStep, type ChatTurn } from '../model/chat.ts'
 import { Glyph, IconButton } from './kit.tsx'
 import { t } from '../strings/index.ts'
 import { openFile, videoFrame, type VideoFrame } from '../page.ts'
@@ -214,6 +214,7 @@ function TurnView(props: { store: Store; address: string; turn: ChatTurn }) {
           </If>
         </View>
       </If>
+      <Each of={outsideFold(turn(), expanded())} key={(x) => x.id}>{(x) => <StepView store={props.store} address={props.address} step={x()} />}</Each>
       <If when={show().fold}>
         <View role="button" testID={`fold-${turn().id}`} onPress={() => expanded.set(!expanded())} class="flex-row items-center gap-1.5 py-1 active:opacity-70">
           <Glyph name={expanded() ? 'chevron-down' : 'chevron-right'} size={13} />
@@ -243,6 +244,13 @@ function TurnView(props: { store: Store; address: string; turn: ChatTurn }) {
 }
 
 function StepView(props: { store: Store; address: string; step: ChatStep }) {
+  // A message of yours the agent took while it worked: where it took it, as yours; nothing more to fetch.
+  if (props.step.kind === 'you') return (
+    <View testID={`you-${props.step.id}`} class="self-end max-w-[85%] items-end gap-1 py-1.5">
+      <View class="px-3 py-2 rounded-[12px] bg-secondary"><Text selectable class="text-[14px] text-foreground">{props.step.title}</Text></View>
+      <Text class="text-[11.5px] text-muted-foreground">{t('chatTakenMidTurn')}</Text>
+    </View>
+  )
   const detail = signal<ChatDetail | null | undefined>(undefined)
   const open = signal(false)
   const toggle = async () => {
@@ -320,7 +328,7 @@ function FileCards(props: { store: Store; address: string; text: string }) {
     Keyboard.dismiss()
     if (f.kind === 'text') open.set(f)
     else if (f.kind === 'video') playing.set(f)
-    else if (f.kind === 'image') props.store.picture.set({ path: f.path, terminal: props.address })
+    else if (f.kind === 'image') props.store.picture.set({ path: f.path, terminal: props.address, full: true })
     else void props.store.chat!.fileLink(props.address, f.path).then((url) => (url ? openFile({ url, name: f.name, kind: f.kind }) : 'failed' as const), () => 'failed' as const).then((r) => {
       if (r === 'no_app') props.store.toast({ title: t('fileNoApp'), level: 'error' })
       else if (r === 'failed') props.store.toast({ title: t('fileCantGet'), level: 'error' })
@@ -486,7 +494,8 @@ function ChangeView(props: { id: string; change: ChatChange }) {
 }
 
 /** One image of the record under the path it came from (when the record says; selectable, to copy), fetched as a
- *  data: URL when it shows; a box of its own size, at most 220 × 220. `end`: in your bubble's column, on the right. */
+ *  data: URL when it shows; a box of its own size, at most 220 × 220, a tap opening it on the whole screen to zoom
+ *  (picture-sheet.tsx). `end`: in your bubble's column, on the right. */
 function ChatImage(props: { store: Store; address: string; picture: ChatPicture; end?: boolean }) {
   const id = props.picture.id
   const url = signal<string | null | undefined>(undefined)
@@ -499,8 +508,11 @@ function ChatImage(props: { store: Store; address: string; picture: ChatPicture;
         <Text selectable testID={`image-source-${id}`} class={`text-[11.5px] font-mono text-muted-foreground ${props.end ? 'text-right' : ''}`}>{s()}</Text>
       )}</If>
       <If when={url()} else={<View class="rounded-[8px] bg-secondary border border-border" style={{ width: 64, height: 64 }} />}>{(u) => (
-        <Image testID={`image-${id}`} src={u()} resizeMode="contain" onLoad={(e) => fit(e.width, e.height)}
-          class="rounded-[8px] border border-border" style={size()} />
+        <View role="button" testID={`image-${id}`} accessibilityLabel={t('pictureOpen')} class="active:opacity-70"
+          onPress={() => { Keyboard.dismiss(); props.store.picture.set({ url: u(), ...(props.picture.source ? { path: props.picture.source } : {}) }) }}>
+          <Image src={u()} resizeMode="contain" onLoad={(e) => fit(e.width, e.height)}
+            class="rounded-[8px] border border-border" style={size()} />
+        </View>
       )}</If>
     </View>
   )
