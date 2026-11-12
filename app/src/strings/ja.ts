@@ -107,7 +107,7 @@ export const ja: Table = {
   programExited: 'プログラムが終了しました。', terminalClosed: 'ターミナルが閉じられました。',
   terminalLost: 'パソコンが再起動し、このターミナルはなくなりました。', terminalFinished: 'このターミナルは終了しました。',
   terminalEnded: 'ターミナルが終了しました（{reason}）。',
-  terminalPageFailed: 'ターミナルを読み込めませんでした。', tryAgain: '再試行',
+  terminalLoading: 'ターミナルはまだ読み込み中です…', tryAgain: '再試行',
   nameNeedsYou: '{name} が対応待ちです', nameFinished: '{name} が完了しました',
   titleNeedsYou: '「{name}」が対応待ちです', titleFinished: '「{name}」が完了しました',
   layoutChanged: '別の場所でレイアウトが変更されました', layoutChangedBody: 'もう一方の画面のレイアウトを表示しています。',

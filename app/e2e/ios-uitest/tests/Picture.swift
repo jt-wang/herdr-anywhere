@@ -46,7 +46,7 @@ final class Picture: XCTestCase {
       return app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: f.minX + (c + 0.5) * f.width / cols, dy: f.minY + 12 + (r + 0.5) * (f.height - 24) / rows))
     }
     shot("terminal")
-    cell(0, 12).tap()
+    if env["MISS_FIRST"] == "1" { app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.01)).tap() } else { cell(0, 12).tap() }
     let opened = el("picture-image").waitForExistence(timeout: 20)
     note("tap the path, picture shown: \(opened)")
     if !opened { sleep(1); touches("tap the path") }
