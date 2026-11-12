@@ -11,6 +11,8 @@ app=$(cd "$(dirname "$0")/.." && pwd)
 apk=$1
 shot=$2
 adb="${ANDROID_HOME:-$HOME/Library/Android/sdk}/platform-tools/adb"
+. "$(dirname "$0")/adb-note.sh"; adb_note "$adb"  # a failed adb call is written down and shown if the suite fails
+trap 'adb_exit $?' EXIT
 id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$app/nsh.json")
 readonly id
 
@@ -38,6 +40,12 @@ tap try-it
 tap space-sp2
 tap terminal-
 sleep 4
+# Trial only, not for merging: wait until Try it's card is up, so the screenshot lands while it is there.
+i=0
+until "$adb" shell "rm -f /sdcard/hm-up.xml; uiautomator dump /sdcard/hm-up.xml >/dev/null 2>&1; cat /sdcard/hm-up.xml" | grep -q 'resource-id="toast-'; do
+  i=$((i + 1)); [ "$i" -le 40 ] || { echo "FAIL: trial: no card in the view tree in 40 looks"; exit 1; }; sleep 0.5
+done
+echo "trial: a card is up after $i more looks"
 "$adb" exec-out screencap -p > "$shot"
 echo "saved $shot"
 # The terminal's part of the screen: below the header, above the composer (1080 x 2400 screen). Checked on saved
