@@ -111,13 +111,15 @@ function WaitingRow(props: { store: Store; a: AgentInfo; now: number; actions: H
         </View>
         <View class="flex-row items-center gap-1.5 mt-1.5">
           <ChoiceRow testID={`needs-${addr}-choices`}>
-            <If when={menu()}>{(m) => shownOrder(m()).map((o) => (
-              <View role="button" testID={`needs-${addr}-choice-${o.n}`} accessibilityLabel={`${o.n}. ${o.full}`} disabled={sending()} onPress={() => void pick(o)}
-                onLongPress={() => s.toast({ title: `${o.n}. ${o.full}`, level: 'info' })}
-                class={`h-8 max-w-[200px] px-3 justify-center rounded-[7px] ${o.selected ? 'bg-primary active:opacity-80' : 'bg-secondary border border-border active:bg-accent'} ${sending() ? 'opacity-50' : ''}`}>
-                <Text class={`text-[13px] font-medium ${o.selected ? 'text-primary-foreground' : 'text-foreground'}`} numberOfLines={1}>{`${o.n}. ${o.label}`}</Text>
-              </View>
-            ))}</If>
+            <If when={menu()}>{(m) => (
+              <Each of={shownOrder(m())} key={(o) => `${o.n}. ${o.full}`}>{(o) => (
+                <View role="button" testID={`needs-${addr}-choice-${o().n}`} accessibilityLabel={`${o().n}. ${o().full}`} disabled={sending()} onPress={() => void pick(o())}
+                  onLongPress={() => s.toast({ title: `${o().n}. ${o().full}`, level: 'info' })}
+                  class={`h-8 max-w-[200px] px-3 justify-center rounded-[7px] ${o().selected ? 'bg-primary active:opacity-80' : 'bg-secondary border border-border active:bg-accent'} ${sending() ? 'opacity-50' : ''}`}>
+                  <Text class={`text-[13px] font-medium ${o().selected ? 'text-primary-foreground' : 'text-foreground'}`} numberOfLines={1}>{`${o().n}. ${o().label}`}</Text>
+                </View>
+              )}</Each>
+            )}</If>
           </ChoiceRow>
           <View role="button" testID={`needs-${addr}-open`} accessibilityLabel={t('open')} onPress={open}
             class="h-8 px-3 justify-center rounded-[7px] bg-secondary border border-border active:bg-accent">

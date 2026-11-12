@@ -4,8 +4,10 @@
 import { cleanup, effect, Image, Keyboard, Scroll, signal, Text, untracked, Video, View } from 'nsh'
 import { Sheet, TextView } from 'nsh/base'
 import type { Store } from '../store.ts'
-import { changeRows, clockText, pathsIn, sizeText, foldLine, refreshEvery, shows, unknownText, type ChatAnswer, type ChatSetup, type ChatChange, type ChatDetail, type ChatFile, type ChatPicture, type ChatRun, type ChatStep, type ChatTurn } from '../model/chat.ts'
-import { Glyph, IconButton } from './kit.tsx'
+import { changeRows, clockText, pathsIn, sizeText, foldLine, outsideFold, refreshEvery, shows, unknownText, type ChatAnswer, type ChatSetup, type ChatChange, type ChatDetail, type ChatFile, type ChatPicture, type ChatRun, type ChatStep, type ChatTurn } from '../model/chat.ts'
+import { Glyph, IconButton, useRev } from './kit.tsx'
+import { AskCard } from './ask-card.tsx'
+import { askCard } from '../model/ask.ts'
 import { t } from '../strings/index.ts'
 import { openFile, videoFrame, type VideoFrame } from '../page.ts'
 
@@ -62,6 +64,13 @@ export function ChatView(props: { store: Store; address: string; status: () => s
   })
   cleanup(() => clearTimeout(behindTimer))
   const unknown = () => { const a = answer(); return a && (!a.chat ? 'gone' : behind() ? undefined : a.unknown) }
+  // The decision card: the agent is blocked and its screen's menu was read; the last turn's question, if it is open.
+  const rev = useRev(s)
+  const card = () => {
+    rev()
+    const last = turns()?.at(-1)
+    return askCard(s.term(props.address)?.status, s.menuFor(props.address), last?.end === 'open' ? last.ask : undefined)
+  }
   return (
     <View testID="chat-view" class="flex-1 bg-background">
       <If when={offline()}>
@@ -82,7 +91,8 @@ export function ChatView(props: { store: Store; address: string; status: () => s
           scrollEventThrottle={64} onScroll={(e) => { pinned = (e?.offset?.y ?? 0) + viewport() >= content - 40 }}>
           <View class="gap-4" onLayout={(b) => toEnd(b.size.height)}>
             <If when={turns()?.length} else={<If when={answer()}><Text class="text-[13px] text-muted-foreground text-center py-6">{t('chatEmpty')}</Text></If>}>
-              <Each of={turns() ?? []} key={(x) => x.id}>{(x) => <TurnView store={s} address={props.address} turn={x()} />}</Each>
+              <Each of={turns() ?? []} key={(x) => x.id}>{(x) => <TurnView store={s} address={props.address} turn={x()} carded={!!card()} back={props.back} />}</Each>
+              <If when={card()}>{(c) => <AskCard store={s} address={props.address} agent={s.program(props.address).name} card={c} back={props.back} />}</If>
               <If when={behind()}><Text testID="chat-updating" class="text-[12.5px] text-muted-foreground">{t('chatUpdating')}</Text></If>
             </If>
           </View>
@@ -193,7 +203,7 @@ function SetupPage(props: { store: Store; address: string; agent: string; needed
   )
 }
 
-function TurnView(props: { store: Store; address: string; turn: ChatTurn }) {
+function TurnView(props: { store: Store; address: string; turn: ChatTurn; carded: boolean; back: () => void }) {
   const expanded = signal(false)
   const turn = () => props.turn
   const show = () => shows(turn(), expanded())
@@ -214,6 +224,7 @@ function TurnView(props: { store: Store; address: string; turn: ChatTurn }) {
           </If>
         </View>
       </If>
+      <Each of={outsideFold(turn(), expanded())} key={(x) => x.id}>{(x) => <StepView store={props.store} address={props.address} step={x()} />}</Each>
       <If when={show().fold}>
         <View role="button" testID={`fold-${turn().id}`} onPress={() => expanded.set(!expanded())} class="flex-row items-center gap-1.5 py-1 active:opacity-70">
           <Glyph name={expanded() ? 'chevron-down' : 'chevron-right'} size={13} />
@@ -229,20 +240,33 @@ function TurnView(props: { store: Store; address: string; turn: ChatTurn }) {
         <TextView testID={`reply-${turn().id}`} markdown={turn().reply} selectable links="open" class="text-[14px] text-foreground" />
         <FileCards store={props.store} address={props.address} text={turn().reply} />
       </If>
-      <If when={turn().ask}>{(a) => (
+      {/* A question the phone can't answer from here (its screen's menu isn't read): its words, numbered, and the terminal. */}
+      <If when={turn().end === 'open' && !props.carded ? turn().ask : undefined}>{(a) => (
         <View testID={`ask-${turn().id}`} class="gap-1.5 px-3 py-2.5 rounded-[10px] border border-chart-2/40 bg-chart-2/10">
-          <Text class="text-[14px] font-medium text-foreground">{a().text}</Text>
-          <Each of={a().options}>{(o) => <Text class="text-[13.5px] text-foreground">{o()}</Text>}</Each>
-          <Text class="text-[12px] text-muted-foreground">{t('chatAnswerInTerminal')}</Text>
+          <Text class="text-[14px] font-medium text-foreground">{a().questions?.[0]?.text ?? a().text}</Text>
+          <Each of={a().questions?.[0]?.options.map((o) => o.label) ?? a().options} key={(o) => o}>{(o, i) => <Text class="text-[13.5px] text-foreground">{`${i() + 1}. ${o()}`}</Text>}</Each>
+          <View class="flex-row items-center gap-3 pt-0.5">
+            <Text class="flex-1 text-[12px] text-muted-foreground">{t('chatAnswerInTerminal')}</Text>
+            <View role="button" testID={`ask-terminal-${turn().id}`} onPress={props.back} class="h-8 px-3 justify-center rounded-[8px] bg-secondary border border-border active:bg-accent">
+              <Text class="text-[12.5px] text-foreground">{t('showTerminal')}</Text>
+            </View>
+          </View>
         </View>
       )}</If>
-      <If when={turn().end === 'open' && !turn().ask}><Text class="text-[12.5px] text-muted-foreground">{t('chatWorking')}</Text></If>
+      <If when={turn().end === 'open' && !turn().ask && !props.carded}><Text class="text-[12.5px] text-muted-foreground">{t('chatWorking')}</Text></If>
       <If when={turn().end === 'stopped'}><Text class="text-[12.5px] text-muted-foreground">{t('chatStopped')}</Text></If>
     </View>
   )
 }
 
 function StepView(props: { store: Store; address: string; step: ChatStep }) {
+  // A message of yours the agent took while it worked: where it took it, as yours; nothing more to fetch.
+  if (props.step.kind === 'you') return (
+    <View testID={`you-${props.step.id}`} class="self-end max-w-[85%] items-end gap-1 py-1.5">
+      <View class="px-3 py-2 rounded-[12px] bg-secondary"><Text selectable class="text-[14px] text-foreground">{props.step.title}</Text></View>
+      <Text class="text-[11.5px] text-muted-foreground">{t('chatTakenMidTurn')}</Text>
+    </View>
+  )
   const detail = signal<ChatDetail | null | undefined>(undefined)
   const open = signal(false)
   const toggle = async () => {

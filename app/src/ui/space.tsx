@@ -176,7 +176,7 @@ function PhoneSpace(props: { store: Store; spaceId: string; tab: Tab; actions: S
           )}</Each>
           <Each of={session() ? [session()!] : []}>{(t) => {
             const p = () => { rev(); return s.program(t().address) }
-            return <PaneBar store={s} session={t()} program={p().name} agent={(rev(), s.isAgent(t().address))} typeIn={props.actions.typeIn} keep={props.actions.keepTypeIn} />
+            return <PaneBar store={s} session={t()} program={p().name} agent={(rev(), s.isAgent(t().address))} typeIn={props.actions.typeIn} keep={props.actions.keepTypeIn} chat={() => chat.on() && chat.avail()} />
           }}</Each>
         </View>
       }>

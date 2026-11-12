@@ -1,0 +1,18 @@
+{
+  "fixtures": ["ask.jsonl"],
+  "start": "q1",
+  "states": {
+    "q1": {"screen": "q1.txt", "state": "blocked", "kind": "question", "keys": {"1": "q2"}},
+    "q2": {"screen": "q2.txt", "state": "blocked", "kind": "question", "keys": {"2": "q3"}},
+    "q3": {"screen": "q3.txt", "state": "blocked", "kind": "question", "keys": {"1": "review"}},
+    "review": {"screen": "review.txt", "state": "blocked", "kind": "question", "keys": {"1": "next-q1"}},
+    "next-q1": {"screen": "next-q1.txt", "state": "blocked", "kind": "question", "keys": {"3": "next-q2"},
+      "msg": "answer: Which box should the fake lamp ship in? (Paper box · Wood box · Tin box)"},
+    "next-q2": {"screen": "next-q2.txt", "state": "blocked", "kind": "question", "keys": {"2": "next-review"},
+      "msg": "answer: Which box should the fake lamp ship in? (Paper box · Wood box · Tin box)"},
+    "next-review": {"screen": "next-review.txt", "state": "blocked", "kind": "question", "keys": {"1": "done"},
+      "msg": "answer: Which box should the fake lamp ship in? (Paper box · Wood box · Tin box)"},
+    "done": {"screen": "done.txt", "state": "done"}
+  },
+  "msg": "answer: Which shelf should the fake lamp go on? (Top shelf · Bottom shelf)"
+}

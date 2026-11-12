@@ -1,0 +1,18 @@
+❯ QTHREE please
+
+──────────────────────────────────────────────
+←  ☒ Shelf  ☒ Color  ☒ Count  ✔ Submit  →
+
+Review your answers
+
+ ● Which shelf should the fake lamp go on?
+   → Top shelf
+ ● Which color should the fake lamp be?
+   → White
+ ● How many fake lamps should we stock?
+   → Ten
+
+Ready to submit your answers?
+
+❯ 1. Submit answers
+  2. Cancel

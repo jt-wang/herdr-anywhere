@@ -4,6 +4,9 @@ import { t as tr } from './strings/index.ts'
 import { FakeCore, settle } from './testing/fakecore.ts'
 import { panes, terminalOf } from './model/layout.ts'
 import { spaceActiveTab } from './model/model.ts'
+import * as CX from './testing/screens/codex-0.167.1.ts'
+import * as CL from './testing/screens/claude-2.1.325.ts'
+import * as OC from './testing/screens/opencode-2.2.0.ts'
 
 /** Waits for a condition the store reaches on its own timers, up to 5 s: a fixed wait failed while the computer was busy. */
 async function until(ok: () => boolean) {
@@ -1071,4 +1074,155 @@ test('an agent that rang costs nothing on later passes until what it says change
   await settle()
   expect(told.length).toBe(1)
   expect(told[0].startsWith('ran the tests and fixed one')).toBe(true)
+})
+
+// Codex 0.167.1 ends a plan with "Implement this plan?" and reports done meanwhile, as after any turn
+// (its status and events are the same after both, measured): only its screen tells them apart. The phone reads it when Codex says done.
+test("Codex's 'Implement this plan?' waits on you though Codex reports done: it rings as needing you, once", async () => {
+  const { core, store } = setup()
+  const rung: string[] = []
+  store.onAlert = (k) => rung.push(k)
+  await store.connect()
+  const r = await store.newSpace({ argv: ['codex'] })
+  await settle()
+  core.setStatus(r.terminal, 'working', 'codex')
+  await settle()
+  core.screens.set(r.terminal, CX.PLAN)
+  core.setStatus(r.terminal, 'done', 'codex')
+  await until(() => rung.length > 0)
+  await settle(10)
+  expect(rung).toEqual(['blocked'])
+  expect(store.statusOf(r.terminal)).toBe('blocked')
+  expect([store.term(r.terminal)?.status?.state, store.term(r.terminal)?.status?.kind, store.term(r.terminal)?.status?.msg]).toEqual(['blocked', 'permission', 'approve plan'])
+  expect(store.menuFor(r.terminal)?.question).toBe('Implement this plan?')
+  // 3 closes it: Codex reports idle, and nothing waits any more.
+  core.screens.set(r.terminal, CX.DONE)
+  core.setStatus(r.terminal, 'idle', 'codex')
+  await settle(10)
+  expect(store.term(r.terminal)?.status?.state).toBe('idle')
+  expect(store.menuFor(r.terminal)).toBe(undefined)
+  expect(rung).toEqual(['blocked'])
+})
+
+test('an ordinary done from Codex still rings as done', async () => {
+  const { core, store } = setup()
+  const rung: string[] = []
+  store.onAlert = (k) => rung.push(k)
+  await store.connect()
+  const r = await store.newSpace({ argv: ['codex'] })
+  await settle()
+  core.setStatus(r.terminal, 'working', 'codex')
+  await settle()
+  core.screens.set(r.terminal, CX.DONE)
+  core.setStatus(r.terminal, 'done', 'codex')
+  await until(() => rung.length > 0)
+  expect(rung).toEqual(['done'])
+  expect(store.term(r.terminal)?.status?.state).toBe('done')
+})
+
+// An agent that asks one set of choices after another stays blocked, its report the same (Claude Code through a
+// call's questions): only its screen says the next one is up. Claude Code 2.1.325's screens, read off the real program.
+const attachedOn = async (screen: string) => {
+  const s = setup()
+  await s.store.connect()
+  const r = await s.store.newSpace({ argv: ['claude'] })
+  await settle()
+  await s.store.attach(r.terminal, { cols: 46, rows: 40 }, { data: () => {}, close: () => {} })
+  s.core.screens.set(r.terminal, screen)
+  s.core.setStatus(r.terminal, 'blocked', 'claude-code', { kind: 'question', msg: 'answer: Which plan should the fake shop use?' })
+  await settle()
+  return { ...s, addr: r.terminal, reads: () => s.core.calls.filter((c) => c.method === 'terminal.read').length }
+}
+const draw = (core: FakeCore, addr: string, screen: string) => { core.screens.set(addr, screen); core.output(addr, `\x1b[H\x1b[2J${screen}`) }
+const runTimers = async (timers: (() => void)[]) => { for (let i = 0; i < 10 && timers.length; i++) { for (const f of timers.splice(0)) f(); await settle() } }
+
+test("a blocked agent's next question, drawn on its screen while its report stays the same: the menu is read again once the screen is still", async () => {
+  const { core, store, timers, advance, addr, reads } = await attachedOn(CL.Q1)
+  expect(store.menuFor(addr)?.question).toBe('Which plan should the fake shop use?')
+  expect(reads()).toBe(1)
+  draw(core, addr, CL.MULTI)
+  await settle()
+  advance(250)
+  await runTimers(timers)
+  expect(store.menuFor(addr)?.question).toBe('Which pages should get the new banner?')
+  expect(store.menuFor(addr)?.options.slice(0, 3).map((o) => o.label)).toEqual(['Home', 'Cart', 'Help'])
+  expect(reads()).toBe(2)
+})
+
+test('a blocked agent whose screen stays still is not read again: no bytes, no reads', async () => {
+  const { store, timers, advance, addr, reads } = await attachedOn(CL.Q1)
+  for (let i = 0; i < 5; i++) { advance(1000); await runTimers(timers) }
+  expect(reads()).toBe(1)
+  expect(store.menuFor(addr)?.question).toBe('Which plan should the fake shop use?')
+})
+
+test('a screen that keeps drawing is read once it is still, and at most once a second while it goes on', async () => {
+  const { core, timers, advance, addr, reads } = await attachedOn(CL.Q1)
+  // 20 bytes 100 ms apart: still for 200 ms never comes, so the second-long cap reads it twice in those 2 s.
+  for (let i = 0; i < 20; i++) { core.output(addr, '.'); await settle(); advance(100); for (const f of timers.splice(0)) f(); await settle() }
+  advance(250); await runTimers(timers)
+  expect(reads()).toBeLessThanOrEqual(4)
+  expect(reads()).toBeGreaterThan(1)
+})
+
+test('an agent at work draws all the time: its bytes read nothing; once it waits on a question, they do', async () => {
+  const { core, store, timers, advance, addr, reads } = await attachedOn(CL.Q1)
+  core.setStatus(addr, 'working', 'claude-code')
+  await settle()
+  expect(store.menuFor(addr)).toBe(undefined)
+  const before = reads()
+  for (let i = 0; i < 30; i++) { core.output(addr, `line ${i}\r\n`); await settle(); advance(100); await runTimers(timers) }
+  advance(1000); await runTimers(timers)
+  expect(reads()).toBe(before)
+  core.screens.set(addr, CL.THREE_Q1)
+  core.setStatus(addr, 'blocked', 'claude-code', { kind: 'question', msg: 'answer: Which shelf should the fake lamp go on?' })
+  await settle()
+  expect(store.menuFor(addr)?.question).toBe('Which shelf should the fake lamp go on?')
+  draw(core, addr, CL.THREE_Q2)
+  await settle(); advance(250); await runTimers(timers)
+  expect(store.menuFor(addr)?.question).toBe('Which color should the fake lamp be?')
+})
+
+test("Codex waiting on a question blinks its title once a second: titles alone read nothing", async () => {
+  const s = setup()
+  await s.store.connect()
+  const r = await s.store.newSpace({ argv: ['codex'] })
+  await settle()
+  await s.store.attach(r.terminal, { cols: 46, rows: 40 }, { data: () => {}, close: () => {} })
+  s.core.screens.set(r.terminal, CX.ASK1)
+  s.core.setStatus(r.terminal, 'blocked', 'codex', { kind: 'question' })
+  await settle()
+  const reads = () => s.core.calls.filter((c) => c.method === 'terminal.read').length
+  expect(reads()).toBe(1)
+  // The bytes Codex 0.167.1 wrote while it waited, a folder name made up.
+  for (let i = 0; i < 10; i++) {
+    s.core.output(r.terminal, `\x1b]0;[ ${i % 2 ? '.' : '!'} ] Action Required | demo-shop\x07`)
+    await settle(); s.advance(1000); await runTimers(s.timers)
+  }
+  expect(reads()).toBe(1)
+})
+
+test("Codex's and OpenCode's next question, drawn while each stays blocked: the menu follows", async () => {
+  for (const [argv, app, first, next, q] of [['codex', 'codex', CX.ASK1, CX.ASK2, 'How big should it be?'], ['opencode', 'opencode', OC.TWO_Q1, OC.TWO_Q2, 'How big should it be?']] as const) {
+    const s = setup()
+    await s.store.connect()
+    const r = await s.store.newSpace({ argv: [argv] })
+    await settle()
+    await s.store.attach(r.terminal, { cols: 46, rows: 40 }, { data: () => {}, close: () => {} })
+    s.core.screens.set(r.terminal, first)
+    s.core.setStatus(r.terminal, 'blocked', app, { kind: 'question' })
+    await settle()
+    expect(s.store.menuFor(r.terminal)?.question).toBe('Which color should the demo button be?')
+    draw(s.core, r.terminal, next)
+    await settle(); s.advance(250); await runTimers(s.timers)
+    expect([app, s.store.menuFor(r.terminal)?.question]).toEqual([app, q])
+  }
+})
+
+test('the cursor moved, the question the same: the menu is read again, the same options, the other one highlighted', async () => {
+  const { core, store, timers, advance, addr } = await attachedOn(CL.THREE_Q1)
+  expect(store.menuFor(addr)?.options.map((o) => o.selected)).toEqual([true, false, false, false])
+  draw(core, addr, CL.THREE_Q1_DOWN)
+  await settle(); advance(250); await runTimers(timers)
+  expect(store.menuFor(addr)?.options.map((o) => [o.n, o.label, o.selected])).toEqual([[1, 'Top shelf', false], [2, 'Bottom shelf', true], [3, 'Type something.', false], [4, 'Chat about this', false]])
 })

@@ -24,7 +24,7 @@ test('the hint goes as soon as Codex reports', async () => {
   const app = await pane({ argv: 'codex' })
   await app.clock.runFor(5500)
   await app.waitFor(`text:${HINT}`)
-  app.host.send('fake.status', { address: 't1', state: 'idle' })
+  await app.host.send('fake.status', { address: 't1', state: 'idle' })
   await app.waitUntil(() => !app.texts().includes(HINT))
 })
 
