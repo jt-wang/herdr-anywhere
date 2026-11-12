@@ -46,11 +46,13 @@ on:
       # The iOS pictures suite's self-test (e2e/ios-picture.sh): the dark run's first tap lands beside the path
       # (miss-first) or is never made (no-tap-first), so the suite must fail with its record of that tap; no-tap-first
       # also shows the app's UIKit log with no touch for it and touches for the second tap (e2e/ios-touch-log.sh).
+      # loop is no self-test: the pictures suite alone, with no Tailcat suite before it, and after its light run 10 more,
+      # dark and light by turns, each counting whether its first tap on the path opened the picture (HM_PICTURE_LOOP).
       # Meant with ios_b_repeat; a push never sets it.
       ios_picture_selftest:
-        description: "iOS pictures suite self-test: none, miss-first or no-tap-first (must fail, with its record)"
+        description: "iOS pictures suite: none, miss-first or no-tap-first (self-tests: must fail, with their record), or loop (10 more runs, counted)"
         type: choice
-        options: ["none", "miss-first", "no-tap-first"]
+        options: ["none", "miss-first", "no-tap-first", "loop"]
         default: "none"
       # The tap that opens a space from home, in the keyboard and pictures suites (OpenSpace.swift): miss-first makes
       # the first one land beside the space, so both must fail with their record of it and a second tap. A push never
@@ -461,6 +463,7 @@ jobs:
           HM_SCROLL_SLOW_TERM: ${{ inputs.ios_scroll_selftest == 'slow-terminal' && '1' || '' }}
           HM_PICTURE_MISS_FIRST: ${{ inputs.ios_picture_selftest == 'miss-first' && '1' || '' }}
           HM_PICTURE_NO_TAP_FIRST: ${{ inputs.ios_picture_selftest == 'no-tap-first' && '1' || '' }}
+          HM_PICTURE_LOOP: ${{ inputs.ios_picture_selftest == 'loop' && '10' || '' }}
           HM_MISS_SPACE: ${{ inputs.ios_open_space_selftest == 'miss-first' && '1' || '' }}
         run: |
           s=e2e/ci/suite.sh
@@ -476,7 +479,7 @@ jobs:
               $s ios-locale e2e/ios-locale.sh "$RUNNER_TEMP/plain/Herdr.app" "$OUT/locale" ;;
             b)
               mkdir -p "$OUT/picture"
-              $s ios-tailcat e2e/ios-tailcat.sh "$OUT/tailcat.png"
+              [ -n "$HM_PICTURE_LOOP" ] || $s ios-tailcat e2e/ios-tailcat.sh "$OUT/tailcat.png"
               $s ios-picture e2e/ios-picture.sh "$OUT/picture" ;;
           esac
           $s --finish
