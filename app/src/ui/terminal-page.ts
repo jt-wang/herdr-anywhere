@@ -19,6 +19,7 @@
 // bottom, refit (a split changed this pane's height: its rows follow, which the keyboard's height never does), text, mark {line, label} (a rule above the buffer's line `line`: "New since you looked").
 import { FIT_JS, GRAPHEMES_JS, WEBGL_JS, XTERM_CSS, XTERM_JS } from '../vendor/xterm.ts'
 import { MONO_WOFF, NOTO_MONO_WOFF, SYMBOLS1_WOFF, SYMBOLS2_WOFF, SYMBOLS_WOFF } from '../vendor/fonts.ts'
+import { KITTY_MARKS, type KittyImage, type KittyImages } from '../model/kitty.ts'
 
 export type PageMessage = { t: 'ready' | 'size'; cols: number; rows: number } | { t: 'input'; data: string } | { t: 'copied'; text: string }
   | { t: 'selected'; text: string } | { t: 'swipe'; dir: 'next' | 'prev' } | { t: 'link'; url: string } | { t: 'image'; path: string; id: number } | { t: 'tap' } | { t: 'touched' } | { t: 'focused' }
@@ -30,6 +31,13 @@ export type BarKey = 'esc' | 'tab' | 'btab' | 'enter' | 'ctrlc' | 'up' | 'down' 
  *  on the API 35 emulator over DevTools). The page never scrolls itself: touch-action is none. iOS keeps
  *  it off, as before; whether moves reach the page there was not checked. */
 export const webViewScrollable = (os: string) => os === 'android'
+
+/** How far from the screen's left edge a finger on the terminal is left to iOS's swipe back, in points: on a phone,
+ *  where the terminal reaches the edge. While the page prevented every move, WKWebView never let the swipe begin over
+ *  the terminal: 0 of 48 slow swipes from the edge went back on the iOS 26.5 simulator, and 32 of 32 once the page
+ *  prevented none (e2e/ios-edge-back.sh). 0 elsewhere: Android's back gesture never reaches the page, and on a wide
+ *  screen the terminal starts right of the sidebar. */
+export const edgeBack = (os: string, phone: boolean) => (os === 'ios' && phone ? 24 : 0)
 
 /** The text sizes Settings offers. */
 /** The terminal's fonts, in the order a character is looked for. */
@@ -508,6 +516,7 @@ const BOOT = `(function () {
     }
     if (toAsk.length && !askTimer) askTimer = setTimeout(askPaths, 120);
     drawLines(lines);
+    drawKitty(top);
   }
   function askPaths() {
     askTimer = 0;
@@ -532,6 +541,67 @@ const BOOT = `(function () {
     layer.innerHTML = html;
   }
   function forgetPictures() { rowsSeen = {}; rowsCount = 0; drawn = ''; scanSoon(); }
+  // Kitty pictures (the app takes them out of the output, model/kitty.ts): id → { url, cols, rows, w, h }. A program
+  // places one with Unicode placeholders: cells of U+10EEEE whose colour is the picture's id and whose marks number the
+  // cell's row and column in it (a cell without them goes on from the one to its left). The picture fits the
+  // columns × rows it was placed in, its shape kept and centred, as Ghostty draws it; each row of placeholder cells
+  // shows its slice, on the cells' own background, so the marks never show. Cells whose picture the app no longer
+  // has show only that background.
+  var shown = {}, kittyLayer = null, kittyDrawn = '', MARK = {};
+  cfg.marks.forEach(function (c, i) { MARK[c] = i; });
+  function kittyPut(m) {
+    var bin; try { bin = atob(m.png); } catch (e) { return; }
+    var u = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+    var be = function (i) { return ((u[i] << 24) >>> 0) + (u[i + 1] << 16) + (u[i + 2] << 8) + u[i + 3]; };
+    kittyDrop([m.id]);
+    shown[m.id] = { url: URL.createObjectURL(new Blob([u], { type: 'image/png' })), cols: m.cols, rows: m.rows, w: be(16), h: be(20) };
+    kittyDrawn = ''; scanSoon();
+  }
+  function kittyDrop(ids) {
+    for (var id in shown) if (!ids || ids.indexOf(+id) >= 0) { URL.revokeObjectURL(shown[id].url); delete shown[id]; }
+    kittyDrawn = ''; scanSoon();
+  }
+  // The runs of placeholder cells on screen row y (buffer row by): [{ x, n, id, row, col }].
+  function kittyRuns(by) {
+    var l = term.buffer.active.getLine(by), out = [], run = null, c;
+    if (!l || l.translateToString(false).indexOf('\\udbfb\\udeee') < 0) return out;
+    for (var x = 0; x < term.cols; x++) {
+      c = l.getCell(x, c);
+      var s = c ? c.getChars() : '';
+      if (!c || s.codePointAt(0) !== 0x10eeee) { run = null; continue; }
+      var marks = Array.from(s).slice(1).map(function (ch) { return MARK[ch.codePointAt(0)]; });
+      var id = c.isFgRGB() || c.isFgPalette() ? c.getFgColor() : 0;
+      if (marks[2] !== undefined) id = (id + marks[2] * 16777216) >>> 0;
+      var row = marks[0], col = marks[1];
+      if (run && run.id === id && (row === undefined || row === run.row) && (col === undefined || col === run.col + run.n)) { run.n++; continue; }
+      run = { x: x, n: 1, id: id, row: row || 0, col: col || 0, bg: cellBg(c) };
+      out.push(run);
+    }
+    return out;
+  }
+  function drawKitty(top) {
+    var screen = term.element && term.element.querySelector('.xterm-screen'); if (!screen) return;
+    var cw = screen.clientWidth / term.cols, ch = screen.clientHeight / term.rows, runs = [];
+    for (var y = 0; y < term.rows; y++) kittyRuns(top + y).forEach(function (r) { r.y = y; runs.push(r); });
+    if (!runs.length && !kittyLayer) return;
+    var key = JSON.stringify(runs) + cw + ' ' + ch + Object.keys(shown).join(',');
+    if (key === kittyDrawn) return;
+    kittyDrawn = key;
+    if (!kittyLayer) { kittyLayer = document.createElement('div'); kittyLayer.className = 'kitty-pictures'; kittyLayer.style.cssText = 'position:absolute;left:0;top:0;right:0;bottom:0;pointer-events:none;z-index:4'; }
+    if (kittyLayer.parentNode !== screen) screen.appendChild(kittyLayer);
+    var html = '';
+    runs.forEach(function (r) {
+      var p = shown[r.id], pic = '';
+      if (p && p.w && p.h) {
+        var W = p.cols * cw, H = p.rows * ch, s = Math.min(W / p.w, H / p.h), dw = p.w * s, dh = p.h * s;
+        pic = 'background-image:url(' + p.url + ');background-repeat:no-repeat;background-size:' + dw + 'px ' + dh + 'px;background-position:'
+          + ((W - dw) / 2 - r.col * cw) + 'px ' + ((H - dh) / 2 - r.row * ch) + 'px;';
+      }
+      html += '<div style="position:absolute;left:' + r.x * cw + 'px;top:' + r.y * ch + 'px;width:' + r.n * cw + 'px;height:' + ch + 'px;background-color:' + r.bg + ';' + pic + '"></div>';
+    });
+    kittyLayer.innerHTML = html;
+  }
   // A link behind text (OSC 8): nothing in the buffer's public API says which cell has one, so note where each was
   // written, and what it was written over: text written there since without the link is no longer it (Claude Code
   // draws its next screen over a dialog's link). A link to a file that is an image is that picture's path, whole and
@@ -666,8 +736,12 @@ const BOOT = `(function () {
   // Rows of finger travel per step.
   function rowsPerStep() { return term.modes.mouseTrackingMode !== 'none' ? wheelRows() : 1; }
   // x, y: where the finger went down. It picks the panel, and a program can ignore a wheel elsewhere (OpenCode's prompt box).
+  // No further left than column 3: OpenCode 1.19.0 takes no wheel on its first two columns, where a finger at the
+  // screen's left edge lands (iOS's swipe back strip), measured through herdr-core (companion TestLiveOpenCodeWheelColumns).
   function scrollView(lines, x, y) {
     if (!ownScroll()) { term.scrollLines(-lines); if (term.buffer.active.viewportY > live()) term.scrollToLine(live()); return where(); }
+    var r = term.element.querySelector('.xterm-screen').getBoundingClientRect();
+    x = Math.max(x, r.left + (r.width / term.cols) * 2.5);
     for (var i = Math.abs(lines); i > 0; i--) term.element.dispatchEvent(new WheelEvent('wheel', { deltaY: lines > 0 ? -1 : 1, deltaMode: 1, clientX: x, clientY: y, bubbles: true, cancelable: true }));
   }
   // A click where the finger was, for a program that follows the mouse. touchend stops the mouse events a tap would
@@ -700,7 +774,7 @@ const BOOT = `(function () {
     gliding = requestAnimationFrame(step);
   }
   function touches() {
-    var t0 = null, selecting = null, press = 0, scrolled = 0, moved = false, dragging = false, trail = [], stopped = false, drag = null;
+    var t0 = null, selecting = null, press = 0, scrolled = 0, moved = false, dragging = false, trail = [], stopped = false, drag = null, edge = false;
     // Steps for the finger's travel so far. Travel short of a step is kept for the next move, so a finger that goes
     // back cancels it. While the page looks how far a report goes, the travel waits, and the answer counts.
     function keepUp() {
@@ -725,12 +799,15 @@ const BOOT = `(function () {
       stopped = stopGlide();
       if (e.touches.length !== 1) { t0 = null; selecting = null; return; }
       var p = e.touches[0];
+      // A finger that comes down at the screen's left edge may be the system's swipe back (iOS): its moves keep their
+      // default, so the swipe can begin, and it still scrolls here when it goes up or down.
+      edge = p.clientX < cfg.edge;
       t0 = { x: p.clientX, y: p.clientY, at: e.timeStamp }; moved = false; scrolled = 0; selecting = null; dragging = false; trail = []; drag = null;
       press = setTimeout(function () { if (!t0 || moved) return; selecting = selectWord(cell(t0.x, t0.y)); }, 450);
     }, { passive: true });
     box.addEventListener('contextmenu', function (e) { e.preventDefault(); });
     box.addEventListener('touchmove', function (e) {
-      e.preventDefault();
+      if (!edge) e.preventDefault();
       if (!t0 || e.touches.length !== 1) return;
       var p = e.touches[0], dx = p.clientX - t0.x, dy = p.clientY - t0.y;
       if (Math.abs(dx) > 8 || Math.abs(dy) > 8) { moved = true; clearTimeout(press); }
@@ -744,6 +821,8 @@ const BOOT = `(function () {
         while (trail.length > 2 && e.timeStamp - trail[0].at > 100) trail.shift();
       }
     }, { passive: false });
+    // The system took the finger (the swipe back began): nothing of it is a tap, a hold or a drag here.
+    box.addEventListener('touchcancel', function () { clearTimeout(press); t0 = null; selecting = null; drag = null; }, { passive: true });
     box.addEventListener('touchend', function (e) {
       clearTimeout(press);
       e.preventDefault();
@@ -900,7 +979,9 @@ const BOOT = `(function () {
     window.addEventListener('message', function (e) {
       if (typeof e.data !== 'string') return;
       var m; try { m = JSON.parse(e.data); } catch (_) { return; }
-      if (m.t === 'reset') { stopGlide(); term.reset(); kitty = []; span = null; linked = []; linking = null; forgetWheel(); pictures = {}; pictureCount = 0; asking = {}; toAsk = []; ended = {}; endedCount = 0; forgetPictures(); }
+      if (m.t === 'reset') { stopGlide(); term.reset(); kitty = []; span = null; linked = []; linking = null; forgetWheel(); pictures = {}; pictureCount = 0; asking = {}; toAsk = []; ended = {}; endedCount = 0; forgetPictures(); kittyDrop(); }
+      else if (m.t === 'kitty' && typeof m.png === 'string' && m.id > 0 && m.cols > 0 && m.rows > 0) kittyPut(m)
+      else if (m.t === 'kitty-drop') kittyDrop(Array.isArray(m.ids) ? m.ids : null)
       else if (m.t === 'image' && typeof m.id === 'number') tapAnswered(m.id, m.picture === true);
       else if (m.t === 'pictures' && m.paths && typeof m.paths === 'object') picturesAnswered(m.paths);
       else if (m.t === 'write') term.write(m.data);
@@ -933,10 +1014,10 @@ const BOOT = `(function () {
 })();`
 
 /** The whole page, scripts and fonts inline: it loads nothing from anywhere. */
-export function terminalPage(opts: { dark: boolean; fontSize: number; scrollback: number; phone?: boolean; raised?: number }): string {
+export function terminalPage(opts: { dark: boolean; fontSize: number; scrollback: number; phone?: boolean; raised?: number; edge?: number }): string {
   const themes = { dark: xtermTheme(true), light: xtermTheme(false) }
   const bg = themes[opts.dark ? 'dark' : 'light'].background
-  const cfg = JSON.stringify({ phone: !!opts.phone, raised: opts.raised ?? 0, dark: opts.dark, fontSize: opts.fontSize, scrollback: opts.scrollback, themes, fonts: TERMINAL_FONTS, ...LOOK })
+  const cfg = JSON.stringify({ phone: !!opts.phone, raised: opts.raised ?? 0, edge: opts.edge ?? 0, dark: opts.dark, fontSize: opts.fontSize, scrollback: opts.scrollback, themes, fonts: TERMINAL_FONTS, marks: KITTY_MARKS, ...LOOK })
   const fonts = `@font-face{font-family:'JetBrains Mono';src:url(data:font/woff;base64,${MONO_WOFF}) format('woff');font-weight:100 800}`
     + `@font-face{font-family:'Symbols Nerd Font';src:url(data:font/woff;base64,${SYMBOLS_WOFF}) format('woff')}`
     + `@font-face{font-family:'Noto Sans Symbols 2';src:url(data:font/woff;base64,${SYMBOLS2_WOFF}) format('woff')}`
@@ -969,27 +1050,45 @@ export function readPageMessage(data: string): PageMessage | undefined {
   return undefined
 }
 
+type Queued = { t: 'write'; data: string } | { t: 'reset' } | ({ t: 'kitty' } & KittyImage) | { t: 'kitty-drop'; ids?: number[] }
+
 /** The app's side of the page: output waits until the page is ready, decoded as one UTF-8 stream, and writes
- * between two flushes go as one message. */
+ * between two flushes go as one message. With the terminal's pictures (model/kitty.ts), the graphics commands are
+ * taken out of the output, each picture goes to the page on its own before the text that shows it, and all of them
+ * again after a reset or a page loaded again. */
 export class PageChannel {
   private open = false
-  private queue: ({ t: 'write'; data: string } | { t: 'reset' })[] = []
+  private queue: Queued[] = []
   private timer: number | undefined
   private dec = new TextDecoder()
-  constructor(private post: (message: string) => void, private later: (f: () => void, ms: number) => number = setTimeout) {}
-  ready() { this.open = true; this.schedule() }
+  private fresh = false
+  constructor(private post: (message: string) => void, private later: (f: () => void, ms: number) => number = setTimeout, private images?: KittyImages) {}
+  ready() {
+    if (this.fresh && this.images) this.queue.unshift(...this.pictures())
+    this.fresh = false
+    this.open = true
+    this.schedule()
+  }
   /** The page went away (reloaded or torn down): nothing more is sent until it says ready again. */
-  lost() { this.open = false; this.queue = []; this.timer = undefined }
+  lost() { this.open = false; this.queue = []; this.timer = undefined; this.fresh = true }
   write(bytes: Uint8Array) {
-    const data = this.dec.decode(bytes, { stream: true })
+    let data = this.dec.decode(bytes, { stream: true })
+    if (this.images && data) {
+      const r = this.images.take(data)
+      data = r.text
+      if (r.dropped) this.queue.push(r.dropped === 'all' ? { t: 'kitty-drop' } : { t: 'kitty-drop', ids: r.dropped })
+      for (const img of r.put) this.queue.push({ t: 'kitty', ...img })
+      if (r.dropped || r.put.length) this.schedule()
+    }
     if (!data) return
     const tail = this.queue.at(-1)
     if (tail?.t === 'write') tail.data += data
     else this.queue.push({ t: 'write', data })
     this.schedule()
   }
-  /** A new attachment repaints from scratch. */
-  reset() { this.dec = new TextDecoder(); this.queue = [{ t: 'reset' }]; this.schedule() }
+  /** A new attachment repaints from scratch, with the pictures kept. */
+  reset() { this.dec = new TextDecoder(); this.queue = [{ t: 'reset' }, ...this.pictures()]; this.schedule() }
+  private pictures(): Queued[] { return (this.images?.all() ?? []).map((img) => ({ t: 'kitty', ...img })) }
   send(message: { t: 'key'; name: BarKey; ctrl?: boolean; shift?: boolean } | { t: 'paste'; data: string } | { t: 'theme'; dark: boolean } | { t: 'fontSize'; size: number } | { t: 'focus' } | { t: 'copy' }
     | { t: 'bottom' } | { t: 'refit' } | { t: 'text' } | { t: 'mark'; line: number; label: string }
     | { t: 'image'; id: number; picture: boolean } | { t: 'pictures'; paths: Record<string, boolean> }) {

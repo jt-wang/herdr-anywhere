@@ -13,7 +13,8 @@ import { host, Keyboard, mount, Storage } from 'nsh'
 import { Linker, type Route, type Tunnel } from '../src/link.ts'
 import { PrefStore } from '../src/prefs.ts'
 import { Store } from '../src/store.ts'
-import { rowKeys } from '../src/ui/pane-bar.tsx'
+import { choiceRow, rowKeys } from '../src/ui/pane-bar.tsx'
+import { setDiag } from '../src/diag.ts'
 import { Root } from '../src/ui/root.tsx'
 import { CLAUDE_EDIT_MENU, FakeCore, type FakeTab } from '../src/testing/fakecore.ts'
 import { FakeFolders } from '../src/testing/fake-folders.ts'
@@ -24,7 +25,7 @@ import { SAMPLE_PICTURE } from './picture.ts'
 const putAway = Keyboard.dismiss
 let keyboardAway = 0
 let checkPosts = 0
-let said: { checks?: string; autoUpdate?: boolean } = {} // what the phone told the computer, as the computer would answer it
+let said: { checks?: string; autoUpdate?: boolean; latest?: string } = {} // what the phone told the computer, as the computer would answer it
 Keyboard.dismiss = () => { void Storage.setItem('keyboard-away', String(++keyboardAway)); putAway() }
 
 const scene = String((host.params as any)?.scene ?? 'busy')
@@ -170,18 +171,49 @@ const pressed: [string, string[]][] = []
 core.onKeys = (addr, keys) => {
   pressed.push([addr, keys])
   void Storage.setItem('fake-keys', JSON.stringify(pressed))
+  if (flowed(addr, { keys })) return
   const st = core.terms.get(addr)?.status
   if (st?.state === 'blocked') core.setStatus(addr, 'working', st.app)
 }
+// An agent that goes on through several screens, as Claude Code does through a call's questions: `app.host.send(
+// 'fake.flow', { address, steps: [{ keys: ['2'], screen }, { text: 'mine', screen }, { keys: ['1'], state: 'working' }] })`.
+// Keys or text that match the next step show its screen, the agent still blocked unless the step says another state.
+const flows = new Map<string, { keys?: string[]; text?: string; screen?: string; state?: string }[]>()
+host.on('fake.flow', (d: any) => { flows.set(d.address, [...d.steps]) })
+function flowed(addr: string, got: { keys?: string[]; text?: string }): boolean {
+  const step = flows.get(addr)?.[0]
+  if (!step || JSON.stringify(step.keys ?? null) !== JSON.stringify(got.keys ?? null) || (step.text ?? null) !== (got.text ?? null)) return false
+  flows.get(addr)!.shift()
+  if (step.screen !== undefined) redraw(addr, step.screen)
+  const st = core.terms.get(addr)?.status
+  if (step.state) core.setStatus(addr, step.state, st?.app)
+  return true
+}
+// The program draws a new screen, as a real one does when its menu moves on: viewers attached get it redrawn.
+function redraw(addr: string, screen: string) {
+  core.screens.set(addr, screen)
+  core.output(addr, `\x1b[H\x1b[2J${screen.replace(/\n/g, '\r\n')}`)
+}
+// Someone at the computer answers in the terminal: the screen changes, the agent still blocked and its report the
+// same: `app.host.send('fake.screen', { address, screen })`. The terminal's web page doesn't run in these tests, so
+// nothing attaches to take those bytes: the store hears of them as the terminal view's stream would tell it
+// (store.attach; store.test.ts has the stream itself). A flow's screens (the phone's own keys) don't: where no
+// terminal is attached, as on the home page, no bytes come.
+host.on('fake.screen', (d: any) => {
+  redraw(d.address, d.screen)
+  if (!core.viewers(d.address)) for (const st of stores) (st as any).drawn?.(d.address)
+})
 // A test moves an agent to another state: `app.host.send('fake.status', { address, state })`.
 host.on('fake.status', (d: any) => {
   if (typeof d.screen === 'string') core.screens.set(d.address, d.screen)
-  core.setStatus(d.address, d.state, core.terms.get(d.address)?.status?.app, { kind: d.kind, msg: d.msg })
+  core.setStatus(d.address, d.state, 'app' in d ? d.app : core.terms.get(d.address)?.status?.app, { kind: d.kind, msg: d.msg })
 })
 // The computer's chat answer for every terminal (GET /api/chat/…): `params.chat` (JSON), else none; a test changes it
 // with `app.host.send('fake.chat', answer)`, or makes the computer unreachable with `{ offline: true }`. Each ask is
 // recorded in `fake-chat-asks`; a step's details are "input of <id>" and "output of <id>" (with an image when the id
-// ends in "img"), unless the answer's `details` has the id; and "gone" is gone. Every image is a one-pixel PNG.
+// ends in "img"), unless the answer's `details` has the id; and "gone" is gone. Every image is a one-pixel PNG, or with
+// `params.chatPicture` the drawn sunset (fixtures/picture.ts), to zoom (e2e/android-zoom.sh, ios-zoom.sh with CHAT=1).
+// An answer with `slow` is replied that many ms after the ask.
 const PIXEL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
 let chatAnswer: any = params.chat ? JSON.parse(params.chat) : { chat: false }
 const chatAsks: string[] = []
@@ -192,9 +224,14 @@ async function chat(url: string) {
   chatAsks.push(path)
   void Storage.setItem('fake-chat-asks', JSON.stringify(chatAsks))
   if (chatAnswer.offline) throw new Error('unreachable')
-  if (/\/images\/[^/?]+$/.test(path)) return answer(200, { url: PIXEL })
+  if (/\/images\/[^/?]+$/.test(path)) return answer(200, { url: params.chatPicture ? SAMPLE_PICTURE : PIXEL })
   const step = /\/steps\/([^/?]+)$/.exec(path)
-  if (!step) return answer(200, chatAnswer)
+  if (!step) {
+    // An answer with `slow` (ms) is the one current when asked, replied that much later, as a busy computer does.
+    const now = chatAnswer
+    if (now.slow) await new Promise((r) => setTimeout(r, now.slow))
+    return answer(200, now)
+  }
   const id = decodeURIComponent(step[1])
   if (chatAnswer.details?.[id]) return answer(200, chatAnswer.details[id])
   return id === 'gone' ? answer(404, { error: 'no such step' })
@@ -202,7 +239,8 @@ async function chat(url: string) {
 }
 // The computer's chat setups (GET /api/chat-setups, PUT/DELETE /api/chat-setups/{agent}): `params.setups` (JSON), else
 // none. Install over a "changed" file without ?force=1 is refused (409); each ask is recorded in `fake-setup-asks` as
-// "METHOD path".
+// "METHOD path". As the Companion, which reads the file at each ask (internal/chat/pi/reader.go), a chat answer of
+// setup-needed for that agent turns setup-not-loaded once it is installed, and back once it is removed.
 let setups: any[] = params.setups ? JSON.parse(params.setups) : []
 const setupAsks: string[] = []
 function chatSetups(url: string, init: any) {
@@ -217,19 +255,29 @@ function chatSetups(url: string, init: any) {
   const force = /[?&]force=1/.test(path)
   if (setups[i].state === 'no-agent' || (setups[i].state === 'changed' && !force)) return answer(409, setups[i])
   setups[i] = { ...setups[i], state: method === 'PUT' ? 'installed' : 'absent' }
+  if (chatAnswer.setup === agent) {
+    if (method === 'PUT' && chatAnswer.unknown === 'setup-needed') chatAnswer = { ...chatAnswer, unknown: 'setup-not-loaded' }
+    if (method === 'DELETE' && chatAnswer.unknown === 'setup-not-loaded') chatAnswer = { ...chatAnswer, unknown: 'setup-needed' }
+  }
   return answer(200, setups[i])
 }
 // Another Herdr screen pins or unpins an agent: `app.host.send('fake.label', { address, labels: { 'herdr.pinned': '1' } })`.
 host.on('fake.label', (d: any) => core.label(d.address, d.labels))
 // A test drops the line: `app.host.send('fake.drop', {})`; the computer then stops answering.
 host.on('fake.drop', () => core.drop('network'))
+// What the app told setDiag (src/diag.ts), in order: `fake-diag`.
+const diags: string[] = []
+setDiag((what, fields) => { diags.push(`${what} ${Object.entries(fields).map(([k, v]) => `${k}=${v}`).join(' ')}`); void Storage.setItem('fake-diag', JSON.stringify(diags)) })
+// The computer's daily check finds a release: `app.host.send('fake.latest', { version: '9.0.0' })`; the phone hears
+// of it the next time it reads /api/info (`host.params.updateEveryMs` makes that soon).
+host.on('fake.latest', (d: any) => { said = { ...said, latest: d.version } })
 // herdr-core holds a method's answers until released, as it holds terminal.send for a half-typed line:
 // `app.host.send('fake.hold', { method })`, then `app.host.send('fake.release', {})`.
 host.on('fake.hold', (d: any) => core.holding.add(d.method))
 host.on('fake.release', () => { core.holding.clear(); core.release() })
 // Text the app sent (`terminal.send`), where a test reads it (`app.storage()['fake-sent']`).
 const sent: [string, string, boolean][] = []
-core.onSend = (addr, text, force) => { sent.push([addr, text, force]); void Storage.setItem('fake-sent', JSON.stringify(sent)) }
+core.onSend = (addr, text, force) => { sent.push([addr, text, force]); void Storage.setItem('fake-sent', JSON.stringify(sent)); flowed(addr, { text }) }
 // What came to POST /api/files: its name, its machine, its size.
 const put: [string, string, number][] = []
 const landed = (q: URLSearchParams, size: number) => {
@@ -302,9 +350,17 @@ for (const k of rowKeys('keys')) {
   Object.defineProperty(k, 'label', { get: () => { void Storage.setItem('fake-row-draws', String(++rowDraws)); return label } })
 }
 
+// How many choice buttons were made, where a test reads it (`app.storage()['fake-choice-draws']`): a button made
+// again while a finger is on it loses that press.
+let choiceDraws = 0
+const button = choiceRow.button.bind(choiceRow)
+choiceRow.button = (...a) => { void Storage.setItem('fake-choice-draws', String(++choiceDraws)); return button(...a) }
+
 // How many times the agents list was worked out, where a test reads it (`app.storage()['fake-views']`): the screens
 // should share one per change, however many rows show it.
+const stores: Store[] = []
 function counted(store: Store) {
+  stores.push(store)
   let views = 0
   const view = store.agentList.view.bind(store.agentList)
   store.agentList.view = (...a) => { void Storage.setItem('fake-views', String(++views)); return view(...a) }
@@ -318,6 +374,7 @@ mount(() => (
     prefs: new PrefStore(io),
     makeStore: (l) => tapPicture(counted(new Store({ pipe: pipe(l), tunnelled: () => l.link.get()?.via === 'tailpocket', slowSendMs: params.slowSendMs ? Number(params.slowSendMs) : undefined }))),
     device: 'Test phone',
+    updateEveryMs: params.updateEveryMs ? Number(params.updateEveryMs) : undefined,
     tunnel: params.via === 'tailpocket' ? fakeTunnel : undefined,
     pairLink: opened || scene === 'relaunch-forgotten' ? String((host.params as any)?.link) : undefined,
     // Recorded where a test can read it: the app's own storage.
@@ -332,6 +389,7 @@ mount(() => (
       if (url.includes('/api/file/link')) { const { path } = JSON.parse(init.body); fileAsks.push(`link ${path}`); void Storage.setItem('fake-file-asks', JSON.stringify(fileAsks)); return answer(200, { url: `/api/file?path=${encodeURIComponent(path)}&terminal=t1&key=k1` }) }
       if (url.includes('/api/file/check')) {
         const { paths } = JSON.parse(init.body)
+        fileAsks.push(`check ${paths.join(' ')}`); void Storage.setItem('fake-file-asks', JSON.stringify(fileAsks))
         return answer(200, { files: paths.map((p: string) => { const f = chatAnswer.files?.[p]; return f ? { asked: p, path: `/work/acme/${p}`, name: p.split('/').pop(), kind: f.kind, size: f.size } : { asked: p, why: 'missing' } }) })
       }
       if (url.includes('/api/file?')) {
