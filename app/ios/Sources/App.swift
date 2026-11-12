@@ -1,7 +1,8 @@
 // The app: one window showing the NSH app full screen, as `nsh package` builds it; the app keeps clear of the
 // notch and home bar itself (safeAreaInsets). TailPocket answers the app's tailPocket.* host calls (src/tunnel.ts);
 // this class answers page.pickFiles and page.uploadFile (src/link.ts): NSH 0.3.0 has a picker for photos and none for
-// other files; page.copyImage, page.videoFrame and page.openFile (src/page.ts).
+// other files; page.copyImage, page.videoFrame and page.openFile (src/page.ts). Notify (Notify.swift) answers
+// page.front and page.notify, and opens tapped notifications.
 import AVFoundation
 import NativeShell
 import QuickLook
@@ -9,16 +10,34 @@ import TailPocketNSH
 import UIKit
 import UniformTypeIdentifiers
 
+// iOS 27 ends the launch of an app built with the iOS 27 SDK that makes its window here, without a scene (crash in
+// _UIApplicationEvaluateRuntimeIssueForNoSceneLifecycleAdoption, TestFlight 0.1.24 on iOS 27.2.1): the window comes
+// from SceneDelegate, named in Info.plist's UIApplicationSceneManifest (project.yml). e2e/ios-scene.sh checks a build.
 @main
 final class AppDelegate: UIResponder, UIApplicationDelegate {
+  // The scene's window too, for code that still asks the app delegate for its window.
   var window: UIWindow?
 
   func application(_ application: UIApplication, didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
     hideWebKeyboardBar()
-    window = UIWindow(frame: UIScreen.main.bounds)
-    window?.rootViewController = AppController()
-    window?.makeKeyAndVisible()
     return true
+  }
+
+  func application(_ application: UIApplication, configurationForConnecting session: UISceneSession, options: UIScene.ConnectionOptions) -> UISceneConfiguration {
+    UISceneConfiguration(name: "Default Configuration", sessionRole: session.role)
+  }
+}
+
+final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
+  var window: UIWindow?
+
+  func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options: UIScene.ConnectionOptions) {
+    guard let scene = scene as? UIWindowScene else { return }
+    let window = UIWindow(windowScene: scene)
+    window.rootViewController = AppController()
+    self.window = window
+    (UIApplication.shared.delegate as? AppDelegate)?.window = window
+    window.makeKeyAndVisible()
   }
 }
 
@@ -59,9 +78,11 @@ final class AppController: UIViewController, UIDocumentPickerDelegate, QLPreview
     super.viewDidLoad()
     app.frame = view.bounds
     app.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-    app.onError = { message in NSLog("nsh error: %@", message) }
+    // No app.onError: nsh 0.3.0 frees the handler as it is set, so the first JS error the app does not catch would
+    // crash it (e2e/ios-onerror.sh). nsh writes those errors to the log itself.
     view.addSubview(app)
     tailPocket = TailPocketNsh.attach(app)
+    Notify.shared.attach(app)
     app.handle("page.pickFiles") { [weak self] data, reply in
       let limit = (data as? [String: Any])?["limit"] as? Int
       Task { @MainActor in self?.pickFiles(limit: limit) { reply.resolve($0) } }

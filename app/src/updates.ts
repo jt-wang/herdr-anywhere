@@ -18,6 +18,8 @@ export type Checked = { latest: string } | { error: string }
 /** What the person can do now: one at a time, the computer first, so the app keeps its connection while that happens. */
 export type Notice = { kind: 'computer' | 'computerByHand' | 'app' | 'rebuild'; version: string }
 export type InstallResult = 'installing' | 'needsPermission'
+/** A notification's second line: where its tap leads. */
+const NOTIFY_BODY = { computer: 'updateNotifyComputer', computerByHand: 'updateNotifyByHand', app: 'updateNotifyApp', rebuild: 'updateNotifyRebuild' } as const
 
 const parts = (v: string): number[] | null => {
   const m = /^v?(\d+)\.(\d+)\.(\d+)$/.exec(v ?? '')
@@ -75,24 +77,62 @@ export class Updates {
     install: (app: AppFile, progress: (done: number) => void, ask?: boolean) => Promise<InstallResult>
     /** How long the computer gets to come back as the new version. */
     waitMs?: number
+    /** Whether the app is in front, where the notice on home says it. */
+    front?: () => boolean
+    /** The last version a notification told of, kept across starts. */
+    told?: { get: () => string; set: (v: string) => void }
+    /** The version the person put off with Not now. */
+    dismissed?: () => string
+    /** Posts the system's notification. */
+    notify?: (n: { title: string; body: string }) => void
+    /** How often a connected phone reads the computer's answer again, which changes when its daily check finds one. */
+    everyMs?: number
+    setInterval?: typeof setInterval
+    clearInterval?: typeof clearInterval
   }) {}
 
+  private loop?: ReturnType<typeof setInterval>
+
   start() {
-    this.off = this.d.conn.sub((c) => { if (c === 'ready') void this.refresh() })
-    if (this.d.conn.get() === 'ready') void this.refresh()
+    this.off = this.d.conn.sub((c) => this.follow(c))
+    this.follow(this.d.conn.get())
   }
 
   stop() {
     this.off?.()
     this.off = undefined
+    this.follow('idle')
+  }
+
+  /** Asks when the connection comes, then each hour while it lasts and the person said yes to daily checks: Android
+   *  keeps it for days, and the computer's daily check reaches the phone only through this answer. Only the computer
+   *  is asked, never GitHub. */
+  private follow(c: Conn) {
+    if (this.loop) (this.d.clearInterval ?? globalThis.clearInterval)(this.loop)
+    this.loop = undefined
+    if (c !== 'ready') return
+    void this.refresh()
+    this.loop = (this.d.setInterval ?? globalThis.setInterval)(() => { if (this.info.get()?.checks === 'on') void this.refresh() }, this.d.everyMs ?? 60 * 60_000)
   }
 
   async refresh() {
     try {
       const r = await this.d.fetcher(`${await this.d.baseUrl()}/api/info`)
       const info = r.ok ? readInfo(await r.json()) : null
-      if (info) this.info.set(info)
+      if (info) { this.info.set(info); this.tell() }
     } catch {}
+  }
+
+  /** A new version the person said the computer may look for, while the app is not in front: the system's
+   *  notification, once per version. In front, the notice on home says it, and that counts as told. */
+  private tell() {
+    const n = this.notice()
+    const told = this.d.told
+    if (!n || !told || this.info.get()?.checks !== 'on') return
+    if (n.version === told.get() || n.version === this.d.dismissed?.()) return
+    told.set(n.version)
+    if (this.d.front?.() !== false) return
+    this.d.notify?.({ title: t('updateNotifyTitle', { version: n.version }), body: t(NOTIFY_BODY[n.kind]) })
   }
 
   notice(): Notice | null {

@@ -308,3 +308,116 @@ test('a check that fails says why', async () => {
   await u.checkNow()
   expect(u.checked.get()).toEqual({ error: 'no network' })
 })
+
+// A new version while the app is not in front: the system's notification, once per version.
+function away(o: { info: any; front?: boolean; dismissed?: string; os?: 'android' | 'ios' | 'web'; channel?: 'source' | 'store' }) {
+  const a = setup({ info: o.info, os: o.os, channel: o.channel })
+  const state = { front: o.front ?? false, told: '', dismissed: o.dismissed ?? '' }
+  const notified: { title: string; body: string }[] = []
+  const timers: { f: () => void; ms: number; on: boolean }[] = []
+  const u = new Updates({
+    ...(a.u as any).d,
+    front: () => state.front,
+    told: { get: () => state.told, set: (v: string) => { state.told = v } },
+    dismissed: () => state.dismissed,
+    notify: (n: { title: string; body: string }) => notified.push(n),
+    setInterval: ((f: () => void, ms: number) => { const t = { f, ms, on: true }; timers.push(t); return t }) as any,
+    clearInterval: ((t: any) => { t.on = false }) as any,
+  })
+  return { ...a, u, state, notified, timers }
+}
+const NEW = { version: '0.1.5', latest: '0.1.6', canUpdate: true, checks: 'on', app: APP }
+
+test("a new version while the app isn't in front posts one notification, with the version, and not again", async () => {
+  const { u, notified } = away({ info: NEW })
+  await u.refresh()
+  expect(notified).toEqual([{ title: 'Herdr Anywhere 0.1.6 is available', body: 'Tap to update the computer from your phone' }])
+  await u.refresh()
+  expect(notified.length).toBe(1)
+})
+
+test('the version told is kept, so a restarted app does not post it again', async () => {
+  const first = away({ info: NEW })
+  await first.u.refresh()
+  const again = away({ info: NEW })
+  again.state.told = first.state.told
+  await again.u.refresh()
+  expect(again.notified).toEqual([])
+})
+
+test('a newer version after it is posted too', async () => {
+  const { u, box, notified } = away({ info: NEW })
+  await u.refresh()
+  box.info = { ...NEW, latest: '0.1.7' }
+  await u.refresh()
+  expect(notified.map((n) => n.title)).toEqual(['Herdr Anywhere 0.1.6 is available', 'Herdr Anywhere 0.1.7 is available'])
+})
+
+test('in front the notice on home says it, so no notification, and none later for that version', async () => {
+  const { u, state, notified } = away({ info: NEW, front: true })
+  await u.refresh()
+  state.front = false
+  await u.refresh()
+  expect(notified).toEqual([])
+})
+
+test('a version the person put off with Not now is not posted', async () => {
+  const { u, notified } = away({ info: NEW, dismissed: '0.1.6' })
+  await u.refresh()
+  expect(notified).toEqual([])
+})
+
+test('nothing is posted unless the person said yes to daily checks', async () => {
+  for (const checks of ['ask', 'off', undefined]) {
+    const { u, notified } = away({ info: { ...NEW, checks } })
+    await u.refresh()
+    expect(notified).toEqual([])
+  }
+})
+
+test('the words say what the tap leads to: the computer, by hand, or the app', async () => {
+  const hand = away({ info: { ...NEW, canUpdate: false } })
+  await hand.u.refresh()
+  expect(hand.notified[0].body).toBe('The computer needs updating by hand')
+  const app = away({ info: { ...NEW, version: '0.1.6' } })
+  await app.u.refresh()
+  expect(app.notified[0].body).toBe('Tap to download the new app')
+})
+
+test('a phone with nothing it can do is told nothing', async () => {
+  const { u, notified } = away({ info: { ...NEW, version: '0.1.6' }, os: 'ios', channel: 'store' })
+  await u.refresh()
+  expect(notified).toEqual([])
+})
+
+test('while connected, with daily checks on, it asks the computer again each hour, and stops when the connection goes', async () => {
+  const { u, calls, conn, timers } = away({ info: { ...NEW, latest: '0.1.5' } })
+  u.start()
+  await settle()
+  const infos = () => calls.filter((c) => c.url.endsWith('/api/info')).length
+  expect(infos()).toBe(1)
+  expect(timers.filter((t) => t.on).map((t) => t.ms)).toEqual([60 * 60_000])
+  timers[0].f()
+  await settle()
+  expect(infos()).toBe(2)
+  conn.set('reconnecting')
+  expect(timers.filter((t) => t.on)).toEqual([])
+  conn.set('ready')
+  await settle()
+  expect(timers.filter((t) => t.on).length).toBe(1)
+  u.stop()
+  expect(timers.filter((t) => t.on)).toEqual([])
+  expect(calls.every((c) => c.url.startsWith('http://c/'))).toBe(true)
+})
+
+test('without a yes to daily checks the hour passes without asking anything', async () => {
+  for (const checks of ['ask', 'off', undefined]) {
+    const { u, calls, timers } = away({ info: { ...NEW, checks } })
+    u.start()
+    await settle()
+    for (const t of timers.filter((t) => t.on)) t.f()
+    await settle()
+    expect(calls.length).toBe(1)
+    u.stop()
+  }
+})
