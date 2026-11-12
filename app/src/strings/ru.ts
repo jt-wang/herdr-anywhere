@@ -107,7 +107,7 @@ export const ru: Table = {
   programExited: 'Программа завершилась.', terminalClosed: 'Терминал закрыт.',
   terminalLost: 'Компьютер перезапустился, этого терминала больше нет.', terminalFinished: 'Этот терминал завершён.',
   terminalEnded: 'Терминал завершён ({reason}).',
-  terminalPageFailed: 'Терминал не загрузился.', tryAgain: 'Повторить',
+  terminalLoading: 'Терминал ещё загружается…', tryAgain: 'Повторить',
   nameNeedsYou: '{name} ждёт вас', nameFinished: '{name}: готово',
   titleNeedsYou: '«{name}» ждёт вас', titleFinished: '«{name}»: готово',
   layoutChanged: 'Раскладка изменена в другом месте', layoutChangedBody: 'Показана раскладка другого экрана.',
