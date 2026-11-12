@@ -119,3 +119,24 @@ export async function copyPicture(url: string): Promise<boolean> {
   if (!host.available()) return false
   return host.call('page.copyImage', { url }).then((r) => r === true, () => false)
 }
+
+/** A frame of a video at a link and how long it is, made by the phone's own player (Android MediaMetadataRetriever,
+ *  iOS AVAssetImageGenerator): a JPEG as a data URL, the length in ms. `null` where the phone can't. */
+export type VideoFrame = { image: string; duration: number }
+export async function videoFrame(url: string): Promise<VideoFrame | null> {
+  if (!host.available()) return null
+  try {
+    const f: any = await host.call('page.videoFrame', { url })
+    return typeof f?.image === 'string' && f.image.startsWith('data:image/') ? { image: f.image, duration: Number(f.duration) || 0 } : null
+  } catch {
+    return null
+  }
+}
+
+/** Fetches the file at a link and hands it to another app on the phone (Android: a chooser, iOS: the share sheet):
+ *  `opened`, `no_app` (nothing on the phone opens it) or `failed` (it couldn't be fetched, or there is no such call). */
+export type Opened = 'opened' | 'no_app' | 'failed'
+export async function openFile(f: { url: string; name: string; kind: string }): Promise<Opened> {
+  if (!host.available()) return 'failed'
+  return host.call('page.openFile', f).then((r) => (r === 'opened' || r === 'no_app' ? r : 'failed'), () => 'failed' as const)
+}

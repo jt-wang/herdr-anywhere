@@ -6,7 +6,9 @@ import { formatsFor, LANGS, langFor, plural, TABLES, type Lang } from './index.t
 const blanks = (s: string) => [...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort()
 const FORMS: Record<Lang, string[]> = { en: ['one', 'other'], es: ['one', 'other'], ru: ['one', 'few', 'many'], 'zh-Hans': ['other'], 'zh-Hant': ['other'], ja: ['other'], ko: ['other'] }
 // Words that read the same in a language, on purpose.
-const SAME: Partial<Record<Lang, string[]>> = { es: ['terminal', 'shell', 'panel', 'points', 'experimental', 'withEvidence'], ru: ['withEvidence'] }
+// Only a number and a sign, or a name every language writes the same way (PDF).
+const NO_WORDS = ['plusWaitingShort', 'filePdf']
+const SAME: Partial<Record<Lang, string[]>> = { es: ['terminal', 'shell', 'panel', 'points', 'experimental', 'withEvidence', 'chatSection'], ru: ['withEvidence'] }
 
 test('every language has every word and no others', () => {
   for (const l of LANGS) expect(Object.keys(TABLES[l]).sort()).toEqual(Object.keys(en).sort())
@@ -30,7 +32,7 @@ test('a word that counts has the plural forms its language needs', () => {
 
 test('no word is left in English', () => {
   for (const l of LANGS) if (l !== 'en') for (const key of Object.keys(en) as (keyof typeof en)[]) {
-    if (SAME[l]?.includes(key)) continue
+    if (SAME[l]?.includes(key) || NO_WORDS.includes(key)) continue
     expect(`${l}.${key} same: ${JSON.stringify(TABLES[l][key]) === JSON.stringify(en[key])}`).toBe(`${l}.${key} same: false`)
   }
 })

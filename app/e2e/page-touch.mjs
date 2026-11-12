@@ -24,6 +24,7 @@ async function open(opts, width = 390, height = 700) {
   const touch = (type, x, y) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y }] })
   return {
     page,
+    cdp,
     touch,
     tap: async (x, y) => { await touch('touchStart', x, y); await touch('touchEnd'); await page.waitForTimeout(400) },
     drag: async (x, y, dy) => {
@@ -701,6 +702,29 @@ for (const [width, scale] of [[360, 3], [384, 2.8125], [393, 3], [411, 2.625], [
   }
   check('an image path opens its picture', (await tapImage('⏺ Read(/work/acme/shot.png)', 0, 12)) === '/work/acme/shot.png', await tapImage('⏺ Read(/work/acme/shot.png)', 0, 12))
   check('and opens no link', (await tapRow('⏺ Read(/work/acme/shot.png)', 0, 12)) === '')
+  // A quick tap the page takes late still opens: the page is busy (700 ms here) from just after the finger comes down
+  // until after it lifts, as a slow machine's page was after drawing a recording (CI's macOS runner: one tap on a
+  // picture opened nothing). How long the finger stayed is the events' own times, not when the page got to them.
+  const busyTap = async (text, row, col) => {
+    await t.send({ t: 'reset' })
+    await t.send({ t: 'write', data: text })
+    await t.page.waitForTimeout(100)
+    await t.page.evaluate(() => { window.posts = [] })
+    const x = cell.x + (col + 0.5) * cell.w, y = cell.y + (row + 0.5) * cell.h
+    // After the page's own touchstart, a listener keeps the page busy; the lift waits for it.
+    await t.page.evaluate(() => window.addEventListener('touchstart', function busy() {
+      window.removeEventListener('touchstart', busy)
+      const end = performance.now() + 700
+      while (performance.now() < end);
+    }, { passive: true }))
+    // The finger lifts 50 ms after it came down, as the phone stamps the two touches.
+    const down = Date.now() / 1000
+    await t.cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }], timestamp: down })
+    await t.cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [], timestamp: down + 0.05 })
+    await t.page.waitForTimeout(400)
+    return t.page.evaluate(() => window.posts.filter((m) => m.t === 'image' || m.t === 'selected').map((m) => `${m.t} ${m.path ?? m.text}`).join(' '))
+  }
+  check('a quick tap on an image path opens it while the page is busy as the finger lifts', (await busyTap('⏺ Read(/work/acme/shot.png)', 0, 12)) === 'image /work/acme/shot.png', await busyTap('⏺ Read(/work/acme/shot.png)', 0, 12))
   check('a relative one, any case', (await tapImage('saved to shots/Home.JPEG.', 0, 12)) === 'shots/Home.JPEG', await tapImage('saved to shots/Home.JPEG.', 0, 12))
   check('one under the home folder, spaces in its name', (await tapImage('open ~/Desktop/a b.png', 0, 7)) === '~/Desktop/a b.png', await tapImage('open ~/Desktop/a b.png', 0, 7))
   const shot = '/Users/someone/Desktop/Screenshot of the home page at 10.00.00.png'

@@ -6,3 +6,4 @@ android/.kotlin/
 .site-shots.tsx
 e2e/out/
 src/ui/terminal-page.before.ts
+.zoom-check.tsx

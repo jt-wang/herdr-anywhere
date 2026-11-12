@@ -2,7 +2,7 @@
 // defaults/mods/tabs, mods/pane, mods/workspace-status). A phone gives the screen to the focused pane: a two-line
 // header (the agent, where it is, Needs you), its terminal edge to edge, and one row under it (ui/pane-bar.tsx); the
 // title opens the switcher, and a flick across the terminal goes to the next or previous tab.
-import { cleanup, computed, effect, fontScale, keyboardFrame, safeAreaInsets, Scroll, signal, Text, View, windowSize } from 'nsh'
+import { cleanup, computed, effect, fontScale, keyboardFrame, safeAreaInsets, Scroll, signal, Text, untracked, View, windowSize } from 'nsh'
 import { AlertDialog, Sheet } from 'nsh/base'
 import { keyboardGone } from './keyboard.ts'
 import type { Store } from '../store.ts'
@@ -15,7 +15,8 @@ import { t } from '../strings/index.ts'
 import { TerminalView, WIDE } from './terminal.tsx'
 import { attachToTerminal, KEY_ROW_MAX_SCALE, PaneBar } from './pane-bar.tsx'
 import { AgentName, AgentRow, agentWords } from './agent-row.tsx'
-import { headerChipTight, showsAWord } from './header-fit.ts'
+import { headerChipTight, showsAWord, titleWhole } from './header-fit.ts'
+import { ChatView } from './chat.tsx'
 import { startable } from '../model/programs.ts'
 import type { TerminalSession } from './terminal-session.ts'
 import type { TypeIn } from '../prefs.ts'
@@ -53,7 +54,8 @@ function TabBar(props: { store: Store; spaceId: string; actions: SpaceActions })
     else if (r === 'close') s.closeTab(c.id)
   }
   return (
-    <Scroll horizontal class="grow-0 bg-sidebar border-b border-border" contentClass="flex-row items-center gap-[3px] px-2 py-[5px]" scrollbar={false}>
+    // The composer below keeps its focus after a send: tabs persist taps, or the first tap only ends that focus.
+    <Scroll horizontal keyboardShouldPersistTaps="handled" class="grow-0 bg-sidebar border-b border-border" contentClass="flex-row items-center gap-[3px] px-2 py-[5px]" scrollbar={false}>
       <Each of={space()?.tabs ?? []} key={(c) => c.id}>{(c) => {
         const on = () => active() === c().id
         const st = () => { rev(); return s.tabStatus(c()) }
@@ -136,21 +138,45 @@ function PhoneSpace(props: { store: Store; spaceId: string; tab: Tab; actions: S
   const session = signal<TerminalSession | undefined>(undefined)
   const switching = signal(false)
   const whole = () => { rev(); return s.shownWhole.has(props.tab.id) && panes(props.tab.root).length > 1 }
+  // The chat view (ui/chat.tsx): the computer says which agents' panes have one; asked again when the pane, its program
+  // or its status changes, never on a timer.
+  const addr = () => { const n = node(); return n ? terminalOf(n) : undefined }
+  const chat = { avail: signal(false), on: signal(false) }
+  let asked = ''
+  effect(() => {
+    rev()
+    const a = addr()
+    const key = a && s.chat && s.isAgent(a) ? `${a} ${s.program(a).key} ${s.statusOf(a) ?? ''}` : ''
+    if (key === asked) return
+    const moved = key.split(' ')[0] !== asked.split(' ')[0]
+    asked = key
+    if (moved) untracked(() => { chat.on.set(s.chatFirst.get()); chat.avail.set(false) })
+    if (!key) return
+    void s.chat!.get(a!).then((r) => { if (asked === key) chat.avail.set(r.chat) }, () => {})
+  })
   return (
     <View class="flex-1 bg-background">
       <PhoneHeader store={s} spaceId={props.spaceId} tab={props.tab} node={node()} actions={props.actions} back={props.back} menu={props.menu}
-        openSwitcher={() => void keyboardGone().then(() => switching.set(true))} />
+        openSwitcher={() => void keyboardGone().then(() => switching.set(true))} chat={chat} />
       <ConnBanner store={s} />
       <If when={whole()} else={
         <View class="flex-1">
           {/* keyed by pane: another pane is another terminal */}
           <Each of={node() ? [node()!] : []} key={(n) => n.id}>{(n) => (
-            <PaneBody store={s} spaceId={props.spaceId} node={n()} actions={props.actions} keys={false}
-              onSession={(t) => { session.set(t); props.sessions.set(t.address, t); cleanup(() => { if (session() === t) session.set(undefined); props.sessions.delete(t.address) }) }} />
+            <View class="flex-1">
+              <PaneBody store={s} spaceId={props.spaceId} node={n()} actions={props.actions} keys={false}
+                onSession={(t) => { session.set(t); props.sessions.set(t.address, t); cleanup(() => { if (session() === t) session.set(undefined); props.sessions.delete(t.address) }) }} />
+              {/* over the terminal, which stays attached under it: the composer below still types into it */}
+              <If when={chat.on() && chat.avail() ? addr() : undefined}>{(a) => (
+                <View class="absolute left-0 right-0 top-0 bottom-0">
+                  <ChatView store={s} address={a()} status={() => { rev(); return s.statusOf(a()) }} back={() => chat.on.set(false)} />
+                </View>
+              )}</If>
+            </View>
           )}</Each>
           <Each of={session() ? [session()!] : []}>{(t) => {
             const p = () => { rev(); return s.program(t().address) }
-            return <PaneBar store={s} session={t()} program={p().name} agent={!!p().agent} typeIn={props.actions.typeIn} keep={props.actions.keepTypeIn} />
+            return <PaneBar store={s} session={t()} program={p().name} agent={(rev(), s.isAgent(t().address))} typeIn={props.actions.typeIn} keep={props.actions.keepTypeIn} />
           }}</Each>
         </View>
       }>
@@ -166,7 +192,8 @@ function PhoneSpace(props: { store: Store; spaceId: string; tab: Tab; actions: S
 const HEADER_MAX_SCALE = KEY_ROW_MAX_SCALE
 
 /** Two short lines: the agent and its status (the title opens the switcher), then where it is; +N waiting and ⋯. */
-function PhoneHeader(props: { store: Store; spaceId: string; tab: Tab; node: Node | undefined; actions: SpaceActions; back: () => void; menu: () => void; openSwitcher: () => void }) {
+function PhoneHeader(props: { store: Store; spaceId: string; tab: Tab; node: Node | undefined; actions: SpaceActions; back: () => void; menu: () => void; openSwitcher: () => void
+  chat: { avail: { (): boolean }; on: { (): boolean; set: (v: boolean) => void } } }) {
   const s = props.store
   const rev = useRev(s)
   const addr = () => (props.node ? terminalOf(props.node) : undefined)
@@ -186,10 +213,23 @@ function PhoneHeader(props: { store: Store; spaceId: string; tab: Tab; node: Nod
   const lineWidth = signal(0)
   const cutFor = signal('')
   const cut = () => cutFor() === `${lineWidth()}|${activity()}`
+  // "+N waiting ›" becomes "+N ›" once the platform cut the title beside it (Android 360 dp with the chat button: "Cl…").
+  // It stays short until the screen, the text size, the title or the count changes, so the title's new room can't undo it.
+  const waitKey = () => `${windowSize().width}|${fontScale()}|${name()}|${waiting().length}`
+  const shortFor = signal('')
+  const nameNatural = signal(0)
+  const nameShown = signal(0)
+  effect(() => {
+    if (waiting().length && nameNatural() && nameShown() && !titleWhole(nameNatural(), nameShown())) untracked(() => shortFor.set(waitKey()))
+  })
   let activityWidth: number | undefined
-  const tight = () => headerChipTight(fontScale())
+  // The chip also goes tight once +N waiting has given way: at 360 dp "+1 ›" alone left the name 1 dp short ("Claude Co…").
+  const tight = () => headerChipTight(fontScale()) || shortFor() === waitKey()
   return (
     <View testID="pane-header" class="flex-row items-center h-[46px] pl-0.5 pr-1 gap-0.5 bg-sidebar border-b border-border">
+      {/* The title as wide as it takes on one line, unseen: what the shown one is held against (titleWhole). */}
+      <Text accessible={false} importantForAccessibility="no" pointerEvents="none" maxFontSizeMultiplier={HEADER_MAX_SCALE} numberOfLines={1} class="absolute left-0 top-0 opacity-0 text-[14.5px] font-semibold"
+        onLayout={(b) => nameNatural.set(b.size.width)}>{name()}</Text>
       <IconButton name="chevron-left" label={t('back')} testID="back" onPress={props.back} />
       <View role="button" testID="switcher" accessibilityLabel={t('switchPane', { name: name(), place: place() })} onPress={props.openSwitcher} class="flex-1 min-w-0 justify-center gap-[1px] active:opacity-70">
         <View class={`flex-row items-center ${tight() ? 'gap-1' : 'gap-1.5'}`}>
@@ -198,7 +238,8 @@ function PhoneHeader(props: { store: Store; spaceId: string; tab: Tab; node: Nod
               keeps the room it had without one. */}
           <View testID="pane-title" class={`flex-row items-center shrink min-w-0 rounded-[6px] bg-secondary ${tight() ? 'gap-1 pl-1 pr-0.5' : 'gap-1.5 pl-1.5 pr-1 border border-border'}`}>
             <ProgramIcon icon={(rev(), s.program(addr()).icon)} size={15} />
-            <Text maxFontSizeMultiplier={HEADER_MAX_SCALE} class="text-[14.5px] font-semibold text-foreground shrink" numberOfLines={1}>{name()}</Text>
+            <Text maxFontSizeMultiplier={HEADER_MAX_SCALE} testID="pane-name" class="text-[14.5px] font-semibold text-foreground shrink" numberOfLines={1}
+              onLayout={(b) => nameShown.set(b.size.width)}>{name()}</Text>
             <Glyph name="chevron-down" size={13} />
           </View>
           <If when={status() === 'blocked'} else={<If when={status()}>{(st) => <StatusMark status={st()} size={7} />}</If>}>
@@ -231,8 +272,13 @@ function PhoneHeader(props: { store: Store; spaceId: string; tab: Tab; node: Nod
       <If when={waiting().length}>
         <View role="button" testID="next-waiting" accessibilityLabel={t('moreWaitingOpen', { n: waiting().length })} onPress={() => props.actions.open(waiting()[0].address)}
           class="px-2 h-7 justify-center rounded-[6px] bg-chart-2/15 active:opacity-70">
-          <Text maxFontSizeMultiplier={HEADER_MAX_SCALE} class="text-[11.5px] font-medium text-chart-2">{t('plusWaiting', { n: waiting().length })}</Text>
+          <Text maxFontSizeMultiplier={HEADER_MAX_SCALE} class="text-[11.5px] font-medium text-chart-2">{t(shortFor() === waitKey() ? 'plusWaitingShort' : 'plusWaiting', { n: waiting().length })}</Text>
         </View>
+      </If>
+      <If when={props.chat.avail()}>
+        <If when={props.chat.on()} else={<IconButton name="chat" label={t('showChat')} testID="show-chat" onPress={() => void keyboardGone().then(() => { props.chat.on.set(true); s.chatFirst.set(true) })} />}>
+          <IconButton name="terminal" label={t('showTerminal')} testID="show-terminal" active onPress={() => { props.chat.on.set(false); s.chatFirst.set(false) }} />
+        </If>
       </If>
       <IconButton name="plus" label={t('addAgent')} testID="add-agent" onPress={() => void keyboardGone().then(() => props.actions.addAgent(props.spaceId))} />
       <IconButton name="more" label={t('paneActions')} testID="space-more" onPress={props.menu} />
@@ -370,7 +416,7 @@ function WidePanes(props: { store: Store; spaceId: string; tab: Tab; actions: Sp
           )
         }}</Each>
       </View>
-      <Each of={focusedSession() ? [focusedSession()!] : []}>{(t) => <PaneBar store={s} session={t()} program={s.program(t().address).name} agent={!!s.program(t().address).agent} typeIn={props.actions.typeIn} keep={props.actions.keepTypeIn} />}</Each>
+      <Each of={focusedSession() ? [focusedSession()!] : []}>{(t) => <PaneBar store={s} session={t()} program={s.program(t().address).name} agent={s.isAgent(t().address)} typeIn={props.actions.typeIn} keep={props.actions.keepTypeIn} />}</Each>
     </View>
   )
 }
