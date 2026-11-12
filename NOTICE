@@ -20,7 +20,8 @@ NSH (https://nsh.dev), Apache License 2.0
   - the runtime that the Android, iOS and web builds embed
 
 Geist, Copyright 2024 The Geist Project Authors, SIL Open Font License 1.1
-  - app/assets/fonts/Geist.ttf (license: app/assets/fonts/OFL.txt)
+  - app/assets/fonts/Geist.ttf, Geist-Medium.ttf, Geist-SemiBold.ttf and Geist-Bold.ttf, the Regular, Medium,
+    SemiBold and Bold faces of the geist-font v1.7.2 release, unchanged (license: app/assets/fonts/OFL.txt)
 
 JetBrains Mono, Copyright 2020 The JetBrains Mono Project Authors, SIL Open Font License 1.1
   - app/assets/fonts/JetBrainsMono-Variable.ttf, and the same font as WOFF in app/assets/fonts and as base64 in
