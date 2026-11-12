@@ -96,9 +96,11 @@ last_bounds() { tr '>' '\n' | grep -F "resource-id=\"$1" | grep -F "${2:-}" | ta
 centre() { awk 'NF == 4 {print int(($1+$3)/2), int(($2+$4)/2)}'; }
 has() { xml | grep -qF "$1"; }
 snap() { [ -n "$shot" ] && "$adb" exec-out screencap -p > "$shot/$1.png" || true; }
+# What a failure shows of the screen leaves out the pairing code (in the link field when pairing failed).
+unpaired() { sed -E 's/#pair=[A-Za-z0-9_-]+/#pair=…/g'; }
 fail() {
-  echo "FAIL: $1"; snap fail; [ -n "$shot" ] && { xml > "$shot/fail.xml"; cp "$work/serve.log" "$shot/serve.log"; }
-  xml | tr '>' '\n' | grep -oE '(resource-id|text)="[^"]+"' | head -40; exit 1
+  echo "FAIL: $1"; snap fail; [ -n "$shot" ] && { xml | unpaired > "$shot/fail.xml"; cp "$work/serve.log" "$shot/serve.log"; }
+  xml | unpaired | tr '>' '\n' | grep -oE '(resource-id|text)="[^"]+"' | head -40; exit 1
 }
 # The app is the process launched; another (or none) is a crash, with Android's crash log.
 alive() {
@@ -134,8 +136,9 @@ step="launching the app"
 "$adb" shell am start -W -n "$id/.MainActivity" >/dev/null
 pid=$("$adb" shell pidof "$id" | tr -d '\r')
 [ -n "$pid" ] || fail "the app did not start"
-tap_last pair-link
-type_text "$invite"
+# adb's input text drops characters on CI's emulator (15 of the code's 22 got in): the helper types in short pieces
+# and reads the field back.
+"$(dirname "$0")/android-type-link.sh" "$invite"
 keys_down
 tap_last 'pair"'
 wait_for 'resource-id="space-' "the phone did not pair"
