@@ -41,17 +41,17 @@ agent() {
     env FAKE_STATE="$st" FAKE_THEN="$then" FAKE_AFTER="$after" FAKE_MSG="Bash: npm test" "$work/bin/claude" >/dev/null
 }
 P=herdr-anywhere.pin-order
-agent orchard-api idle - 0 --label herdr.pinned=1 --label "$P=i"
+agent orchard_api idle - 0 --label herdr.pinned=1 --label "$P=i"
 agent ledger working blocked "${WAIT_AFTER:-150}" --label herdr.pinned=1 --label "$P=r"
-agent field-notes idle - 0 --label herdr.pinned=1 --label "$P=v"
-agent tide-mobile blocked - 0 --label herdr.pinned=1 --label "$P=x"
-agent lantern-web working - 0 --label herdr.pinned=1
+agent field_notes idle - 0 --label herdr.pinned=1 --label "$P=v"
+agent tide_mobile blocked - 0 --label herdr.pinned=1 --label "$P=x"
+agent lantern_web working - 0 --label herdr.pinned=1
 # Enough spaces that the list scrolls well past Pinned on a tall phone too (step 6b).
-for s in moss-docs quarry-cli harbor-ops kiln-site birch-sdk ember-bot pine-relay copper-ui willow-db slate-jobs fern-auth dune-maps; do
+for s in moss_docs quarry_cli harbor_ops kiln_site birch_sdk ember_bot pine_relay copper_ui willow_db slate_jobs fern_auth dune_maps; do
   mkdir -p "$work/u/src/$s"; "$hc" run --bg --keep --cwd "$work/u/src/$s" --label herdr.space="sp$s" --label herdr.tab="tb$s" >/dev/null
 done
 addr() { "$hc" get "$1" --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["address"])'; }
-A=$(addr orchard-api); B=$(addr ledger); C=$(addr field-notes); D=$(addr tide-mobile); E=$(addr lantern-web)
+A=$(addr orchard_api); B=$(addr ledger); C=$(addr field_notes); D=$(addr tide_mobile); E=$(addr lantern_web)
 label() { "$hc" get "$1" --json | python3 -c 'import json,sys; print(json.load(sys.stdin).get("labels", {}).get(sys.argv[1], ""))' "$2"; }
 labels() { for t in "$@"; do "$hc" get "$t" --json | python3 -c 'import json,sys; print(sorted(json.load(sys.stdin).get("labels", {}).items()))'; done; }
 
@@ -106,17 +106,9 @@ drag() {
 is() { [ "$1" = "$2" ] && say "ok: $3" || say "FAIL: $3: got [$1], wanted [$2]"; }
 
 "$adb" shell am start -W -n "$id/.MainActivity" >/dev/null
-# A slow emulator can drop typed characters (the companion then refuses the code): check the field holds the whole
-# invite, else clear it and type again (as e2e/android-picture.sh).
-for try in 1 2 3; do
-  tap pair-link; sleep 1
-  "$adb" shell input keyevent 123 $(seq 1 ${#invite} | sed 's/.*/67/') < /dev/null
-  rest=$invite
-  while [ -n "$rest" ]; do "$adb" shell input text "'$(printf %s "$rest" | cut -c1-40)'" < /dev/null; rest=$(printf %s "$rest" | cut -c41-); sleep 0.5; done
-  xml | grep -qF "$invite" && break
-  [ $try = 3 ] && { echo "FAIL: the invite didn't go in whole, 3 tries"; exit 1; }
-  echo "the invite didn't go in whole (try $try): typing it again"
-done
+# A slow emulator drops typed characters (the companion then refuses the code): e2e/android-type-link.sh types the
+# invite in short pieces and reads the field back until it holds all of it.
+"$(dirname "$0")/android-type-link.sh" "$invite"
 # On a narrow screen (360 dp) the keyboard covers the Pair button: close it first (back closes only the keyboard).
 "$adb" shell dumpsys window InputMethod | grep -q "isOnScreen=true" && { "$adb" shell input keyevent 4; sleep 1; }
 tap pair
