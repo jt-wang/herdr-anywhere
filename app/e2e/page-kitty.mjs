@@ -129,6 +129,18 @@ for (const dark of [true, false]) {
   check('the read picture takes 48 by 16 cells', r && r.cols === 48 && r.rows === 16, r)
   const same = r ? await looksLike(t.page, r, pngOf(read)) : 0
   check('the read picture is drawn over its cells', same >= 44, same)
+  // The column right of the block holds spaces; the last placeholder's marks must not show there (xterm draws a cell's
+  // combining marks past its right edge).
+  const spaces = await t.page.evaluate((r) => {
+    const t = window.term, b = t.buffer.active, top = Math.round((r.y - document.querySelector('.xterm-screen').getBoundingClientRect().top) / (r.height / r.rows))
+    let n = 0
+    for (let y = top; y < top + r.rows; y++) { const c = b.getLine(b.viewportY + y).getCell(r.cols); if ((c.getChars() || ' ') === ' ') n++ }
+    return n
+  }, r)
+  const right = await pixels(t.page, { x: r.x + r.width, y: r.y, width: r.width / r.cols, height: r.height })
+  let off = 0
+  for (let y = 0; y < right.h; y++) for (let x = 0; x < right.w; x++) { const p = right.at(x, y); if (Math.abs(p[0] - 0x17) + Math.abs(p[1] - 0x19) + Math.abs(p[2] - 0x1d) > 6) off++ }
+  check('the cells right of the read picture show only the background', spaces === r.rows && off === 0, { spaces, off })
   await t.page.screenshot({ path: `${shots}after-read-dark.png` })
   await t.close()
 }

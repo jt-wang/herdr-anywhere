@@ -8,6 +8,8 @@ import debug from '../../fixtures/kitty/omp-18.18.3-debug.json'
 import read from '../../fixtures/kitty/omp-18.18.3-read.json'
 
 const APC = /\x1b_G[^\x1b]*\x1b\\/g
+// What the app adds around placeholder cells: SGR 8 (hidden) before, SGR 28 after.
+const unhide = (s: string) => s.replaceAll('\x1b[8m', '').replaceAll('\x1b[28m', '')
 const feed = (k: KittyImages, writes: string[]) => {
   const out = { text: '', put: [] as number[], dropped: [] as (number[] | 'all')[] }
   for (const w of writes) {
@@ -40,7 +42,20 @@ test('a picture omp read for the model (240 by 160, sent at 300 by 200): 48 by 1
 test('the terminal gets everything but the graphics commands, placeholders included', () => {
   for (const s of [debug, read]) for (const step of ['open', 'live', 'reload', 'back'] as const) {
     const all = s[step].join('')
-    expect(feed(new KittyImages(), s[step]).text).toBe(all.replace(APC, ''))
+    expect(unhide(feed(new KittyImages(), s[step]).text)).toBe(all.replace(APC, ''))
+  }
+})
+
+test('placeholder cells reach the terminal hidden, so it draws their background and not their marks', () => {
+  for (const s of [debug, read]) for (const step of ['live', 'back'] as const) {
+    const text = feed(new KittyImages(), s[step]).text
+    let hidden = false, shown = 0, inside = 0
+    for (const m of text.matchAll(/\x1b\[(8|28)m|\u{10EEEE}/gu)) {
+      if (m[1]) hidden = m[1] === '8'
+      else if (hidden) inside++
+      else shown++
+    }
+    expect([shown, inside > 0, hidden]).toEqual([0, true, false])
   }
 })
 
@@ -51,7 +66,7 @@ test('a command cut anywhere between two writes is read the same', () => {
     for (let i = 0; i < all.length; i += size) pieces.push(all.slice(i, i + size))
     const k = new KittyImages()
     const r = feed(k, pieces)
-    expect(r.text).toBe(all.replace(APC, ''))
+    expect(unhide(r.text)).toBe(all.replace(APC, ''))
     expect(k.all().map((i) => [i.id, i.png.length])).toEqual([[13180035, 17 * 4096 + 28]])
   }
 })
