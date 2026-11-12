@@ -3,6 +3,7 @@ package autostart
 import (
 	"encoding/xml"
 	"os"
+	"os/user"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -225,6 +226,70 @@ func TestDefaultNameCanBeChangedForTests(t *testing.T) {
 	t.Setenv("HERDR_ANYWHERE_AUTOSTART_NAME", "")
 	if got := Default().Name; got == "" || got == "io.example.other" {
 		t.Fatal(got)
+	}
+}
+
+// A HOME that is not the account's (a test's, mostly) gets no entry under the person's name: the file would go in that
+// HOME, where the service manager never looks at login, but the name is the person's in their own domain (launchd's
+// gui/<uid>, systemd's user instance), so loading it would first unload the person's Companion.
+func TestDefaultRefusesThePersonsNameUnderAnotherHome(t *testing.T) {
+	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
+		t.Skip("the Run key is the same whatever HOME is")
+	}
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv(NameEnv, "")
+	f := &fakeRun{}
+	s := Default()
+	s.run = f.run // were it not refused, nothing here reaches the real launchctl or systemctl
+	if _, err := s.Install(entry); err == nil || !strings.Contains(err.Error(), NameEnv) || !strings.Contains(err.Error(), "not this account's home") {
+		t.Fatalf("install under another HOME: %v", err)
+	}
+	if _, err := os.Stat(s.Path()); !os.IsNotExist(err) {
+		t.Fatalf("an entry was written at %s: %v", s.Path(), err)
+	}
+	if err := s.Start(); err == nil || !strings.Contains(err.Error(), NameEnv) {
+		t.Fatalf("start under another HOME: %v", err)
+	}
+	if removed, err := s.Remove(); removed || err != nil {
+		t.Fatalf("remove under another HOME: %v %v", removed, err)
+	}
+	if len(f.calls) > 0 {
+		t.Fatalf("it ran %v", f.calls)
+	}
+
+	// A name of its own: the test's entry, in its HOME.
+	t.Setenv(NameEnv, "io.example.herdranywhere.test.refuse")
+	s = Default()
+	s.run = f.run
+	if _, err := s.Install(entry); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Start(); err != nil {
+		t.Fatal(err)
+	}
+	if removed, err := s.Remove(); !removed || err != nil {
+		t.Fatalf("remove: %v %v", removed, err)
+	}
+	if len(f.calls) == 0 {
+		t.Fatal("with a name of its own it ran nothing")
+	}
+}
+
+// In the account's own home the person's name is used, as before.
+func TestDefaultUsesThePersonsNameInTheirHome(t *testing.T) {
+	u, err := user.Current()
+	if err != nil {
+		t.Skip(err)
+	}
+	t.Setenv("HOME", u.HomeDir)
+	t.Setenv(NameEnv, "")
+	if s := Default(); s.Name != DefaultName || s.refuse != nil {
+		t.Fatalf("%s %v", s.Name, s.refuse)
+	}
+	t.Setenv("HOME", u.HomeDir+"/") // the same folder, written otherwise
+	if s := Default(); s.refuse != nil {
+		t.Fatal(s.refuse)
 	}
 }
 
