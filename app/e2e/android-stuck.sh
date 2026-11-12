@@ -93,6 +93,7 @@ wait_for 'text="1. Top shelf"' "the home page has no row of choices for the firs
 sleep 1; snap 1-home-question-1
 tap_re 'needs-[^"]*-choice-1'
 after_tap '1. Amber' '1. Top shelf' 'the home page'
+if [ "$fixed" = yes ]; then wait_for 'text="Which color should the fake lamp be?"' "the home page still says the first question"; fi
 sleep 1; snap 2-home-after-tap
 echo "ok: the home page's row after a tap"
 
