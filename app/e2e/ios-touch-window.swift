@@ -40,7 +40,8 @@ final class HMTouchWindow: UIWindow {
         w.timer.invalidate()
         extra = " +\(Int(Date().timeIntervalSince(w.began) * 1000))ms began-view=\(HMTouchWindow.name(w.view)) began-view-in-window=\(HMTouchWindow.inWindow(w.view))"
       }
-      NSLog("%@", HMTouchWindow.line(touch, in: self) + " " + (sent[id] ?? "sent=none") + extra)
+      // sent=… and the times first: the system's log cuts a long line at about 1 kB, and the lists come after.
+      NSLog("%@", HMTouchWindow.line(touch, in: self, first: (sent[id] ?? "sent=none") + extra))
     }
   }
 
@@ -114,7 +115,7 @@ final class HMTouchWindow: UIWindow {
     }
   }
 
-  static func line(_ touch: UITouch, in window: UIWindow) -> String {
+  static func line(_ touch: UITouch, in window: UIWindow, first: String) -> String {
     let phase = phase(touch)
     let at = touch.location(in: window)
     var chain: [UIView] = []
@@ -126,7 +127,7 @@ final class HMTouchWindow: UIWindow {
       let f = v.convert(v.bounds, to: window)
       return "\(name(v)) at (\(Int(f.minX)),\(Int(f.minY)) \(Int(f.width))x\(Int(f.height)))"
     }
-    return "hm-touch phase=\(phase) at=(\(Int(at.x)),\(Int(at.y))) view=\(name(touch.view)) in-picture=\(inPicture ? "yes" : "no")"
+    return "hm-touch phase=\(phase) \(first) at=(\(Int(at.x)),\(Int(at.y))) view=\(name(touch.view)) in-picture=\(inPicture ? "yes" : "no")"
       + " view-gestures=\(gestures(touch.view?.gestureRecognizers)) touch-gestures=\(gestures(touch.gestureRecognizers))"
       + " picture-views=[\(pictureList.joined(separator: ", "))] chain=\(chain.map { name($0) }.joined(separator: " < "))"
   }
