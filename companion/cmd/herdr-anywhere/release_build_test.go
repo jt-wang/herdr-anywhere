@@ -5,6 +5,7 @@ import (
 	"debug/elf"
 	"debug/macho"
 	"debug/pe"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -30,7 +31,11 @@ func buildFor(t *testing.T, goos, goarch string, flags []string, vet bool) strin
 		t.Fatal(err)
 	}
 	env := append(os.Environ(), "GOOS="+goos, "GOARCH="+goarch, "CGO_ENABLED=0")
-	exe := filepath.Join(t.TempDir(), update.AssetFor(goos, goarch))
+	name, err := releaseName(goos, goarch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	exe := filepath.Join(t.TempDir(), name)
 	steps := [][]string{append(append([]string{"build"}, flags...), "-o", exe, "./cmd/herdr-anywhere")}
 	if vet {
 		steps = append(steps, []string{"vet", "./..."}) // compiles every _test.go too
@@ -43,6 +48,23 @@ func buildFor(t *testing.T, goos, goarch string, flags []string, vet bool) strin
 		}
 	}
 	return exe
+}
+
+// releaseName is goos/goarch's file name in a release, an error for a target releases have no file for.
+func releaseName(goos, goarch string) (string, error) {
+	if name := update.AssetFor(goos, goarch); name != "" {
+		return name, nil
+	}
+	return "", fmt.Errorf("%s/%s: releases have no file for it", goos, goarch)
+}
+
+// pathCheckTarget is the target the path check builds: this computer's own when releases have a file for it (the
+// packages are mostly built already, for the tests), else linux/amd64.
+func pathCheckTarget(goos, goarch string) (string, string) {
+	if update.AssetFor(goos, goarch) != "" {
+		return goos, goarch
+	}
+	return "linux", "amd64"
 }
 
 // localPath is the first of this checkout's folder and Go's module cache that file holds, "" for neither: a build
@@ -71,11 +93,24 @@ func TestThePathCheckFindsAnUntrimmedBuild(t *testing.T) {
 		t.Skip("builds the companion")
 	}
 	t.Parallel()
-	// This computer's own target: the packages are mostly built already, for the tests.
-	exe := buildFor(t, runtime.GOOS, runtime.GOARCH, []string{"-buildvcs=false"}, false)
+	goos, goarch := pathCheckTarget(runtime.GOOS, runtime.GOARCH)
+	exe := buildFor(t, goos, goarch, []string{"-buildvcs=false"}, false)
 	root, _ := filepath.Abs("../../..")
 	if p := localPath(t, exe); p != root {
 		t.Fatalf("a build without -trimpath: the path check found %q, want this checkout, %s", p, root)
+	}
+}
+
+// windows/arm64 has no file in a release: a build for it once got "" for a name and wrote over its own temp folder.
+func TestATargetWithoutAReleaseFile(t *testing.T) {
+	if name, err := releaseName("windows", "arm64"); err == nil || !strings.Contains(err.Error(), "windows/arm64") {
+		t.Errorf("releaseName(windows, arm64) = %q, %v; want an error naming windows/arm64", name, err)
+	}
+	if goos, goarch := pathCheckTarget("windows", "arm64"); update.AssetFor(goos, goarch) == "" {
+		t.Errorf("the path check builds %s/%s, which has no release file", goos, goarch)
+	}
+	if goos, goarch := pathCheckTarget("darwin", "arm64"); goos+"/"+goarch != "darwin/arm64" {
+		t.Errorf("on darwin/arm64 the path check builds %s/%s, want this computer's own target", goos, goarch)
 	}
 }
 
