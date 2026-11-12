@@ -141,10 +141,14 @@ compose() {
   fail "could not type '$1' into the composer"
 }
 # With an if, not an &&: a function whose last command is a failed && returns 1, which ends the script under set -e.
-keys_down() { for _ in 1 2; do if "$adb" shell dumpsys input_method | grep -q 'mInputShown=true'; then "$adb" shell input keyevent KEYCODE_BACK; sleep 1; fi; done; }
+# backs counts the Backs it sent: one sent as the keyboard goes by itself could reach the app and close the pane, so
+# when the chat view is gone after a prompt, sent() says how many there were (0: the app closed it).
+backs=0
+keys_down() { for _ in 1 2; do if "$adb" shell dumpsys input_method | grep -q 'mInputShown=true'; then "$adb" shell input keyevent KEYCODE_BACK; backs=$((backs + 1)); sleep 1; fi; done; }
 # A prompt sent from the composer; the chat shows it as the newest turn, finished.
 sent() {
-  tap_last compose-input; compose "$1"; tap_last 'compose-send"'; keys_down
+  tap_last compose-input; compose "$1"; tap_last 'compose-send"'; b=$backs; keys_down
+  has 'resource-id="chat-view"' || fail "$2: the chat view is gone right after the prompt was sent, with $((backs - b)) Back(s) sent for the keyboard"
   wait_for "text=\"$1\"" "$2: the chat did not show '$1'" "${3:-40}"
   for _ in $(seq 1 20); do has 'text="Working…"' || break; sleep 1; done
   echo "ok: $2: '$1' shown"
