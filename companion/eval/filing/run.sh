@@ -43,6 +43,31 @@ EOF
 chmod +x "$w/bin/hcx"
 H=$w/bin/hcx
 panes() { "$H" ls --json 2>/dev/null | python3 -c 'import json,sys; [print(t["address"]) for t in json.load(sys.stdin)["terminals"]]' 2>/dev/null || true; }
+# input_box_empty says whether the bottom of the filing pane is an empty input box: the last ❯ line, with a
+# rule above and below it, and nothing after ❯ but whitespace. A suggestion or a draft there is not empty.
+input_box_empty() {
+  "$H" read herdr-organizer --json 2>/dev/null | python3 -I -c '
+import json, sys
+try:
+    text = json.load(sys.stdin).get("text", "")
+except Exception:
+    sys.exit(1)
+
+def rule(line):
+    line = line.strip()
+    return bool(line) and all(ch == "─" for ch in line)
+
+lines = text.splitlines()
+for i in range(len(lines) - 1, -1, -1):
+    line = lines[i].lstrip(" \t")
+    if not line.startswith("❯"):
+        continue
+    if i == 0 or i + 1 >= len(lines) or not rule(lines[i - 1]) or not rule(lines[i + 1]) or line[1:].strip():
+        sys.exit(1)
+    sys.exit(0)
+sys.exit(1)
+'
+}
 cleanup() {
   for a in $(panes); do "$H" kill "$a" >/dev/null 2>&1 || true; done
   "$H" server stop >/dev/null 2>&1 || true
@@ -87,6 +112,20 @@ for lang in $LANGS; do
     sleep 10
   done
   # Then the user tells the filing pane itself that a task is finished (R12), and it puts the page right.
+  # Wait for an empty input box: a suggestion there would take the Enter instead of the correction. Nothing
+  # here clears the box: a user's draft is theirs. On timeout, say so and go on.
+  # The screen as the round ended, kept to see whether Claude Code put a suggestion in the box.
+  "$H" read herdr-organizer > "$out/$lang/before-correction.txt" 2>/dev/null || true
+  waited=0
+  while ! input_box_empty; do
+    if [ "$waited" -ge 60 ]; then
+      echo "$lang: the filing pane's input box was not empty after 60s; sending the correction anyway"
+      break
+    fi
+    sleep 2
+    waited=$((waited + 2))
+  done
+  echo "$lang: input box empty after ${waited}s" >> "$out/$lang/once.log"
   "$H" send herdr-organizer "$(python3 -I -c 'import json,sys; print(next(r for r in json.load(open(sys.argv[1]))["runs"] if r["lang"] == sys.argv[2])["correction"]["text"])' "$here/cases.json" "$lang")" >/dev/null
   sent=$(date +%s)
   while :; do
