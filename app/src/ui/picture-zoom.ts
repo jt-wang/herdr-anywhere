@@ -8,6 +8,9 @@ export const DOUBLE_TAP_MS = 300
 const DOUBLE_TAP_PT = 40
 /** A double tap on a picture at its fitted size zooms in this far. */
 const DOUBLE_TAP_ZOOM = 2.5
+/** How long after a double tap the scroll view's reports are its own animated zoom, not a pinch: the last of them can
+ *  be one from part way (seen on a CI runner's Android emulator), so the double tap's own scale stands. */
+const ZOOM_MS = 800
 
 /** As far as a picture fitted into `box` zooms: to twice its own pixels, and between 4 and 16 times. */
 export function maxZoom(natural: Size, box: Size): number {
@@ -33,15 +36,17 @@ export type ZoomTo = { scale: number; x: number; y: number; animated: boolean }
 export function pictureZoom(zoomTo: (to: ZoomTo) => void) {
   let scale = 1
   let last: Tap | null = null
+  let zoomedAt = -Infinity
   return {
     tap(t: Tap, size: { natural: Size; box: Size }) {
       if (!isDoubleTap(last, t)) { last = t; return }
       last = null
       scale = doubleTapScale(scale, maxZoom(size.natural, size.box))
+      zoomedAt = t.at
       zoomTo({ scale, x: t.x, y: t.y, animated: true })
     },
-    scrolled(zoomScale: number) { scale = zoomScale },
+    scrolled(zoomScale: number, at = Date.now()) { if (at - zoomedAt > ZOOM_MS) scale = zoomScale },
     zoomed: () => scale > 1.01,
-    reset() { scale = 1; last = null },
+    reset() { scale = 1; last = null; zoomedAt = -Infinity },
   }
 }
