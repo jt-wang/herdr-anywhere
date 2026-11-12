@@ -1,0 +1,11 @@
+[
+  {"id": "", "from": "you", "said": "WORK through the three steps",
+   "steps": [{"id": "", "kind": "note", "title": "Step one."},
+             {"id": "", "kind": "run", "title": "python3 -c 'import time; time.sleep(6)'"},
+             {"id": "", "kind": "you", "title": "ALSO keep the old colors"},
+             {"id": "", "kind": "note", "title": "Step two."},
+             {"id": "", "kind": "run", "title": "python3 -c 'import time; time.sleep(6)'"},
+             {"id": "", "kind": "note", "title": "Step three."},
+             {"id": "", "kind": "run", "title": "python3 -c 'import time; time.sleep(6)'"}],
+   "reply": "All three steps are done.", "end": "done"}
+]
