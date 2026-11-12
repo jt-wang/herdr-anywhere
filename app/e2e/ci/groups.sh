@@ -1,9 +1,9 @@
 #!/bin/sh
 # Which of devices.yml's suite groups a run takes. Empty: all of them (a push always). A dispatch can name some,
 # separated by commas or spaces; the rest are skipped. A name that is not a group fails the run, so a typo can't
-# end green with nothing tested. ios_main_repeat or ios_b_repeat runs copies of that one iOS group and nothing else,
-# so it can't be combined with a list.
-# Usage: app/e2e/ci/groups.sh GROUPS MAIN_REPEAT B_REPEAT    prints ios=, android= (JSON lists of matrix keys),
+# end green with nothing tested. ios_main_repeat, ios_b_repeat or ios27_chat_repeat runs copies of that one iOS group
+# and nothing else, so it can't be combined with a list.
+# Usage: app/e2e/ci/groups.sh GROUPS MAIN_REPEAT B_REPEAT [CHAT27_REPEAT]    prints ios=, android= (JSON lists of matrix keys),
 #          update=, remote=, user_path= (true or false), one per line, for $GITHUB_OUTPUT
 #        app/e2e/ci/groups.sh --self-test
 # The groups, as devices.yml's jobs and matrix keys:
@@ -23,10 +23,10 @@ json() { printf '['; sep=; for x in "$@"; do printf '%s"%s"' "$sep" "$x"; sep=,;
 
 plan() {
   list=$(printf '%s\n' "$1" | tr ', ' '\n\n' | grep -v '^$')
-  main=${2:-0} b=${3:-0}
-  if [ "$main" != 0 ] || [ "$b" != 0 ]; then
-    [ -z "$list" ] || { echo "groups.sh: a run of copies (ios_main_repeat, ios_b_repeat) takes no groups: $1" >&2; return 2; }
-    [ "$main" != 0 ] && ios=$(json a) || ios=$(json b)
+  main=${2:-0} b=${3:-0} chat27=${4:-0}
+  if [ "$main" != 0 ] || [ "$b" != 0 ] || [ "$chat27" != 0 ]; then
+    [ -z "$list" ] || { echo "groups.sh: a run of copies (ios_main_repeat, ios_b_repeat, ios27_chat_repeat) takes no groups: $1" >&2; return 2; }
+    if [ "$main" != 0 ]; then ios=$(json a); elif [ "$b" != 0 ]; then ios=$(json b); else ios=$(json chat27); fi
     printf 'ios=%s\nandroid=[]\nupdate=false\nremote=false\nuser_path=false\n' "$ios"
     return 0
   fi
@@ -71,6 +71,9 @@ if [ "${1:-}" = --self-test ]; then
   check 'ios=["a"] android=[] update=false remote=false user_path=false' "" 3 0
   check 'ios=["b"] android=[]' "" 0 2
   check 'takes no groups' ios-b 2 0
+  check 'ios=["chat27"] android=[] update=false remote=false user_path=false' "" 0 0 4
+  check 'ios=["a"] android=[]' "" 1 0 4
+  check 'takes no groups' ios27-chat 0 0 4
   plan ios-mian 0 0 >/dev/null 2>&1 && { echo "FAIL: groups.sh self-test: an unknown group exits 0"; fail=1; }
   # devices.yml runs each Android key (its job's name map and its case) and no other.
   yml="$(dirname "$0")/../../../.github/workflows/devices.yml"

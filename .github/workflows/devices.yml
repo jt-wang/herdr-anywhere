@@ -24,7 +24,7 @@ on:
         default: false
       # A suite that passes one run and fails the next needs more runs to show why: this many copies of one iOS group
       # at once, on the commit asked for, and no other suite. Each uploads its own folder, checked as always. With both
-      # set, the main group's. 5 at most: GitHub runs 5 macOS jobs at a time for an account on the Free, Pro or Team
+      # set, the first of main, b, iOS 27 chat. 5 at most: GitHub runs 5 macOS jobs at a time for an account on the Free, Pro or Team
       # plan, across all its repositories (docs.github.com/en/actions/reference/limits); more would only wait.
       ios_main_repeat:
         description: "Run only the iOS main group, this many copies at once (0: the usual run)"
@@ -33,6 +33,11 @@ on:
         default: "0"
       ios_b_repeat:
         description: "Run only the iOS Tailcat and pictures group, this many copies at once (0: the usual run)"
+        type: choice
+        options: ["0", "1", "2", "3", "4", "5"]
+        default: "0"
+      ios27_chat_repeat:
+        description: "Run only the iOS 27 chat view group (ios27-chat), this many copies at once (0: the usual run)"
         type: choice
         options: ["0", "1", "2", "3", "4", "5"]
         default: "0"
@@ -78,9 +83,9 @@ permissions:
 
 concurrency:
   # A run of copies has a group of its own, so it doesn't cancel the branch's usual run, nor that run it; copies of
-  # the main group and of the b group apart, as a run has only one of them (ios_main_repeat wins over ios_b_repeat).
+  # the main, b and iOS 27 chat groups apart, as a run has only one of them (ios_main_repeat, then ios_b_repeat).
   # So does each scroll self-test, the pictures self-test, the open-the-space one, the OCR probe and a run of some groups.
-  group: devices-${{ github.ref }}${{ (inputs.ios_main_repeat || '0') != '0' && '-repeat-a' || (inputs.ios_b_repeat || '0') != '0' && '-repeat-b' || '' }}${{ (inputs.ios_scroll_selftest || 'none') != 'none' && format('-{0}', inputs.ios_scroll_selftest) || '' }}${{ (inputs.ios_picture_selftest || 'none') != 'none' && '-picture-selftest' || '' }}${{ (inputs.ios_open_space_selftest || 'none') != 'none' && '-open-space-selftest' || '' }}${{ inputs.ocr_probe && '-ocr-probe' || '' }}${{ inputs.groups && '-groups' || '' }}
+  group: devices-${{ github.ref }}${{ (inputs.ios_main_repeat || '0') != '0' && '-repeat-a' || (inputs.ios_b_repeat || '0') != '0' && '-repeat-b' || (inputs.ios27_chat_repeat || '0') != '0' && '-repeat-chat27' || '' }}${{ (inputs.ios_scroll_selftest || 'none') != 'none' && format('-{0}', inputs.ios_scroll_selftest) || '' }}${{ (inputs.ios_picture_selftest || 'none') != 'none' && '-picture-selftest' || '' }}${{ (inputs.ios_open_space_selftest || 'none') != 'none' && '-open-space-selftest' || '' }}${{ inputs.ocr_probe && '-ocr-probe' || '' }}${{ inputs.groups && '-groups' || '' }}
   cancel-in-progress: true
 
 env:
@@ -108,12 +113,13 @@ jobs:
           HM_GROUPS: ${{ inputs.groups }}
           MAIN_REPEAT: ${{ inputs.ios_main_repeat || '0' }}
           B_REPEAT: ${{ inputs.ios_b_repeat || '0' }}
+          CHAT27_REPEAT: ${{ inputs.ios27_chat_repeat || '0' }}
         run: |
           # Every script's trap on INT or TERM ends it (a cancelled or timed-out job sends one), and the check finds one that doesn't.
           sh app/e2e/ci/traps.sh --self-test
           sh app/e2e/ci/traps.sh
           sh app/e2e/ci/groups.sh --self-test
-          sh app/e2e/ci/groups.sh "$HM_GROUPS" "$MAIN_REPEAT" "$B_REPEAT" > "$RUNNER_TEMP/groups"
+          sh app/e2e/ci/groups.sh "$HM_GROUPS" "$MAIN_REPEAT" "$B_REPEAT" "$CHAT27_REPEAT" > "$RUNNER_TEMP/groups"
           cat "$RUNNER_TEMP/groups"
           cat "$RUNNER_TEMP/groups" >> "$GITHUB_OUTPUT"
 
@@ -441,9 +447,9 @@ jobs:
         # a: main, keyboard, letters, languages, scrolling (group ios-main); b: Tailcat, pictures (ios-b); onerror: an
         # error the app's JS doesn't catch (ios-onerror); onerror27: the same on iOS 27 (ios-onerror-27); chat: the chat
         # view of four agents (ios-chat); chat27: the same on iOS 27 (ios27-chat). copy 0 is the
-        # usual run; a run of copies (ios_main_repeat or ios_b_repeat) has only that group, numbered from 1.
+        # usual run; a run of copies (ios_main_repeat, ios_b_repeat or ios27_chat_repeat) has only that group, numbered from 1.
         key: ${{ fromJSON(needs.plan.outputs.ios) }}
-        copy: ${{ fromJSON('{"0":[0],"1":[1],"2":[1,2],"3":[1,2,3],"4":[1,2,3,4],"5":[1,2,3,4,5]}')[inputs.ios_main_repeat != '0' && inputs.ios_main_repeat || inputs.ios_b_repeat != '0' && inputs.ios_b_repeat || '0'] }}
+        copy: ${{ fromJSON('{"0":[0],"1":[1],"2":[1,2],"3":[1,2,3],"4":[1,2,3,4],"5":[1,2,3,4,5]}')[inputs.ios_main_repeat != '0' && inputs.ios_main_repeat || inputs.ios_b_repeat != '0' && inputs.ios_b_repeat || inputs.ios27_chat_repeat != '0' && inputs.ios27_chat_repeat || '0'] }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
