@@ -17,7 +17,9 @@ runs:
       run: |
         echo "NSH_IOS_EMBED=$RUNNER_TEMP/nsh-ios" >> "$GITHUB_ENV"
         echo "key=nsh-ios-$(app/ios/nsh-patches/key.sh | tr ' ' '-')-$(basename "$XCODE" .app)" >> "$GITHUB_OUTPUT"
-    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+    # Restored here and saved right after the build (below): actions/cache's own save runs at the job's end and only
+    # when every step passed, so a job whose suites fail would build it again next time.
+    - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       id: cache
       with:
         path: ${{ runner.temp }}/nsh-ios
@@ -33,3 +35,8 @@ runs:
         start=$(date +%s)
         app/ios/nsh-patches/build-nsh-ios.sh "$RUNNER_TEMP/nsh-src" "$RUNNER_TEMP/nsh-ios"
         echo "NativeShell built in $(( $(date +%s) - start )) s"
+    - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      if: steps.cache.outputs.cache-hit != 'true'
+      with:
+        path: ${{ runner.temp }}/nsh-ios
+        key: ${{ steps.key.outputs.key }}
