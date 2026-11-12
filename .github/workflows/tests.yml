@@ -1,13 +1,14 @@
 name: Tests
 
-# Every pull request and every push to main or ci (where a release's commit is tested before main) runs the
+# Every pull request and every push to main, ci (where a release's commit is tested before main) or a ci-* branch (a
+# change tried on its own, beside the others) runs the
 # tests a contributor runs locally, plus a secret scan over the whole history. The device suites (app/e2e/android*.sh,
 # ios*.sh) and user-path.sh run in devices.yml, on emulators and simulators; app/e2e/run.sh runs in computers.yml,
-# with herdr-core.
+# with herdr-core. One iOS check runs here: the app built with the iOS 27 SDK opens on an iOS 27 simulator (job ios27).
 on:
   pull_request:
   push:
-    branches: [main, ci]
+    branches: [main, ci, "ci-*"]
   workflow_dispatch:
 
 permissions:
@@ -58,6 +59,48 @@ jobs:
           echo "$HOME/.nsh/bin" >> "$GITHUB_PATH"
       - run: nsh --version && nsh check && scripts/test.sh
         working-directory: app
+
+  ios27:
+    name: iPhone app opens on iOS 27 (simulator)
+    # iOS 27 ends the launch of an app built with its SDK that has no scene (e2e/ios-scene.sh, e2e/ios-opens.sh).
+    # xcode-27 is the runner image with Xcode 27 and the iOS 27 simulators.
+    runs-on: xcode-27
+    env:
+      XCODEGEN_VERSION: "2.45.4"
+      # SHA-256 of xcodegen.zip; matches the digest GitHub lists for the release asset. Update both together.
+      XCODEGEN_SHA256: "090ec29491aad50aec10631bf6e62253fed733c50f3aab0f5ffc86bc170bdbef"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: third_party/tailpocket-8ae23dd/go.mod
+          cache-dependency-path: third_party/tailpocket-8ae23dd/go.sum
+      - name: Install nsh and xcodegen
+        run: |
+          curl -sfL -o nsh.tar.gz "https://github.com/longbridge/nsh/releases/download/$NSH_VERSION/nsh-macos-arm64.tar.gz"
+          echo "$NSH_SHA256  nsh.tar.gz" | shasum -a 256 -c -
+          tar -xzf nsh.tar.gz -C "$HOME" && mv "$HOME/nsh" "$HOME/.nsh"
+          echo "$HOME/.nsh/bin" >> "$GITHUB_PATH"
+          curl -sfL -o xcodegen.zip "https://github.com/yonaskolb/XcodeGen/releases/download/$XCODEGEN_VERSION/xcodegen.zip"
+          echo "$XCODEGEN_SHA256  xcodegen.zip" | shasum -a 256 -c -
+          unzip -q xcodegen.zip -d "$RUNNER_TEMP/xcodegen"
+          echo "$(dirname "$(find "$RUNNER_TEMP/xcodegen" -type f -name xcodegen -perm -u+x | head -1)")" >> "$GITHUB_PATH"
+      # The Xcode the TestFlight builds use.
+      - run: sudo xcode-select -s /Applications/Xcode_27.0.app && xcodebuild -version
+      - name: Build the app for the simulator (Release)
+        run: ios/build.sh App.tsx simulator
+        working-directory: app
+      - name: The build has a scene
+        run: e2e/ios-scene.sh ios/build/Herdr.app
+        working-directory: app
+      - name: Cold start on the newest iOS 27 simulator
+        working-directory: app
+        run: |
+          runtime=$(xcrun simctl list runtimes -j | python3 -c 'import json,sys; r=[x for x in json.load(sys.stdin)["runtimes"] if x["identifier"].startswith("com.apple.CoreSimulator.SimRuntime.iOS-27") and x["isAvailable"]]; print(max(r, key=lambda x: [int(n) for n in x["version"].split(".")])["identifier"] if r else "")')
+          [ -n "$runtime" ] || { echo "FAIL: no iOS 27 simulator runtime on this runner"; xcrun simctl list runtimes; exit 1; }
+          SIM_RUNTIME=$runtime e2e/ios-opens.sh ios/build/Herdr.app
 
   page:
     name: Terminal page (touch and keyboard, Chromium)
