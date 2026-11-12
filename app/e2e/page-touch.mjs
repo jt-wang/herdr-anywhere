@@ -21,7 +21,7 @@ async function open(opts, width = 390, height = 700) {
   await page.goto('http://terminal.test/')
   await page.waitForFunction(() => window.posts.some((m) => m.t === 'ready'))
   const cdp = await context.newCDPSession(page)
-  const touch = (type, x, y) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y }] })
+  const touch = (type, x, y) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' || type === 'touchCancel' ? [] : [{ x, y }] })
   return {
     page,
     cdp,
@@ -1018,6 +1018,45 @@ for (const [width, scale] of [[360, 3], [384, 2.8125], [393, 3], [411, 2.625], [
     console.log(`${name}: ${places} places, asked about ${asked.length}`)
     await t.page.context().close()
   }
+}
+
+// iOS's swipe back starts at the screen's left edge, where the terminal reaches on a phone. A finger that comes down
+// within `edge` of it keeps its moves' default, so the system's swipe can begin; with every move prevented a slow swipe
+// from 2 pt over the terminal went back 0 of 24 times (iOS 26.5 simulator, e2e/ios-edge-back.sh). Further in, moves stay
+// prevented; a drag up or down from the edge still scrolls; and when the system takes the finger (touchcancel), the
+// hold that selects a word is called off.
+{
+  const t = await open({ phone: true, edge: 24 })
+  await t.send({ t: 'write', data: Array.from({ length: 300 }, (_, i) => `line ${i}`).join('\r\n') })
+  await t.page.waitForTimeout(300)
+  await t.page.evaluate(() => { window.kept = []; document.addEventListener('touchmove', (e) => window.kept.push(e.defaultPrevented), { passive: true }) })
+  const sideways = async (x) => {
+    await t.page.evaluate(() => { window.kept = [] })
+    await t.touch('touchStart', x, 300)
+    for (let i = 1; i <= 6; i++) await t.touch('touchMove', x + i * 30, 300)
+    await t.touch('touchCancel')
+    return t.page.evaluate(() => window.kept)
+  }
+  const edge = await sideways(10)
+  check('a move from the left edge keeps its default', edge.length > 0 && edge.every((p) => !p), edge)
+  const inner = await sideways(100)
+  check('a move from further in is prevented', inner.length > 0 && inner.every((p) => p), inner)
+  await t.drag(10, 150, 300)
+  check('a drag down from the edge still scrolls the page back', await t.away())
+  await t.send({ t: 'bottom' })
+  await t.touch('touchStart', 10, 300)
+  await t.touch('touchCancel')
+  await t.page.waitForTimeout(700)
+  check('a finger the system took selects nothing', !(await t.page.evaluate(() => window.term.hasSelection())))
+  await t.page.context().close()
+  const off = await open({ phone: true })
+  await off.page.evaluate(() => { window.kept = []; document.addEventListener('touchmove', (e) => window.kept.push(e.defaultPrevented), { passive: true }) })
+  await off.touch('touchStart', 10, 300)
+  for (let i = 1; i <= 6; i++) await off.touch('touchMove', 10 + i * 30, 300)
+  await off.touch('touchEnd')
+  const offKept = await off.page.evaluate(() => window.kept)
+  check('without an edge (Android, a wide screen) every move is prevented', offKept.length > 0 && offKept.every((p) => p), offKept)
+  await off.page.context().close()
 }
 
 await browser.close()

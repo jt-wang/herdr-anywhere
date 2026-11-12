@@ -7,6 +7,7 @@
 #   zsh    zsh (the e2e terminals run zsh, as on a Mac)
 #   shots  what ci-shots-check.sh needs: python with zxing-cpp and Pillow as HM_SHOTS_PYTHON, tesseract and ffmpeg
 #   ios    xcodegen and idb (idb-companion and the fb-idb client)
+#   video  ffmpeg, which ci-shots-check.sh needs to look inside a recording (a Mac runner has none)
 # herdr-core and nsh are the versions computers.yml pins; update both files together.
 set -euo pipefail
 tmp=${RUNNER_TEMP:?run on a GitHub runner}
@@ -88,9 +89,16 @@ ios() {
   echo "$tmp/idb-py/bin" >> "$path_"
 }
 
+# Homebrew has no versioned ffmpeg formula: the runner image's formula is taken, as for tesseract.
+video() {
+  command -v ffmpeg >/dev/null || if [ $os = linux ]; then sudo apt-get install -y -qq ffmpeg >/dev/null
+    else HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 brew install -q ffmpeg >/dev/null; fi
+  ffmpeg -version | sed -n 1p
+}
+
 for what in "$@"; do
   case $what in
-    core) core ;; nsh) nsh ;; zsh) zsh_ ;; shots) shots ;; ios) ios ;;
+    core) core ;; nsh) nsh ;; zsh) zsh_ ;; shots) shots ;; ios) ios ;; video) video ;;
     *) echo "unknown: $what"; exit 2 ;;
   esac
 done

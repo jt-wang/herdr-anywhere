@@ -45,13 +45,13 @@ test('Install puts the file there; a Pi already running is told to type /reload,
   await app.waitFor('id:chat-setup-ask')
   await app.press('id:chat-setup-yes')
   await app.waitUntil(() => setupAsks(app).includes('PUT /api/chat-setups/pi'))
-  app.host.send('fake.chat', { chat: true, unknown: 'setup-not-loaded', setup: 'pi' })
-  await app.clock.runFor(3100)
+  // The computer says setup-not-loaded as soon as the file is there; the phone asks again at once, with no poll.
   await app.waitFor('id:chat-setup-reload')
   expect(app.texts()).toContain('Installed. This Pi was open before, so it starts using the file after /reload or a restart.')
   await app.press('id:chat-setup-reload')
   await app.waitUntil(() => sent(app).some((s) => s.startsWith('/reload')))
-  app.host.send('fake.chat', { chat: true, turns })
+  // Awaited: the clock moving before the fake had the new answer let the 3 s ask read the old one, and no other came.
+  await app.host.send('fake.chat', { chat: true, turns })
   await app.clock.runFor(3100)
   await app.waitFor('text:Done: 8px corners.')
 })

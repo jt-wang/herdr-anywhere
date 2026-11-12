@@ -1,0 +1,23 @@
+[
+  {
+    "id": "",
+    "from": "you",
+    "said": "CHANGE the notes",
+    "steps": [
+      { "id": "", "kind": "read", "title": "notes.txt" },
+      { "id": "", "kind": "edit", "title": "notes.txt", "added": 2 }
+    ],
+    "reply": "Added two lines to notes.txt.",
+    "end": "done"
+  },
+  {
+    "id": "",
+    "from": "you",
+    "said": "BREAK the build",
+    "steps": [
+      { "id": "", "kind": "run", "title": "echo checking; echo 'one test failed' >&2; exit 3", "failed": true }
+    ],
+    "reply": "The check failed with code 3.",
+    "end": "done"
+  }
+]

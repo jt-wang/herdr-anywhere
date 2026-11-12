@@ -175,9 +175,16 @@ func parse(msgs []message) []chat.Turn {
 	for _, m := range msgs {
 		switch m.Type {
 		case "user":
-			finish("stopped", 0)
 			var d userData
 			json.Unmarshal(m.Data, &d)
+			// Sent while the agent worked and taken before its next step: the turn has no end row yet. A step of the
+			// turn, where it was taken (OpenCode 2 writes the row then; OpenCode 1 when sent, which sorts it after the
+			// call it waited for).
+			if cur != nil {
+				flush()
+				cur.Steps = append(cur.Steps, chat.Step{ID: m.ID, Kind: chat.StepYou, Title: strings.TrimSpace(d.Text)})
+				continue
+			}
 			cur = &chat.Turn{ID: m.ID, From: "you", Said: d.Text, At: at(m.Created), Steps: []chat.Step{}, End: "open"}
 			started = m.Created
 		case "assistant":
