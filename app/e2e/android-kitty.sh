@@ -99,14 +99,20 @@ wait_for() {
 tap() { wait_for "$1"; set -- $B; "$adb" shell input tap $((($1 + $3) / 2)) $((($2 + $4) / 2)); }
 failed=0
 say() { echo "$1"; case $1 in FAIL*) failed=1;; esac; }
-# The chart on the phone's screen now: a screenshot (kept in the folder for screenshots), read by kitty-chart.py.
+# The chart on the phone's screen: a screenshot (kept in the folder for screenshots), read by kitty-chart.py. A screen
+# still redrawing (after the switch to dark, on a busy machine) is taken again, every 2 s for up to 20 s; the last one
+# is kept. Before the pictures, one screenshot.
 chart() { # name, what it shows
-  f=$work/$1.png
-  "$adb" exec-out screencap -p > "$f"
+  f=$work/$1.png t=0
+  while :; do
+    "$adb" exec-out screencap -p > "$f"
+    if out=$(python3 "$app/e2e/kitty-chart.py" "$f"); then r=ok; else r=FAIL; fi
+    [ $r = ok ] || [ "${HM_KITTY_BEFORE:-}" = 1 ] || [ $t -ge 20 ] && break
+    sleep 2; t=$((t + 2))
+  done
   [ -z "$shots" ] || { mkdir -p "$shots"; cp "$f" "$shots/$1.png"; }
-  if out=$(python3 "$app/e2e/kitty-chart.py" "$f"); then r=ok; else r=FAIL; fi
   if [ "${HM_KITTY_BEFORE:-}" = 1 ]; then echo "before: $2: $( [ $r = ok ] && echo drawn || echo "not drawn")"
-  else say "$r: $2"; [ $r = ok ] || echo "$out"; fi
+  else say "$r: $2$( [ $t = 0 ] || echo " (after $t s more)")"; [ $r = ok ] || echo "$out"; fi
 }
 open_pane() { tap "space-spacme"; wait_for "terminal-$term"; sleep 4; }
 # The app's and its WebView renderer's memory (PSS), from Android's summary: printed to compare with the page's
