@@ -7,12 +7,14 @@ name: Computers
 # under Windows' x64 emulation, as Herdr ships no Arm build for Windows yet, and the same for the x64 companion.
 # The Linux and Windows jobs also run the README's and INSTALL.md's install steps for that computer.
 # Runs only in the public repo, where GitHub's runners for public repos are free.
-# It runs on main, on release tags and on the public branch ci, where each release's commit is pushed and
-# must pass before it goes to main.
+# It runs on main, on release tags, on the public branch ci, where each release's commit is pushed and must pass
+# before it goes to main, and on ci-* branches, where a change is tried on its own beside the others.
 on:
   pull_request:
   push:
-    branches: [main, ci]
+    # A ci-try-* branch runs nothing when pushed: a trial is run by hand (workflow_dispatch), only what it needs. The
+    # "!" pattern comes after "ci-*", as GitHub applies the patterns in order.
+    branches: [main, ci, "ci-*", "!ci-try-*"]
     tags: ["v*"]
   workflow_dispatch:
 
