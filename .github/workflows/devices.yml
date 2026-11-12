@@ -77,6 +77,12 @@ on:
         description: "Only these groups, by commas or spaces (empty: all but ios-onerror-27, ios-chat, ios27-chat, android-chat): ios-main ios-b ios-onerror ios-onerror-27 ios-chat ios27-chat android-main android-panes android-tunnel android-notify android-progress android-picture android-chat android-update remote-picture user-path"
         type: string
         default: ""
+      # A name for one of several runs dispatched on the same branch, so they don't cancel each other. They share the
+      # branch's caches (NativeShell among them), which runs on another branch can't restore.
+      batch:
+        description: "Name of this run among several on one branch (empty: the branch's usual group)"
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -85,7 +91,8 @@ concurrency:
   # A run of copies has a group of its own, so it doesn't cancel the branch's usual run, nor that run it; copies of
   # the main, b and iOS 27 chat groups apart, as a run has only one of them (ios_main_repeat, then ios_b_repeat).
   # So does each scroll self-test, the pictures self-test, the open-the-space one, the OCR probe and a run of some groups.
-  group: devices-${{ github.ref }}${{ (inputs.ios_main_repeat || '0') != '0' && '-repeat-a' || (inputs.ios_b_repeat || '0') != '0' && '-repeat-b' || (inputs.ios27_chat_repeat || '0') != '0' && '-repeat-chat27' || '' }}${{ (inputs.ios_scroll_selftest || 'none') != 'none' && format('-{0}', inputs.ios_scroll_selftest) || '' }}${{ (inputs.ios_picture_selftest || 'none') != 'none' && '-picture-selftest' || '' }}${{ (inputs.ios_open_space_selftest || 'none') != 'none' && '-open-space-selftest' || '' }}${{ inputs.ocr_probe && '-ocr-probe' || '' }}${{ inputs.groups && '-groups' || '' }}
+  # A named batch adds its name, so batches on one branch run side by side.
+  group: devices-${{ github.ref }}${{ (inputs.ios_main_repeat || '0') != '0' && '-repeat-a' || (inputs.ios_b_repeat || '0') != '0' && '-repeat-b' || (inputs.ios27_chat_repeat || '0') != '0' && '-repeat-chat27' || '' }}${{ (inputs.ios_scroll_selftest || 'none') != 'none' && format('-{0}', inputs.ios_scroll_selftest) || '' }}${{ (inputs.ios_picture_selftest || 'none') != 'none' && '-picture-selftest' || '' }}${{ (inputs.ios_open_space_selftest || 'none') != 'none' && '-open-space-selftest' || '' }}${{ inputs.ocr_probe && '-ocr-probe' || '' }}${{ inputs.groups && '-groups' || '' }}${{ inputs.batch && format('-b{0}', inputs.batch) || '' }}
   cancel-in-progress: true
 
 env:

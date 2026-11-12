@@ -72,6 +72,8 @@ jobs:
           echo "$HOME/.nsh/bin" >> "$GITHUB_PATH"
       - run: nsh --version && nsh check && scripts/test.sh
         working-directory: app
+      # The NativeShell build script refuses folders with spaces before it builds anything (no Rust needed here).
+      - run: app/ios/nsh-patches/build-nsh-ios.test.sh
 
   ios27:
     name: iPhone app opens on iOS 27 (simulator)

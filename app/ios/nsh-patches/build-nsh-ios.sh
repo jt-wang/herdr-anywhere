@@ -14,6 +14,13 @@ set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 src=${1:?nsh source}; out=${2:?out folder}
 base=76fa8a7fed47ea51aea01fa85bb40960be15d984 # v0.3.0
+# These three paths go into compiler flags (below) that cargo and cc split at spaces: a path with a space breaks the
+# build half way (rustc: "must contain '='"), so it is refused before anything starts.
+for v in "src=$src" "CARGO_HOME=${CARGO_HOME:-$HOME/.cargo}" "CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-}"; do
+  case ${v#*=} in *" "*)
+    echo "${v%%=*} has a space (${v#*=}): the flags that keep this computer's paths out of the framework are split at spaces; use a folder without spaces" >&2
+    exit 1 ;; esac
+done
 key=$("$here/key.sh"); rust=$(printf %s "$key" | awk '{print $4}')
 # A toolchain that isn't installed is an error here, never installed by rustup on the way.
 export RUSTUP_TOOLCHAIN="${RUSTUP_TOOLCHAIN:-$rust}" RUSTUP_AUTO_INSTALL=0
