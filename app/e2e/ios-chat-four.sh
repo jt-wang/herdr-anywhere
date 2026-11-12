@@ -17,7 +17,7 @@ set -eu
 uitest=${UITEST:-ChatFour}
 case $uitest in
   ChatFour) agents=${AGENTS:-claude-code codex pi opencode}; delay=400ms; tag=chat-four ;;
-  ChatFold) agents=${AGENTS:-claude-code}; delay=3s; tag=chat-fold ;;
+  ChatFold) agents=${AGENTS:-claude-code}; delay=5s; tag=chat-fold ;;
   *) echo "no test $uitest (ChatFour or ChatFold)" >&2; exit 2 ;;
 esac
 away=${AWAY:-10 60}
