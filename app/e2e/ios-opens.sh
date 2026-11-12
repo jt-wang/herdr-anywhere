@@ -13,17 +13,32 @@ id=$(plutil -extract CFBundleIdentifier raw "$app/Info.plist")
 exe=$(plutil -extract CFBundleExecutable raw "$app/Info.plist")
 reports=$HOME/Library/Logs/DiagnosticReports
 marker=$(mktemp)
-udid=$(xcrun simctl create "ios-opens $$" "$device" "$SIM_RUNTIME")
+# A simulator that can't be made is a failed setup (exit 2), never a failed app (exit 1): the runtime and its device
+# types go to the log, so a run that never started the app says so.
+echo "runtime $SIM_RUNTIME, device $device"
+if ! xcrun simctl list runtimes -j | python3 -c '
+import json, sys
+r = next((r for r in json.load(sys.stdin)["runtimes"] if r["identifier"] == sys.argv[1]), None)
+if r is None: sys.exit("no runtime " + sys.argv[1])
+print("runtime", r.get("version"), r.get("buildversion"), "available:", r.get("isAvailable"), r.get("availabilityError", ""))
+ids = [d["identifier"] for d in r.get("supportedDeviceTypes", [])]
+if sys.argv[2] not in ids: sys.exit("the runtime has no " + sys.argv[2] + "; it has: " + " ".join(i.split(".")[-1] for i in ids))
+' "$SIM_RUNTIME" "$device"; then
+  echo "SETUP FAIL: no simulator of this kind on this runtime"; xcrun simctl list runtimes -v; exit 2
+fi
+if ! udid=$(xcrun simctl create "ios-opens $$" "$device" "$SIM_RUNTIME"); then
+  echo "SETUP FAIL: simctl create"; xcrun simctl list runtimes -v; xcrun simctl runtime list 2>/dev/null || true; exit 2
+fi
 cleanup() { xcrun simctl shutdown "$udid" 2>/dev/null || true; xcrun simctl delete "$udid" 2>/dev/null || true; rm -f "$marker"; }
 trap cleanup EXIT
 trap 'exit 130' INT TERM
-xcrun simctl boot "$udid"
-xcrun simctl bootstatus "$udid" -b >/dev/null
+xcrun simctl boot "$udid" || { echo "SETUP FAIL: simctl boot"; exit 2; }
+xcrun simctl bootstatus "$udid" -b >/dev/null || { echo "SETUP FAIL: simctl bootstatus"; exit 2; }
 # The first launch on a simulator that has just booted can be slow: start a system app once first.
 xcrun simctl launch "$udid" com.apple.Preferences >/dev/null 2>&1 || true
 sleep 5
 xcrun simctl terminate "$udid" com.apple.Preferences 2>/dev/null || true
-xcrun simctl install "$udid" "$app"
+xcrun simctl install "$udid" "$app" || { echo "SETUP FAIL: simctl install"; exit 2; }
 touch "$marker"
 pid=$(xcrun simctl launch "$udid" "$id" | awk -F': ' '{print $2}')
 case $pid in ''|*[!0-9]*) echo "FAIL: simctl launch gave no pid"; exit 1 ;; esac
