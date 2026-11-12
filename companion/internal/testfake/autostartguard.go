@@ -20,7 +20,8 @@ import (
 // check for the e2e suites.
 type AutostartGuard struct {
 	own, home, file, stamp string
-	loaded                 []string
+	state                  string   // the person's state folder
+	marks, loaded          []string // what the state folder holds; the loaded entries
 }
 
 // GuardAutostart notes the person's entry (in the account's home from the user database, or $HM_AUTOSTART_HOME) and
@@ -38,6 +39,8 @@ func GuardAutostart(own string) *AutostartGuard {
 	}
 	g.file = (&autostart.Service{Name: autostart.DefaultName, Home: home}).Path()
 	g.stamp = stamp(g.file)
+	g.state = filepath.Join(home, ".config", "herdr-anywhere")
+	g.marks = stateMarks(g.state)
 	g.loaded = loadedEntries()
 	return g
 }
@@ -68,6 +71,9 @@ func (g *AutostartGuard) Check() []string {
 	if now := stamp(g.file); now != g.stamp {
 		bad = append(bad, fmt.Sprintf("the person's entry %s changed: %s before, %s after", g.file, g.stamp, now))
 	}
+	if what := stateChange(g.marks, stateMarks(g.state)); what != "" {
+		bad = append(bad, fmt.Sprintf("the person's state folder %s changed: %s", g.state, what))
+	}
 	after := loadedEntries()
 	var added, gone []string
 	for _, l := range after {
@@ -87,6 +93,75 @@ func (g *AutostartGuard) Check() []string {
 		bad = append(bad, "unloaded during the run: "+strings.Join(gone, " "))
 	}
 	return bad
+}
+
+// stateFiles are the person's state files that only a command writes, or serve as it starts: the person's running
+// Companion changes none of them.
+var stateFiles = []string{"organizer.json", "progress.json", "serve.json", "tailcat.json"}
+
+// stateMarks is what a state folder holds, a line each: "none" when there is no folder, "name NAME" for each name in it
+// (not the temporary files a write renames from), and "FILE STAMP" for the stateFiles. The person's running Companion
+// changes none of these lines: the log and state.json it writes are only names here.
+func stateMarks(dir string) []string {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []string{"none"}
+		}
+		return []string{err.Error()}
+	}
+	var marks []string
+	for _, e := range entries {
+		if n := e.Name(); !strings.HasPrefix(n, ".") && !strings.HasSuffix(n, ".tmp") {
+			marks = append(marks, "name "+n)
+		}
+	}
+	for _, f := range stateFiles {
+		marks = append(marks, f+" "+stamp(filepath.Join(dir, f)))
+	}
+	return marks
+}
+
+// stateChange says how the state folder's marks changed, or "".
+func stateChange(before, after []string) string {
+	added, gone := differ(before, after)
+	switch {
+	case len(added)+len(gone) == 0:
+		return ""
+	case slices.Contains(before, "none"):
+		return "made during the run"
+	case slices.Contains(after, "none"):
+		return "removed during the run"
+	}
+	var what []string
+	for _, l := range added {
+		if n, ok := strings.CutPrefix(l, "name "); ok {
+			what = append(what, "added "+n)
+		} else {
+			what = append(what, strings.Fields(l)[0]+" written")
+		}
+	}
+	for _, l := range gone {
+		if n, ok := strings.CutPrefix(l, "name "); ok {
+			what = append(what, "removed "+n)
+		}
+	}
+	return strings.Join(what, ", ")
+}
+
+// differ is what is in after and not in before, and what is in before and not in after.
+func differ(before, after []string) (added, gone []string) {
+	for _, l := range after {
+		if !slices.Contains(before, l) {
+			added = append(added, l)
+		}
+	}
+	for _, l := range before {
+		if !slices.Contains(after, l) {
+			gone = append(gone, l)
+		}
+	}
+	return added, gone
 }
 
 // stamp is a file's time and size, or "none".

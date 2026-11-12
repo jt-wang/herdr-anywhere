@@ -51,6 +51,21 @@ autostart_companions() { # the person's Companions: serve processes of a herdr-a
 }
 # systemctl --user reaches the user's manager through XDG_RUNTIME_DIR (or the session bus): a suite gives itself
 # another, so the guard asks with the ones it found at its start.
+autostart_statemarks() { # DIR: what the person's state folder holds, a line each: "none" with no folder, "name NAME" for
+  # each name in it (not a write's temporary file), "FILE STAMP" for the files only a command writes, or serve as it
+  # starts. The person's running Companion changes none of these lines (the Go guard is the same: testfake/autostartguard.go).
+  [ -d "$1" ] || { echo none; return 0; }
+  ls -A "$1" | grep -v -e '^\.' -e '\.tmp$' | sed 's/^/name /' || true
+  for f in organizer.json progress.json serve.json tailcat.json; do echo "$f $(autostart_stamp "$1/$f")"; done
+}
+autostart_statechange() { # BEFORE AFTER: how the state folder's marks changed, or nothing
+  [ "$1" != "$2" ] || return 0
+  [ "$1" != none ] || { echo "made during the suite"; return 0; }
+  [ "$2" != none ] || { echo "removed during the suite"; return 0; }
+  { printf '%s\n' "$2" | grep -vxF -e "$(printf '%s\n' "$1")" -e '' | sed -e 's/^name /added /' -e t -e 's/ .*/ written/' || true
+    printf '%s\n' "$1" | grep -vxF -e "$(printf '%s\n' "$2")" -e '' | sed -n 's/^name /removed /p' || true
+  } | paste -sd, - | sed 's/,/, /g'
+}
 autostart_systemctl() {
   env XDG_RUNTIME_DIR="${ag_runtime:-${XDG_RUNTIME_DIR:-/run/user/$(id -u)}}" ${ag_bus:+DBUS_SESSION_BUS_ADDRESS="$ag_bus"} systemctl --user "$@"
 }
@@ -68,6 +83,8 @@ autostart_guard() {
   ag_loaded=$(autostart_labels)
   ag_state=$(autostart_state)
   ag_companions=$(autostart_companions)
+  ag_statedir=$ag_home/.config/herdr-anywhere
+  ag_marks=$(autostart_statemarks "$ag_statedir")
   ag_on=1
 }
 autostart_guard_end() {
@@ -102,6 +119,9 @@ autostart_guard_end() {
   ag_ended=$(printf '%s\n' "$ag_companions" | grep -vxF -e "$(printf '%s\n' "$ag_after")" -e '' || true)
   [ -z "$ag_ended" ] || ag_bad="$ag_bad
   the person's Companion ended during the suite: $(echo $ag_ended)"
+  ag_now=$(autostart_statechange "$ag_marks" "$(autostart_statemarks "$ag_statedir")")
+  [ -z "$ag_now" ] || ag_bad="$ag_bad
+  the person's state folder $ag_statedir changed: $ag_now"
   [ -n "$ag_bad" ] || return 0
   echo "FAIL: autostart guard ($ag_name):$ag_bad"
   return 1
@@ -179,6 +199,17 @@ if [ "${1:-}" = --self-test ]; then
   # …and still sees a stop that reached the person's manager.
   own_runtime_stop() { own_runtime; (XDG_RUNTIME_DIR=$t/run; old_stop "$def" "$t/suite-home"); }
   reset; person_loaded; run_case "a runtime dir of its own, a stop with the default name" fail "unloaded during the suite: $def" own_runtime_stop
+  # The person's state folder (~/.config/herdr-anywhere): a suite makes, removes or writes none of it, while the
+  # person's Companion goes on writing its log and state.json.
+  st=$t/account/.config/herdr-anywhere
+  make_state() { mkdir -p "$st"; }
+  reset; run_case "the person's state folder made" fail "the person's state folder $st changed: made during the suite" make_state
+  write_progress() { echo '{"on":true}' > "$st/progress.json"; echo '{}' > "$st/track.json"; }
+  reset; make_state; echo '{"on":false}' > "$st/progress.json"
+  run_case "a file written in the person's state folder" fail "added track.json, progress.json written" write_progress
+  companion_writes() { echo b >> "$st/serve.log"; echo '{}' > "$st/state.json.1.tmp"; echo '{"devices":[]}' > "$st/state.json"; }
+  reset; make_state; echo a > "$st/serve.log"; echo '{}' > "$st/state.json"; echo '{"on":false}' > "$st/progress.json"
+  run_case "the person's Companion writes its log and state" pass "" companion_writes
   end_person() { kill "$person"; wait "$person" 2>/dev/null; }
   reset; run_case "the person's Companion ends" fail "the person's Companion ended during the suite: $person $p/herdr-anywhere" end_person
   person=

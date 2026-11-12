@@ -30,7 +30,7 @@ func TestMain(m *testing.M) {
 	code := m.Run()
 	os.RemoveAll(home)
 	for _, bad := range guard.Check() {
-		fmt.Fprintln(os.Stderr, "FAIL: the person's Companion entry at login:", bad)
+		fmt.Fprintln(os.Stderr, "FAIL: the person's Companion (its entry at login, its state folder):", bad)
 		code = 1
 	}
 	os.Exit(code)

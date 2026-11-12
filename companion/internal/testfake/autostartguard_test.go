@@ -2,6 +2,7 @@ package testfake
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -80,6 +81,42 @@ func TestGuardAutostart(t *testing.T) {
 		reset()
 		g := GuardAutostart(own)
 		installStart(t, "io.example.herdranywhere.test.someone-else", t.TempDir())
+		saysAll(t, g.Check())
+	})
+	// The person's state folder (~/.config/herdr-anywhere): a run makes, removes or writes none of it, while the
+	// person's Companion goes on writing its log and state.json.
+	state := filepath.Join(account, ".config", "herdr-anywhere")
+	write := func(name, text string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(state, name), []byte(text), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Run("the person's state folder made during the run", func(t *testing.T) {
+		reset()
+		g := GuardAutostart(own)
+		os.MkdirAll(state, 0o700)
+		saysAll(t, g.Check(), "the person's state folder "+state+" changed", "made during the run")
+	})
+	t.Run("a file written in the person's state folder", func(t *testing.T) {
+		reset()
+		os.MkdirAll(state, 0o700)
+		write("progress.json", `{"on":false}`)
+		g := GuardAutostart(own)
+		write("progress.json", `{"on":true}`+"\n")
+		write("track.json", "{}")
+		saysAll(t, g.Check(), "the person's state folder "+state+" changed", "progress.json", "added track.json")
+	})
+	t.Run("the person's Companion writes its log and state", func(t *testing.T) {
+		reset()
+		os.MkdirAll(state, 0o700)
+		write("serve.log", "a\n")
+		write("state.json", "{}")
+		write("progress.json", `{"on":false}`)
+		g := GuardAutostart(own)
+		write("serve.log", "a\nb\n")
+		write("state.json.123.tmp", "{}")
+		write("state.json", `{"devices":[]}`)
 		saysAll(t, g.Check())
 	})
 }
