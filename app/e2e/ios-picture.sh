@@ -28,7 +28,7 @@ mkdir -p "$work/home" "$work/state" "$work/config" "$work/data"
 L() { HC_SESSION="hmiospic-$$" HC_SOCKET="" HOME="$work/home" SHELL=/bin/zsh XDG_STATE_HOME="$work/state" XDG_CONFIG_HOME="$work/config" \
   XDG_DATA_HOME="$work/data" XDG_RUNTIME_DIR="$run" "$@"; }
 . "$app/e2e/picture-terminal.sh"
-serve_pid=
+. "$app/e2e/companion.sh"  # companion_start, companion_stop
 cleanup() {
   status=$?
   trap - EXIT INT TERM HUP
@@ -36,7 +36,7 @@ cleanup() {
   # The sampler first: a sample written while rm -rf runs makes load.txt again, and the folder is not deleted.
   { kill "$sampler"; wait "$sampler"; } 2>/dev/null || true
   [ -z "${touchlog:-}" ] || { kill "$touchlog"; wait "$touchlog"; } 2>/dev/null || true
-  [ -n "$serve_pid" ] && { pkill -P "$serve_pid" 2>/dev/null; kill "$serve_pid" 2>/dev/null; }
+  companion_stop || status=1
   L "$hc" server stop >/dev/null 2>&1 || true
   picture_cleanup
   chmod -R u+w "$work" 2>/dev/null; rm -rf "${work:?}" "${run:?}" || echo "NOTE: left after the cleanup: $(ls -A "$work" 2>/dev/null | head -5 | tr '\n' ' ')"
@@ -44,9 +44,7 @@ cleanup() {
 }
 trap cleanup EXIT; trap 'exit 130' INT; trap 'exit 143' TERM HUP
 picture_terminal
-L env HERDR_ANYWHERE_STATE="$work/companion" "$work/herdr-anywhere" serve --listen "127.0.0.1:$port" --hc "$hc" > "$work/serve.log" 2>&1 &
-serve_pid=$!
-i=0; until curl -fsS "http://127.0.0.1:$port/api/info" >/dev/null 2>&1; do i=$((i + 1)); [ $i -gt 100 ] && { cat "$work/serve.log" >&2; exit 1; }; sleep 0.1; done
+companion_start "$work/serve.log" L env HERDR_ANYWHERE_STATE="$work/companion" "$work/herdr-anywhere" serve --listen "127.0.0.1:$port" --hc "$hc" --state "$work/companion" || exit 1
 link=$(L env HERDR_ANYWHERE_STATE="$work/companion" "$work/herdr-anywhere" pair --url "http://127.0.0.1:$port" 2>/dev/null | grep -o 'http://[^ ]*#pair=[A-Za-z0-9_-]*' | head -1)
 [ -n "$link" ] || { echo "FAIL: no pairing link"; exit 1; }
 # The app is built from a copy of app/ whose terminal page also tells the test when the page got each touch and what it
