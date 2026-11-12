@@ -14,7 +14,9 @@ final class Scroll: XCTestCase {
     app.activate()
     let tile = app.descendants(matching: .any)["space-" + space].firstMatch
     XCTAssertTrue(tile.waitForExistence(timeout: 40), "home does not list the space")
-    tile.tap()
+    // Only for the old-versus-new comparison on ci-scroll-old: with MISS_FIRST the first tap lands beside the space, as
+    // the new test's self-test taps.
+    if env["MISS_FIRST"] == "1" { app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.01)).tap() } else { tile.tap() }
     // The terminal itself, not its "Connecting…" line (terminal-state), which the same prefix also finds. On a CI run the
     // first drag, 4 s after the terminal showed, sent the program nothing and the later ones worked, most likely as the page was not
     // ready yet. So the drags wait until it is, as TypeIn does.

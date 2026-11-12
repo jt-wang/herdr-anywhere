@@ -30,14 +30,17 @@ final class TypeIn: XCTestCase {
     }
     XCTAssertTrue(el("space-spios").waitForExistence(timeout: 40), "home does not list the space")
     el("space-spios").tap()
-    // The terminal page loaded and attached: "Connecting…" (terminal-state) goes once the page says ready. On the iOS 26.3
-    // simulator it stayed for 90 s over a blank page, and the keyboard check below still passed.
+    // The terminal page loaded and attached: the line under the terminal (terminal-state) goes once the page says ready.
+    // On the iOS 26.3 simulator it stayed for 90 s over a blank page, and the keyboard check below still passed; on a
+    // CI runner the page once took over 20 s. Until it does, the app says it is still loading, so the test waits too,
+    // and notes how long it took.
     XCTAssertTrue(el("space-more").waitForExistence(timeout: 10), "the space did not open")
+    let opened = Date()
     let state = el("terminal-state")
     let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: state)
-    let live = XCTWaiter().wait(for: [gone], timeout: 20) == .completed
-    note("terminal live: \(live)\(live ? "" : ", still says: \(state.label)")")
-    XCTAssertTrue(live, "the terminal page did not load: still \(state.label) after 20 s")
+    let live = XCTWaiter().wait(for: [gone], timeout: 60) == .completed
+    note("terminal live: \(live) after \(String(format: "%.1f", Date().timeIntervalSince(opened))) s\(live ? "" : ", still says: \(state.label)")")
+    XCTAssertTrue(live, "the terminal page did not load: still \(state.label) after 60 s")
     sleep(2)
     note("opened, keyboard up: \(app.keyboards.count > 0)")
     typeIn()

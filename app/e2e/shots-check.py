@@ -70,6 +70,8 @@ def mask(folder):
         pictures += 1
         painted += paint(path)
     for path in files(folder, VIDEOS):
+        if not shutil.which("ffmpeg"):
+            sys.exit(f"FAIL: {path} is a video, and there is no ffmpeg here to look inside it")
         n = video_codes(path)
         if n:
             sys.exit(f"FAIL: {path} shows a QR code in {n} frames; a video can't be painted over, so it can't be uploaded")
