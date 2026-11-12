@@ -114,8 +114,8 @@ func (s *Service) save(st connecthost.State) error {
 // no node until the first pairing (connecthost/host.go:135-150).
 func (s *Service) Start(ctx context.Context) error { return s.host.Start(ctx) }
 
-// Listener yields connections from paired phones.
-func (s *Service) Listener() net.Listener { return s.host.Listener() }
+// Listener yields connections from paired phones, and none from a phone revoked since (admit).
+func (s *Service) Listener() net.Listener { return admit(s.host.Listener(), s.store, s.log) }
 
 // Close stops the node, every pairing window and the listener.
 func (s *Service) Close() error { return s.host.Close() }
@@ -260,5 +260,48 @@ func (i *issuer) undo() {
 	if i.device != "" {
 		_ = i.store.Revoke(i.device)
 		i.device = ""
+	}
+}
+
+// admit passes on the connections of phones whose device is still paired. A revoke is a change to the device list,
+// made by another process (`herdr-anywhere revoke`); Tailcat drops the phone only later, when Watch prunes it, and
+// until its node stops the phone can still open connections. /hc refuses its token, but /api/info needs none, so
+// without this a revoked phone still reached serve for that while (measured over real relays: up to 424 ms after
+// revoke while the 4401 closes, and again in the moment between writing tailcat.json and stopping the node;
+// TestLiveTailcat). A connection whose phone Tailcat does not name is passed on: Tailcat admits only allowed phones,
+// and a phone it has just admitted is named only once connecthost indexes it.
+func admit(ln net.Listener, st *store.Store, logger *log.Logger) net.Listener {
+	if logger == nil {
+		logger = log.New(io.Discard, "", 0)
+	}
+	return &admitted{Listener: ln, store: st, log: logger}
+}
+
+type admitted struct {
+	net.Listener
+	store *store.Store
+	log   *log.Logger
+}
+
+func (l *admitted) Accept() (net.Conn, error) {
+	for {
+		c, err := l.Listener.Accept()
+		if err != nil {
+			return nil, err
+		}
+		phone := connecthost.PhoneOf(c)
+		if phone == "" {
+			return c, nil
+		}
+		keys, err := deviceKeys(l.store)
+		if err == nil && keys[phone] {
+			return c, nil
+		}
+		c.Close()
+		if err != nil {
+			l.log.Printf("tailcat: refused a connection: reading the devices: %v", err)
+		} else {
+			l.log.Printf("tailcat: refused a connection from revoked phone %s", phone)
+		}
 	}
 }

@@ -30,8 +30,15 @@ export HC_SESSION="hmaqt-$$" HC_SOCKET="" HOME="$work/home" SHELL=/bin/zsh
 export XDG_STATE_HOME="$work/state" XDG_CONFIG_HOME="$work/config" XDG_DATA_HOME="$work/data" XDG_RUNTIME_DIR="$run"
 export GIT_CONFIG_GLOBAL="$work/home/.gitconfig"
 "$hc" run --bg --keep --cwd "$work/home/src/acme-api" --label herdr.space=spatc --label herdr.tab=tbatc >/dev/null
+# The frozen case needs adb as root (kill -STOP on the app); the tests after this one read as adb's shell, and a root
+# shell reads what an app keeps from others (android-picture.sh). Put it back as it was.
+was_root=$("$adb" shell id -u | tr -d '\r')
 cleanup() {
   [ -n "${serve_pid:-}" ] && kill "$serve_pid" 2>/dev/null
+  if [ "$was_root" != 0 ] && [ "$("$adb" shell id -u 2>/dev/null | tr -d '\r')" = 0 ]; then
+    "$adb" unroot >/dev/null 2>&1; sleep 2; "$adb" wait-for-device
+    for _ in $(seq 1 15); do [ "$("$adb" shell id -u 2>/dev/null | tr -d '\r')" = 2000 ] && break; sleep 1; done
+  fi
   "$hc" server stop >/dev/null 2>&1 || true
   chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run" "$state"
 }

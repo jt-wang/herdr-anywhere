@@ -36,7 +36,11 @@ cleanup() {
   status=$?
   trap - EXIT INT TERM HUP
   set +e # every step runs, even after one fails
-  [ -n "$serve_pid" ] && kill "$serve_pid" 2>/dev/null
+  # $! is the shell running L, and the Companion is its child: stop the child too.
+  [ -n "$serve_pid" ] && { pkill -P "$serve_pid" 2>/dev/null; kill "$serve_pid" 2>/dev/null; }
+  # The Companion this test started must be gone, or it outlives the test.
+  i=0; while nc -z 127.0.0.1 "$port" 2>/dev/null && [ $i -lt 50 ]; do i=$((i + 1)); sleep 0.1; done
+  nc -z 127.0.0.1 "$port" 2>/dev/null && { echo "FAIL: the Companion on port $port is still running after the test"; status=1; }
   L "$hc" server stop >/dev/null 2>&1
   "$docker" rm -f "$box" >/dev/null 2>&1
   rm -rf "$work" "$run" "$state"

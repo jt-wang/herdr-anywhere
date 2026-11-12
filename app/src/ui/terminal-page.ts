@@ -260,24 +260,200 @@ const BOOT = `(function () {
     return '';
   }
   // An image's path under a tap: only its shape is judged here, a path that ends in an image type. Which file it is
-  // (a relative one is the terminal's folder's) and whether it may be read, the Companion says (GET /api/image).
-  // A folder's name has no spaces; a file's may (macOS names a screenshot with spaces, its date and its time).
+  // (a relative one is from the folder the terminal's program is in, on the machine the terminal is on) and whether it
+  // may be read, the Companion says (POST /api/image/check). A name may have spaces, one at a time and none next to a
+  // slash: macOS names a screenshot with its date and time, and an external disk is often named with spaces.
   // A tap asks the app whether the path is a picture on the computer before anything opens (askTap); the rows on
   // screen are looked through once a frame at most for the underline (scanPictures).
-  var IMAGE_ABS = /(^|[\\s("'<\\[=:])((?:~|[A-Za-z]:)?(?:[\\/\\\\][^\\s"'<>()\\[\\]{}|\\/\\\\]+)*[\\/\\\\][^"'<>()\\[\\]{}|\\/\\\\\\n]*?\\.(?:png|jpe?g|gif|webp))(?![\\w])/gi;
+  var IMAGE_ABS = /(^|[\\s("'<\\[=:])((?:~|[A-Za-z]:)?(?:[\\/\\\\][^\\s"'<>()\\[\\]{}|\\/\\\\]+(?: [^\\s"'<>()\\[\\]{}|\\/\\\\]+)*)*[\\/\\\\][^"'<>()\\[\\]{}|\\/\\\\\\n]*?\\.(?:png|jpe?g|gif|webp))(?![\\w])/gi;
   var IMAGE_REL = /(^|[\\s("'<\\[=:])((?:[^\\s"'<>()\\[\\]{}|\\/\\\\:]+[\\/\\\\])*[^\\s"'<>()\\[\\]{}|\\/\\\\:]+\\.(?:png|jpe?g|gif|webp))(?![\\w])/gi;
-  function imageAt(c) {
-    var a = around(c); if (!a) return '';
-    var res = [IMAGE_ABS, IMAGE_REL];
-    for (var k = 0; k < res.length; k++) {
-      var re = res[k], m; re.lastIndex = 0;
-      while ((m = re.exec(a.text))) {
-        var from = m.index + m[1].length, path = m[2];
-        if (a.base >= from && a.base < from + path.length && path.length <= 1024) return path;
-        re.lastIndex = from + 1;
+  var LINKS = /https?:\\/\\/[^\\s"'<>\\u2500-\\u257f\\u3000-\\u9fff\\uff00-\\uffef]+/g;
+  // A path stops at quotes, brackets and the marks and lines a TUI draws, and at two spaces.
+  var NOT_PATH = /["'<>()\\[\\]{}|\\x60\\u2000-\\u2bff\\u3000-\\u303f\\uff00-\\uffef]/;
+  // A row's characters, one a cell; the second cell of a wide character is ''.
+  function cellsOf(y) {
+    var l = term.buffer.active.getLine(y), out = [];
+    for (var x = 0; l && x < l.length; x++) { var k = l.getCell(x); out.push(k ? k.getChars() || (k.getWidth() ? ' ' : '') : ' '); }
+    return out;
+  }
+  function blank(ch) { return ch === undefined || ch === ' '; }
+  // Where the text holding cell x starts: back over single spaces, up to two spaces or a character no path has.
+  function runStart(cs, x) {
+    while (x > 0) {
+      var ch = cs[x - 1];
+      if (ch === ' ') { if (x < 2 || blank(cs[x - 2]) || NOT_PATH.test(cs[x - 2])) break; }
+      else if (ch && NOT_PATH.test(ch)) break;
+      x--;
+    }
+    while (x < cs.length && cs[x] === ' ') x++;
+    return x;
+  }
+  // Where the text from cell x ends (single spaces go on; two end it, and so does one before a mark no path holds,
+  // as in Claude Code's "Phot (158.5" at 40 columns), and where text starts again after such a gap.
+  function runEnd(cs, x) {
+    var end = x, i;
+    for (i = x; i < cs.length; i++) { if (cs[i] !== ' ') end = i + 1; else if (blank(cs[i + 1]) || NOT_PATH.test(cs[i + 1] || '')) break; }
+    for (i = end; i < cs.length && blank(cs[i]); i++);
+    return { end: end, next: i < cs.length && (i > end + 1 || (i === end + 1 && NOT_PATH.test(cs[i]))) ? i : -1 };
+  }
+  // The rows of a path a TUI cut, up from the row its type ends on (cell x of row y). A row above goes on with it when
+  // its text starts at the same left edge, after a space or a mark: Claude Code 2.1.322 sends files as three columns,
+  // "›"/"[image]", the path and the size (recorded in e2e/tui-paths). Or the terminal wrapped it. Or the TUI wrapped it
+  // at the screen's edge, the next row with its own indent.
+  function pathRows(y, x) {
+    var b = term.buffer.active, cs = cellsOf(y), l = b.getLine(y), rows = [{ y: y, cs: cs, x0: l && l.isWrapped ? 0 : runStart(cs, x) }];
+    for (var u = y - 1; u >= 0 && rows.length < 9; u--) {
+      var top = rows[0], up = cellsOf(u), x0 = top.x0, below = b.getLine(u + 1), e;
+      if (below && below.isWrapped && x0 === 0) rows.unshift({ y: u, cs: up, x0: 0, edge: true, wrap: true });
+      else if (!blank(up[x0]) && up[x0] !== '' && (x0 === 0 || blank(up[x0 - 1]) || NOT_PATH.test(up[x0 - 1]))) {
+        // A row whose text there ends in an image type ends a path of its own (Claude Code lists files one under another).
+        if (/\\.(?:png|jpe?g|gif|webp)$/i.test(up.slice(x0, runEnd(up, x0).end).join(''))) break;
+        rows.unshift({ y: u, cs: up, x0: x0 });
+      }
+      else if ((e = ending(b.getLine(u))).end >= term.cols - 6 && !NOT_PATH.test(up[e.end - 1] || ' ') && !blank(top.cs[x0]) && !NOT_PATH.test(top.cs[x0])) rows.unshift({ y: u, cs: up, x0: runStart(up, e.end - 1), edge: true });
+      else break;
+    }
+    return rows;
+  }
+  // The rows' text joined, from row "from" on, for a column that ends at cell x1. ys/xs/ws: the cell each character came
+  // from (y -1: a space a cut took out). A row that ends before the column's edge was cut at a space, which the cut
+  // took out, or after a hyphen, a slash or a dot (Codex 0.167.1 cuts after hyphens; OpenCode 1.19.0 after all three,
+  // as in "home-screen." then "png"). A row the
+  // TUI cut near the screen's edge may have been cut at a space too (OpenCode's "/Photo" then "Archive 2TB" at 40
+  // columns): "spaced" reads it so.
+  function joined(rows, from, x1, spaced) {
+    var j = { text: '', ys: [], xs: [], ws: [] };
+    for (var k = from; k < rows.length; k++) {
+      var r = rows[k], cs = r.cs, last = k === rows.length - 1, n0 = j.text.length;
+      var to = r.edge ? ending(term.buffer.active.getLine(r.y)).end : last ? cs.length : Math.min(r.end, x1);
+      for (var x = r.x0; x < to; x++) {
+        if (cs[x] === '') continue;
+        for (var i = 0; i < cs[x].length; i++) { j.text += cs[x][i]; j.ys.push(r.y); j.xs.push(x); j.ws.push(cs[x + 1] === '' ? 2 : 1); }
+      }
+      while (j.text.length > n0 && j.text[j.text.length - 1] === ' ') { j.text = j.text.slice(0, -1); j.ys.pop(); j.xs.pop(); j.ws.pop(); }
+      if (last) break;
+      var n = j.text.length, full = r.edge ? r.wrap || !spaced : n > n0 && j.xs[n - 1] + j.ws[n - 1] >= x1;
+      if (!full && !/[-.\\/\\\\]/.test(j.text[n - 1] || '')) { j.text += ' '; j.ys.push(-1); j.xs.push(-1); j.ws.push(0); }
+    }
+    return j;
+  }
+  // Where the path's column ends on the right, no TUI draws: a row with nothing after it ends at or before it, text
+  // after a gap starts at or after it. Each place between is a reading; so is each row a path may start on.
+  function readings(rows) {
+    var lo = 0, hi = term.cols, ends = [], k, x1, out = [], starts = [0];
+    for (k = 0; k < rows.length; k++) {
+      var r = rows[k]; if (r.edge) continue;
+      var e = runEnd(r.cs, r.x0); r.end = e.end;
+      if (e.next >= 0) hi = Math.min(hi, e.next);
+      if (k < rows.length - 1) ends.push(e.end);
+      if (k && k < rows.length - 1 && /^(?:[\\/\\\\~]|[A-Za-z]:[\\/\\\\])/.test(r.cs.slice(r.x0, r.x0 + 3).join(''))) starts.push(k);
+    }
+    if (rows.length > 1) starts.push(rows.length - 1);
+    for (k = 0; k < ends.length; k++) if (ends[k] <= hi && ends[k] > lo) lo = ends[k];
+    // Few places between: each; many (a row that tells little, far left): the two ends, and the cell before the
+    // nearest column, since Claude Code starts its size column with a space (" (158.5KB)" cut to " (158.5K" and "B)").
+    var xs = [];
+    if (!lo) xs.push(hi);
+    else if (hi - lo <= 3) for (x1 = lo; x1 <= hi; x1++) xs.push(x1);
+    else xs.push(lo, hi);
+    if (hi < term.cols && hi - 1 > lo && xs.indexOf(hi - 1) < 0) xs.push(hi - 1);
+    var cut = rows.some(function (r) { return r.edge && !r.wrap; });
+    for (k = 0; k < starts.length; k++) for (var i = 0; i < xs.length; i++) {
+      out.push({ j: joined(rows, starts[k], xs[i]), rank: k * 10 + i });
+      if (cut) out.push({ j: joined(rows, starts[k], xs[i], true), rank: k * 10 + i + 0.5 });
+    }
+    return out;
+  }
+  // Image paths that end on buffer rows first..last, each with the cells it is drawn on ([row, from, to]), in every
+  // reading of the rows a TUI cut it over. Which reading is a picture, the Companion says. What a row gives is kept
+  // while it and the 8 rows above it read the same: a TUI redraws a spinner or a clock many times a second.
+  var ended = {}, endedCount = 0;
+  function picturesOn(first, last) {
+    var out = [], seen = {}, b = term.buffer.active, side = b.type === 'alternate' ? 'a' : 'n', texts = {}, m, y;
+    first = Math.max(0, first); last = Math.min(last, b.length - 1);
+    for (y = Math.max(0, first - 8); y <= last; y++) texts[y] = rowOf(y).text;
+    if (endedCount > 2000) { ended = {}; endedCount = 0; }
+    for (y = first; y <= last; y++) {
+      var key = term.cols + '|' + [texts[y - 8], texts[y - 7], texts[y - 6], texts[y - 5], texts[y - 4], texts[y - 3], texts[y - 2], texts[y - 1], texts[y]].join('\\n');
+      var kept = ended[side + y];
+      if (!kept || kept.key !== key) {
+        if (!kept) endedCount++;
+        kept = ended[side + y] = { key: key, found: endingOn(y, texts[y], texts[y - 1]) };
+      }
+      for (var i = 0; i < kept.found.length; i++) { var f = kept.found[i], k = f.path + ' ' + f.cells.join(';'); if (!seen[k]) { seen[k] = true; out.push(f); } }
+    }
+    return out;
+  }
+  function endingOn(y, text, above) {
+    var out = [], seen = {}, anchors = [], m, re = /\\.(?:png|jpe?g|gif|webp)(?![\\w])/gi, r;
+    if (/\\./.test(text)) { r = rowOf(y); while ((m = re.exec(text))) anchors.push(r.at.indexOf(m.index)); }
+    // A type cut in two: ".p" ends the row above, "ng" starts a piece of this one.
+    var head = above && /[^\\s.]\\.([a-z]{0,3})\\s*$/i.exec(above);
+    if (head) {
+      var cs = cellsOf(y);
+      for (var x = 0; x < cs.length; x++) {
+        if (!/[a-z]/i.test(cs[x]) || !(x === 0 || blank(cs[x - 1]) || NOT_PATH.test(cs[x - 1]))) continue;
+        var word = ''; for (var w = x; w < cs.length && /[a-z]/i.test(cs[w]); w++) word += cs[w];
+        if (/^\\.(?:png|jpe?g|gif|webp)$/i.test('.' + head[1] + word)) anchors.push(x);
       }
     }
-    return '';
+    for (var a = 0; a < anchors.length; a++) {
+      if (anchors[a] < 0) continue;
+      var reads = readings(pathRows(y, anchors[a]));
+      for (var n = 0; n < reads.length; n++) pathsInText(reads[n].j, y, reads[n].rank, out, seen);
+    }
+    return out;
+  }
+  function pathsInText(j, y, rank, out, seen) {
+    var links = [], m, res = [IMAGE_ABS, IMAGE_REL];
+    for (LINKS.lastIndex = 0; (m = LINKS.exec(j.text)); ) links.push([m.index, m.index + m[0].length]);
+    for (var k = 0; k < res.length; k++) {
+      var re = res[k]; re.lastIndex = 0;
+      while ((m = re.exec(j.text))) {
+        var from = m.index + m[1].length, to = from + m[2].length, taken = j.ys[to - 1] !== y || m[2].length > 1024;
+        re.lastIndex = from + 1;
+        for (var i = 0; i < links.length && !taken; i++) taken = from < links[i][1] && links[i][0] < to;
+        if (taken) continue;
+        var cells = [];
+        for (i = from; i < to; i++) {
+          if (j.ys[i] < 0) continue;
+          var c = cells[cells.length - 1];
+          if (c && c[0] === j.ys[i]) c[2] = Math.max(c[2], j.xs[i] + j.ws[i]); else cells.push([j.ys[i], j.xs[i], j.xs[i] + j.ws[i]]);
+        }
+        var key = m[2] + ' ' + cells.join(';');
+        if (!seen[key]) { seen[key] = true; out.push({ path: m[2], cells: cells, rank: k * 1000 + rank }); }
+      }
+    }
+  }
+  // The paths on rows first..last: those an agent linked, then those read from the text (up to "ends" for paths cut
+  // over rows) where no link says what is there.
+  function picturesFor(first, last, ends) {
+    var linkedOnes = linkedPictures(first - 8, ends), out = linkedOnes.slice(), read = picturesOn(first, ends);
+    for (var i = 0; i < read.length; i++) {
+      var f = read[i], over = false;
+      for (var j = 0; j < linkedOnes.length && !over; j++) over = overlaps(f.cells, linkedOnes[j].cells);
+      if (!over) out.push(f);
+    }
+    return out;
+  }
+  function overlaps(a, b) {
+    for (var i = 0; i < a.length; i++) for (var j = 0; j < b.length; j++) if (a[i][0] === b[j][0] && a[i][1] < b[j][2] && b[j][1] < a[i][2]) return true;
+    return false;
+  }
+  // A tap: the path under it the computer said is a picture (the longest, if several readings are); else the likeliest
+  // reading, a full path before a relative one, from the most rows.
+  function imageAt(c) {
+    var k = linkUnder(c); if (k && k.picture) return k.picture;
+    var found = picturesFor(c.row, c.row, c.row + 8), best = null, guess = null;
+    for (var i = 0; i < found.length; i++) {
+      var f = found[i], on = false;
+      for (var k = 0; k < f.cells.length && !on; k++) on = f.cells[k][0] === c.row && c.col >= f.cells[k][1] && c.col < f.cells[k][2];
+      if (!on) continue;
+      var known = pictures[f.path];
+      if (known && known.picture && (!best || f.path.length > best.path.length)) best = f;
+      if (!guess || f.rank < guess.rank) guess = f;
+    }
+    return best ? best.path : guess ? guess.path : '';
   }
   // A tap that isn't on anything of the page's own: a click for a program that follows the mouse, and the app's tap.
   function tapOn(at) {
@@ -307,43 +483,28 @@ const BOOT = `(function () {
   // The underline: a line under each picture's path in the rows on screen, in a layer over the text (registerDecoration
   // draws nothing on a full-screen program's screen, the alternate buffer). Paths not known yet are asked about
   // together; one in a row written again is asked about again, if its answer is a second old (the agent may have
-  // saved the file since). A path the terminal wrapped onto two rows gets no line; a tap still opens it.
-  var LINKS = /https?:\\/\\/[^\\s"'<>\\u2500-\\u257f\\u3000-\\u9fff\\uff00-\\uffef]+/g;
+  // saved the file since). A path cut over rows is looked for up to 8 rows past the screen's edges, and gets a line on
+  // each of its rows on screen.
   var rowsSeen = {}, rowsCount = 0, toAsk = [], asking = {}, askTimer = 0, scanFrame = 0, layer = null, drawn = '';
-  function pathsIn(text) {
-    var out = [], links = [], m, res = [IMAGE_ABS, IMAGE_REL];
-    if (!/\\.(png|jpe?g|gif|webp)/i.test(text)) return out;
-    for (LINKS.lastIndex = 0; (m = LINKS.exec(text)); ) links.push([m.index, m.index + m[0].length]);
-    for (var k = 0; k < res.length; k++) {
-      var re = res[k]; re.lastIndex = 0;
-      while ((m = re.exec(text))) {
-        var from = m.index + m[1].length, to = from + m[2].length, taken = false;
-        for (var i = 0; i < links.length && !taken; i++) taken = from < links[i][1] && links[i][0] < to;
-        for (i = 0; i < out.length && !taken; i++) taken = from < out[i].to && out[i].from < to;
-        if (!taken && m[2].length <= 1024) out.push({ from: from, to: to, path: m[2] });
-        re.lastIndex = from + 1;
-      }
-    }
-    return out;
-  }
   function scanSoon() { if (!scanFrame) scanFrame = requestAnimationFrame(scanPictures); }
   function scanPictures() {
     scanFrame = 0;
-    var b = term.buffer.active, side = b.type === 'alternate' ? 'a' : 'n', now = Date.now(), lines = [];
+    var b = term.buffer.active, side = b.type === 'alternate' ? 'a' : 'n', now = Date.now(), lines = [], changed = {}, top = b.viewportY;
     if (rowsCount > 4000) { rowsSeen = {}; rowsCount = 0; }
-    for (var r = 0; r < term.rows; r++) {
-      var y = b.viewportY + r, row = rowOf(y), key = side + y, changed = rowsSeen[key] !== row.text;
+    for (var y = Math.max(0, top - 8); y < Math.min(b.length, top + term.rows + 8); y++) {
+      var text = rowOf(y).text, key = side + y;
+      if (rowsSeen[key] !== text) changed[y] = true;
       if (rowsSeen[key] === undefined) rowsCount++;
-      rowsSeen[key] = row.text;
-      var found = pathsIn(row.text);
-      for (var i = 0; i < found.length; i++) {
-        var f = found[i], known = pictures[f.path];
-        if (!asking[f.path] && (!known || (changed && now - known.at >= 1000))) { asking[f.path] = true; toAsk.push(f.path); }
-        if (known && known.picture) {
-          var x0 = row.at.indexOf(f.from), x1 = row.at.indexOf(f.to - 1), line = b.getLine(y), last = line && line.getCell(x1);
-          if (x0 >= 0 && x1 >= x0) lines.push([r, x0, x1 - x0 + (last && last.getWidth() === 2 ? 2 : 1)]);
-        }
-      }
+      rowsSeen[key] = text;
+    }
+    var found = picturesFor(top, top + term.rows - 1, top + term.rows - 1 + 8);
+    for (var i = 0; i < found.length; i++) {
+      var f = found[i], shown = false, moved = false, k;
+      for (k = 0; k < f.cells.length; k++) { var c = f.cells[k]; if (c[0] >= top && c[0] < top + term.rows) shown = true; if (changed[c[0]]) moved = true; }
+      if (!shown) continue;
+      var known = pictures[f.path];
+      if (!asking[f.path] && (!known || (moved && now - known.at >= 1000))) { asking[f.path] = true; toAsk.push(f.path); }
+      if (known && known.picture) for (k = 0; k < f.cells.length; k++) { c = f.cells[k]; if (c[0] >= top && c[0] < top + term.rows) lines.push([c[0] - top, c[1], c[2] - c[1]]); }
     }
     if (toAsk.length && !askTimer) askTimer = setTimeout(askPaths, 120);
     drawLines(lines);
@@ -371,22 +532,63 @@ const BOOT = `(function () {
     layer.innerHTML = html;
   }
   function forgetPictures() { rowsSeen = {}; rowsCount = 0; drawn = ''; scanSoon(); }
-  // A link behind text (OSC 8): nothing in the buffer's public API says which cell has one, so note where each was written.
+  // A link behind text (OSC 8): nothing in the buffer's public API says which cell has one, so note where each was
+  // written, and what it was written over: text written there since without the link is no longer it (Claude Code
+  // draws its next screen over a dialog's link). A link to a file that is an image is that picture's path, whole and
+  // as the agent knows it, however the screen shows it: Claude Code 2.1.322 and Codex 0.167.1 link each path they show
+  // with file:///<the full path>, a relative one and a bare file name too, each row of a cut path on its own
+  // (recorded in e2e/tui-paths).
   var linked = [], linking = null;
   function here() { var b = term.buffer.active; return { at: term.registerMarker(0) || { line: b.baseY + b.cursorY }, col: b.cursorX }; }
+  function spanText(k) {
+    var b = term.buffer.active, a = k.start.at.line, z = k.end.at.line, out = '';
+    if (a < 0 || z < 0 || z < a || z - a > 12) return null;
+    for (var y = a; y <= z; y++) { var l = b.getLine(y); if (!l) return null; out += l.translateToString(false, y === a ? k.start.col : 0, y === z ? k.end.col : l.length) + '\\n'; }
+    return out;
+  }
+  function filePicture(uri) {
+    var m = /^file:\\/\\/(?:localhost)?(\\/[^?#]*)$/i.exec(uri), p;
+    if (!m) return '';
+    try { p = decodeURIComponent(m[1]); } catch (e) { return ''; }
+    if (/^\\/[A-Za-z]:[\\/\\\\]/.test(p)) p = p.slice(1);
+    return p.length <= 1024 && !/[\\n\\r\\0]/.test(p) && /\\.(?:png|jpe?g|gif|webp)$/i.test(p) ? p : '';
+  }
   function hyperlink(data) {
     var uri = data.slice(data.indexOf(';') + 1);
-    if (linking) { linking.end = here(); linked.push(linking); linking = null; if (linked.length > 200) linked.shift(); }
-    if (/^https?:\\/\\//.test(uri)) { linking = { url: uri, start: here() }; }
+    if (linking) {
+      linking.end = here(); linking.text = spanText(linking);
+      if (linking.text && linking.text.trim()) linked.push(linking);
+      else { linking.start.at.dispose && linking.start.at.dispose(); linking.end.at.dispose && linking.end.at.dispose(); }
+      linking = null;
+      if (linked.length > 400) { var old = linked.shift(); old.start.at.dispose && old.start.at.dispose(); old.end.at.dispose && old.end.at.dispose(); }
+    }
+    var picture = filePicture(uri);
+    if (/^https?:\\/\\//.test(uri)) linking = { url: uri, start: here() };
+    else if (picture) linking = { picture: picture, start: here() };
     return false;
   }
-  function linkBehind(c) {
+  function inSpan(k, c) {
+    var a = k.start.at.line, z = k.end.at.line;
+    return a >= 0 && z >= 0 && (c.row > a || (c.row === a && c.col >= k.start.col)) && (c.row < z || (c.row === z && c.col < k.end.col));
+  }
+  // The newest link written over the cell, if the text there is still what it was written with.
+  function linkUnder(c) {
+    for (var i = linked.length - 1; i >= 0; i--) { var k = linked[i]; if (inSpan(k, c)) return spanText(k) === k.text ? k : null; }
+    return null;
+  }
+  function linkBehind(c) { var k = linkUnder(c); return k && k.url ? k.url : ''; }
+  // Pictures linked on rows first..last: each span still standing, with the cells it covers.
+  function linkedPictures(first, last) {
+    var out = [], b = term.buffer.active;
     for (var i = linked.length - 1; i >= 0; i--) {
       var k = linked[i], a = k.start.at.line, z = k.end.at.line;
-      if (a < 0 || z < 0) continue;
-      if ((c.row > a || (c.row === a && c.col >= k.start.col)) && (c.row < z || (c.row === z && c.col < k.end.col))) return k.url;
+      if (!k.picture || a < 0 || z < first || a > last || spanText(k) !== k.text) continue;
+      var cells = [];
+      for (var y = a; y <= z; y++) { var l = b.getLine(y), from = y === a ? k.start.col : 0, to = y === z ? k.end.col : (l ? l.length : 0); while (to > from && l && !l.getCell(to - 1).getChars().trim()) to--; if (to > from) cells.push([y, from, to]); }
+      // Only the newest link over the same cells counts.
+      if (cells.length && !out.some(function (o) { return o.cells.join(';') === cells.join(';'); })) out.push({ path: k.picture, cells: cells, rank: -1 });
     }
-    return '';
+    return out;
   }
   function linkAt(c) { return linkBehind(c) || linkInText(c); }
   // The word under the finger, selected; a drag goes on from its start.
@@ -695,7 +897,7 @@ const BOOT = `(function () {
     window.addEventListener('message', function (e) {
       if (typeof e.data !== 'string') return;
       var m; try { m = JSON.parse(e.data); } catch (_) { return; }
-      if (m.t === 'reset') { stopGlide(); term.reset(); kitty = []; span = null; linked = []; linking = null; forgetWheel(); pictures = {}; pictureCount = 0; asking = {}; toAsk = []; forgetPictures(); }
+      if (m.t === 'reset') { stopGlide(); term.reset(); kitty = []; span = null; linked = []; linking = null; forgetWheel(); pictures = {}; pictureCount = 0; asking = {}; toAsk = []; ended = {}; endedCount = 0; forgetPictures(); }
       else if (m.t === 'image' && typeof m.id === 'number') tapAnswered(m.id, m.picture === true);
       else if (m.t === 'pictures' && m.paths && typeof m.paths === 'object') picturesAnswered(m.paths);
       else if (m.t === 'write') term.write(m.data);

@@ -108,8 +108,10 @@ for scheme in light dark; do
     "$adb" shell input swipe $x $y $x $y 900; sleep 1.2
     shot "$scheme-held"
     has 'Picture copied' && say "ok: holding the picture copies it" || say "FAIL: holding the picture said nothing ($(xml | grep -oE 'text="[^"]*(copy|Copy)[^"]*"' | head -3))"
-    # Only the app that pastes may read it: not adb's shell.
-    out=$("$adb" shell content read --uri "content://$id.copied/picture.png" 2>&1 | head -2 || true)
+    # Only the app that pastes may read it: not adb's shell. A root shell (after `adb root`, which android-quiet.sh
+    # uses) reads any app's files, so then it reads as the shell's own user, 2000.
+    as=""; [ "$("$adb" shell id -u | tr -d '\r')" = 0 ] && as="su 2000"
+    out=$("$adb" shell $as content read --uri "content://$id.copied/picture.png" 2>&1 | head -2 || true)
     case $out in *Security*|*Permission*|*denied*|*"not exported"*) say "ok: the copied picture isn't open to other apps";; *) say "FAIL: adb's shell read the copied picture: $out";; esac
     # One file holds it (a release build can't be looked into: run-as needs a debuggable one).
     if [ "$("$adb" shell run-as "$id" echo yes 2>/dev/null | tr -d '\r')" = yes ]; then

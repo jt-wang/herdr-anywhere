@@ -220,31 +220,48 @@ func TestLiveTailcat(t *testing.T) {
 	// 4401 when the token check closes it first; the node restart that the
 	// Tailcat revoke causes may cut the connection before that frame arrives.
 	t.Logf("socket closed %v after revoke: status %d (%v)", time.Since(started).Round(time.Millisecond), websocket.CloseStatus(err), err)
+	// /api/info needs no token, so it tells whether Tailcat still carries the
+	// phone to serve at all (it did before the revoke, above). The device list
+	// is the revoke: from here on, before serve takes the phone off Tailcat,
+	// the phone must reach nothing.
+	if b := reach(t, ctx, sess); len(b) > 0 {
+		t.Fatalf("a revoked phone still reaches serve through Tailcat %v after revoke: %.80q", time.Since(started).Round(time.Millisecond), b)
+	}
 	waitFor(t, 15*time.Second, func() bool {
 		b, _ := os.ReadFile(filepath.Join(dir, "tailcat.json"))
 		return len(b) > 0 && !strings.Contains(string(b), phonePub)
 	}, "serve to drop the phone from Tailcat", logs)
 	t.Logf("phone off the Tailcat allowlist %v after revoke", time.Since(started).Round(time.Millisecond))
-	// /api/info needs no token, so it tells whether Tailcat still carries the
-	// phone to serve at all (it did before the revoke, above). This dials the
-	// session directly: at 905975f a failed dial behind the forwarder panics
-	// the process (connectphone/forward.go:74-77 closes the typed-nil conn
-	// DialTCPPort returns with its error; seen here).
+	if b := reach(t, ctx, sess); len(b) > 0 {
+		t.Fatalf("a revoked phone still reaches serve through Tailcat %v after revoke: %.80q", time.Since(started).Round(time.Millisecond), b)
+	}
+}
+
+// reach GETs /api/info over a new Tailcat connection and returns what came
+// back: nothing when the dial is refused or serve closes the connection. It
+// dials the session directly: in older TailPocket versions a failed dial
+// behind the forwarder panics the process (the forwarder closed the typed-nil
+// conn DialTCPPort returns with its error).
+func reach(t *testing.T, ctx context.Context, sess *connectphone.Session) []byte {
+	t.Helper()
 	dialCtx, dialCancel := context.WithTimeout(ctx, 20*time.Second)
 	defer dialCancel()
 	c, err := sess.Dial(dialCtx)
 	if err != nil {
 		t.Logf("revoked phone refused: %v", err)
-		return
+		return nil
 	}
 	defer c.Close()
 	c.SetDeadline(time.Now().Add(10 * time.Second))
-	if _, err := c.Write([]byte("GET /api/info HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")); err == nil {
-		if b, _ := io.ReadAll(c); len(b) > 0 {
-			t.Fatalf("a revoked phone still reaches serve through Tailcat: %.80q", b)
-		}
+	if _, err := c.Write([]byte("GET /api/info HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")); err != nil {
+		t.Logf("revoked phone refused: %v", err)
+		return nil
 	}
-	t.Log("revoked phone refused: its connection carries nothing")
+	b, _ := io.ReadAll(c)
+	if len(b) == 0 {
+		t.Log("revoked phone refused: its connection carries nothing")
+	}
+	return b
 }
 
 // info GETs /api/info through the forwarder.

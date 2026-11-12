@@ -98,6 +98,9 @@ keys _; check "space sends the first candidate" "$(got)" "$(python3 -c 'print(re
 for i in 1 2 3; do keys '<'; check "backspace $i after a pinyin word" "$(got)" "b'\\x7f'"; done
 keys shijie_; got >/dev/null
 keys '<'; check "a backspace after a second word" "$(got)" "b'\\x7f'"
+# The line still holds 世, typed and not sent. herdr-core (from 0.1.20) holds terminal.send, which the input box uses,
+# until a person sends or clears what they typed, up to 60 s after their last key (its draft_wait): Enter sends it.
+keys '>'; check "Enter sends the line" "$(got)" "b'\\r'"
 # The same in the input box (a native field), read by sending it: Gboard spent the first backspace after a picked word
 # there too (你好 and one backspace sent 你好).
 tap to-box; sleep 1; tap compose-input; sleep 1; got >/dev/null

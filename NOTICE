@@ -2,6 +2,7 @@ Herdr Anywhere
 
 Herdr Anywhere's own code is under the MIT License (see LICENSE). This product includes material from other projects,
 under their licenses.
+The Apache License 2.0, which several of them use, is in LICENSES/Apache-2.0.txt.
 
 Herdr desktop app (https://github.com/herdrdev/herdr-app), Apache License 2.0
   - the program icons in app/assets/icons (from defaults/icons), with that folder's notices LICENSES.md,

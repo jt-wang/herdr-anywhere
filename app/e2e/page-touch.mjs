@@ -1,6 +1,7 @@
 // The terminal page in a real browser with real touch events (Chromium over CDP, so a tap makes the same mouse events
 // a phone's WebView makes, which is what xterm focuses on). Run with `e2e/page-touch.sh`.
 import { createRequire } from 'node:module'
+import { readFileSync, readdirSync } from 'node:fs'
 import { terminalPage } from '../src/ui/terminal-page.ts'
 
 const require = createRequire(process.env.PLAYWRIGHT_DIR + '/')
@@ -10,8 +11,8 @@ const browser = await chromium.launch()
 const failures = []
 const check = (name, ok, seen) => { console.log(`${ok ? 'ok' : 'FAIL'}: ${name}${seen === undefined ? '' : ` (${JSON.stringify(seen)})`}`); if (!ok) failures.push(name) }
 
-async function open(opts) {
-  const context = await browser.newContext({ viewport: { width: 390, height: 700 }, hasTouch: true, isMobile: true, deviceScaleFactor: 3 })
+async function open(opts, width = 390, height = 700) {
+  const context = await browser.newContext({ viewport: { width, height }, hasTouch: true, isMobile: true, deviceScaleFactor: 3 })
   const page = await context.newPage()
   await page.addInitScript(() => { window.posts = []; window.nsh = { postMessage: (m) => window.posts.push(JSON.parse(m)) }; window.addEventListener('error', (e) => { window.pageError = e.message })
     // The page keeps its terminal in a closure; a test that needs the view's exact line takes it as xterm's bundle sets window.Terminal.
@@ -709,7 +710,10 @@ for (const [width, scale] of [[360, 3], [384, 2.8125], [393, 3], [411, 2.625], [
   check('a path to another kind of file opens nothing', (await tapImage('⏺ Read(/work/acme/notes.txt)', 0, 12)) === '')
   check('a link to an image stays a link', (await tapRow('see https://example.com/a.png now', 0, 8)) === 'https://example.com/a.png')
   const deep = '/Users/someone/projects/acme/app/screenshots/settings-dark-mode.png'
-  check('a long one the TUI wrapped with its indent opens whole', (await tapImage(`  ⎿  Read(${deep.slice(0, 40)}\r\n       ${deep.slice(40)})\r\n`, 1, 9)) === deep, await tapImage(`  ⎿  Read(${deep.slice(0, 40)}\r\n       ${deep.slice(40)})\r\n`, 1, 9))
+  // The TUI's first row fills the terminal's width at most (390 px is 50 columns where a cell is 7.8 px wide, 48 where
+  // Chromium rounds it to 8): one more and the terminal wraps it too.
+  const cut = Math.min(40, cols - 10), wrapped = `  ⎿  Read(${deep.slice(0, cut)}\r\n       ${deep.slice(cut)})\r\n`
+  check('a long one the TUI wrapped with its indent opens whole', (await tapImage(wrapped, 1, 9)) === deep, await tapImage(wrapped, 1, 9))
   // Selecting: hold, drag; what is selected goes to the app when the finger lifts.
   await t.send({ t: 'reset' })
   await t.send({ t: 'write', data: 'hello world again\r\nsecond line here\r\n' })
@@ -864,6 +868,132 @@ for (const [width, scale] of [[360, 3], [384, 2.8125], [393, 3], [411, 2.625], [
   })
   check('a resized dark terminal has no bright line at its edge', !ruler.none && ruler.brightest < 64, ruler)
   await t.page.context().close()
+}
+
+{
+  // Every recording in e2e/tui-paths named <agent>-<version>-<columns>.ansi: real agents reading or sending pictures at
+  // the widths phones have (40 columns: a 360-wide phone with large text; 46: 360 wide; 50: 390; 52: 412; 56: 440;
+  // 66: 440 with small text). The test knows only the pictures' paths. It finds every place one is drawn by its
+  // characters, on one row or over several, each row's piece anywhere on its row, a space at a break maybe gone, and
+  // checks that each piece is underlined and that a tap on it opens that picture. With the agents' links and without.
+  // The made-up home the recordings were made in (e2e/tui-paths/README.md): the agent runs in garden-planner-mobile;
+  // one picture is under it, given by a relative path, the other in another project, given by its full path.
+  const home = '/private/tmp/hx-sam/Photo Archive 2TB/work'
+  const rel = 'screens/final-review/settings-dark-mode.png', inside = `${home}/garden-planner-mobile/${rel}`
+  const outside = `${home}/weather-widget-companion-app/exports/release-candidate/home-screen.png`
+  const same = { [outside]: [], [inside]: [rel], [rel]: [inside] }
+  const pictures = Object.keys(same)
+  const setups = { 40: [360, 15], 46: [360, 13], 50: [390, 13], 52: [412, 13], 56: [440, 13], 66: [440, 11] }
+  // TUI_PATHS=kimi runs only the recordings whose names match it.
+  const files = readdirSync(new URL('tui-paths/', import.meta.url)).filter((f) => /-\d+\.ansi$/.test(f) && new RegExp(process.env.TUI_PATHS || '').test(f)).sort()
+  for (const file of files) for (const linked of [true, false]) {
+    const cols = Number(/-(\d+)\.ansi$/.exec(file)[1]), [width, font] = setups[cols] ?? [], name = `${file}${linked ? '' : ', no links'}`
+    if (!width) { check(`${name}: a phone width for ${cols} columns`, false); continue }
+    // 40 rows, as recorded: Codex and OpenCode draw at absolute rows. The width and font give the columns where a cell
+    // is 7.8 px wide (13 px text). Chromium makes it narrower or wider on some machines (8 px in a Linux container;
+    // 412 px was 53 columns on GitHub's macOS runner), so the width moves by whole cells, as the height does, until
+    // both fit.
+    let t, size
+    for (let w = width, height = 812, tries = 0; ; tries++) {
+      t = await open({ phone: true, fontSize: font }, w, height)
+      size = await t.page.evaluate(() => { const r = document.querySelector('.xterm-screen').getBoundingClientRect(); return { cols: window.term.cols, rows: window.term.rows, w: r.width / window.term.cols, h: r.height / window.term.rows, width: innerWidth } })
+      if ((size.cols === cols && size.rows === 40) || tries === 5) break
+      await t.page.context().close()
+      w += Math.round((cols - size.cols) * size.w)
+      height += Math.round((40 - size.rows) * size.h)
+    }
+    check(`${name}: plays at ${cols} columns and 40 rows`, size.cols === cols && size.rows === 40, size)
+    await t.send({ t: 'reset' })
+    await t.page.evaluate(() => { window.posts = [] })
+    // TUI_PATHS_SLOW=<n> runs the page's CPU n times slower, as a slow CI machine does.
+    if (process.env.TUI_PATHS_SLOW) await (await t.page.context().newCDPSession(t.page)).send('Emulation.setCPUThrottlingRate', { rate: Number(process.env.TUI_PATHS_SLOW) })
+    let data = readFileSync(new URL(`tui-paths/${file}`, import.meta.url), 'utf8')
+    if (!linked) data = data.replace(/\x1b\]8;[^\x07\x1b]*(\x07|\x1b\\)/g, '')
+    await t.send({ t: 'write', data })
+    // The page asks about paths once the recording is drawn; that can take seconds on a slow machine (on CI the first
+    // recording had asked nothing after 900 ms). Wait for the first question, then until none comes for 500 ms.
+    const questions = () => t.page.evaluate(() => window.posts.filter((m) => m.t === 'paths').length)
+    await t.page.waitForFunction(() => window.posts.some((m) => m.t === 'paths'), null, { timeout: 15000 }).catch(() => {})
+    for (let n = await questions(), until = Date.now() + 15000; Date.now() < until; ) {
+      await t.page.waitForTimeout(500)
+      const now = await questions()
+      if (now === n) break
+      n = now
+    }
+    const asked = (await t.page.evaluate(() => window.posts)).filter((m) => m.t === 'paths').flatMap((m) => m.paths)
+    await t.send({ t: 'pictures', paths: Object.fromEntries(asked.map((p) => [p, pictures.includes(p)])) })
+    await t.page.waitForTimeout(300)
+    // The screen, a cell at a time ('' for the second cell of a wide character).
+    const cells = await t.page.evaluate(() => {
+      const b = window.term.buffer.active, out = []
+      for (let r = 0; r < window.term.rows; r++) { const l = b.getLine(b.viewportY + r), row = []; for (let x = 0; l && x < l.length; x++) row.push(l.getCell(x).getChars()); out.push(row) }
+      return out
+    })
+    // Where a path is drawn: pieces [row, from, to] on rows one after another, together the path. Each piece starts
+    // a run of text (after a space, a mark or the row's start), every piece but the last is 2 characters or more.
+    const word = (ch) => ch !== undefined && /[A-Za-z0-9._~\/-]/.test(ch)
+    const starts = (r, x) => x === 0 || !word(cells[r][x - 1])
+    const drawn = (p) => {
+      const found = []
+      const go = (r, c, i, segs) => {
+        let x = c, k = i
+        const ends = []
+        while (x < cells[r].length && k < p.length) { if (cells[r][x] === '') { x++; continue } if (cells[r][x] !== p[k]) break; x++; k++; ends.push([x, k]) }
+        for (let e = ends.length - 1; e >= 0; e--) {
+          const [to, at] = ends[e], s = [...segs, [r, c, to]]
+          if (at === p.length) return s
+          if (r + 1 >= cells.length || s.length > 12 || to - c < 2) continue
+          for (const skip of p[at] === ' ' ? [0, 1] : [0]) {
+            const want = p[at + skip]
+            for (let x2 = 0; x2 < cells[r + 1].length; x2++) if (cells[r + 1][x2] === want && starts(r + 1, x2)) { const got = go(r + 1, x2, at + skip, s); if (got) return got }
+          }
+        }
+        return null
+      }
+      for (let r = 0; r < cells.length; r++) for (let c = 0; c < cells[r].length; c++) {
+        if (cells[r][c] !== p[0] || !starts(r, c) || found.some((f) => f.some((s) => s[0] === r && c >= s[1] && c < s[2]))) continue
+        const got = go(r, c, 0, [])
+        // A space a row breaks at is not drawn as part of the path, at the end of a row or the start of the next.
+        if (got) found.push(got.map(([y, a, b]) => { while (b > a + 1 && cells[y][b - 1] === ' ') b--; while (a < b - 1 && cells[y][a] === ' ') a++; return [y, a, b] }))
+      }
+      return found
+    }
+    const claimed = []
+    const ls = await t.page.evaluate(() => { const s = document.querySelector('.xterm-screen').getBoundingClientRect(), w = s.width / window.term.cols, h = s.height / window.term.rows; return [...document.querySelectorAll('.picture-lines > div')].map((d) => { const r = d.getBoundingClientRect(); return [Math.round((r.bottom - s.top) / h) - 1, Math.round((r.left - s.left) / w), Math.round((r.right - s.left) / w)] }) })
+    let places = 0
+    for (const p of [...pictures].sort((a, b) => b.length - a.length)) {
+      for (const segs of drawn(p)) {
+        if (segs.some((s) => claimed.some((c) => c[0] === s[0] && s[1] < c[2] && c[1] < s[2]))) continue
+        claimed.push(...segs)
+        places++
+        for (const s of segs) {
+          check(`${name}: …${p.slice(-24)} on row ${s[0]} is underlined`, ls.some((l) => l[0] === s[0] && l[1] <= s[1] && l[2] >= s[2]), { s, ls })
+          const c = await t.page.evaluate(() => { const r = document.querySelector('.xterm-screen').getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width / window.term.cols, h: r.height / window.term.rows } })
+          await t.page.evaluate(() => { window.posts = [] })
+          await t.tap(c.x + (s[1] + 0.5) * c.w, c.y + (s[0] + 0.5) * c.h)
+          const got = (await t.page.evaluate(() => window.posts)).filter((m) => m.t === 'image').map((m) => m.path).join(' ')
+          check(`${name}: a tap on …${p.slice(-24)} on row ${s[0]} opens it`, got === p || same[p].includes(got), got)
+        }
+      }
+    }
+    check(`${name}: a picture's path is on screen`, places > 0, cells.map((r) => r.join('')).join('\n'))
+    check(`${name}: nothing asked about holds the column beside a path`, !asked.some((p) => /KB\)|bytes\)|\(\d/.test(p)), asked)
+    // At most what was asked when these were recorded and measured, so a reading that asks about much more shows.
+    check(`${name}: it asks about few paths`, asked.length <= 24, asked.length)
+    // Codex names a picture it viewed by its file name; its link has the whole path.
+    for (const [n, whole] of [['home-screen.png', outside], ['settings-dark-mode.png', inside]]) {
+      const at = cells.findIndex((r) => r.join('').includes(`Viewed image ${n}`))
+      if (at < 0) continue
+      const x = cells[at].join('').indexOf(`Viewed image ${n}`) + 'Viewed image '.length + 1
+      const c = await t.page.evaluate(() => { const r = document.querySelector('.xterm-screen').getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width / window.term.cols, h: r.height / window.term.rows } })
+      await t.page.evaluate(() => { window.posts = [] })
+      await t.tap(c.x + (x + 0.5) * c.w, c.y + (at + 0.5) * c.h)
+      const got = (await t.page.evaluate(() => window.posts)).filter((m) => m.t === 'image').map((m) => m.path).join(' ')
+      check(`${name}: a tap on "Viewed image ${n}" opens ${linked ? 'the whole path' : 'the name'}`, got === (linked ? whole : n), got)
+    }
+    console.log(`${name}: ${places} places, asked about ${asked.length}`)
+    await t.page.context().close()
+  }
 }
 
 await browser.close()

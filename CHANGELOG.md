@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.1.24
+
+- A picture path that an agent breaks over several rows opens again. In 0.1.23 a long path Claude Code listed beside the file's size could not be tapped; now every row of the path is underlined and a tap on any of them opens the picture. Checked with Claude Code, Codex, OpenCode, Pi and Kimi Code at phone widths.
+- A phone you revoke is cut off at once over TailPocket. Before, for up to a second after the revoke it could still open a connection and read Companion's version.
+
+Android: `Herdr-Anywhere.apk`; an installed 0.1.6 or later can update to it from home. Intel Mac: `herdr-anywhere-macos-amd64`.
+
 ## v0.1.23
 
 - Tap a picture's path in a terminal to see the picture. When an agent reads or writes a screenshot, its path gets a line under it; a tap opens the picture with its full path. Copy copies the path, and touching and holding the picture copies the picture. It also works in full-screen programs like Codex, and for terminals on another machine. A path to a file that isn't a picture, or to one that doesn't exist, gets no line.

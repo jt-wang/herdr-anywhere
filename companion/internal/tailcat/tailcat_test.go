@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -310,5 +311,54 @@ func TestListenRefusesASecondServeAndReplacesAStaleSocket(t *testing.T) {
 	defer ln.Close()
 	if _, err := Listen(st.Dir()); err == nil {
 		t.Fatal("a second serve took over the control socket")
+	}
+}
+
+// fakeListener hands out the connections put on it.
+type fakeListener struct{ conns chan net.Conn }
+
+func (l fakeListener) Accept() (net.Conn, error) {
+	c, ok := <-l.conns
+	if !ok {
+		return nil, net.ErrClosed
+	}
+	return c, nil
+}
+func (l fakeListener) Close() error   { return nil }
+func (l fakeListener) Addr() net.Addr { return &net.TCPAddr{} }
+
+// fromPhone is a connection Tailcat carried from phone, and the phone's end of it.
+func fromPhone(phone string) (net.Conn, net.Conn) {
+	ours, theirs := net.Pipe()
+	return &connecthost.Conn{Conn: ours, Phone: phone}, theirs
+}
+
+func TestARevokedPhoneReachesNothingBeforeTailcatDropsIt(t *testing.T) {
+	st := newStore(t)
+	kept, gone := phoneKey(), phoneKey()
+	pairTailcat(t, st, kept)
+	d := pairTailcat(t, st, gone)
+	if err := st.Revoke(d.ID); err != nil { // as `herdr-anywhere revoke` does, from another process
+		t.Fatal(err)
+	}
+	in := make(chan net.Conn, 3)
+	fromGone, goneEnd := fromPhone(gone)
+	fromKept, _ := fromPhone(kept)
+	fromUnknown, _ := fromPhone("")
+	in <- fromGone
+	in <- fromKept
+	in <- fromUnknown
+	close(in)
+	ln := admit(fakeListener{in}, st, nil)
+
+	for _, want := range []net.Conn{fromKept, fromUnknown} {
+		c, err := ln.Accept()
+		if err != nil || c != want {
+			t.Fatalf("Accept gave %v, %v; want the connection from %q", c, err, connecthost.PhoneOf(want))
+		}
+	}
+	goneEnd.SetReadDeadline(time.Now().Add(time.Second))
+	if _, err := goneEnd.Read(make([]byte, 1)); !errors.Is(err, io.EOF) {
+		t.Fatalf("the revoked phone's connection is still open: %v", err)
 	}
 }
