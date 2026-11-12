@@ -45,17 +45,17 @@ agent() {
   mkdir -p "$work/u/src/$n"
   L "$hc" run --bg --keep --cwd "$work/u/src/$n" --name "$n" --label herdr.space="sp$n" --label herdr.tab="tb$n" "$@" -- env FAKE_STATE="$st" "$work/bin/claude" >/dev/null
 }
-agent orchard-api idle --label herdr.pinned=1 --label "$P=i"
+agent orchard_api idle --label herdr.pinned=1 --label "$P=i"
 agent ledger working --label herdr.pinned=1 --label "$P=r"
-agent field-notes idle --label herdr.pinned=1 --label "$P=v"
-agent tide-mobile blocked --label herdr.pinned=1 --label "$P=x"
-agent lantern-web working --label herdr.pinned=1
+agent field_notes idle --label herdr.pinned=1 --label "$P=v"
+agent tide_mobile blocked --label herdr.pinned=1 --label "$P=x"
+agent lantern_web working --label herdr.pinned=1
 # Enough spaces that the list scrolls well past Pinned (the edge step).
-for s in moss-docs quarry-cli harbor-ops kiln-site birch-sdk ember-bot pine-relay copper-ui willow-db slate-jobs fern-auth dune-maps; do
+for s in moss_docs quarry_cli harbor_ops kiln_site birch_sdk ember_bot pine_relay copper_ui willow_db slate_jobs fern_auth dune_maps; do
   mkdir -p "$work/u/src/$s"; L "$hc" run --bg --keep --cwd "$work/u/src/$s" --label herdr.space="sp$s" --label herdr.tab="tb$s" >/dev/null
 done
 addr() { L "$hc" get "$1" --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["address"])'; }
-A=$(addr orchard-api); B=$(addr ledger); C=$(addr field-notes); D=$(addr tide-mobile); E=$(addr lantern-web)
+A=$(addr orchard_api); B=$(addr ledger); C=$(addr field_notes); D=$(addr tide_mobile); E=$(addr lantern_web)
 label() { L "$hc" get "$1" --json | python3 -c 'import json,sys; print(json.load(sys.stdin).get("labels", {}).get(sys.argv[1], ""))' "$2"; }
 L env HERDR_ANYWHERE_STATE="$work/companion" "$work/herdr-anywhere" serve --listen "127.0.0.1:$port" --hc "$hc" > "$work/serve.log" 2>&1 &
 serve_pid=$!
