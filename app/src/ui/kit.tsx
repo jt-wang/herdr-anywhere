@@ -114,6 +114,11 @@ export function IconButton(props: { name: keyof typeof GLYPHS; label: string; te
 const PRIVACY_URL = 'https://herdr-anywhere.jingtao.io/privacy/'
 export const openPrivacy = () => void openUrl(PRIVACY_URL).catch(() => {})
 
+/** The app's panels from the bottom (a menu, Add an agent, renaming, the switcher…): a rounded panel with an edge,
+ *  over the screen dimmed behind it, so it stands apart from a terminal of the same colour in light and dark. */
+export const PANEL = 'bg-popover rounded-t-[14px] border-t border-x border-border'
+export const PANEL_BACKDROP = 'bg-black/40'
+
 export function Button(props: { label: string; testID?: string; onPress: () => void; kind?: 'primary' | 'plain' | 'outline' | 'danger'; disabled?: boolean }) {
   const k = () => props.kind ?? 'primary'
   return (

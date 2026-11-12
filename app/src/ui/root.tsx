@@ -1,6 +1,6 @@
 // The app: pairing on first launch, then home ⇄ space ⇄ settings over one live store, with alerts and sheets
 // over every screen.
-import { cleanup, colorScheme, computed, effect, Keyboard, platform, safeAreaInsets, setColorScheme, signal, Storage, Text, Video, View } from 'nsh'
+import { cleanup, colorScheme, computed, createAnimatedValue, effect, Keyboard, platform, safeAreaInsets, setColorScheme, signal, Storage, Text, Video, View } from 'nsh'
 import { createNavStack, NavPage, NavStack } from 'nsh/base'
 import type { ViewSwitchProps } from './view-switch.tsx'
 import type { Store } from '../store.ts'
@@ -17,6 +17,8 @@ import { PairScreen } from './pair.tsx'
 import { NewSheet, RenameSheet, type NewTarget, type RenameTarget } from './sheets.tsx'
 import { PeekSheet } from './peek.tsx'
 import { PictureSheet } from './picture-sheet.tsx'
+import { MenuSheet } from './menu-sheet.tsx'
+import { toastTop } from './toast-top.ts'
 import { makeDemo, type Demo } from '../demo.ts'
 import { useSignal } from './kit.tsx'
 import { APP_VERSION, installProblem, Updates } from '../updates.ts'
@@ -44,13 +46,24 @@ export type RootDeps = {
 
 type Route = { name: 'home' } | { name: 'space'; id: string } | { name: 'settings' } | { name: 'progress' } | { name: 'task'; id: string }
 
+/** Points up, or points a second up at the release, past which a pull on a toast takes it away. */
+const SWIPE_AWAY = 40, FLICK = 1000
+
 function Toasts(props: { store: Store; open: (terminal: string) => void }) {
   const toasts = useSignal(props.store.toasts)
   const insets = safeAreaInsets()
   return (
-    <View class="absolute left-3 right-3 gap-2" style={{ top: insets().top + 12 }} pointerEvents="box-none">
-      <Each of={toasts()} key={(t) => t.id}>{(t) => (
+    <View class="absolute left-3 right-3 gap-2" style={{ top: toastTop(platform.os, insets().top) }} pointerEvents="box-none">
+      <Each of={toasts()} key={(t) => t.id}>{(t) => {
+        // Swiped up it goes, as the system's banner does, without doing what it offers; a shorter pull springs back.
+        const y = createAnimatedValue(0)
+        const swiped = (e: { cancelled: boolean; translationY: number; velocityY: number }) => {
+          if (!e.cancelled && (e.translationY < -SWIPE_AWAY || e.velocityY < -FLICK)) void y.timing(-200, { duration: 180 }).then(() => props.store.dismiss(t().id))
+          else void y.spring(0)
+        }
+        return (
         <View role="button" testID={`toast-${t().id}`} onPress={() => { props.store.dismiss(t().id); if (t().action?.terminal) props.open(t().action!.terminal!); t().action?.run?.() }}
+          pan={{ y }} panActivation={{ activeOffsetY: 10, failOffsetX: 20 }} onPanEnd={swiped} style={{ transform: [{ translateY: y }] }}
           class="flex-row items-center gap-2.5 rounded-[12px] bg-popover border border-border px-3.5 py-2.5 shadow-md">
           <View class={`w-2 h-2 rounded-full ${t().level === 'error' ? 'bg-chart-2' : 'bg-chart-3'}`} />
           <View class="flex-1">
@@ -58,7 +71,8 @@ function Toasts(props: { store: Store; open: (terminal: string) => void }) {
             <If when={t().body}><Text class="text-[12px] text-muted-foreground" numberOfLines={3}>{t().body}</Text></If>
           </View>
         </View>
-      )}</Each>
+        )
+      }}</Each>
     </View>
   )
 }
@@ -216,6 +230,7 @@ function Connected(props: { deps: RootDeps; store: Store; link: Link; unpaired: 
       <RenameSheet store={store} target={renaming} />
       <PeekSheet store={store} address={peeking} fontSize={() => prefs().fontSize} />
       <PictureSheet store={store} />
+      <MenuSheet />
       <Toasts store={store} open={openTerminal} />
       <AlertSounds alerts={alerts} />
     </View>

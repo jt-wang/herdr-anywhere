@@ -25,9 +25,10 @@ test('the composer offers to attach, with text too; send comes with the text', a
 
 test('a photo goes to the computer over HTTP, its path in the composer, sent with the text after it', async () => {
   const app = await composer()
-  app.onDialog(() => 'Photo')
   app.onPick(() => [{ name: 'shot.png', type: 'image/png', data: new Uint8Array([1, 2, 3]) }])
   await app.press('id:attach')
+  await app.waitFor('id:menu')
+  await app.press('id:menu-photo')
   await app.waitUntil(() => puts(app).length === 1)
   expect(puts(app)[0]).toEqual(['shot.png', '', 3])
   // Scaled down on the phone: an agent needs no 48 megapixels.
@@ -42,8 +43,9 @@ test('a photo goes to the computer over HTTP, its path in the composer, sent wit
 test('a file goes through page.uploadFile with the address and the token, and its path comes back', async () => {
   const uploads: any[] = []
   const app = await composer({ 'page.uploadFile': (a: any) => { uploads.push(a); return { status: 200, body: JSON.stringify({ path: '/up/notes.txt' }) } } })
-  app.onDialog(() => 'File')
   await app.press('id:attach')
+  await app.waitFor('id:menu')
+  await app.press('id:menu-file')
   await app.waitFor('id:compose-send')
   expect(uploads.length).toBe(1)
   expect(uploads[0].id).toBe('f1')
@@ -57,8 +59,9 @@ test('a file over the limit says so and is not sent; the other file still is', a
   const big = { id: 'b', name: 'big.zip', size: 3 * 1024 * 1024 * 1024 }
   const uploads: any[] = []
   const app = await composer({ 'page.pickFiles': [big, FILE], 'page.uploadFile': (a: any) => { uploads.push(a); return { status: 200, body: '{"path":"/up/notes.txt"}' } } })
-  app.onDialog(() => 'File')
   await app.press('id:attach')
+  await app.waitFor('id:menu')
+  await app.press('id:menu-file')
   await app.waitFor('text:big.zip is over 2 GB')
   await app.waitUntil(() => uploads.length === 1)
   expect(uploads[0].id).toBe('f1')
@@ -66,19 +69,22 @@ test('a file over the limit says so and is not sent; the other file still is', a
 
 test('a companion from before uploads says to update it', async () => {
   const app = await composer({ 'page.uploadFile': { status: 404, body: '' } })
-  app.onDialog(() => 'File')
   await app.press('id:attach')
+  await app.waitFor('id:menu')
+  await app.press('id:menu-file')
   await app.waitFor('text:notes.txt: Update Herdr Anywhere on the computer to attach files.')
 })
 
 test('cancelling either picker changes nothing', async () => {
   const app = await composer({ 'page.pickFiles': [] })
-  app.onDialog(() => 'File')
   await app.press('id:attach')
+  await app.waitFor('id:menu')
+  await app.press('id:menu-file')
   await app.wait(100)
-  app.onDialog(() => 'Photo')
   app.onPick(() => null)
   await app.press('id:attach')
+  await app.waitFor('id:menu')
+  await app.press('id:menu-photo')
   await app.wait(100)
   expect(puts(app)).toEqual([])
   expect(app.count('id:attach')).toBe(1)
@@ -86,9 +92,7 @@ test('cancelling either picker changes nothing', async () => {
 
 test('a tap on the terminal is not how to type there any more: ⋯ offers it', async () => {
   const app = await composer()
-  const titles: string[][] = []
-  app.onDialog((d) => { titles.push(d.buttons); return null })
   await app.press('id:space-more')
-  await app.waitUntil(() => titles.length === 1)
-  expect(titles[0]).toContain('Type in the terminal')
+  await app.waitFor('id:menu')
+  expect(app.count('id:menu-type')).toBe(1)
 })

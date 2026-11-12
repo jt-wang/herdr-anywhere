@@ -4,13 +4,14 @@
 // title opens the switcher, and a flick across the terminal goes to the next or previous tab.
 import { cleanup, computed, effect, fontScale, keyboardFrame, safeAreaInsets, Scroll, signal, Text, untracked, View, windowSize } from 'nsh'
 import { AlertDialog, Sheet } from 'nsh/base'
+import { confirmClose, pickFrom } from './menu-sheet.tsx'
 import { keyboardGone } from './keyboard.ts'
 import type { Store } from '../store.ts'
 import { layoutRects } from '../store.ts'
 import { addresses, find, panes, terminalOf, type Node } from '../model/layout.ts'
 import { focusedPaneOf, shownNode, spaceActiveTab, type Tab } from '../model/model.ts'
 import { gitTail } from '../model/marks.ts'
-import { ConnBanner, Glyph, IconButton, ProgramIcon, SpaceBadge, StatusDot, StatusMark, shortPath, useRev } from './kit.tsx'
+import { ConnBanner, Glyph, IconButton, PANEL, PANEL_BACKDROP, ProgramIcon, SpaceBadge, StatusDot, StatusMark, shortPath, useRev } from './kit.tsx'
 import { t } from '../strings/index.ts'
 import { TerminalView, WIDE } from './terminal.tsx'
 import { attachToTerminal, KEY_ROW_MAX_SCALE, PaneBar } from './pane-bar.tsx'
@@ -48,8 +49,8 @@ function TabBar(props: { store: Store; spaceId: string; actions: SpaceActions })
   const space = () => { rev(); return s.model.space(props.spaceId) }
   const active = () => { rev(); const sp = space(); return sp && spaceActiveTab(sp)?.id }
   const menu = async (c: Tab) => {
-    const r = await AlertDialog.show({ title: s.tabLabel(space()!, c), presentation: 'actionSheet', actions: [
-      { id: 'rename', label: t('rename') }, { id: 'close', label: t('closeTab'), role: 'destructive' }, { id: 'cancel', label: t('cancel'), role: 'cancel' }] })
+    const r = await pickFrom({ title: s.tabLabel(space()!, c), items: [
+      { id: 'rename', label: t('rename'), icon: 'square-pen' }, { id: 'close', label: t('closeTab'), icon: 'x', role: 'destructive' }] })
     if (r === 'rename') props.actions.rename('tab', c.id, c.name)
     else if (r === 'close') s.closeTab(c.id)
   }
@@ -315,7 +316,7 @@ function Switcher(props: { store: Store; spaceId: string; open: { (): boolean; s
   // A sub-agent has no pane of its own: open shows what it prints.
   const sub = (addr: string) => { close(); props.actions.open(addr) }
   return (
-    <Sheet open={props.open()} side="bottom" onOpenChange={(o) => props.open.set(o)} popupClass="bg-popover rounded-t-[14px] px-3 pt-3 pb-[env(safe-area-inset-bottom)]">
+    <Sheet open={props.open()} side="bottom" onOpenChange={(o) => props.open.set(o)} popupClass={`${PANEL} px-3 pt-3 pb-[env(safe-area-inset-bottom)]`} backdropClass={PANEL_BACKDROP}>
       <Scroll ref={(r: any) => { scroller = r }} class="max-h-[520px]" scrollable={rows() > viewport() + 1} onLayout={(b) => viewport.set(b.size.height)}
         scrollEventThrottle={16} onScroll={(e) => clamp(e.offset.y)} onMomentumEnd={(e) => clamp(e.y)} onScrollDragEnd={(e) => clamp(e.y)}>
       <View class="pb-2" onLayout={(b) => rows.set(b.size.height)}>
@@ -459,6 +460,7 @@ function SpaceStatus(props: { store: Store; spaceId: string }) {
 export function SpaceScreen(props: { store: Store; spaceId: string; actions: SpaceActions }) {
   const s = props.store
   const rev = useRev(s)
+  const words = agentWords(s)
   s.viewingTab = true
   cleanup(() => { s.viewingTab = false })
   const space = () => { rev(); return s.model.space(props.spaceId) }
@@ -490,33 +492,33 @@ export function SpaceScreen(props: { store: Store; spaceId: string; actions: Spa
       s.toast({ title: t('couldntStart'), body: String(e?.message ?? e), level: 'error' })
     }
   }
+  // A pane as its header names it: an agent by its row's main text, anything else by the pane's name.
+  const paneTitle = (a: string | undefined) => { const ag = words.at(a); return ag ? words.main(ag) : a ? s.paneName(a) : name() }
   const menu = async () => {
     const current = tab()
     const pane = current ? focusedPaneOf(current) : undefined
     const phone = !wide()
     const address = pane ? s.model.addressOf(pane) : undefined
     const session = address ? sessions.get(address) : undefined
-    const r = await AlertDialog.show({ title: name(), presentation: 'actionSheet', actions: [
-      ...(session ? [{ id: 'type', label: t('typeInTerminal') }] : []),
-      ...(session?.typeIn.get() === 'terminal' ? [{ id: 'attach', label: t('attach') }] : []),
-      ...(phone && pane ? [{ id: 'split-right', label: t('splitRight') }, { id: 'split-down', label: t('splitDown') }, { id: 'close-pane', label: t('closePane'), role: 'destructive' as const }] : []),
-      ...(phone && current && panes(current.root).length > 1 ? [s.shownWhole.has(current.id) ? { id: 'show-one', label: t('showOnePane') } : { id: 'show-all', label: t('showAllPanes') }] : []),
-      ...(phone && current ? [{ id: 'rename-tab', label: t('renameTab') }] : []),
-      { id: 'rename', label: t('renameSpace') }, { id: 'close', label: t('closeSpace'), role: 'destructive' },
-      ...(phone ? [{ id: 'settings', label: t('settings') }] : []), { id: 'cancel', label: t('cancel'), role: 'cancel' }] })
+    const r = await pickFrom({ title: name(), items: [
+      ...(session ? [{ id: 'type', label: t('typeInTerminal'), icon: 'keyboard' as const }] : []),
+      ...(session?.typeIn.get() === 'terminal' ? [{ id: 'attach', label: t('attach'), icon: 'plus' as const }] : []),
+      ...(phone && pane ? [{ id: 'split-right', label: t('splitRight'), icon: 'split-right' as const }, { id: 'split-down', label: t('splitDown'), icon: 'split-down' as const }, { id: 'close-pane', label: t('closePane'), icon: 'x' as const, role: 'destructive' as const }] : []),
+      ...(phone && current && panes(current.root).length > 1 ? [s.shownWhole.has(current.id) ? { id: 'show-one', label: t('showOnePane'), icon: 'zoom' as const } : { id: 'show-all', label: t('showAllPanes'), icon: 'unzoom' as const }] : []),
+      ...(phone && current ? [{ id: 'rename-tab', label: t('renameTab'), icon: 'square-pen' as const }] : []),
+      { id: 'rename', label: t('renameSpace'), icon: 'square-pen' }, { id: 'close', label: t('closeSpace'), icon: 'x', role: 'destructive' },
+      ...(phone ? [{ id: 'settings', label: t('settings'), icon: 'settings' as const }] : [])] })
     if (r === 'type') session?.focus()
     else if (r === 'attach' && session) void attachToTerminal(s, session)
     else if (r === 'split-right' || r === 'split-down') void split(pane, r === 'split-right' ? 'right' : 'down')
     else if (r === 'show-one' && current) s.showWhole(current.id, false)
     else if (r === 'show-all' && current) { if (await accepts()) s.showWhole(current.id, true) }
-    else if (r === 'close-pane' && pane) s.closePane(pane)
+    else if (r === 'close-pane' && pane) { if (await confirmClose(paneTitle(address), 'closePaneDetail')) s.closePane(pane) }
     else if (r === 'rename-tab' && current) props.actions.rename('tab', current.id, current.name)
     else if (r === 'settings') props.actions.settings()
     else if (r === 'rename') props.actions.rename('space', props.spaceId, space()?.name ?? '')
     else if (r === 'close') {
-      const ok = await AlertDialog.show({ title: t('closeTitle', { name: name() }), description: t('closeDetail'), actions: [
-        { id: 'cancel', label: t('cancel'), role: 'cancel' }, { id: 'close', label: t('close'), role: 'destructive' }] })
-      if (ok === 'close') { s.closeSpace(props.spaceId); props.actions.back() }
+      if (await confirmClose(name(), 'closeDetail')) { s.closeSpace(props.spaceId); props.actions.back() }
     }
   }
   return (
