@@ -433,3 +433,32 @@ test('a file no app on the phone opens, or one that could not be fetched, says s
   await failed.press('id:file-docs/guide.pdf')
   await failed.waitFor("text:Couldn't get the file from the computer.")
 })
+
+// Diagnostics (src/diag.ts) for an open chat view that closes with no tap: on iOS 27 CI it once went for 23 s, the
+// computer asked nothing, and the steps' "Show all 500 lines" was never seen (e2e/ios-chat-four.sh). Only that path
+// says anything; a view that stays says nothing.
+const diags = (app: any): string[] => JSON.parse(app.storage()['fake-diag'] ?? '[]')
+
+test('an open chat view the computer stops offering says so for the diagnostics; one that stays says nothing', async () => {
+  const app = await pane({ chat: JSON.stringify({ chat: true, turns }) })
+  await app.press('id:show-chat')
+  await app.waitFor('id:chat-view')
+  await app.host.send('fake.status', { address: 't1', state: 'working' })
+  await app.clock.runFor(3100)
+  expect(diags(app)).toEqual([])
+  await app.host.send('fake.chat', { chat: false })
+  await app.host.send('fake.status', { address: 't1', state: 'done' })
+  await app.clock.runFor(3100)
+  expect(app.count('id:chat-view')).toBe(0)
+  expect(diags(app)).toEqual(['chat-gone addr=t1 agent=true program=claude'])
+})
+
+test('an open chat view whose pane stops being an agent says why for the diagnostics', async () => {
+  const app = await pane({ argv: 'fakeagent', chat: JSON.stringify({ chat: true, turns }) })
+  await app.press('id:show-chat')
+  await app.waitFor('id:chat-view')
+  await app.host.send('fake.status', { address: 't1', state: 'done', app: '' })
+  await app.clock.runFor(3100)
+  expect(app.count('id:chat-view')).toBe(0)
+  expect(diags(app)).toEqual(['chat-closed addr=t1 agent=false program=program chat=true'])
+})
