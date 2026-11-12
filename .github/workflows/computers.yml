@@ -17,12 +17,21 @@ on:
     branches: [main, ci, "ci-*", "!ci-try-*"]
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      # A job that passes one run and fails the next needs more runs to show how often and why: this many copies of the
+      # Android × Linux job at once, and no other job.
+      android_linux_repeat:
+        description: "Run only Android app × Linux computer, this many copies at once (0: the usual run)"
+        type: choice
+        options: ["0", "5", "10", "20"]
+        default: "0"
 
 permissions:
   contents: read
 
 concurrency:
-  group: computers-${{ github.ref }}
+  # A run of copies has a group of its own, so it doesn't cancel the branch's usual run, nor that run it.
+  group: computers-${{ github.ref }}${{ (inputs.android_linux_repeat || '0') != '0' && '-repeat-android' || '' }}
   cancel-in-progress: true
 
 env:
@@ -37,7 +46,7 @@ env:
 jobs:
   companion:
     name: Companion on ${{ matrix.os }}
-    if: github.repository == 'jt-wang/herdr-anywhere'
+    if: github.repository == 'jt-wang/herdr-anywhere' && (inputs.android_linux_repeat || '0') == '0'
     strategy:
       fail-fast: false
       matrix:
@@ -188,7 +197,7 @@ jobs:
   # drives a POSIX shell, so Windows isn't here yet.
   app:
     name: App against a real core on ${{ matrix.os }}
-    if: github.repository == 'jt-wang/herdr-anywhere'
+    if: github.repository == 'jt-wang/herdr-anywhere' && (inputs.android_linux_repeat || '0') == '0'
     strategy:
       fail-fast: false
       matrix:
@@ -243,8 +252,13 @@ jobs:
   # the companion on the runner, the emulator reaching them at 10.0.2.2. e2e/android.sh pairs by typing the link,
   # opens a terminal, types, and checks notifications and the folder picker (its header says all it does).
   android-linux:
-    name: Android app × Linux computer
+    name: Android app × Linux computer${{ matrix.copy != 0 && format(' (copy {0})', matrix.copy) || '' }}
     if: github.repository == 'jt-wang/herdr-anywhere'
+    strategy:
+      fail-fast: false
+      matrix:
+        # copy 0 is the usual run; a run of copies (android_linux_repeat) is numbered from 1.
+        copy: ${{ fromJSON('{"0":[0],"5":[1,2,3,4,5],"10":[1,2,3,4,5,6,7,8,9,10],"20":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20]}')[inputs.android_linux_repeat || '0'] }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -305,7 +319,9 @@ jobs:
           # This runner's emulator can keep covering the screen with "Pixel Launcher isn't responding" (on CI: back
           # three times after Wait, so the link was never typed). hide_error_dialogs skips error dialogs and goes on as
           # if they were answered (checked on API 35: a crash dialog shows without it and not with it). The
-          # app under test still fails its checks if it stops answering.
+          # app under test still fails its checks if it stops answering. WiFi goes off before the suite: the phone
+          # goes out through mobile data alone (app/e2e/android-net.sh says why).
           script: |
             adb -s emulator-5554 shell settings put global hide_error_dialogs 1
+            ANDROID_SERIAL=emulator-5554 sh e2e/android-net.sh --mobile-only
             ANDROID_SERIAL=emulator-5554 e2e/android.sh

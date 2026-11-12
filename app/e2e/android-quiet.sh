@@ -186,7 +186,9 @@ away() {
 during=away
 case_ background '"$adb" shell input keyevent 3' '"$adb" shell am start -W -n "$id/.MainActivity" >/dev/null' 50
 during=
-case_ offline '"$adb" shell svc wifi disable; "$adb" shell svc data disable' '"$adb" shell svc wifi enable; "$adb" shell svc data enable' 50
+# Back online as it was: on CI the phone has WiFi off (android-net.sh mobile_only), and it stays off.
+wifi_was=$("$adb" shell settings get global wifi_on | tr -d '\r')
+case_ offline '"$adb" shell svc wifi disable; "$adb" shell svc data disable' '[ "$wifi_was" = 0 ] || "$adb" shell svc wifi enable; "$adb" shell svc data enable' 50
 "$adb" root >/dev/null 2>&1; sleep 2
 "$adb" wait-for-device
 case_ frozen '"$adb" shell kill -STOP $(pid)' '"$adb" shell kill -CONT $(pid)' 50

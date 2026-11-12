@@ -8,6 +8,11 @@
 # and says how many rows the content moved. Passes when, in every agent, a drag from the edge moves the content as
 # far as one from the middle (within 1 row), the middle's drag moved it at least 2 rows, and no drag went back to home.
 # A first pair of drags in each space is measured and printed, not compared (see EdgeScroll).
+# Then sideways swipes from 10 pt and 20 pt (EdgeScroll: one let go early, two that go back): each passes when the
+# agent's screen as hc reads it is the same after as before (nothing was typed, clicked or scrolled in the program), no
+# "Copied" came up and the tab stayed; for the one let go early, also the content did not move (rows.py), no
+# selection showed (e2e/selection.py, its colour learnt from a hold on the middle) and no keyboard came up. The hold
+# and a tap on the middle are controls: the hold must show a selection and Copied, the tap the keyboard.
 # Usage: SIM_UDID=<udid> [AGENTS=cc,cx,oc,pi] e2e/ios-edge-scroll.sh [out folder]
 # SIM_UDID is required, so the run never lands on another simulator. Needs go, nsh, hc, xcodegen, Xcode, Pillow,
 # tesseract, and claude, codex, opencode and pi installed (one missing is skipped and said). Fake data only.
@@ -88,11 +93,12 @@ clean() {
 }
 lhc() { clean "$hc" "$@"; }
 placeholder=$(cat "$app/e2e/pair.ts")
-serve_pid=; fa=; fr=; test_pid=
+serve_pid=; fa=; fr=; test_pid=; answer_pid=
 cleanup() {
   trap - EXIT; trap '' INT TERM HUP
   set +e
   [ -n "$test_pid" ] && { pkill -P "$test_pid" 2>/dev/null; kill "$test_pid" 2>/dev/null; }
+  [ -n "$answer_pid" ] && kill "$answer_pid" 2>/dev/null
   [ -n "$serve_pid" ] && { pkill -P "$serve_pid" 2>/dev/null; kill "$serve_pid" 2>/dev/null; }
   pkill -f -- "--state $state" 2>/dev/null
   [ -n "$fa" ] && kill "$fa" 2>/dev/null; [ -n "$fr" ] && kill "$fr" 2>/dev/null
@@ -158,6 +164,16 @@ TEST_RUNNER_OUT="$out" TEST_RUNNER_SPACES="$spaces" perl -e 'alarm 1200; exec @A
   -derivedDataPath "$work/uitest/derived" -clonedSourcePackagesDirPath "$work/uitest/spm" -packageCachePath "$work/uitest/spm-cache" \
   -resultBundlePath "$out/test.xcresult" > "$work/test.log" 2>&1 &
 test_pid=$!
+# The test asks for an agent's screen around each sideways swipe (OUT/ask-<agent>-<tag>): hc reads it into hc-<tag>.txt.
+(while kill -0 "$test_pid" 2>/dev/null; do
+  for f in "$out"/ask-*; do
+    [ -e "$f" ] || continue
+    tag=${f##*/ask-}
+    lhc read "${tag%%-*}" > "$out/.hc-$tag" 2>&1; mv "$out/.hc-$tag" "$out/hc-$tag.txt"; rm -f "$f"
+  done
+  sleep 0.2
+done) &
+answer_pid=$!
 # The answer goes in once the phone shows the space, so the phone has every row of it, history included.
 for a in $agents; do
   i=0; until grep -q "^ready sp$a\$" "$out/drags.txt" || ! kill -0 "$test_pid" 2>/dev/null; do i=$((i + 1)); [ $i -gt 300 ] && break; sleep 1; done
@@ -202,5 +218,44 @@ for a in $agents; do
       else say "FAIL: $what: $ev rows, from the middle $mv"; fi
     done
   done
+done
+
+# Sideways from the strip. The controls first: without them a check that sees nothing proves nothing.
+sel=$app/e2e/selection.py
+for a in $agents; do
+  set -- $(awk -v s="sp$a" '$1 == "control" && $2 == s' "$out/drags.txt")
+  [ $# -ge 9 ] || { say "FAIL: $(name "$a"): no control line"; continue; }
+  bx="$4 $5 $6 $7"; cp=$8; kbd=$9 # control sp<a> box x y w h copied=<0|1> keyboard=<0|1>
+  set -- $(python3 -I "$sel" learn "$out/sp$a-hold-0.png" "$out/sp$a-hold-1.png" $bx)
+  if [ "$2" = none ]; then color=; grew=0; else color="$2 $3 $4"; grew=$6; fi
+  if [ "$grew" -lt 1000 ]; then say "FAIL: $(name "$a"): control: a hold showed no selection ($*)"; color=; fi
+  [ "$cp" = copied=1 ] || say "FAIL: $(name "$a"): control: a hold did not say Copied"
+  [ "$kbd" = keyboard=1 ] || say "FAIL: $(name "$a"): control: a tap brought no keyboard"
+  awk -v s="sp$a" '$1 == "side" && $2 == s' "$out/drags.txt" > "$work/side"
+  [ -s "$work/side" ] || { say "FAIL: $(name "$a"): no sideways swipes"; continue; }
+  while read -r _ sp x0 kind _ x y w hh back kb cpd tab; do
+    what="$(name "$a"), sideways $kind from $x0 pt"; tag="side$x0-$kind"; bad=
+    h0=$out/hc-$a-$tag-0.txt; h1=$out/hc-$a-$tag-1.txt
+    if [ ! -s "$h0" ] || [ ! -s "$h1" ]; then bad="$bad, hc read nothing"
+    elif ! sed 's/[[:space:]]*$//' "$h0" > "$work/h0" || ! sed 's/[[:space:]]*$//' "$h1" > "$work/h1" || ! cmp -s "$work/h0" "$work/h1"; then
+      bad="$bad, the agent's screen changed: $(diff "$work/h0" "$work/h1" | grep '^[<>]' | head -2 | tr '\n' ' ')"
+    fi
+    [ "$cpd" = copied=1 ] && bad="$bad, Copied came up"
+    [ "$tab" = tab=same ] || bad="$bad, the tab changed"
+    if [ "$kind" = part ]; then
+      [ "$back" = back=0 ] || bad="$bad, it went back"
+      [ "$kb" = kb=01 ] && bad="$bad, the keyboard came up"
+      set -- $(python3 -I "$app/e2e/rows.py" "$out/$sp-$tag-0.png" "$out/$sp-$tag-1.png" "$x" "$y" "$w" "$hh")
+      [ "$2" = 0 ] || bad="$bad, the content moved $2 rows"
+      if [ -n "$color" ]; then
+        n0=$(python3 -I "$sel" count "$out/$sp-$tag-0.png" "$x" "$y" "$w" "$hh" $color)
+        n1=$(python3 -I "$sel" count "$out/$sp-$tag-1.png" "$x" "$y" "$w" "$hh" $color)
+        [ $((n1 - n0)) -gt $((grew / 3)) ] && bad="$bad, a selection showed ($n0 -> $n1 px of its colour; a hold: +$grew)"
+      fi
+    else
+      [ "$back" = back=1 ] || bad="$bad, it did not go back"
+    fi
+    if [ -n "$bad" ]; then say "FAIL: $what: ${bad#, }"; else say "ok: $what: nothing in the terminal"; fi
+  done < "$work/side"
 done
 exit $failed

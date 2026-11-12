@@ -148,6 +148,8 @@ jobs:
           cp app/android/build/Herdr.apk "$RUNNER_TEMP/build/"
           (cd companion && CGO_ENABLED=0 go build -buildvcs=false -trimpath -ldflags="-s -w" -o "$RUNNER_TEMP/build/herdr-anywhere-linux-amd64" ./cmd/herdr-anywhere)
           "$RUNNER_TEMP/build/herdr-anywhere-linux-amd64" --version
+      - name: The suites' start and stop of their Companion (e2e/companion.sh)
+        run: sh app/e2e/companion.sh --self-test "$RUNNER_TEMP/build/herdr-anywhere-linux-amd64"
       - run: app/e2e/ci/tools.sh shots
       - name: Check what is uploaded
         run: |
