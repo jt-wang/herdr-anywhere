@@ -56,7 +56,16 @@ rest=$invite
 while [ -n "$rest" ]; do "$adb" shell input text "'$(printf %s "$rest" | cut -c1-80)'" < /dev/null; rest=$(printf %s "$rest" | cut -c81-); sleep 0.5; done
 tap pair
 b=""; for _ in $(seq 1 30); do b=$(xml | bounds 'add-agent-box/spweb"'); [ -n "$b" ] && break; sleep 1; done
-[ -n "$b" ] || { echo "FAIL: home has no space on box"; exit 1; }
+if [ -z "$b" ]; then
+  echo "FAIL: home has no space on box"
+  "$adb" exec-out screencap -p > "$shots/fail-home.png"
+  echo "on screen (ids): $(xml | tr '>' '\n' | grep -oE 'resource-id="[^"]+"' | sed -E 's/resource-id="(.*)"/\1/' | head -40 | tr '\n' ' ')"
+  echo "on screen (texts): $(xml | tr '>' '\n' | grep -oE ' text="[^"]+"' | sed -E 's/ text="(.*)"/\1/; s/#pair=[A-Za-z0-9_-]+/#pair=…/' | head -30 | tr '\n' '|')"
+  echo "hc ls: $("$hc" ls --json 2>&1 | python3 -c 'import json,sys; print([(t["address"], (t.get("labels") or {}).get("herdr.space")) for t in json.load(sys.stdin)["terminals"]])' 2>&1)"
+  echo "hc machine ls: $("$hc" machine ls 2>&1 | head -5 | tr '\n' ' ')"
+  echo "serve log: $(tail -5 "$work/serve.log" | sed -E 's/#pair=[A-Za-z0-9_-]+/#pair=…/g' | tr '\n' ' ')"
+  exit 1
+fi
 
 # One opening of the sheet: the title as tesseract reads it off the screen, from the left of the title's view to the
 # sheet's right edge (a cut title's view is narrower than its text).
