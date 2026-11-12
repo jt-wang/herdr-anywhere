@@ -5,6 +5,8 @@ export type Appearance = 'system' | 'light' | 'dark'
 /** Where typing goes in a pane: our input box, or the phone's own keyboard straight into the terminal. */
 export type TypeIn = 'composer' | 'terminal'
 export type Prefs = { appearance: Appearance; typeIn: TypeIn; fontSize: number; alertBlocked: boolean; alertDone: boolean; stayConnected: boolean; dismissedUpdate: string; askedNotifications: boolean
+  /** The last new version a system notification told of (src/updates.ts tell): each is told once. */
+  toldUpdate: string
   /** Agent rows say the program's name ("Claude Code") before the title; off, the icon alone says it (Settings › Look). */
   showAgentNames: boolean
   /** Experimental: the first screen is the progress page (ui/progress.tsx), goals first. */
@@ -23,7 +25,7 @@ export type Prefs = { appearance: Appearance; typeIn: TypeIn; fontSize: number; 
   chatFirst: boolean
   /** The agents whose chat setup the phone has asked about once by itself (ui/chat.tsx); it doesn't ask them again. */
   chatSetupAsked: string[] }
-export const DEFAULTS: Prefs = { appearance: 'system', typeIn: 'composer', fontSize: 13, alertBlocked: true, alertDone: true, stayConnected: true, dismissedUpdate: '', askedNotifications: false, showAgentNames: true, progressFirst: false, progressAgent: '', progressLang: '', homeView: 'progress', progressFolded: [], opened: 0, chatFirst: false, chatSetupAsked: [] }
+export const DEFAULTS: Prefs = { appearance: 'system', typeIn: 'composer', fontSize: 13, alertBlocked: true, alertDone: true, stayConnected: true, dismissedUpdate: '', toldUpdate: '', askedNotifications: false, showAgentNames: true, progressFirst: false, progressAgent: '', progressLang: '', homeView: 'progress', progressFolded: [], opened: 0, chatFirst: false, chatSetupAsked: [] }
 import { FONT_MAX, FONT_MIN } from './ui/terminal-page.ts'
 export { FONT_MAX, FONT_MIN }
 
@@ -63,6 +65,7 @@ function clean(p: Prefs): Prefs {
     homeView: p.homeView === 'agents' ? 'agents' : 'progress',
     progressFolded: Array.isArray(p.progressFolded) ? p.progressFolded.filter((x): x is string => typeof x === 'string') : [],
     dismissedUpdate: typeof p.dismissedUpdate === 'string' ? p.dismissedUpdate : '',
+    toldUpdate: typeof p.toldUpdate === 'string' ? p.toldUpdate : '',
     opened: Math.max(0, Math.floor(Number(p.opened) || 0)),
     chatFirst: p.chatFirst === true,
     chatSetupAsked: Array.isArray(p.chatSetupAsked) ? p.chatSetupAsked.filter((x): x is string => typeof x === 'string') : [],
