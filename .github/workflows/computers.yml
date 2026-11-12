@@ -319,7 +319,9 @@ jobs:
           # This runner's emulator can keep covering the screen with "Pixel Launcher isn't responding" (on CI: back
           # three times after Wait, so the link was never typed). hide_error_dialogs skips error dialogs and goes on as
           # if they were answered (checked on API 35: a crash dialog shows without it and not with it). The
-          # app under test still fails its checks if it stops answering.
+          # app under test still fails its checks if it stops answering. WiFi goes off before the suite: the phone
+          # goes out through mobile data alone (app/e2e/android-net.sh says why).
           script: |
             adb -s emulator-5554 shell settings put global hide_error_dialogs 1
+            ANDROID_SERIAL=emulator-5554 sh e2e/android-net.sh --mobile-only
             ANDROID_SERIAL=emulator-5554 e2e/android.sh
