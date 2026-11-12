@@ -1,5 +1,5 @@
 #!/bin/sh
-# Runs e2e/live.test.ts against a real companion and a real herdr-core in a session of their own:
+# Runs e2e/live.test.ts (or HM_LIVE_TEST) against a real companion and a real herdr-core in a session of their own:
 # its own HC_SESSION, HOME, XDG dirs and companion state, a free port on 127.0.0.1, all removed after.
 # Needs: go, nsh, and herdr-core's hc (HM_TEST_HC, or on PATH, or ~/.local/bin).
 set -eu
@@ -26,7 +26,7 @@ cleanup() {
   rm -rf "$work" "$run"
   printf "%s\n" "$placeholder" > "$app/e2e/pair.ts"
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT; trap 'exit 130' INT; trap 'exit 143' TERM
 
 port=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')
 "$work/herdr-anywhere" serve --listen "127.0.0.1:$port" --hc "$hc" > "$work/serve.log" 2>&1 &
@@ -42,6 +42,6 @@ cd "$app"
 # nsh test passes the test no environment, so the link goes in as a module, put back to the placeholder after.
 printf 'export const PAIR = %s\nexport const COMPANION = %s\n' "'$HM_PAIR'" "$serve_pid" > e2e/pair.ts
 status=0
-nsh test e2e/live.test.ts || status=$?
+nsh test "${HM_LIVE_TEST:-e2e/live.test.ts}" || status=$?
 [ $status -eq 0 ] || { echo "--- companion log" >&2; cat "$work/serve.log" >&2; }
 exit $status

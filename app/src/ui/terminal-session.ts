@@ -1,7 +1,7 @@
 // One pane's terminal on the phone: the web page (terminal-page.ts) says when it is laid out and what was typed;
 // this attaches to herdr-core at that size, sends output to the page, and attaches again (resumed) after the
 // line comes back, as herdr-app's terminal view does.
-import type { Store } from '../store.ts'
+import type { Conn, Store } from '../store.ts'
 import type { CloseReason, Stream } from '../hc/client.ts'
 import { Signal } from '../store.ts'
 import type { TypeIn } from '../prefs.ts'
@@ -10,7 +10,7 @@ import { PageChannel, ctrlKey, readPageMessage, xtermTheme, type BarKey } from '
 import { findSince, sinceLabel, tailOf } from '../model/seen.ts'
 import { t, type Key } from '../strings/index.ts'
 
-export type SessionState = 'waiting' | 'live' | 'ended' | 'lost' | 'failed'
+export type SessionState = 'waiting' | 'live' | 'ended' | 'lost'
 /** What fingers did on the page that the app acts on. */
 export type Gestures = { swipe?: (dir: 'next' | 'prev') => void; link?: (url: string) => void
   /** An image's path was tapped, as the terminal shows it: whether it is a picture there (the app then opens its
@@ -27,6 +27,14 @@ const WHY: Record<string, Key> = {
   finished: 'terminalFinished',
 }
 
+/** The line under a terminal that is not live, and whether it offers Try again. A page still not ready after its two
+ *  waits (slow) may be slow or may have lost its web process: the WebView tells the app neither (nsh has no callback for
+ *  it), so the line says only what is true either way, and Try again works either way. */
+export function terminalNote(state: SessionState, slow: boolean, conn: Conn, why: string): { text: string; retry: boolean } {
+  if (state === 'waiting') return { text: t(slow && conn === 'ready' ? 'terminalLoading' : 'connecting'), retry: slow }
+  return { text: state === 'lost' ? t('reconnecting') : why, retry: false }
+}
+
 /** How often a viewer in use tells herdr-core so. */
 const CLAIM_MS = 2000
 /** How long a page has to say ready. It takes 0.3–1.4 s on the iOS 17 simulator. A page whose web process
@@ -37,6 +45,8 @@ export const PAGE_READY_MS = 6000
 export class TerminalSession {
   readonly state = new Signal<SessionState>('waiting')
   readonly why = new Signal('')
+  /** The page has not said ready after both waits: slow, or its web process is gone (terminalNote). */
+  readonly slow = new Signal(false)
   readonly ctrl = new Signal(false)
   readonly shift = new Signal(false)
   /** Where typing goes in this pane now: the input box or the terminal (pane-bar.tsx switches it). */
@@ -82,7 +92,7 @@ export class TerminalSession {
     if (m.t === 'ready') {
       this.pageReady = true
       this.reloaded = false
-      if (this.state.get() === 'failed') { this.state.set('waiting'); this.why.set('') }
+      this.slow.set(false)
       this.size = { cols: m.cols, rows: m.rows }
       this.channel.ready()
       if (this.focusLater) { this.focusLater = false; this.focus() }
@@ -128,10 +138,11 @@ export class TerminalSession {
     }
   }
 
-  /** The page did not load: load it again and wait once more. */
+  /** Try again on a page that has not said ready: a new page in its place, with its own wait. A page that said ready
+   *  meanwhile (the button was still on screen) is kept. */
   retry() {
-    this.state.set('waiting')
-    this.why.set('')
+    if (this.pageReady || this.disposed) return
+    this.slow.set(false)
     this.opts.reload?.()
     this.waitForPage()
   }
@@ -146,7 +157,7 @@ export class TerminalSession {
     this.waitForPage()
   }
 
-  /** A page that does not say ready in time is loaded again once; after that the terminal says so (retry()). */
+  /** A page that does not say ready in time is loaded again once; after that the terminal offers to (slow, retry()). */
   private waitForPage() {
     const wait = ++this.pageWait
     this.pageReady = false
@@ -158,8 +169,7 @@ export class TerminalSession {
         this.waitForPage()
         return
       }
-      this.state.set('failed')
-      this.why.set(t('terminalPageFailed'))
+      this.slow.set(true)
     }, PAGE_READY_MS)
   }
 

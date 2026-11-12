@@ -15,6 +15,7 @@ set -eu
 apk=$1; bin=$2; shots=${3:-}
 app=$(cd "$(dirname "$0")/.." && pwd)
 adb="${ANDROID_HOME:-$HOME/Library/Android/sdk}/platform-tools/adb"
+. "$(dirname "$0")/adb-note.sh"; adb_note "$adb"  # a failed adb call is written down and shown if the suite fails
 hc=${HM_TEST_HC:-$(command -v hc || echo "$HOME/.local/bin/hc")}
 id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$app/nsh.json")
 port=7797; while nc -z 127.0.0.1 "$port" 2>/dev/null; do port=$((port + 1)); done
@@ -62,7 +63,7 @@ cleanup() {
   chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run" "$state"
   exit "$status"
 }
-trap cleanup EXIT; trap 'cleanup; exit 130' INT; trap 'cleanup; exit 143' TERM HUP
+trap 'adb_exit $? cleanup' EXIT; trap 'cleanup; exit 130' INT; trap 'cleanup; exit 143' TERM HUP
 
 "$work/bin/fake-model" -addr "127.0.0.1:$mport" -read docs/chart.png > "$work/model.log" 2>&1 &
 model_pid=$!
