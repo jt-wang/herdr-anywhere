@@ -206,7 +206,7 @@ function TurnView(props: { store: Store; address: string; turn: ChatTurn }) {
         </View>
       }>
         <View class="self-end max-w-[85%] items-end gap-1.5">
-          <Each of={turn().images ?? []}>{(p) => <ChatImage store={props.store} address={props.address} picture={p()} end />}</Each>
+          <Each of={turn().images ?? []} key={(p) => p.id}>{(p) => <ChatImage store={props.store} address={props.address} picture={p()} end />}</Each>
           <If when={turn().said}>
             <View class="px-3 py-2 rounded-[12px] bg-secondary">
               <Text selectable class="text-[14px] text-foreground">{turn().said}</Text>
@@ -272,7 +272,7 @@ function StepView(props: { store: Store; address: string; step: ChatStep }) {
               }>{(r) => <Text testID={`read-${props.step.id}`} class="text-[12px] text-muted-foreground">{t('chatReadLines', { from: r().from, to: r().from + Math.max(r().count, 1) - 1, total: r().total })}</Text>}</If>
               }>{(c) => <ChangeView id={props.step.id} change={c()} />}</If>
               }>{(r) => <RunView id={props.step.id} run={r()} />}</If>
-              <Each of={d().images ?? []}>{(p) => <ChatImage store={props.store} address={props.address} picture={p()} />}</Each>
+              <Each of={d().images ?? []} key={(p) => p.id}>{(p) => <ChatImage store={props.store} address={props.address} picture={p()} />}</Each>
             </View>
           )}</If>
         </View>
@@ -294,8 +294,13 @@ const FRAMES = new Map<string, VideoFrame | null>()
 function FileCards(props: { store: Store; address: string; text: string }) {
   const files = signal<ChatFile[]>([])
   const open = signal<ChatFile | null>(null)
+  // Asked again only when the paths change: the view gets the turn anew at each 3 s ask, its reply the same.
+  let asked = ''
   effect(() => {
     const paths = pathsIn(props.text)
+    const k = paths.join('\n')
+    if (k === asked) return
+    asked = k
     untracked(() => { if (paths.length) void props.store.chat!.files(props.address, paths).then((f) => files.set(f), () => {}) })
   })
   // A frame of each video, made once per file as the computer has it now.
