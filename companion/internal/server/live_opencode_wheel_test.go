@@ -13,6 +13,7 @@ package server
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"net/http/httptest"
 	"os"
@@ -23,6 +24,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/coder/websocket"
 
 	"herdr-anywhere/companion/internal/chat/fakeresponses"
 )
@@ -90,14 +93,30 @@ func TestLiveOpenCodeWheelColumns(t *testing.T) {
 		t.Fatalf("terminal.attach returned %v", att)
 	}
 	ch := uint32(chf)
-	// Reads what the core streams for a while: its credit goes back, so the program is never held up.
-	drain := func(d time.Duration) {
-		ctx, cancel := context.WithTimeout(context.Background(), d)
-		defer cancel()
+	// One reader for the rest of the test, so the core is never held up: it takes every frame and gives the credit
+	// back. A Read whose context ends closes the connection (coder/websocket), so nothing here reads with a timeout;
+	// the screen is read with hc read instead. From here the test only writes to the connection.
+	go func() {
 		for {
-			if _, err := cl.next(ctx); err != nil {
-				return
+			for len(cl.buf) >= 9 {
+				c, kind, n := binary.LittleEndian.Uint32(cl.buf[0:4]), cl.buf[4], int(binary.LittleEndian.Uint32(cl.buf[5:9]))
+				if len(cl.buf) < 9+n {
+					break
+				}
+				cl.buf = cl.buf[9+n:]
+				if kind == kData && c != 0 {
+					_ = cl.c.Write(context.Background(), websocket.MessageBinary, frame(c, kCredit, binary.LittleEndian.AppendUint32(nil, uint32(n))))
+				}
 			}
+			if err := cl.more(context.Background()); err != nil {
+				return // the test is over and its connection closed
+			}
+		}
+	}()
+	drain := time.Sleep
+	wheel := func(b []byte) {
+		if err := cl.c.Write(context.Background(), websocket.MessageBinary, frame(ch, kData, b)); err != nil {
+			t.Fatalf("sending a wheel report: %v", err)
 		}
 	}
 	screen := func() string {
@@ -143,7 +162,7 @@ func TestLiveOpenCodeWheelColumns(t *testing.T) {
 	for _, col := range []int{30, 1, 2, 3} {
 		before := top()
 		for i := 0; i < 3; i++ {
-			cl.send(frame(ch, kData, []byte(fmt.Sprintf("\x1b[<64;%d;10M", col))))
+			wheel([]byte(fmt.Sprintf("\x1b[<64;%d;10M", col)))
 			drain(300 * time.Millisecond)
 		}
 		drain(time.Second)
@@ -159,5 +178,5 @@ func TestLiveOpenCodeWheelColumns(t *testing.T) {
 	if moved[1] > 0 || moved[2] > 0 {
 		t.Logf("this OpenCode takes a wheel on column 1 or 2 (%v): the page's clamp is no longer needed for it", moved)
 	}
-	cl.call("terminal.kill", map[string]any{"terminal": addr})
+	exec.Command(hc, "kill", addr).Run() // not through the connection: its reader is the goroutine above
 }
