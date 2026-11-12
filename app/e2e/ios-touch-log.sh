@@ -49,6 +49,7 @@ EOF
 2000-01-01 10:00:27.410 Db Herdr[100:200] [com.apple.UIKit:EventDispatch] Sending UIEvent type: 0; subtype: 0; to windows: 1
 2000-01-01 10:00:27.420 Db Herdr[100:200] [com.apple.UIKit:EventDispatch] Sending UIEvent type: 4; subtype: 0; to windows: 1
 2000-01-01 10:00:27.411 Df Herdr[100:200] hm-touch phase=began view=WKContentView in-picture=no gestures=[WKSyntheticTapGestureRecognizer possible]
+2000-01-01 10:00:27.462 Df Herdr[100:200] (Foundation) hm-touch phase=watch +51ms view-in-window=yes touch-gestures=[WKSyntheticTapGestureRecognizer@0x1 possible]
 2000-01-01 10:00:27.480 Db Herdr[100:200] [com.apple.UIKit:EventDispatch] Sending UIEvent type: 0; subtype: 0; to windows: 1
 2000-01-01 10:00:27.481 Df Herdr[100:200] hm-touch phase=ended view=WKContentView in-picture=no gestures=[WKSyntheticTapGestureRecognizer ended]
 EOF
@@ -61,6 +62,9 @@ EOF
   # The test copy's window (e2e/ios-touch-window.swift) says where each touch landed: those lines go with the tap.
   grep -A2 "touch events from 10:00:27.200" "$t/said" | grep -q "app window: phase=began view=WKContentView in-picture=no" ||
     { echo "FAIL: ios-touch-log self-test: where the touch landed is not said with its tap: $(cat "$t/said")"; fail=1; }
+  # And what the window saw every 50 ms between (phase=watch), in order.
+  grep -A3 "touch events from 10:00:27.200" "$t/said" | sed -n 3p | grep -q "app window: phase=watch +51ms" ||
+    { echo "FAIL: ios-touch-log self-test: the window's look in between is not said in order: $(cat "$t/said")"; fail=1; }
   grep -A1 "touch events from 10:00:05.100" "$t/said" | grep -q "app window:" &&
     { echo "FAIL: ios-touch-log self-test: a landing for a tap with no event"; fail=1; }
   [ "$(grep -c 'type: 0;' "$t/keep/uikit-taps.txt")" = 2 ] ||
