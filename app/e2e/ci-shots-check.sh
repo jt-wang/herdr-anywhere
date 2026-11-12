@@ -9,12 +9,13 @@
 # check finds it in a log, reads it from a QR code and leaves no code there, and finds it in a picture's words, and
 # that a folder with none of it passes. A job runs it before the real check, so a check that finds nothing fails.
 # Needs python3 with zxing-cpp and Pillow (shots-check.py), ffmpeg for videos, and tesseract (or a Mac's Vision).
-set -u
+set -uo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 py=${HM_SHOTS_PYTHON:-python3}
 shapes='herdr[0-9]:[A-Za-z0-9_-]{16,}|#pair=[A-Za-z0-9_-]{8,}|token=[A-Za-z0-9_-]{8,}'
-# What OCR makes of the same: spaces may come in, and _ - may be read as other marks.
-seen_shapes='[Hh]erdr ?[0-9] ?: ?[^ ]{8,}|pair ?= ?[^ ]{8,}|token ?= ?[^ ]{8,}'
+# What OCR makes of the same, matched with the spaces it reads taken out: it splits a long token with spaces at random
+# (1 run in 10 here read "pair=…" as two words), reads : as ; and _ - as other marks.
+seen_shapes='[Hh]erdr[0-9][:;][^ ]{8,}|pair[=:][^ ]{8,}|token[=:][^ ]{8,}'
 
 check() {
   local folder=$1; shift
@@ -31,7 +32,7 @@ check() {
   bad=$(grep -rlaE "$shapes" "$folder")
   [ -z "$bad" ] || { echo "FAIL: something shaped like a pairing secret is in $(echo $bad)"; return 1; }
   local words
-  words=$("$py" "$here/shots-check.py" words "$folder") || return 1
+  words=$("$py" "$here/shots-check.py" words "$folder" | awk -F'\t' '{ gsub(/[ \t]/, "", $2); print $1 "\t" $2 }') || return 1
   bad=$(printf '%s\n' "$words" | grep -E "$seen_shapes" | cut -f1 | sort -u)
   [ -z "$bad" ] || { echo "FAIL: a picture shows something shaped like a pairing secret: $(echo $bad)"; return 1; }
   if [ -n "$*" ]; then
@@ -59,7 +60,11 @@ self_test() {
     n=$((n + 1))
     if check "$dir" "$@" > "$t/out" 2>&1; then got=pass; else got=fail; fi
     if [ "$got" = "$want" ]; then echo "ok: self-test $name: $got"; else
-      echo "FAIL: self-test $name: wanted $want, got $got"; sed "s#$link#<the link>#g" "$t/out"; fail=1; fi
+      echo "FAIL: self-test $name: wanted $want, got $got"
+      local said; said=$(cat "$t/out"); printf '%s\n' "${said//"$link"/<the link>}"
+      said=$("$py" "$here/shots-check.py" words "$dir" 2>&1 | cut -f2-); echo "the words read on its pictures:"
+      printf '%s\n' "${said//"$link"/<the link>}" | sed 's/^/  /'
+      fail=1; fi
   }
   mkdir -p "$t/log" "$t/qr" "$t/words" "$t/words-bare" "$t/clean"
   printf 'serve: phone opened %s\n' "$link" > "$t/log/serve.log"

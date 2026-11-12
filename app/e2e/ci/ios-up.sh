@@ -5,7 +5,8 @@
 # Usage: app/e2e/ci/ios-up.sh
 set -euo pipefail
 sudo xcode-select -s /Applications/Xcode_26.6.app
-xcodebuild -version | head -1
+# Not piped into head: xcodebuild aborts when its output closes early (SIGPIPE, exit 134 on the runner).
+xcodebuild -version > "${RUNNER_TEMP:-/tmp}/xcode-version" && head -1 "${RUNNER_TEMP:-/tmp}/xcode-version"
 runtime=$(xcrun simctl list runtimes -j | python3 -c '
 import json, sys
 r = [x for x in json.load(sys.stdin)["runtimes"] if x["name"] == "iOS 26.5" and x["isAvailable"]]

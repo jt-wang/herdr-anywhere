@@ -41,6 +41,11 @@ b=$("$bt/apksigner" verify --print-certs "$out/new.apk" | grep 'SHA-256 digest')
 c=$("$bt/apksigner" verify --print-certs "$out/other.apk" | grep 'SHA-256 digest')
 [ -n "$a" ] && [ "$a" = "$b" ] || { echo "FAIL: old.apk and new.apk are not signed by the same key"; exit 1; }
 [ "$a" != "$c" ] || { echo "FAIL: other.apk is signed by the same key"; exit 1; }
+# What each says it is, as Android reads it.
+badge() { "$bt/aapt2" dump badging "$1" | sed -n "s/.*versionCode='\([0-9]*\)' versionName='\([^']*\)'.*/\2 \1/p" | head -1; }
+echo "old.apk: $(badge "$out/old.apk"); new.apk: $(badge "$out/new.apk")"
+[ "$(badge "$out/new.apk")" = "9.9.9 999" ] || { echo "FAIL: new.apk is not 9.9.9 build 999"; exit 1; }
+[ "$(badge "$out/old.apk" | cut -d' ' -f1)" = "$version" ] || { echo "FAIL: old.apk is not $version"; exit 1; }
 
 cd "$app/../companion"
 CGO_ENABLED=0 go build -buildvcs=false -trimpath -ldflags="-s -w -X main.version=$version" -o "$out/old-companion" ./cmd/herdr-anywhere
