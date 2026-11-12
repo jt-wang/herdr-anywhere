@@ -33,8 +33,9 @@ export async function allowNotifications(): Promise<Permission> {
 
 /** Posts the system's notification for an alert; the page posts it only while it is not in front. A finished agent's
  *  (`done`) is the quieter kind where the host has one (Android: a channel without sound). */
-/** `quiet`: new words for the notification already posted for this terminal; nothing when it was dismissed. */
-export function notifyFromPage(n: { title: string; body?: string; terminal?: string; kind: 'blocked' | 'done'; quiet?: boolean }) {
+/** `quiet`: new words for the notification already posted for this terminal; nothing when it was dismissed.
+ *  `update`: a new version (src/updates.ts), on its own channel on Android; its tap opens home (page.open `home`). */
+export function notifyFromPage(n: { title: string; body?: string; terminal?: string; kind: 'blocked' | 'done' | 'update'; quiet?: boolean }) {
   if (host.available()) host.call('page.notify', { title: n.title, body: n.body ?? null, terminal: n.terminal ?? null, kind: n.kind, quiet: !!n.quiet }).catch(() => {})
 }
 
@@ -64,12 +65,13 @@ export function onFront(back: () => void): () => void {
   return host.on('page.front', (d: any) => { if (d?.front === true) back() })
 }
 
-/** Follows whether the page is in front (`front`), and taps on its notifications (`open`). Returns the stop. */
-export function followPage(on: { front: (front: boolean) => void; open: (terminal: string) => void }): () => void {
+/** Follows whether the page is in front (`front`), and taps on its notifications: an agent's (`open`), a new
+ *  version's (`home`). Returns the stop. */
+export function followPage(on: { front: (front: boolean) => void; open: (terminal: string) => void; home?: () => void }): () => void {
   if (!host.available()) return () => {}
   host.call('page.front').then((f) => { if (typeof f === 'boolean') on.front(f) }, () => {})
   const a = host.on('page.front', (d: any) => { if (typeof d?.front === 'boolean') on.front(d.front) })
-  const b = host.on('page.open', (d: any) => { if (typeof d?.terminal === 'string') on.open(d.terminal) })
+  const b = host.on('page.open', (d: any) => { if (typeof d?.terminal === 'string') on.open(d.terminal); else if (d?.home === true) on.home?.() })
   return () => { a(); b() }
 }
 
