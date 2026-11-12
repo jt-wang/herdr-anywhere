@@ -19,7 +19,7 @@ cleanup() {
   kill "$web" 2>/dev/null
   chmod -R u+w "$work" 2>/dev/null; rm -rf "$work"
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT; trap 'exit 130' INT; trap 'exit 143' TERM
 for _ in 1 2 3 4 5 6 7 8 9 10; do curl -fsS -o /dev/null "http://127.0.0.1:$port/" 2>/dev/null && break; python3 -c 'import time; time.sleep(0.3)'; done
 
 # What a Mac with Herdr has: hc and herdr-core in ~/.local/bin, and Herdr's keys.json from opening it once. No Go.

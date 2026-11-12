@@ -273,6 +273,119 @@ test("a retry that the tunnel leaves unanswered keeps saying so: the failed retr
   }
 })
 
+// The report this follows: an iPhone paired through Tailcat, back from another app, said "Your computer doesn't answer"
+// and offered to pair again, then connected. The tunnel it had was dead (src/link.ts calls that `stale`), the computer
+// was not: that says only "reconnecting", and the next try goes at once, on a new tunnel.
+test("a stale tunnel says it is reconnecting and tries again at once; a new tunnel left unanswered says the computer doesn't answer", async () => {
+  let mode: 'up' | 'stale' | 'silent' = 'up'
+  const core = new FakeCore()
+  const pipe = () => {
+    if (mode === 'up') return core
+    const c = new FakeCore()
+    const why = mode
+    c.send = () => c.drop(why === 'stale' ? 'stale' : 'no-answer')
+    return c
+  }
+  const timers: { f: () => void; ms: number }[] = []
+  const store = new Store({ pipe, now: () => 1_000_000, setInterval: (() => 0) as any, clearInterval: (() => {}) as any,
+    setTimeout: ((f: () => void, ms: number) => { timers.push({ f, ms }); return 0 }) as any, tunnelled: () => true })
+  await store.connect()
+  mode = 'stale'
+  core.drop('network')
+  await settle()
+  timers.shift()!.f()
+  await settle(20)
+  expect(store.lostWhy.get()).toBe('stale')
+  expect(store.error.get()).toBe('Reconnecting to your computer…')
+  expect(timers[0].ms).toBe(0)
+  mode = 'silent'
+  timers.shift()!.f()
+  await settle(20)
+  expect(store.lostWhy.get()).toBe('no-answer')
+  expect(store.error.get()).toBe("Your computer doesn't answer. Run this on it:")
+  expect(timers[0].ms > 0).toBe(true)
+})
+
+test('back in the front, a line that still answers is kept: no new line, nothing said', async () => {
+  let made = 0
+  const core = new FakeCore()
+  const store = new Store({ pipe: () => { made++; return core }, now: () => 1_000_000, setInterval: (() => 0) as any,
+    clearInterval: (() => {}) as any, setTimeout: (() => 0) as any, probeMs: 200 })
+  await store.connect()
+  const before = core.calls.length
+  store.foreground()
+  await settle(20)
+  expect(core.calls.length > before).toBe(true)
+  expect(made).toBe(1)
+  expect(store.conn.get()).toBe('ready')
+  expect(store.error.get()).toBe('')
+})
+
+test('each check of the line when back in the front reports how long it took and whether it was answered', async () => {
+  let now = 1_000_000
+  const probes: [number, boolean][] = []
+  const cores = [new FakeCore(), new FakeCore()]
+  let made = 0
+  const store = new Store({ pipe: () => cores[made++], now: () => now, setInterval: (() => 0) as any, clearInterval: (() => {}) as any,
+    setTimeout: (() => 0) as any, probeMs: 50, onProbe: (ms, answered) => probes.push([ms, answered]) })
+  await store.connect()
+  cores[0].holding.add('machine.list')
+  store.foreground()
+  await settle()
+  now += 120
+  cores[0].release()
+  await until(() => probes.length === 1)
+  expect(probes).toEqual([[120, true]])
+  cores[0].mute = true
+  store.foreground()
+  await until(() => probes.length === 2)
+  expect(probes[1][1]).toBe(false)
+})
+
+test('back in the front, a line that no longer answers is dropped within the probe, not after 15 s, and connected again at once', async () => {
+  const cores = [new FakeCore(), new FakeCore()]
+  let made = 0
+  let renewed = 0
+  const timers: { f: () => void; ms: number }[] = []
+  const store = new Store({ pipe: () => cores[made++], now: () => 1_000_000, setInterval: (() => 0) as any,
+    clearInterval: (() => {}) as any, setTimeout: ((f: () => void, ms: number) => { timers.push({ f, ms }); return 0 }) as any,
+    probeMs: 50, renew: () => { renewed++ }, tunnelled: () => true })
+  await store.connect()
+  cores[0].mute = true
+  store.foreground()
+  await until(() => store.conn.get() === 'reconnecting')
+  expect(store.error.get()).toBe('Reconnecting to your computer…')
+  expect(renewed).toBe(1)
+  expect(timers.map((t) => t.ms)).toEqual([0])
+  timers.shift()!.f()
+  await until(() => store.conn.get() === 'ready')
+  expect(made).toBe(2)
+  expect(store.error.get()).toBe('')
+})
+
+test('back in the front while the line is down, it tries again at once instead of waiting out its back-off', async () => {
+  const live = new FakeCore()
+  let up = false
+  let made = 0
+  const pipe = () => {
+    made++
+    if (up) return live
+    const c = new FakeCore()
+    c.send = () => c.drop('network')
+    return c
+  }
+  const timers: { f: () => void; ms: number }[] = []
+  const store = new Store({ pipe, now: () => 1_000_000, setInterval: (() => 0) as any, clearInterval: (() => {}) as any,
+    setTimeout: ((f: () => void, ms: number) => { timers.push({ f, ms }); return 0 }) as any })
+  await store.connect().catch(() => {})
+  await settle()
+  expect(store.conn.get()).toBe('reconnecting')
+  up = true
+  store.foreground()
+  await until(() => store.conn.get() === 'ready')
+  expect(made).toBe(2)
+})
+
 test('while the line is down, the state shown says how old it is', async () => {
   let now = 1_000_000
   const cores = [new FakeCore(), new FakeCore()]

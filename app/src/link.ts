@@ -89,8 +89,8 @@ export type LinkerIO = {
 }
 
 type Opened = { baseUrl: string; close: () => void; path?: () => Promise<Route> }
-/** A tunnel being opened, and once open, the tunnel. */
-type Tunnelling = { opening: Promise<Opened>; open?: Opened }
+/** A tunnel being opened, and once open, the tunnel; `answered` once a socket on it heard the computer. */
+type Tunnelling = { opening: Promise<Opened>; open?: Opened; answered?: boolean }
 
 export class Linker {
   readonly link = new Signal<Link | null>(null)
@@ -155,13 +155,14 @@ export class Linker {
       if (ended) return
       let heard = false
       const s = (inner = open(socketUrl(c.baseUrl, l.token, l.enc), l.enc))
-      s.onBytes = (b) => { heard = true; outer.onBytes?.(b) }
+      s.onBytes = (b) => { heard = t.answered = true; outer.onBytes?.(b) }
       // Unanswered, it is all the phone can know: Companion stopped and this phone taken off the computer look the
-      // same through the tunnel (link.test.ts).
+      // same through the tunnel (link.test.ts). Unless the tunnel answered before: then it is the tunnel that stopped
+      // (the phone was suspended in the background), and a new one may well reach the computer: `stale`.
       s.onClose = (r) => {
         const silent = r === 'network' && !heard
         if (silent) this.dropTunnel(t)
-        closed(silent ? 'no-answer' : r)
+        closed(!silent ? r : t.answered ? 'stale' : 'no-answer')
       }
       for (const b of queue.splice(0)) s.send(b)
     }, () => {
@@ -200,6 +201,11 @@ export class Linker {
       if (this.tunnel === t) this.tunnel = undefined
       throw e
     }
+  }
+
+  /** Drops the tunnel, so the next pipe opens a new one: a line on it stopped answering (Store.foreground). */
+  renew() {
+    this.dropTunnel(this.tunnel)
   }
 
   private tunnelling(tunnel: Tunnel): Tunnelling {

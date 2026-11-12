@@ -46,3 +46,19 @@ test('an expired invite says so, and the pairing screen stays', async () => {
   await app.waitFor('text:That invite expired. Run herdr-anywhere pair again.')
   expect(app.shows('id:pair')).toBe(true)
 })
+
+// ios/Sources/App.swift sends app.foreground when the app comes back from the background. A line down then tries again
+// at once instead of waiting out its back-off (src/store.ts foreground).
+test('back in the front, the app tries the computer again at once, not when its back-off ends', async () => {
+  const app = await open('./App.tsx', { platform: 'ios', clock: {}, host: { handlers: handlers() }, network: { '*': { error: 'offline' } } })
+  await app.waitFor('id:pair-link')
+  await app.type('id:pair-link', INVITE)
+  await app.press('id:pair')
+  await app.waitUntil(() => calls(app, 'tailPocket.connect').length > 0)
+  const tries = calls(app, 'tailPocket.connect').length
+  // Nothing moves the clock: the back-off's retry has not come.
+  await app.host.send('nothing.in.particular')
+  expect(calls(app, 'tailPocket.connect').length).toBe(tries)
+  await app.host.send('app.foreground')
+  expect(calls(app, 'tailPocket.connect').length).toBe(tries + 1)
+})

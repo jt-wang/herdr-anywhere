@@ -206,6 +206,32 @@ test('through TailPocket, a socket that closes before the computer answered clos
   expect(reasons).toEqual(['no-answer', 'network', 'unpaired'])
 })
 
+// After the phone comes back from the background, the tunnel it had can be dead while the computer is fine: an
+// unanswered socket there says nothing about the computer. Only a tunnel opened since, also unanswered, does.
+test('through TailPocket, an unanswered socket on a tunnel that answered before closes with stale; on a tunnel never answered, with no-answer', async () => {
+  const { t, log } = fakeTunnel()
+  const made: any[] = []
+  const socket = () => { const pipe: any = { send() {}, close() {} }; made.push(pipe); return pipe }
+  const l = new Linker({ load: async () => null, save() {}, remove() {}, socket: socket as any, tunnel: t })
+  l.set(await pairThrough(t, INVITE, 'iPhone'))
+  const reasons: string[] = []
+  const open = () => { const p = l.pipe(); p.onClose = (r) => reasons.push(r) }
+  open()
+  await settle()
+  made[0].onBytes(new Uint8Array([1]))
+  made[0].onClose('network')
+  // The same tunnel, which answered before, now leaves the socket unanswered: stale, and that tunnel is closed.
+  open()
+  await settle()
+  made[1].onClose('network')
+  // A new tunnel, unanswered too: the computer doesn't answer.
+  open()
+  await settle()
+  made[2].onClose('network')
+  expect(reasons).toEqual(['network', 'stale', 'no-answer'])
+  expect(log.slice(1)).toEqual(['connect 40001', 'close 40001', 'connect 40002', 'close 40002'])
+})
+
 test('a tunnel that cannot open closes the pipe, so the store retries; forgetting the computer forgets its TailPocket link', async () => {
   const { t, log } = fakeTunnel({ connectFails: 1 })
   const l = new Linker({ load: async () => null, save() {}, remove() {}, socket: (() => ({ send() {}, close() {} })) as any, tunnel: t })

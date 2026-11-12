@@ -26,21 +26,18 @@ python3 -c 'import base64,re,sys; d=re.search(r"base64,([A-Za-z0-9+/=]+)", open(
   "$app/fixtures/picture.ts" "$work/files/shot.png"
 # Every hc call, the Companion's too, sees this home only; docker keeps the caller's own settings to find its daemon.
 dockerhost=${DOCKER_HOST:-$("$docker" context inspect --format '{{.Endpoints.docker.Host}}' 2>/dev/null || true)}
+. "$app/e2e/companion.sh"  # companion_start, companion_stop
 L() {
   env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin:"$(dirname "$docker")" HOME="$work/home" SHELL=/bin/sh DOCKER_HOST="$dockerhost" \
     HC_SESSION="hmpicture-$$" HC_SOCKET="" XDG_STATE_HOME="$work/state" XDG_CONFIG_HOME="$work/config" \
     XDG_DATA_HOME="$work/data" XDG_RUNTIME_DIR="$run" "$@"
 }
-serve_pid=""
 cleanup() {
   status=$?
   trap - EXIT INT TERM HUP
   set +e # every step runs, even after one fails
-  # $! is the shell running L, and the Companion is its child: stop the child too.
-  [ -n "$serve_pid" ] && { pkill -P "$serve_pid" 2>/dev/null; kill "$serve_pid" 2>/dev/null; }
   # The Companion this test started must be gone, or it outlives the test.
-  i=0; while nc -z 127.0.0.1 "$port" 2>/dev/null && [ $i -lt 50 ]; do i=$((i + 1)); sleep 0.1; done
-  nc -z 127.0.0.1 "$port" 2>/dev/null && { echo "FAIL: the Companion on port $port is still running after the test"; status=1; }
+  companion_stop || status=1
   L "$hc" server stop >/dev/null 2>&1
   "$docker" rm -f "$box" >/dev/null 2>&1
   rm -rf "$work" "$run" "$state"
@@ -50,9 +47,7 @@ trap cleanup EXIT; trap 'cleanup; exit 130' INT; trap 'cleanup; exit 143' TERM H
 failed=0
 say() { echo "$1"; case $1 in FAIL*) failed=1;; esac; }
 
-L "$bin" serve --listen "127.0.0.1:$port" --hc "$hc" --state "$state" > "$work/serve.log" 2>&1 &
-serve_pid=$!
-sleep 1
+companion_start "$work/serve.log" L "$bin" serve --listen "127.0.0.1:$port" --hc "$hc" --state "$state" || exit 1
 code=$(L "$bin" pair --url "http://127.0.0.1:$port" --state "$state" 2>/dev/null | grep -o '#pair=[A-Za-z0-9_-]*' | head -1 | cut -d= -f2)
 token=$(curl -s -X POST "http://127.0.0.1:$port/api/pair" -d "{\"code\":\"$code\",\"device\":\"e2e\"}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')
 [ -n "$token" ] || { echo "FAIL: no token"; exit 1; }
