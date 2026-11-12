@@ -6,8 +6,15 @@ set -eu
 cd "$(dirname "$0")/.."
 fail=0
 for f in $(find . -name '*.test.ts' -o -name '*.test.tsx' | grep -vE '^\./(e2e|node_modules|dist|android)/|/\.' | sort); do
-  out=$(nsh test "$f" 2>&1) || { fail=1; echo "$out" | grep -E "✗|error" ; }
-  echo "$out" | tail -1 | sed "s|^|$f: |"
+  # A failing file prints all it said: its failure may name no test (a crash, a hang the runner ended), and a filter
+  # that matched nothing would end the script here under set -e, before the files after it ran.
+  if out=$(nsh test "$f" 2>&1); then
+    echo "$out" | tail -1 | sed "s|^|$f: |"
+  else
+    fail=1
+    echo "$f: FAILED"
+    echo "$out" | sed 's/^/  /'
+  fi
 done
 for check in scripts/check-*.sh; do "$check" src/ui || fail=1; done
 exit $fail

@@ -55,7 +55,7 @@ function Toasts(props: { store: Store; open: (terminal: string) => void }) {
           <View class={`w-2 h-2 rounded-full ${t().level === 'error' ? 'bg-chart-2' : 'bg-chart-3'}`} />
           <View class="flex-1">
             <Text class="text-[14px] font-medium text-foreground" numberOfLines={1}>{t().title}</Text>
-            <If when={t().body}><Text class="text-[12px] text-muted-foreground" numberOfLines={2}>{t().body}</Text></If>
+            <If when={t().body}><Text class="text-[12px] text-muted-foreground" numberOfLines={3}>{t().body}</Text></If>
           </View>
         </View>
       )}</Each>

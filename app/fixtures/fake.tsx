@@ -1,4 +1,5 @@
 // The app over an in-memory herdr-core (src/testing/fakecore.ts), already paired, for the screen tests.
+// `host.params.slowSendMs`: how long a send goes unanswered before the input box says why (5 s when not set).
 // `host.params.scene`: "empty" (a fresh computer), "busy" (two spaces, agents in every state), "twins" (two Claude
 // Codes in one space), "unpaired", "companion-off" (with via: "tailpocket": nothing answers through the tunnel), "companion-refused" (the computer at
 // `url` refuses at once),
@@ -222,6 +223,10 @@ function chatSetups(url: string, init: any) {
 host.on('fake.label', (d: any) => core.label(d.address, d.labels))
 // A test drops the line: `app.host.send('fake.drop', {})`; the computer then stops answering.
 host.on('fake.drop', () => core.drop('network'))
+// herdr-core holds a method's answers until released, as it holds terminal.send for a half-typed line:
+// `app.host.send('fake.hold', { method })`, then `app.host.send('fake.release', {})`.
+host.on('fake.hold', (d: any) => core.holding.add(d.method))
+host.on('fake.release', () => { core.holding.clear(); core.release() })
 // Text the app sent (`terminal.send`), where a test reads it (`app.storage()['fake-sent']`).
 const sent: [string, string, boolean][] = []
 core.onSend = (addr, text, force) => { sent.push([addr, text, force]); void Storage.setItem('fake-sent', JSON.stringify(sent)) }
@@ -311,7 +316,7 @@ mount(() => (
     linker: new Linker(params.via === 'tailpocket' ? { ...io, tunnel: fakeTunnel } : io),
     opensSettings: params.open === 'settings',
     prefs: new PrefStore(io),
-    makeStore: (l) => tapPicture(counted(new Store({ pipe: pipe(l), tunnelled: () => l.link.get()?.via === 'tailpocket' }))),
+    makeStore: (l) => tapPicture(counted(new Store({ pipe: pipe(l), tunnelled: () => l.link.get()?.via === 'tailpocket', slowSendMs: params.slowSendMs ? Number(params.slowSendMs) : undefined }))),
     device: 'Test phone',
     tunnel: params.via === 'tailpocket' ? fakeTunnel : undefined,
     pairLink: opened || scene === 'relaunch-forgotten' ? String((host.params as any)?.link) : undefined,

@@ -165,6 +165,10 @@ tap compose-send
 for _ in $(seq 1 15); do [ -e "$work/home/src/acme-api/hm-line-two" ] && break; sleep 1; done
 [ -e "$work/home/src/acme-api/hm-line-one" ] && [ -e "$work/home/src/acme-api/hm-line-two" ] || { echo "FAIL: two composer lines did not both reach the computer"; exit 1; }
 echo "ok: the composer grew from $one to $two px and sent both lines"
+# Sending leaves the keyboard up for the next message (a box made read-only while it sent lost its focus, and the
+# keyboard went with it: the back key below then left the terminal).
+keyboard_up || { echo "FAIL: the keyboard went down when the composer sent"; exit 1; }
+echo "ok: the keyboard stays up after a send"
 "$adb" shell input keyevent 4
 sleep 1
 # The menu's Type in the terminal brings the keyboard up itself, with it down before (the back key put it away). adb's
