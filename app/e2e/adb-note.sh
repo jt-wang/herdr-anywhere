@@ -8,6 +8,7 @@
 # failure), and exits with that status. Not "adb_done $?; cleanup": under set -e a trap's failed command ends the
 # shell there, so on a failure the cleanup never ran.
 # Usage: . e2e/adb-note.sh; adb_note "$ADB_PATH" [FILE]    then "$adb" … as before
+#        adb_gone && exit 1    in a loop that waits on the phone
 #        sh e2e/adb-note.sh --self-test
 adb_note() {
   adb_real=$1 adb_file=${2:-$(mktemp)}
@@ -26,6 +27,15 @@ adb_noted() {
     fi
   fi
   return "$adb_rc"
+}
+# True, and says so, once adb has not found the phone for HM_ADB_GONE s (20) in a row: the emulator went, and a suite
+# that waits on the phone (an upload, 600 s) should stop then, not run out its wait. adb root and unroot lose it for
+# about 2 s. Call it from the suite's own shell (not in $(…)), where it keeps the time it first missed the phone.
+adb_gone() {
+  if [ "$("$adb_real" get-state 2>/dev/null | tr -d '\r')" = device ]; then adb_since=; return 1; fi
+  [ -n "${adb_since:-}" ] || adb_since=$(date +%s)
+  [ $(($(date +%s) - adb_since)) -ge "${HM_ADB_GONE:-20}" ] || return 1
+  echo "FAIL: adb has not found the phone for $(($(date +%s) - adb_since)) s: the emulator went (the job's emulator-lost notes say more)"
 }
 adb_failures() {
   [ -n "${adb_file:-}" ] || return 0
@@ -78,6 +88,22 @@ if [ "${1:-}" = --self-test ]; then
     [ -e "$t/f" ] && { echo "FAIL: adb-note self-test: the list file is left behind"; fail=1; }
     rm -f "$t/cleanup" "$t/on"
   done
+  # adb_gone: the phone gone (adb no longer finds it) for HM_ADB_GONE s in a row; a blip (adb root) is not.
+  echo device > "$t/state"
+  fake_state() { [ "$1" = get-state ] && cat "$t/state"; }
+  adb_note fake_state "$t/g"
+  HM_ADB_GONE=1
+  adb_gone > "$t/said" && { echo "FAIL: adb-note self-test: gone with the phone there"; fail=1; }
+  echo "error: device 'emulator-5554' not found" > "$t/state"
+  adb_gone > "$t/said" && { echo "FAIL: adb-note self-test: gone at once, a blip would stop the suite"; fail=1; }
+  sleep 1.2
+  adb_gone > "$t/said" || { echo "FAIL: adb-note self-test: not gone after the phone was away for 1 s"; fail=1; }
+  grep -q "has not found the phone for" "$t/said" || { echo "FAIL: adb-note self-test: adb_gone says: $(cat "$t/said")"; fail=1; }
+  echo device > "$t/state"
+  adb_gone > "$t/said" && { echo "FAIL: adb-note self-test: still gone with the phone back"; fail=1; }
+  echo "error: device offline" > "$t/state"
+  adb_gone > "$t/said" && { echo "FAIL: adb-note self-test: gone at once after the phone was back"; fail=1; }
+  unset HM_ADB_GONE
   rm -rf "$t"
   [ "$fail" = 0 ] && echo "PASS: adb-note self-test" || exit 1
 fi

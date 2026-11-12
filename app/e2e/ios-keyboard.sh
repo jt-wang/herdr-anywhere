@@ -30,12 +30,10 @@ work=$(mktemp -d)
 run=$(mktemp -d /tmp/hmXXXX)
 mkdir -p "$work/sam/src/acme-api" "$work/state" "$work/config" "$work/data"
 : > "$work/sam/.zshrc"
-placeholder=$(cat "$app/e2e/pair.ts")
 cleanup() {
   [ -n "${serve_pid:-}" ] && kill "$serve_pid" 2>/dev/null
   # The same session the core was started in below, or `server stop` finds no core and leaves its holder running.
   HC_SESSION="hmios-$$" HC_SOCKET="" HOME="$work/sam" XDG_RUNTIME_DIR="$run" "$hc" server stop >/dev/null 2>&1 || true
-  printf "%s\n" "$placeholder" > "$app/e2e/pair.ts"
   chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run"
   xcrun simctl shutdown "$SIM_UDID" 2>/dev/null || true
 }
@@ -56,14 +54,15 @@ until curl -fsS "http://127.0.0.1:$port/api/info" >/dev/null 2>&1; do
 done
 link=$(HERDR_ANYWHERE_STATE="$work/companion" "$work/herdr-anywhere" pair --url "http://127.0.0.1:$port" 2>/dev/null | grep -o 'http://[^ ]*#pair=[A-Za-z0-9_-]*' | head -1)
 [ -n "$link" ] || { echo "pair printed no link" >&2; exit 1; }
-printf "export const PAIR: string = '%s'\n" "$link" > "$app/e2e/pair.ts"
-"$app/ios/build.sh" ios-e2e.tsx simulator >/dev/null 2>&1 || { echo "FAIL: ios/build.sh"; exit 1; }
-printf "%s\n" "$placeholder" > "$app/e2e/pair.ts"
+# Built from a copy of app/ that also asks the Companion for /hm-e2e/openSpace/… each time it opens a space
+# (e2e/ios-touch-app.sh), for a failure to tell a tap on the space the app never got from one it got late.
+printf "export const PAIR: string = '%s'\n" "$link" > "$work/pair.ts"
+built=$("$app/e2e/ios-touch-app.sh" "$work" "$work/pair.ts" none) || exit 1
 
 xcrun simctl boot "$SIM_UDID" 2>/dev/null || true
 xcrun simctl bootstatus "$SIM_UDID" -b >/dev/null
 xcrun simctl uninstall "$SIM_UDID" "$id" 2>/dev/null || true
-xcrun simctl install "$SIM_UDID" "$app/ios/build/Herdr.app"
+xcrun simctl install "$SIM_UDID" "$built"
 # Herdr's alert sounds ship with the app, where the app's asset: URIs look (next to its bundle, as nsh build lays out).
 container=$(xcrun simctl get_app_container "$SIM_UDID" "$id")
 for s in request done; do
@@ -94,6 +93,8 @@ sed 's/^/  /' "$work/typein.txt" 2>/dev/null || true
 [ -n "$shot" ] && { cp "$work/typein-terminal.png" "${shot%.png}-terminal.png" 2>/dev/null; cp "$work/uitest/test.log" "${shot%.png}-xctest.log" 2>/dev/null; } || true
 if [ "$rc" != 0 ]; then
   echo "FAIL: the keyboard test (xcodebuild test exit $rc)"
+  echo "the app's lines (each space it opened, in the Companion's log; e2e/ios-touch-app.sh):"
+  "$app/e2e/app-lines.sh" "/hm-e2e/openSpace/" "$work/serve.log"
   # Every screenshot the test kept: the menu before and after each tap, and XCTest's own at the failure.
   # The screen's elements around the tap on the space, as the test noted them (OpenSpace.swift).
   [ -n "$shot" ] && { mkdir -p "${shot%.png}-failure"; for f in "$work"/typein.txt-*.txt; do [ -f "$f" ] && cp "$f" "${shot%.png}-failure/${f##*/typein.txt-}"; done; } || true
