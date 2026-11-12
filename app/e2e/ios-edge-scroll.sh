@@ -9,10 +9,12 @@
 # far as one from the middle (within 1 row), the middle's drag moved it at least 2 rows, and no drag went back to home.
 # A first pair of drags in each space is measured and printed, not compared (see EdgeScroll).
 # Then sideways swipes from 10 pt and 20 pt (EdgeScroll: one let go early, two that go back): each passes when the
-# agent's screen as hc reads it is the same after as before (nothing was typed, clicked or scrolled in the program), no
-# "Copied" came up and the tab stayed; for the one let go early, also the content did not move (rows.py), no
-# selection showed (e2e/selection.py, its colour learnt from a hold on the middle) and no keyboard came up. The hold
-# and a tap on the middle are controls: the hold must show a selection and Copied, the tap the keyboard.
+# agent's screen as hc reads it is the same after as before (nothing was typed, clicked or scrolled in the program) and
+# the tab stayed; for the one let go early, also the content did not move (rows.py) and no selection showed
+# (e2e/selection.py, its colour learnt from a hold on the middle, which must show one: the control). Whether "Copied"
+# or the keyboard came up is printed as a note and not judged: a tap on the terminal brings no keyboard in this app
+# (the to-terminal key does), and Copied was seen after the hold in OpenCode and Pi only, so neither check is known to
+# see what it looks for.
 # Usage: SIM_UDID=<udid> [AGENTS=cc,cx,oc,pi] e2e/ios-edge-scroll.sh [out folder]
 # SIM_UDID is required, so the run never lands on another simulator. Needs go, nsh, hc, xcodegen, Xcode, Pillow,
 # tesseract, and claude, codex, opencode and pi installed (one missing is skipped and said). Fake data only.
@@ -229,8 +231,7 @@ for a in $agents; do
   set -- $(python3 -I "$sel" learn "$out/sp$a-hold-0.png" "$out/sp$a-hold-1.png" $bx)
   if [ "$2" = none ]; then color=; grew=0; else color="$2 $3 $4"; grew=$6; fi
   if [ "$grew" -lt 1000 ]; then say "FAIL: $(name "$a"): control: a hold showed no selection ($*)"; color=; fi
-  [ "$cp" = copied=1 ] || say "FAIL: $(name "$a"): control: a hold did not say Copied"
-  [ "$kbd" = keyboard=1 ] || say "FAIL: $(name "$a"): control: a tap brought no keyboard"
+  echo "note: $(name "$a"): control: after the hold $cp, after a tap $kbd (printed, not judged)"
   awk -v s="sp$a" '$1 == "side" && $2 == s' "$out/drags.txt" > "$work/side"
   [ -s "$work/side" ] || { say "FAIL: $(name "$a"): no sideways swipes"; continue; }
   while read -r _ sp x0 kind _ x y w hh back kb cpd tab; do
@@ -240,11 +241,11 @@ for a in $agents; do
     elif ! sed 's/[[:space:]]*$//' "$h0" > "$work/h0" || ! sed 's/[[:space:]]*$//' "$h1" > "$work/h1" || ! cmp -s "$work/h0" "$work/h1"; then
       bad="$bad, the agent's screen changed: $(diff "$work/h0" "$work/h1" | grep '^[<>]' | head -2 | tr '\n' ' ')"
     fi
-    [ "$cpd" = copied=1 ] && bad="$bad, Copied came up"
+    note=; [ "$cpd" = copied=1 ] && note="$note, Copied came up"
     [ "$tab" = tab=same ] || bad="$bad, the tab changed"
     if [ "$kind" = part ]; then
       [ "$back" = back=0 ] || bad="$bad, it went back"
-      [ "$kb" = kb=01 ] && bad="$bad, the keyboard came up"
+      [ "$kb" = kb=01 ] && note="$note, the keyboard came up"
       set -- $(python3 -I "$app/e2e/rows.py" "$out/$sp-$tag-0.png" "$out/$sp-$tag-1.png" "$x" "$y" "$w" "$hh")
       [ "$2" = 0 ] || bad="$bad, the content moved $2 rows"
       if [ -n "$color" ]; then
@@ -256,6 +257,7 @@ for a in $agents; do
       [ "$back" = back=1 ] || bad="$bad, it did not go back"
     fi
     if [ -n "$bad" ]; then say "FAIL: $what: ${bad#, }"; else say "ok: $what: nothing in the terminal"; fi
+    [ -z "$note" ] || echo "note: $what: ${note#, } (printed, not judged)"
   done < "$work/side"
 done
 exit $failed
