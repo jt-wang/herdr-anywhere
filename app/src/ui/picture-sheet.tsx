@@ -1,14 +1,12 @@
 // A picture whose path was tapped in a terminal (ui/terminal-page.ts says it was a path ending in an image type):
 // the path on top, to select or copy; the picture under it, fitted to the width, held to copy it. The computer says
-// which file it is and whether it may be shown (link.ts imageApi). Only the open sheet holds the picture. Pinched, it
-// zooms in its box, and drags within it; a double tap zooms in on that point, another back out (picture-zoom.ts).
-import { Clipboard, effect, Image, Scroll, signal, Text, untracked, View, windowSize, type YNode } from 'nsh'
+// which file it is and whether it may be shown (link.ts imageApi). Only the open sheet holds the picture.
+import { Clipboard, effect, Image, Scroll, signal, Text, untracked, View, windowSize } from 'nsh'
 import { Sheet } from 'nsh/base'
 import type { Store } from '../store.ts'
 import type { Picture } from '../link.ts'
 import { copyPicture } from '../page.ts'
 import { IconButton, useSignal } from './kit.tsx'
-import { maxZoom, pictureZoom } from './picture-zoom.ts'
 import { t } from '../strings/index.ts'
 
 export function PictureSheet(props: { store: Store }) {
@@ -18,15 +16,12 @@ export function PictureSheet(props: { store: Store }) {
   const why = signal('')
   const natural = signal({ width: 0, height: 0 })
   const width = signal(0)
-  let zoomer: YNode | null = null
-  const zoom = pictureZoom((to) => zoomer?.zoomTo(to))
   effect(() => {
     const a = asked()
     untracked(() => {
       shown.set(null)
       why.set('')
       natural.set({ width: 0, height: 0 })
-      zoom.reset()
       if (!a) return
       if (!s.images) return why.set(t('pictureCantRead'))
       s.images.read(a.path, a.terminal).then(
@@ -51,8 +46,6 @@ export function PictureSheet(props: { store: Store }) {
     const k = Math.min(1, (w - 2) / n.width, (windowSize().height * 0.5) / n.height) // inside its 1 px border
     return { width: n.width * k, height: n.height * k }
   }
-  const tap = (e?: { position: { x: number; y: number } }) =>
-    zoom.tap({ at: Date.now(), x: e?.position.x ?? 0, y: e?.position.y ?? 0 }, { natural: natural(), box: box() })
   return (
     <Sheet open={asked() !== null} side="bottom" onOpenChange={(o) => { if (!o) close() }}
       popupClass="bg-popover rounded-t-[14px] border-t border-border max-h-[88%] pb-[env(safe-area-inset-bottom)]">
@@ -73,15 +66,9 @@ export function PictureSheet(props: { store: Store }) {
                 <Text testID="picture-state" class="py-10 text-[13.5px] text-muted-foreground text-center">{why() || t('pictureLoading')}</Text>
               }>{(p) => (
                 <View class="gap-2 items-center">
-                  <View class="rounded-[8px] overflow-hidden border border-border bg-background">
-                    <Scroll ref={(r: YNode | null) => { zoomer = r }} testID="picture-zoom" style={box()} minimumZoomScale={1}
-                      maximumZoomScale={maxZoom(natural(), box())} bounces={false} centerContent scrollbar={false}
-                      onScroll={(e) => zoom.scrolled(e.zoomScale)}>
-                      <View role="button" testID="picture" accessibilityLabel={t('pictureHold')}
-                        onLongPress={copyImage} onPress={tap}>
-                        <Image testID="picture-image" src={p().url} resizeMode="contain" onLoad={(e) => natural.set({ width: e.width, height: e.height })} style={box()} />
-                      </View>
-                    </Scroll>
+                  <View role="button" testID="picture" accessibilityLabel={t('pictureHold')} onLongPress={copyImage} onPress={() => {}}
+                    class="rounded-[8px] overflow-hidden border border-border bg-background">
+                    <Image testID="picture-image" src={p().url} resizeMode="contain" onLoad={(e) => natural.set({ width: e.width, height: e.height })} style={box()} />
                   </View>
                   <Text class="text-[12px] text-muted-foreground">{t('pictureHold')}</Text>
                 </View>
