@@ -116,7 +116,7 @@ export const en = {
   programExited: 'The program exited.', terminalClosed: 'The terminal was closed.',
   terminalLost: 'The computer restarted and this terminal is gone.', terminalFinished: 'This terminal has ended.',
   terminalEnded: 'The terminal ended ({reason}).',
-  terminalPageFailed: "The terminal didn't load.", tryAgain: 'Try again',
+  terminalLoading: "The terminal is still loading…", tryAgain: 'Try again',
   // Alerts and layout
   nameNeedsYou: '{name} needs you', nameFinished: '{name} finished',
   // A row's title in an alert, quoted as this language quotes a name.

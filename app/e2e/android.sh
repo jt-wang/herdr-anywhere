@@ -25,6 +25,9 @@ readonly id
 port=7691
 while nc -z 127.0.0.1 "$port" 2>/dev/null; do port=$((port + 1)); done
 work=$(mktemp -d)
+# Each adb call that fails is written down, so a stop on one says which (CI: exit 137 with nothing to tell which).
+. "$app/e2e/adb-note.sh"
+adb_note "$adb" "$work/adb-failed"
 (cd "$app/../companion" && go build -o "$work/herdr-anywhere" ./cmd/herdr-anywhere)
 run=$(mktemp -d /tmp/hmXXXX)
 mkdir -p "$work/home/src/acme-api" "$work/home/src/beta-web" "$work/state" "$work/config" "$work/data"
@@ -47,7 +50,11 @@ show_terms() {
 }
 cleanup() {
   status=$?
-  [ "$status" -ne 0 ] && { echo "--- exit status $status"; show_terms; }
+  if [ "$status" -ne 0 ]; then
+    echo "--- the script stopped with exit $status; adb sees the phone as: $("$adb_real" get-state 2>&1 | tr -d "\r")"
+    show_terms
+    adb_failures
+  fi
   [ -n "${serve_pid:-}" ] && kill "$serve_pid" 2>/dev/null
   "$hc" server stop >/dev/null 2>&1 || true
   chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run"
