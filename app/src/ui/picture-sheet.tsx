@@ -7,7 +7,7 @@ import { Sheet } from 'nsh/base'
 import type { Store } from '../store.ts'
 import type { Picture } from '../link.ts'
 import { copyPicture } from '../page.ts'
-import { IconButton, useSignal } from './kit.tsx'
+import { IconButton, PANEL, PANEL_BACKDROP, useSignal } from './kit.tsx'
 import { maxZoom, pictureZoom } from './picture-zoom.ts'
 import { t } from '../strings/index.ts'
 
@@ -55,7 +55,7 @@ export function PictureSheet(props: { store: Store }) {
     zoom.tap({ at: Date.now(), x: e?.position.x ?? 0, y: e?.position.y ?? 0 }, { natural: natural(), box: box() })
   return (
     <Sheet open={asked() !== null} side="bottom" onOpenChange={(o) => { if (!o) close() }}
-      popupClass="bg-popover rounded-t-[14px] border-t border-border max-h-[88%] pb-[env(safe-area-inset-bottom)]">
+      popupClass={`${PANEL} max-h-[88%] pb-[env(safe-area-inset-bottom)]`} backdropClass={PANEL_BACKDROP}>
       <If when={asked()}>
         <View testID="picture-sheet" class="shrink">
           <View class="self-center w-9 h-1 mt-2 rounded-full bg-border" />
