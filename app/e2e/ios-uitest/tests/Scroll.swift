@@ -15,8 +15,15 @@ final class Scroll: XCTestCase {
     let tile = app.descendants(matching: .any)["space-" + space].firstMatch
     XCTAssertTrue(tile.waitForExistence(timeout: 40), "home does not list the space")
     tile.tap()
-    let term = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'terminal-'")).firstMatch
+    // The terminal itself, not its "Connecting…" line (terminal-state), which the same prefix also finds. On a CI run the
+    // first drag, 4 s after the terminal showed, sent the program nothing and the later ones worked, most likely as the page was not
+    // ready yet. So the drags wait until it is, as TypeIn does.
+    let term = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'terminal-' AND identifier != 'terminal-state'")).firstMatch
     XCTAssertTrue(term.waitForExistence(timeout: 20), "no terminal")
+    // The page loaded and attached: terminal-state goes once the page says ready (as TypeIn waits).
+    let state = app.descendants(matching: .any)["terminal-state"].firstMatch
+    let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: state)
+    XCTAssertEqual(XCTWaiter().wait(for: [gone], timeout: 30), .completed, "the terminal page did not load: still \(state.label) after 30 s")
     sleep(4)
     let h = term.frame.height
     let at = { (x: CGFloat, y: CGFloat) in term.coordinate(withNormalizedOffset: CGVector(dx: x, dy: y)) }

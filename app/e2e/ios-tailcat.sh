@@ -1,7 +1,8 @@
 #!/bin/sh
 # The iOS app on a simulator, paired and connected through TailPocket over Tailcat's real relays: an isolated
 # herdr-core with a fake project, the companion with `serve --tailcat`, and the invite `herdr-anywhere pair` prints fed
-# to the app (a script cannot tap the simulator, so ios-e2e.tsx opens the app at it, as e2e/ios.sh does with a link).
+# to the app (a script cannot tap the simulator, so ios-e2e.tsx opens the app at it, as e2e/ios.sh does with a link;
+# here through the app's storage, written after the install).
 # Passes when the companion logs the phone's binary connection, the home screen lists the project and no TCP
 # connection reaches the companion's loopback port (where it listens too); reopened, the app connects again without
 # pairing; then, revoked, the /hc request ends with a log line naming a Tailcat address, the app asks to pair again, and
@@ -15,7 +16,7 @@ shot=${1:-}
 # What a failure prints and keeps of the companion's log: no token, and every address masked except the loopback's, so
 # a request from this computer reads as local.
 mask='s/token=[^ &]+/token=…/; s/ (127\.0\.0\.1|::1) (GET|POST)/ @loopback:\1@ \2/; s/[0-9a-f:.]{7,} (GET|POST)/<addr> \1/; s/@loopback:([^@]*)@/\1/'
-hc=$(command -v hc || echo "$HOME/.local/bin/hc")
+hc=${HM_TEST_HC:-$(command -v hc || echo "$HOME/.local/bin/hc")}
 id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$app/nsh.json")
 
 port=7691
@@ -27,8 +28,6 @@ run=$(mktemp -d /tmp/hmXXXX)
 state=$(mktemp -d /tmp/hmtcXXXX)
 mkdir -p "$work/home/src/acme-api" "$work/state" "$work/config" "$work/data"
 : > "$work/home/.zshrc"
-placeholder=$(cat "$app/e2e/pair.ts")
-opens=$(cat "$app/e2e/open-settings.ts")
 cleanup() {
   rc=$?
   # A failure keeps the companion's whole log: beside the screenshot, or in a temporary file when none was asked for.
@@ -39,17 +38,18 @@ cleanup() {
   fi
   [ -n "${serve_pid:-}" ] && kill "$serve_pid" 2>/dev/null
   HC_SESSION="hmtc-$$" HC_SOCKET="" HOME="$work/home" XDG_RUNTIME_DIR="$run" "$hc" server stop >/dev/null 2>&1 || true
-  printf "%s\n" "$placeholder" > "$app/e2e/pair.ts"
-  printf "%s\n" "$opens" > "$app/e2e/open-settings.ts"
   chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run" "$state"
 }
 trap cleanup EXIT INT TERM
 
-# Tailcat's pairing window lasts 2 minutes, so the app is built once before it opens; the second build, with the
-# invite, is incremental.
+# Tailcat's pairing window lasts 2 minutes, so the app is built and installed before it opens, and the invite goes
+# into the app's storage (ios-e2e.tsx reads it there). A second build with the invite in it took over 2 minutes on CI.
 "$app/ios/build.sh" ios-e2e.tsx simulator >/dev/null 2>&1 || { echo "FAIL: ios/build.sh"; exit 1; }
 xcrun simctl boot "$SIM_UDID" 2>/dev/null || true
 xcrun simctl bootstatus "$SIM_UDID" -b >/dev/null
+xcrun simctl uninstall "$SIM_UDID" "$id" 2>/dev/null || true
+xcrun simctl install "$SIM_UDID" "$app/ios/build/Herdr.app"
+store="$(xcrun simctl get_app_container "$SIM_UDID" "$id" data)/Library/Application Support/nsh/$id/storage.json"
 
 (
   export HC_SESSION="hmtc-$$" HC_SOCKET="" HOME="$work/home" SHELL=/bin/zsh
@@ -67,14 +67,9 @@ until grep -q "listening on Tailcat" "$work/serve.log" 2>/dev/null; do
 done
 invite=$("$work/herdr-anywhere" pair --state "$state" 2>/dev/null | grep -o 'herdr1:[A-Za-z0-9_-]*' | head -1)
 [ -n "$invite" ] || { echo "FAIL: pair printed no invite"; exit 1; }
-printf "export const PAIR: string = '%s'\n" "$invite" > "$app/e2e/pair.ts"
-printf "export const OPEN_SETTINGS_ON_LAUNCH: number = 3\n" > "$app/e2e/open-settings.ts"
-"$app/ios/build.sh" ios-e2e.tsx simulator >/dev/null 2>&1 || { echo "FAIL: ios/build.sh with the invite"; exit 1; }
-printf "%s\n" "$placeholder" > "$app/e2e/pair.ts"
-printf "%s\n" "$opens" > "$app/e2e/open-settings.ts"
-
-xcrun simctl uninstall "$SIM_UDID" "$id" 2>/dev/null || true
-xcrun simctl install "$SIM_UDID" "$app/ios/build/Herdr.app"
+# NSH's Storage, as the app finds it on its first launch; the third launch opens on Settings.
+mkdir -p "$(dirname "$store")"
+python3 -c 'import json,sys; json.dump({"e2e-pair": sys.argv[2], "e2e-open-settings": "3"}, open(sys.argv[1], "w"))' "$store" "$invite"
 started=$(date +%s)
 xcrun simctl launch "$SIM_UDID" "$id" >/dev/null
 
