@@ -35,7 +35,7 @@ cleanup() {
   [ -x "$work/dock/.local/bin/hc" ] && $dock "$work/dock/.local/bin/hc" server stop >/dev/null 2>&1 || true
   chmod -R u+w "$work" 2>/dev/null; rm -rf "${work:?}" "${run:?}" "${boxrun:?}" "${dockrun:?}" "${state:?}"
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT; trap 'exit 130' INT; trap 'exit 143' TERM HUP
 
 # Each machine has one agent, the repository's stand-in Claude Code, and only system folders besides: the menu lists it
 # and nothing this computer has installed.
