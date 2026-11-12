@@ -23,6 +23,8 @@ work=$(cd "$(mktemp -d)" && pwd -P); run=$(mktemp -d /tmp/hmXXXX); boxrun=$(mkte
 mkdir -p "$shots" "$work/me/src/acme-api" "$work/me/src/acme-web" "$work/state" "$work/config" "$work/data" "$work/boxstate" "$work/me/src/acme-docs" "$work/dockstate"
 : > "$work/me/.zshrc"
 export HC_SESSION="hmtitle-$$" HC_SOCKET="" HOME="$work/me" SHELL=/bin/sh
+# A start or pair that starts the Companion itself sets up this test's own login entry, never the person's.
+export HERDR_ANYWHERE_AUTOSTART_NAME="io.example.android-sheet-title-$$"
 export XDG_STATE_HOME="$work/state" XDG_CONFIG_HOME="$work/config" XDG_DATA_HOME="$work/data" XDG_RUNTIME_DIR="$run" GIT_CONFIG_GLOBAL="$work/me/.gitconfig"
 box="env HOME=$work/box PATH=$work/box/bin:$work/box/.local/bin:/usr/bin:/bin:/usr/sbin:/sbin XDG_RUNTIME_DIR=$boxrun XDG_STATE_HOME=$work/boxstate HC_SESSION=hmtitlebox-$$"
 dock="env HOME=$work/dock PATH=$work/dock/bin:$work/dock/.local/bin:/usr/bin:/bin:/usr/sbin:/sbin XDG_RUNTIME_DIR=$dockrun XDG_STATE_HOME=$work/dockstate HC_SESSION=hmtitledock-$$"
