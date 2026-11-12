@@ -11,6 +11,8 @@ app=$(cd "$(dirname "$0")/.." && pwd)
 apk=$1
 shot=$2
 adb="${ANDROID_HOME:-$HOME/Library/Android/sdk}/platform-tools/adb"
+. "$(dirname "$0")/adb-note.sh"; adb_note "$adb"  # a failed adb call is written down and shown if the suite fails
+trap 'adb_exit $?' EXIT
 id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$app/nsh.json")
 readonly id
 
