@@ -48,7 +48,9 @@ until curl -fsS "http://127.0.0.1:$port/api/info" >/dev/null 2>&1; do
   i=$((i + 1)); [ $i -gt 100 ] && { cat "$work/serve.log" >&2; exit 1; }
   sleep 0.1
 done
-link=$(HERDR_ANYWHERE_STATE="$work/companion" "$work/herdr-anywhere" pair --url "http://127.0.0.1:$port" 2>/dev/null | grep -o 'http://[^ ]*#pair=[A-Za-z0-9_-]*' | head -1)
+# The link goes into the app's build, which comes after it: an hour (pair's default is 10 minutes), as a first build
+# with Xcode 27.0 took 16 and the app was shown an expired code.
+link=$(HERDR_ANYWHERE_STATE="$work/companion" "$work/herdr-anywhere" pair --ttl 60m --url "http://127.0.0.1:$port" 2>/dev/null | grep -o 'http://[^ ]*#pair=[A-Za-z0-9_-]*' | head -1)
 [ -n "$link" ] || { echo "pair printed no link" >&2; exit 1; }
 printf "export const PAIR: string = '%s'\n" "$link" > "$app/e2e/pair.ts"
 "$app/ios/build.sh" ios-e2e-error.tsx simulator >/dev/null 2>&1 || { echo "FAIL: ios/build.sh"; exit 1; }
