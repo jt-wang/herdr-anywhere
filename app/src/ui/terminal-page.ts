@@ -31,6 +31,13 @@ export type BarKey = 'esc' | 'tab' | 'btab' | 'enter' | 'ctrlc' | 'up' | 'down' 
  *  it off, as before; whether moves reach the page there was not checked. */
 export const webViewScrollable = (os: string) => os === 'android'
 
+/** How far from the screen's left edge a finger on the terminal is left to iOS's swipe back, in points: on a phone,
+ *  where the terminal reaches the edge. While the page prevented every move, WKWebView never let the swipe begin over
+ *  the terminal: 0 of 48 slow swipes from the edge went back on the iOS 26.5 simulator, and 32 of 32 once the page
+ *  prevented none (e2e/ios-edge-back.sh). 0 elsewhere: Android's back gesture never reaches the page, and on a wide
+ *  screen the terminal starts right of the sidebar. */
+export const edgeBack = (os: string, phone: boolean) => (os === 'ios' && phone ? 24 : 0)
+
 /** The text sizes Settings offers. */
 /** The terminal's fonts, in the order a character is looked for. */
 export const TERMINAL_FONTS = "'JetBrains Mono', 'Symbols Nerd Font', 'Noto Sans Symbols 2', 'Noto Sans Symbols', 'Noto Sans Mono', ui-monospace, Menlo, monospace"
@@ -700,7 +707,7 @@ const BOOT = `(function () {
     gliding = requestAnimationFrame(step);
   }
   function touches() {
-    var t0 = null, selecting = null, press = 0, scrolled = 0, moved = false, dragging = false, trail = [], stopped = false, drag = null;
+    var t0 = null, selecting = null, press = 0, scrolled = 0, moved = false, dragging = false, trail = [], stopped = false, drag = null, edge = false;
     // Steps for the finger's travel so far. Travel short of a step is kept for the next move, so a finger that goes
     // back cancels it. While the page looks how far a report goes, the travel waits, and the answer counts.
     function keepUp() {
@@ -725,12 +732,15 @@ const BOOT = `(function () {
       stopped = stopGlide();
       if (e.touches.length !== 1) { t0 = null; selecting = null; return; }
       var p = e.touches[0];
+      // A finger that comes down at the screen's left edge may be the system's swipe back (iOS): its moves keep their
+      // default, so the swipe can begin, and it still scrolls here when it goes up or down.
+      edge = p.clientX < cfg.edge;
       t0 = { x: p.clientX, y: p.clientY, at: e.timeStamp }; moved = false; scrolled = 0; selecting = null; dragging = false; trail = []; drag = null;
       press = setTimeout(function () { if (!t0 || moved) return; selecting = selectWord(cell(t0.x, t0.y)); }, 450);
     }, { passive: true });
     box.addEventListener('contextmenu', function (e) { e.preventDefault(); });
     box.addEventListener('touchmove', function (e) {
-      e.preventDefault();
+      if (!edge) e.preventDefault();
       if (!t0 || e.touches.length !== 1) return;
       var p = e.touches[0], dx = p.clientX - t0.x, dy = p.clientY - t0.y;
       if (Math.abs(dx) > 8 || Math.abs(dy) > 8) { moved = true; clearTimeout(press); }
@@ -744,6 +754,8 @@ const BOOT = `(function () {
         while (trail.length > 2 && e.timeStamp - trail[0].at > 100) trail.shift();
       }
     }, { passive: false });
+    // The system took the finger (the swipe back began): nothing of it is a tap, a hold or a drag here.
+    box.addEventListener('touchcancel', function () { clearTimeout(press); t0 = null; selecting = null; drag = null; }, { passive: true });
     box.addEventListener('touchend', function (e) {
       clearTimeout(press);
       e.preventDefault();
@@ -933,10 +945,10 @@ const BOOT = `(function () {
 })();`
 
 /** The whole page, scripts and fonts inline: it loads nothing from anywhere. */
-export function terminalPage(opts: { dark: boolean; fontSize: number; scrollback: number; phone?: boolean; raised?: number }): string {
+export function terminalPage(opts: { dark: boolean; fontSize: number; scrollback: number; phone?: boolean; raised?: number; edge?: number }): string {
   const themes = { dark: xtermTheme(true), light: xtermTheme(false) }
   const bg = themes[opts.dark ? 'dark' : 'light'].background
-  const cfg = JSON.stringify({ phone: !!opts.phone, raised: opts.raised ?? 0, dark: opts.dark, fontSize: opts.fontSize, scrollback: opts.scrollback, themes, fonts: TERMINAL_FONTS, ...LOOK })
+  const cfg = JSON.stringify({ phone: !!opts.phone, raised: opts.raised ?? 0, edge: opts.edge ?? 0, dark: opts.dark, fontSize: opts.fontSize, scrollback: opts.scrollback, themes, fonts: TERMINAL_FONTS, ...LOOK })
   const fonts = `@font-face{font-family:'JetBrains Mono';src:url(data:font/woff;base64,${MONO_WOFF}) format('woff');font-weight:100 800}`
     + `@font-face{font-family:'Symbols Nerd Font';src:url(data:font/woff;base64,${SYMBOLS_WOFF}) format('woff')}`
     + `@font-face{font-family:'Noto Sans Symbols 2';src:url(data:font/woff;base64,${SYMBOLS2_WOFF}) format('woff')}`

@@ -18,6 +18,7 @@
 //	CHANGE a Read of notes.txt, an Edit of it (one line becomes three), then a sentence
 //	BREAK  a Bash call that prints two lines and exits 3, then a sentence
 //	RENDER a sentence naming the files it made: a video and a PDF, by paths in the session's folder
+//	ROWS   a list of 150 numbered rows ("- acme-api line 1" …), long enough to scroll
 //
 // Anything else (side requests such as titles, prompts with none of these words) gets "OK.".
 package fakeapi
@@ -30,6 +31,8 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+
+	"herdr-anywhere/companion/internal/chat/fakeresponses"
 )
 
 type block = map[string]any
@@ -54,6 +57,7 @@ func scripts(cwd string) map[string][]Step {
 	return map[string][]Step{
 		"HELLO":  {{[]block{text("Hello from the fake model.")}, "end_turn", 0}},
 		"RENDER": {{[]block{text("Rendered `renders/demo.mp4` (3 s). The guide is in docs/guide.pdf.")}, "end_turn", 0}},
+		"ROWS":   {{[]block{text(fakeresponses.Rows(150))}, "end_turn", 0}},
 		"LIST": {
 			{[]block{text("I'll list the files."), tool("toolu_fake_list", "Bash", map[string]any{"command": "ls", "description": "List files"})}, "tool_use", 0},
 			{[]block{text("There are two files: notes.txt and todo.txt.")}, "end_turn", 0},
@@ -101,7 +105,7 @@ func scripts(cwd string) map[string][]Step {
 	}
 }
 
-var word = regexp.MustCompile(`\b(HELLO|LIST|EDIT|ASK|SLOW|THINK|LOOK|FIND|HELP|WRITE|FAIL|CHANGE|BREAK|RENDER)\b`)
+var word = regexp.MustCompile(`\b(HELLO|LIST|EDIT|ASK|SLOW|THINK|LOOK|FIND|HELP|WRITE|FAIL|CHANGE|BREAK|RENDER|ROWS)\b`)
 var cwdLine = regexp.MustCompile(`Primary working directory: ([^\s\\"]+)`)
 
 // Server answers /v1/messages. Requests lists the paths it was asked for, for a test to look at.

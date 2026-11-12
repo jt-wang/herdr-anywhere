@@ -2,6 +2,7 @@ package fakeresponses
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -95,5 +96,18 @@ func TestStepsInEachProgramsTools(t *testing.T) {
 	want := `[{"content":[{"annotations":[],"text":"I'll list the files.","type":"output_text"}],"role":"assistant","status":"completed","type":"message"},{"arguments":"{\"cmd\":\"ls\"}","call_id":"call_fake_list","name":"exec_command","status":"completed","type":"function_call"}]`
 	if got != want {
 		t.Errorf("Codex LIST changed:\n%s", got)
+	}
+}
+
+// ROWS answers with a list long enough to scroll: 150 rows, each with its number, so a test can tell how far it moved.
+func TestRowsIsALongNumberedList(t *testing.T) {
+	got := text(respond(nil, prompt("ROWS please")))
+	for _, want := range []string{`- acme-api line 1\n`, `- acme-api line 75\n`, `- acme-api line 150"`} {
+		if !strings.Contains(got, want) {
+			t.Errorf("no %q in %s", want, got)
+		}
+	}
+	if n := strings.Count(got, "- acme-api line "); n != 150 {
+		t.Errorf("%d rows, want 150", n)
 	}
 }
