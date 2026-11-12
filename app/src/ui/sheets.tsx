@@ -71,7 +71,7 @@ export function NewSheet(props: { store: Store; target: Signal<NewTarget | null>
             onPick={(f) => { Keyboard.dismiss(); folder.set(f); picking.set(false) }} />
         </If>
         <If when={!(picking() && local())}>
-        <Text class="text-[15px] font-semibold text-foreground">{title()}</Text>
+        <Text class="text-[15px] font-semibold text-foreground" style={{ fontFamily: 'Geist Title' }}>{title()}</Text>
         {/* The folder chosen: a line that goes back to the first step */}
         <View role="button" testID="folder-chosen" disabled={!local()} accessibilityLabel={t('folderChosen', { path: tilde(where(), s.home) })} onPress={() => picking.set(true)}
           class="flex-row items-center gap-1.5 py-1.5 mb-1 self-start rounded-[6px] active:opacity-60">
