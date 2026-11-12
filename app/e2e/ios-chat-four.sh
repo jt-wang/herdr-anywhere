@@ -16,6 +16,7 @@ away=${AWAY:-10 60}
 app=$(cd "$(dirname "$0")/.." && pwd)
 companion="$app/../companion"
 shots=${1:-}
+[ -z "$shots" ] || mkdir -p "$shots"
 hc=${HM_TEST_HC:-$(command -v hc || echo "$HOME/.local/bin/hc")}
 id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$app/nsh.json")
 chat="$companion/internal/chat"
@@ -110,7 +111,7 @@ xcrun simctl list devices booted | grep -q "$SIM_UDID" || booted=1
 xcrun simctl boot "$SIM_UDID" 2>/dev/null || true
 xcrun simctl bootstatus "$SIM_UDID" -b >/dev/null
 xcrun simctl spawn "$SIM_UDID" log stream --style compact \
-  --predicate 'process == "Herdr" AND (messageType == error OR messageType == fault OR composedMessage CONTAINS[c] "nsh")' \
+  --predicate 'process == "Herdr" AND (messageType == error OR messageType == fault OR composedMessage CONTAINS[c] "nsh") AND NOT composedMessage CONTAINS "XC_kAX" AND NOT composedMessage CONTAINS "nsh_platform_ios::"' \
   > "$work/app.log" 2>&1 &
 log_pid=$!
 xcrun simctl ui "$SIM_UDID" appearance light
@@ -147,12 +148,12 @@ i=0; until grep -q "device .* connected (binary," "$work/serve.log"; do
 done
 cp -R "$app/e2e/ios-uitest" "$work/uitest"
 (cd "$work/uitest" && xcodegen generate --quiet)
-[ -n "$shots" ] && mkdir -p "$shots"
 rc=0
 TEST_RUNNER_OUT="${shots:-$work}/chat-four.txt" TEST_RUNNER_SHOTS="${shots:-$work}/chat-four" TEST_RUNNER_CTL="$ctl" \
   TEST_RUNNER_AGENTS="$agents" TEST_RUNNER_AWAY="$away" \
   perl -e 'alarm 1800; exec @ARGV' xcodebuild test -quiet -project "$work/uitest/KeyboardCheck.xcodeproj" -scheme UITests \
-  -only-testing:UITests/ChatFour -destination "id=$SIM_UDID" -derivedDataPath "$work/uitest/derived" > "$work/uitest/test.log" 2>&1 || rc=$?
+  -only-testing:UITests/ChatFour -destination "id=$SIM_UDID" -derivedDataPath "$work/uitest/derived" \
+  -resultBundlePath "$work/uitest/result.xcresult" > "$work/uitest/test.log" 2>&1 || rc=$?
 sed 's/^/  /' "${shots:-$work}/chat-four.txt" 2>/dev/null || true
 # One process all through: another pid, or none, is a crash (or iOS ending the app), with its report when there is one.
 now=$(pid); [ "$now" = "$before" ] || { sleep 2; now=$(pid); }
@@ -165,8 +166,8 @@ fi
 if [ "$rc" != 0 ]; then
   echo "FAIL: xcodebuild test exit $rc"
   # Its failures, else its end: what XCUITest said went wrong.
-  grep -iE "error|fail|XCT" "$work/uitest/test.log" | head -20 | sed 's/^/  /'
-  grep -qiE "error|fail|XCT" "$work/uitest/test.log" || tail -30 "$work/uitest/test.log" | sed 's/^/  /'
+  # -quiet leaves the failures' messages out of the log: they are read from the result bundle.
+  "$app/e2e/ios-xcresult.sh" "$work/uitest/result.xcresult" ${shots:+"$shots/failure"}
   [ -n "$shots" ] && { cp "$work/serve.log" "$shots/serve.log"; cp "$work/uitest/test.log" "$shots/test.log"; }
   exit 1
 fi
