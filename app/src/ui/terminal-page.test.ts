@@ -1,6 +1,6 @@
 // The terminal's web page and the app's side of it.
 import { expect, test } from 'nsh/test'
-import { PageChannel, TERMINAL_FONTS, ctrlKey, readPageMessage, terminalPage, webViewScrollable, xtermTheme } from './terminal-page.ts'
+import { PageChannel, TERMINAL_FONTS, ctrlKey, edgeBack, readPageMessage, terminalPage, webViewScrollable, xtermTheme } from './terminal-page.ts'
 
 test('page messages are read strictly', () => {
   expect(readPageMessage('{"t":"ready","cols":80,"rows":24}')).toEqual({ t: 'ready', cols: 80, rows: 24 })
@@ -110,4 +110,13 @@ test("on Android the WebView is left scrollable, so the page gets finger moves: 
   // NSH's Android WebView swallows every move while it is not scrollable; the page saw touchstart and touchend only.
   expect(webViewScrollable('android')).toBe(true)
   expect(webViewScrollable('ios')).toBe(false)
+})
+
+test("iOS's swipe back gets a finger from the left edge on a phone, and nowhere else", () => {
+  expect(edgeBack('ios', true)).toBe(24)
+  expect(edgeBack('ios', false)).toBe(0)
+  expect(edgeBack('android', true)).toBe(0)
+  expect(edgeBack('web', true)).toBe(0)
+  expect(terminalPage({ dark: true, fontSize: 13, scrollback: 2000, phone: true, edge: 24 }).includes('"edge":24')).toBe(true)
+  expect(terminalPage({ dark: true, fontSize: 13, scrollback: 2000, phone: true }).includes('"edge":0')).toBe(true)
 })
