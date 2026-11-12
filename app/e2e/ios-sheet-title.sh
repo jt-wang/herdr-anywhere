@@ -27,10 +27,14 @@ L() { env HC_SESSION="hmtitle-$$" HC_SOCKET="" HOME="$work/me" SHELL=/bin/sh XDG
 box="env HOME=$work/box PATH=$work/box/bin:$work/box/.local/bin:/usr/bin:/bin:/usr/sbin:/sbin XDG_RUNTIME_DIR=$boxrun XDG_STATE_HOME=$work/boxstate HC_SESSION=hmtitlebox-$$"
 dock="env HOME=$work/dock PATH=$work/dock/bin:$work/dock/.local/bin:/usr/bin:/bin:/usr/sbin:/sbin XDG_RUNTIME_DIR=$dockrun XDG_STATE_HOME=$work/dockstate HC_SESSION=hmtitledock-$$"
 serve_pid=""; test_pid=""
+: > "$work/started" # what e2e/ios-failure-logs.sh keeps is from after this
+"$app/e2e/ios-failure-logs.sh" --sample-load "$work/load.txt" >/dev/null 2>&1 & sampler=$! # the machine's load, kept with a failure
 cleanup() {
   status=$?
   trap - EXIT INT TERM HUP
   set +e
+  # The sampler first: a sample written while rm -rf runs makes load.txt again, and the folder is not deleted.
+  { kill "$sampler"; wait "$sampler"; } 2>/dev/null
   [ -n "$test_pid" ] && kill "$test_pid" 2>/dev/null
   [ -n "$serve_pid" ] && kill "$serve_pid" 2>/dev/null
   printf "%s\n" "$placeholder" > "$app/e2e/pair.ts"
@@ -68,7 +72,7 @@ cp -R "$app/e2e/ios-uitest" "$work/uitest"
 (cd "$work/uitest" && xcodegen generate --quiet)
 echo light > "$work/t/now"
 TEST_RUNNER_DIR="$work/t" xcodebuild test -quiet -project "$work/uitest/KeyboardCheck.xcodeproj" -scheme UITests \
-  -only-testing:UITests/SheetTitle -destination "id=$SIM_UDID" -derivedDataPath "$work/uitest/derived" > "$work/uitest.log" 2>&1 &
+  -only-testing:UITests/SheetTitle -destination "id=$SIM_UDID" -derivedDataPath "$work/uitest/derived" -resultBundlePath "$work/uitest/result.xcresult" > "$work/uitest.log" 2>&1 &
 test_pid=$!
 # The themes the test asks for.
 while kill -0 "$test_pid" 2>/dev/null; do
@@ -78,7 +82,14 @@ while kill -0 "$test_pid" 2>/dev/null; do
 done
 rc=0; wait "$test_pid" || rc=$?; test_pid=""
 cp "$work"/t/*.png "$shots/" 2>/dev/null || true
-[ "$rc" = 0 ] || { echo "FAIL: the test (exit $rc)"; grep -E "error:|XCTAssert|failed" "$work/uitest.log" | head -5; exit 1; }
+if [ "$rc" != 0 ]; then
+  # xcodebuild -quiet leaves the failures' messages out of its log: they are in the result bundle, with XCTest's
+  # screenshots at each; the Companion's log, the simulator's crash reports and the machine's load go with them.
+  echo "FAIL: the test (exit $rc)"
+  "$app/e2e/ios-xcresult.sh" "$work/uitest/result.xcresult" "$shots/failure" all
+  "$app/e2e/ios-failure-logs.sh" "$work/started" "$work/serve.log" "$shots/failure" || true
+  exit 1
+fi
 
 # Each opening: the title as tesseract reads it, from the left of the title's view to the sheet's right edge (a cut
 # title's view is narrower than its text).
