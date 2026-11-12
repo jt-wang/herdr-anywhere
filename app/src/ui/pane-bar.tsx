@@ -2,11 +2,12 @@
 // them (model/menu.ts), or the keys when they can't be read; and, while the keyboard is up, the key row under them.
 import { cleanup, effect, Keyboard, keyboardFrame, Picker, platform, signal, Text, View } from 'nsh'
 import { AlertDialog, Input } from 'nsh/base'
-import type { Store } from '../store.ts'
+import type { Sending, Store } from '../store.ts'
 import { explain } from '../store.ts'
 import { MAX_FILE } from '../link.ts'
 import { machineOfAddress } from '../model/model.ts'
 import { asWord, withPath } from './attach.ts'
+import { composerHeight } from './composer-size.ts'
 import { asks } from '../model/answers.ts'
 import { shownOrder, type Option } from '../model/menu.ts'
 import type { BarKey } from './terminal-page.ts'
@@ -26,9 +27,6 @@ const ROW_KEYS: { key: RowKey; label: string }[] = [
  *  with choices on screen does the row need its own. */
 export const rowKeys = (mode: 'compose' | 'choices' | 'keys', here: TypeIn = 'composer') => ROW_KEYS.filter((k) => k.key !== 'esc' || mode === 'choices' || (mode === 'compose' && here === 'terminal'))
 
-/** The composer grows with its text up to this, then scrolls. */
-const COMPOSER_MIN = 36
-const COMPOSER_MAX = 132
 
 const FALLBACK_KEYS: { key: string; label: string }[] = [
   { key: 'esc', label: 'esc' }, { key: 'up', label: '↑' }, { key: 'down', label: '↓' }, { key: 'left', label: '←' }, { key: 'right', label: '→' }, { key: 'enter', label: 'enter' },
@@ -159,21 +157,45 @@ export function pickedWord(before: string, after: string): boolean {
 }
 /** An invisible character the box holds for a moment after such a pick: see the Composer. */
 const NUDGE = '\u200b'
+/** The box's text is this much narrower than the box: 12 each side (px-3) and its 1 px borders; 2 more, so the hidden
+ *  copy of the hint wraps no later than the box's own. */
+const HINT_INSET = 28
 
 function Composer(props: { toTerminal: () => void; keepTerminal: () => boolean; store: Store; session: TerminalSession; hint: string; focus: boolean; focused: (f: boolean) => void }) {
   const addr = props.session.address
-  const text = signal('')
+  const sendingAll = useSignal(props.store.sending)
+  const mine = () => sendingAll().find((x) => x.address === addr)
+  /** Sent and not yet answered: the text stays in the box, which takes no typing and no second send until it is. */
+  const busy = () => !!mine() && !mine()!.failed
+  const text = signal(mine()?.text ?? '')
+  // What the typed text measures; the hint as the box lays it out at this phone's text size, wrapped at the box's
+  // width (the hidden copy below, as wide as the box's text); the box's width.
+  const content = signal<number | undefined>(undefined)
+  const hintTall = signal(0)
+  const wide = signal(0)
   const pending = useSignal(props.store.pending)
+  // The box clears once herdr-core has the text, and takes it back when it did not go: also when it was away meanwhile.
+  let was: Sending | undefined
+  let held: Sending['held']
+  effect(() => {
+    const m = mine()
+    if (m?.held) held = m.held
+    if (was && !was.failed && !m && text().startsWith(was.text)) { text.set(text().slice(was.text.length).trimStart()); content.set(undefined) }
+    if (m?.failed) { if (!text()) text.set(m.text); props.store.forget(addr) }
+    was = m
+  })
   const uploading = signal(0)
   const waiting = () => pending().filter((p) => p.address === addr).length
-  const tall = signal(COMPOSER_MIN)
   const send = () => {
     const typed = text().replace(new RegExp(NUDGE, 'g'), '')
-    if (!typed.trim()) return
-    text.set('')
-    tall.set(COMPOSER_MIN)
+    if (!typed.trim() || busy()) return
     props.session.claim()
-    void props.store.compose(addr, typed).catch((e) => props.store.toast({ title: t('couldntSend'), body: String(e?.message ?? e), level: 'error' }))
+    held = undefined
+    const going = props.store.compose(addr, typed)
+    // Queued for when the computer is back (`pending`): it has left the box.
+    if (!props.store.sending.get().some((x) => x.address === addr)) { text.set(''); content.set(undefined) }
+    void going.catch((e) => props.store.toast(e?.kind !== 'disconnected' ? { title: t('couldntSend'), body: `${String(e?.message ?? e)} ${t('stillInBox')}`, level: 'error' }
+      : held === 'draft' ? { title: t('couldntSend'), body: t('sendLost'), level: 'error' } : { title: t('maybeNotSent'), body: t('sendLostUnsure'), level: 'error' }))
   }
   const failed = (body: string) => props.store.toast({ title: t('couldntAttach'), body, level: 'error' })
   // One after another: a path joins the text when its file has landed, on the machine the terminal is on.
@@ -190,12 +212,16 @@ function Composer(props: { toTerminal: () => void; keepTerminal: () => boolean; 
         <Text testID="pending" class="px-3 pt-1 text-[11.5px] text-sidebar-foreground">{t('pendingSend', { n: waiting() })}</Text>
       </If>
       <View testID="composer" class="flex-row items-end gap-1.5 px-2 py-1">
+        <View pointerEvents="none" accessibilityElementsHidden onLayout={(b) => hintTall.set(b.size.height)}
+          style={{ position: 'absolute', opacity: 0, ...(wide() > HINT_INSET ? { width: wide() - HINT_INSET } : {}) }}>
+          <Text class="text-[14px]">{props.hint}</Text>
+        </View>
         <Key label="esc" testID="key-esc" grow={false} onPress={() => {
           props.session.key('esc')
           // Typing in the terminal goes on there, as after the row's keys.
           if (props.keepTerminal()) props.session.focus()
         }} />
-        <Input testID="compose-input" value={text()} onChange={(t) => {
+        <Input testID="compose-input" value={text()} readonly={busy()} onChange={(t) => {
             const before = text()
             text.set(t)
             // Gboard (Android) keeps a word picked in pinyin as its own and spends the next backspace on it, deleting
@@ -208,14 +234,23 @@ function Composer(props: { toTerminal: () => void; keepTerminal: () => boolean; 
             }
           }} placeholder={props.hint} autoFocus={props.focus}
           multiline submitBehavior="newline" onFocus={() => { props.session.claim(); props.focused(true) }} onBlur={() => props.focused(false)}
-          onContentSizeChange={(e) => tall.set(Math.max(COMPOSER_MIN, Math.min(COMPOSER_MAX, e.height + 16)))} style={{ height: text() ? tall() : COMPOSER_MIN }}
-          class="flex-1 rounded-[8px] border border-input bg-background px-3 py-2 text-[14px] text-foreground placeholder:text-sidebar-foreground" />
+          onLayout={(b) => wide.set(b.size.width)}
+          onContentSizeChange={(e) => content.set(e.height)} style={{ height: composerHeight({ hint: hintTall(), content: text() ? content() : undefined }) }}
+          class={`flex-1 rounded-[8px] border border-input bg-background px-3 py-2 text-[14px] placeholder:text-sidebar-foreground ${busy() ? 'text-sidebar-foreground' : 'text-foreground'}`} />
         <BarButton glyph="terminal" label={t('typeInTerminal')} testID="to-terminal" onPress={props.toTerminal} />
         <BarButton glyph="plus" label={t('attach')} testID="attach" onPress={() => void attach()} />
-        <If when={text().trim()}>
+        <If when={text().trim() && !busy()}>
           <BarButton glyph="send" label={t('send')} testID="compose-send" primary onPress={send} />
         </If>
+        <If when={busy()}>
+          <View testID="compose-sending" accessibilityLabel={t('sending')} class="w-10 h-9 items-center justify-center rounded-[8px] bg-primary opacity-40">
+            <Glyph name="send" size={18} class="tint-primary-foreground" />
+          </View>
+        </If>
       </View>
+      <If when={busy() && mine()?.held}>
+        <Text testID="send-held" class="px-3 pb-1 text-[11.5px] text-sidebar-foreground">{mine()?.held === 'draft' ? t('sendHeldDraft') : t('sendHeldLine')}</Text>
+      </If>
     </View>
   )
 }

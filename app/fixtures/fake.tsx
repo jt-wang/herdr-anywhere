@@ -1,4 +1,5 @@
 // The app over an in-memory herdr-core (src/testing/fakecore.ts), already paired, for the screen tests.
+// `host.params.slowSendMs`: how long a send goes unanswered before the input box says why (5 s when not set).
 // `host.params.scene`: "empty" (a fresh computer), "busy" (two spaces, agents in every state), "twins" (two Claude
 // Codes in one space), "unpaired", "companion-off" (with via: "tailpocket": nothing answers through the tunnel), "companion-refused" (the computer at
 // `url` refuses at once),
@@ -177,51 +178,14 @@ host.on('fake.status', (d: any) => {
   if (typeof d.screen === 'string') core.screens.set(d.address, d.screen)
   core.setStatus(d.address, d.state, core.terms.get(d.address)?.status?.app, { kind: d.kind, msg: d.msg })
 })
-// The computer's chat answer for every terminal (GET /api/chat/…): `params.chat` (JSON), else none; a test changes it
-// with `app.host.send('fake.chat', answer)`, or makes the computer unreachable with `{ offline: true }`. Each ask is
-// recorded in `fake-chat-asks`; a step's details are "input of <id>" and "output of <id>" (with an image when the id
-// ends in "img"), unless the answer's `details` has the id; and "gone" is gone. Every image is a one-pixel PNG.
-const PIXEL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
-let chatAnswer: any = params.chat ? JSON.parse(params.chat) : { chat: false }
-const chatAsks: string[] = []
-const fileAsks: string[] = []
-host.on('fake.chat', (d: any) => { chatAnswer = d })
-async function chat(url: string) {
-  const path = url.replace(/^https?:\/\/[^/]+/, '')
-  chatAsks.push(path)
-  void Storage.setItem('fake-chat-asks', JSON.stringify(chatAsks))
-  if (chatAnswer.offline) throw new Error('unreachable')
-  if (/\/images\/[^/?]+$/.test(path)) return answer(200, { url: PIXEL })
-  const step = /\/steps\/([^/?]+)$/.exec(path)
-  if (!step) return answer(200, chatAnswer)
-  const id = decodeURIComponent(step[1])
-  if (chatAnswer.details?.[id]) return answer(200, chatAnswer.details[id])
-  return id === 'gone' ? answer(404, { error: 'no such step' })
-    : answer(200, { input: `input of ${id}`, output: `output of ${id}`, ...(id.endsWith('img') ? { images: [{ id: `${id}.0`, source: `/work/acme/${id}.png` }] } : {}) })
-}
-// The computer's chat setups (GET /api/chat-setups, PUT/DELETE /api/chat-setups/{agent}): `params.setups` (JSON), else
-// none. Install over a "changed" file without ?force=1 is refused (409); each ask is recorded in `fake-setup-asks` as
-// "METHOD path".
-let setups: any[] = params.setups ? JSON.parse(params.setups) : []
-const setupAsks: string[] = []
-function chatSetups(url: string, init: any) {
-  const path = url.replace(/^https?:\/\/[^/]+/, '')
-  const method = init?.method ?? 'GET'
-  setupAsks.push(`${method} ${path}`)
-  void Storage.setItem('fake-setup-asks', JSON.stringify(setupAsks))
-  if (method === 'GET') return answer(200, { setups })
-  const agent = decodeURIComponent(/\/api\/chat-setups\/([^/?]+)/.exec(path)?.[1] ?? '')
-  const i = setups.findIndex((x) => x.agent === agent)
-  if (i < 0) return answer(404, { error: 'no such setup' })
-  const force = /[?&]force=1/.test(path)
-  if (setups[i].state === 'no-agent' || (setups[i].state === 'changed' && !force)) return answer(409, setups[i])
-  setups[i] = { ...setups[i], state: method === 'PUT' ? 'installed' : 'absent' }
-  return answer(200, setups[i])
-}
 // Another Herdr screen pins or unpins an agent: `app.host.send('fake.label', { address, labels: { 'herdr.pinned': '1' } })`.
 host.on('fake.label', (d: any) => core.label(d.address, d.labels))
 // A test drops the line: `app.host.send('fake.drop', {})`; the computer then stops answering.
 host.on('fake.drop', () => core.drop('network'))
+// herdr-core holds a method's answers until released, as it holds terminal.send for a half-typed line:
+// `app.host.send('fake.hold', { method })`, then `app.host.send('fake.release', {})`.
+host.on('fake.hold', (d: any) => core.holding.add(d.method))
+host.on('fake.release', () => { core.holding.clear(); core.release() })
 // Text the app sent (`terminal.send`), where a test reads it (`app.storage()['fake-sent']`).
 const sent: [string, string, boolean][] = []
 core.onSend = (addr, text, force) => { sent.push([addr, text, force]); void Storage.setItem('fake-sent', JSON.stringify(sent)) }
@@ -311,7 +275,7 @@ mount(() => (
     linker: new Linker(params.via === 'tailpocket' ? { ...io, tunnel: fakeTunnel } : io),
     opensSettings: params.open === 'settings',
     prefs: new PrefStore(io),
-    makeStore: (l) => tapPicture(counted(new Store({ pipe: pipe(l), tunnelled: () => l.link.get()?.via === 'tailpocket' }))),
+    makeStore: (l) => tapPicture(counted(new Store({ pipe: pipe(l), tunnelled: () => l.link.get()?.via === 'tailpocket', slowSendMs: params.slowSendMs ? Number(params.slowSendMs) : undefined }))),
     device: 'Test phone',
     tunnel: params.via === 'tailpocket' ? fakeTunnel : undefined,
     pairLink: opened || scene === 'relaunch-forgotten' ? String((host.params as any)?.link) : undefined,
@@ -320,21 +284,6 @@ mount(() => (
     fetcher: (async (url: string, init: any) => {
       if (url.includes('/api/files')) return answer(200, { path: landed(new URLSearchParams(url.split('?')[1]), init.body.size) })
       if (url.includes('/api/folders')) return folders(url, init)
-      if (url.includes('/api/chat-setups')) return chatSetups(url, init)
-      if (url.includes('/api/chat/')) return chat(url)
-      // POST /api/file/check and GET /api/file: the files of the chat answer's `files` ({ path: { kind, size, text } }),
-      // each asked for recorded in `fake-file-asks`; any other path is missing.
-      if (url.includes('/api/file/link')) { const { path } = JSON.parse(init.body); fileAsks.push(`link ${path}`); void Storage.setItem('fake-file-asks', JSON.stringify(fileAsks)); return answer(200, { url: `/api/file?path=${encodeURIComponent(path)}&terminal=t1&key=k1` }) }
-      if (url.includes('/api/file/check')) {
-        const { paths } = JSON.parse(init.body)
-        return answer(200, { files: paths.map((p: string) => { const f = chatAnswer.files?.[p]; return f ? { asked: p, path: `/work/acme/${p}`, name: p.split('/').pop(), kind: f.kind, size: f.size } : { asked: p, why: 'missing' } }) })
-      }
-      if (url.includes('/api/file?')) {
-        const p = new URLSearchParams(url.split('?')[1]).get('path') ?? ''
-        fileAsks.push(p); void Storage.setItem('fake-file-asks', JSON.stringify(fileAsks))
-        const f = Object.values(chatAnswer.files ?? {}).find((x: any, i) => Object.keys(chatAnswer.files)[i] === p || `/work/acme/${Object.keys(chatAnswer.files)[i]}` === p) as any
-        return f ? { ok: true, status: 200, json: async () => ({}), text: async () => f.text ?? '' } : answer(404, { why: 'missing' })
-      }
       // POST /api/image/check: the same files as picture(): notes.png isn't a picture, gone.png isn't there.
       if (url.includes('/api/image/check')) { const { paths } = JSON.parse(init.body); return answer(200, { paths: paths.map((p: string) => ({ asked: p, picture: !/(notes|gone)\.png$/.test(p), ...(/notes\.png$/.test(p) ? { why: 'not_image' } : /gone\.png$/.test(p) ? { why: 'missing' } : {}) })) }) }
       if (url.includes('/api/image')) return picture(url)
