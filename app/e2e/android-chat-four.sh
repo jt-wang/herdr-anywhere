@@ -118,12 +118,33 @@ tap_last() { # resource-id prefix, and a part of it
   [ -n "$xy" ] || fail "no $1${2:+…$2} on screen"
   "$adb" shell input tap $xy
 }
-type_text() { rest=$1; while [ -n "$rest" ]; do "$adb" shell input text "'$(printf %s "$rest" | cut -c1-80 | sed 's/ /%s/g')'" < /dev/null; rest=$(printf %s "$rest" | cut -c81-); sleep 0.5; done; }
+type_text() { rest=$1; while [ -n "$rest" ]; do "$adb" shell input text "'$(printf %s "$rest" | cut -c1-10 | sed 's/ /%s/g')'" < /dev/null; rest=$(printf %s "$rest" | cut -c11-); sleep 0.3; done; }
+# The composer's text: compose-input is the field's wrapper, the text its EditText child's (as android-type-link.sh
+# reads the link field). Read from a dump on stdin.
+composed() {
+  python3 -c '
+import html, re, sys
+s = sys.stdin.read()
+i = s.find("resource-id=\"compose-input\"")
+m = re.search(r"<node [^>]*class=\"android\.widget\.EditText\"[^>]*>", s[i:]) if i >= 0 else None
+t = re.search(r" text=\"([^\"]*)\"", m.group(0)) if m else None
+print(html.unescape(t.group(1)) if t else "")'
+}
+# adb's input text drops characters on CI's emulator (a prompt went out as "HELLO, what is in this pictu"): the
+# composer is typed in 10-character pieces and read back; a wrong one is cleared and typed again, three times at most.
+compose() {
+  for n in 1 2 3; do
+    type_text "$1"; got=$(xml | composed); [ "$got" = "$1" ] && return 0
+    echo "note: the composer holds '$got', not '$1' (try $n); cleared and typed again"
+    "$adb" shell input keyevent KEYCODE_MOVE_END $(printf 'KEYCODE_DEL %.0s' $(seq 1 $((${#got} + 1))))
+  done
+  fail "could not type '$1' into the composer"
+}
 # With an if, not an &&: a function whose last command is a failed && returns 1, which ends the script under set -e.
 keys_down() { for _ in 1 2; do if "$adb" shell dumpsys input_method | grep -q 'mInputShown=true'; then "$adb" shell input keyevent KEYCODE_BACK; sleep 1; fi; done; }
 # A prompt sent from the composer; the chat shows it as the newest turn, finished.
 sent() {
-  tap_last compose-input; type_text "$1"; tap_last 'compose-send"'; keys_down
+  tap_last compose-input; compose "$1"; tap_last 'compose-send"'; keys_down
   wait_for "text=\"$1\"" "$2: the chat did not show '$1'" "${3:-40}"
   for _ in $(seq 1 20); do has 'text="Working…"' || break; sleep 1; done
   echo "ok: $2: '$1' shown"
