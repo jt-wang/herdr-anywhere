@@ -61,7 +61,9 @@ tap_where() {
 wait_for() { for _ in $(seq 1 "$2"); do xml | grep -qF "$1" && return 0; sleep 1; done; echo "FAIL: \"$1\" did not show within $2 s"; words; exit 1; }
 snap() { [ -n "$shot" ] && "$adb" exec-out screencap -p > "$shot/$1.png" || true; }
 records() { "$adb" shell dumpsys notification --noredact | grep -E "NotificationRecord.*pkg=$id .*tag=new-version" || true; }
-posted() { records | grep -c . || true; }
+# Shown now: the keys of the active notifications only. dumpsys has more sections than the active list; its record's
+# object id is still read above, to tell a second post from the same one.
+posted() { "$adb" shell cmd notification list | grep -c "|$id|1|new-version|" || true; }
 # The phone in the background reads the computer again once it is back: the Companion restarted with what it found.
 restart() {
   companion_stop "$state" || exit 1
@@ -117,6 +119,7 @@ if [ -z "$gone" ]; then
   now=$(records | grep -oE 'NotificationRecord\(0x[0-9a-f]+' | head -1)
   [ "$now" = "$first" ] && echo "FAIL: the notification is still listed after its tap (the same record, $first)" ||
     echo "FAIL: after its tap the notification was posted again ($first, then $now)"
+  "$adb" shell cmd notification list | grep -F "|$id|"
   "$adb" shell dumpsys notification --noredact | grep -A12 "tag=new-version" | head -30
   exit 1
 fi

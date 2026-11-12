@@ -22,6 +22,7 @@ before=$(grep -q updateNotifyTitle "$app/src/strings/en.ts" || echo 1)
 version=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$app/nsh.json")
 port=7764; while nc -z 127.0.0.1 "$port" 2>/dev/null; do port=$((port + 1)); done
 work=$(mktemp -d); run=$(mktemp -d /tmp/hmXXXX); state=$(mktemp -d /tmp/hmtcXXXX)
+: > "$work/started"
 [ -n "$out" ] || out=$work/out
 mkdir -p "$out"; out=$(cd "$out" && pwd)
 (cd "$app/../companion" && CGO_ENABLED=0 go build -buildvcs=false -o "$work/herdr-anywhere" ./cmd/herdr-anywhere)
@@ -80,11 +81,16 @@ uitest() { # NAME: runs testNAME, its words to $out/NAME.txt
   rc=0
   TEST_RUNNER_OUT="$out/$1.txt" TEST_RUNNER_SHOTS="$out/$1" TEST_RUNNER_UPDATE_JSON="$state/update.json" TEST_RUNNER_ASK="$work/ask" TEST_RUNNER_BEFORE="$before" TEST_RUNNER_AFTER="${AFTER:-}" \
     TEST_RUNNER_WAITS="${WAITS:-0 5 10 20 30 60}" TEST_RUNNER_ROUNDS="${ROUNDS:-3}" \
-    perl -e 'alarm 3000; exec @ARGV' xcodebuild test -quiet -project "$work/uitest/KeyboardCheck.xcodeproj" -scheme UITests \
+    perl -e 'alarm 3000; exec @ARGV' xcodebuild test -project "$work/uitest/KeyboardCheck.xcodeproj" -scheme UITests \
     -only-testing:"UITests/Notifications/test$2" -destination "id=$SIM_UDID" -derivedDataPath "$work/uitest/derived" > "$work/uitest-$1.log" 2>&1 || rc=$?
   sed 's/^/  /' "$out/$1.txt" 2>/dev/null || true
   cp "$work/uitest-$1.log" "$out/$1-xcodebuild.log" 2>/dev/null || true
-  [ "$rc" = 0 ] || { echo "FAIL: $1: xcodebuild test exit $rc; the test log ends:"; tail -25 "$work/uitest-$1.log" | cut -c1-240; exit 1; }
+  [ "$rc" = 0 ] && return 0
+  echo "FAIL: $1: xcodebuild test exit $rc; what failed:"
+  grep -E "error: |XCTAssert|Failing tests|^	" "$work/uitest-$1.log" | grep -v "^	*$" | tail -15 | cut -c1-300
+  # The test opens the app itself, so whether it ever connected is asked only now: if not, what may explain it.
+  HM_CONNECT_WAIT=1 "$app/e2e/ios-connect-wait.sh" "$SIM_UDID" "$id" "$work/serve.log" "$work/started" "$out/connect-failure" || true
+  exit 1
 }
 
 # Settings at its alerts, light then dark: the iPhone line under System notifications (after) or not (before).
