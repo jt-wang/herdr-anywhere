@@ -1,6 +1,6 @@
 #!/bin/bash
 # Before a CI job uploads its screenshots and logs, which anyone can download: every QR code on a picture painted over,
-# and no pairing secret left in the folder, neither in any file's bytes nor in the words on a picture.
+# and no pairing secret left in the folder, neither in any file's bytes nor in the words on a picture or video.
 # A pairing secret is an invite (herdr1:…), a pairing link's #pair=… or a token=… value, and every line of each
 # SECRET file given (the invite or link a test made; lines shorter than 8 characters are skipped).
 # Usage: app/e2e/ci-shots-check.sh FOLDER [SECRET…]    exits 1 and names the file when it finds one
@@ -38,11 +38,11 @@ check() {
   local hits
   hits=$(printf '%s\n' "$words" | cut -f2 | grep -nE "$seen_shapes" | cut -d: -f1 | tr '\n' ' ')
   bad=$(printf '%s\n' "$words" | awk -F'\t' -v hits="$hits" 'BEGIN { n = split(hits, h, " "); for (i = 1; i <= n; i++) at[h[i]] = 1 } NR in at { print $1 }' | sort -u)
-  [ -z "$bad" ] || { echo "FAIL: a picture shows something shaped like a pairing secret: $(echo $bad)"; return 1; }
+  [ -z "$bad" ] || { echo "FAIL: a picture or video shows something shaped like a pairing secret: $(echo $bad)"; return 1; }
   if [ -n "$*" ]; then
     for f in "$@"; do
       bad=$(grep -E '.{8,}' "$f" | while IFS= read -r s; do printf '%s\n' "$words" | grep -F "$s" | cut -f1; done | sort -u)
-      [ -z "$bad" ] || { echo "FAIL: a picture shows a pairing secret from $(basename "$f"): $(echo $bad)"; return 1; }
+      [ -z "$bad" ] || { echo "FAIL: a picture or video shows a pairing secret from $(basename "$f"): $(echo $bad)"; return 1; }
     done
   fi
   echo "ok: $folder has no pairing secret and no QR code ($(find "$folder" -type f | wc -l | tr -d ' ') files)"
@@ -85,6 +85,10 @@ self_test() {
   case_ "a picture showing the link, no secret file given" fail "$t/words-bare"
   mkdir -p "$t/words-grey"; cp "$t/sample/words-grey.png" "$t/words-grey/"
   case_ "a phone screen showing the link in a field's grey, no secret file given" fail "$t/words-grey"
+  if [ -f "$t/sample/words.mp4" ]; then
+    mkdir -p "$t/video"; cp "$t/sample/words.mp4" "$t/video/"
+    case_ "a screen recording showing the link for 2 s, no secret file given" fail "$t/video"
+  else echo "skip: self-test of a screen recording: no ffmpeg, so any video fails the check"; fi
   "$py" "$here/shots-check.py" sample "$t/sample2" "acme-api › tab 2" || return 1
   cp "$t/sample2/words.png" "$t/clean/"; printf 'serve: phone connected over binary\n' > "$t/clean/serve.log"
   case_ "a folder with none of it" pass "$t/clean" "$t/s/link"

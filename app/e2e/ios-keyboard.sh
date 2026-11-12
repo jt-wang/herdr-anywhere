@@ -90,7 +90,8 @@ sed 's/^/  /' "$work/typein.txt" 2>/dev/null || true
 [ -n "$shot" ] && { cp "$work/typein-terminal.png" "${shot%.png}-terminal.png" 2>/dev/null; cp "$work/uitest/test.log" "${shot%.png}-xctest.log" 2>/dev/null; } || true
 if [ "$rc" != 0 ]; then
   echo "FAIL: the keyboard test (xcodebuild test exit $rc)"
-  "$app/e2e/ios-xcresult.sh" "$work/uitest/result.xcresult" ${shot:+"${shot%.png}-failure"}
+  # Every screenshot the test kept: the menu before and after each tap, and XCTest's own at the failure.
+  "$app/e2e/ios-xcresult.sh" "$work/uitest/result.xcresult" ${shot:+"${shot%.png}-failure"} all
   exit 1
 fi
 echo "PASS: Type in the terminal brings the keyboard up, also after the key bar's hide button; typing straight into the terminal sends what was typed"
