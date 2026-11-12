@@ -1,14 +1,22 @@
 name: Tests
 
-# Every pull request and every push to main or ci (where a release's commit is tested before main) runs the
+# Every pull request and every push to main, ci (where a release's commit is tested before main) or a ci-* branch (a
+# change tried on its own, beside the others) runs the
 # tests a contributor runs locally, plus a secret scan over the whole history. The device suites (app/e2e/android*.sh,
 # ios*.sh) and user-path.sh run in devices.yml, on emulators and simulators; app/e2e/run.sh runs in computers.yml,
-# with herdr-core.
+# with herdr-core. One iOS check runs here: the app built with the iOS 27 SDK opens on an iOS 27 simulator (job ios27).
 on:
   pull_request:
   push:
-    branches: [main, ci]
+    # A ci-try-* branch runs nothing when pushed: a trial is run by hand (workflow_dispatch), only what it needs. The
+    # "!" pattern comes after "ci-*", as GitHub applies the patterns in order.
+    branches: [main, ci, "ci-*", "!ci-try-*"]
   workflow_dispatch:
+    inputs:
+      only_ios27:
+        description: Only jobs ios27 and ios26 (the iOS 27 checks)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -26,7 +34,10 @@ env:
 jobs:
   companion:
     name: Companion (go test)
+    if: ${{ !inputs.only_ios27 }}
     runs-on: macos-26
+    # About twice its longest recent run: without it a stuck job holds one of the account's 5 macOS runners for 6 hours.
+    timeout-minutes: 32
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -45,7 +56,10 @@ jobs:
 
   app:
     name: App (unit and screen tests)
+    if: ${{ !inputs.only_ios27 }}
     runs-on: macos-26
+    # About twice its longest recent run.
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -59,9 +73,93 @@ jobs:
       - run: nsh --version && nsh check && scripts/test.sh
         working-directory: app
 
+  ios27:
+    name: iPhone app opens on iOS 27 (simulator)
+    # iOS 27 ends the launch of an app built with its SDK that has no scene (e2e/ios-scene.sh, e2e/ios-opens.sh).
+    # xcode-27 is the runner image with Xcode 27 and the iOS 27 simulators.
+    runs-on: xcode-27
+    # About twice its longest recent run.
+    timeout-minutes: 30
+    env:
+      XCODEGEN_VERSION: "2.45.4"
+      # SHA-256 of xcodegen.zip; matches the digest GitHub lists for the release asset. Update both together.
+      XCODEGEN_SHA256: "090ec29491aad50aec10631bf6e62253fed733c50f3aab0f5ffc86bc170bdbef"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: third_party/tailpocket-8ae23dd/go.mod
+          cache-dependency-path: third_party/tailpocket-8ae23dd/go.sum
+      - name: Install nsh and xcodegen
+        run: |
+          curl -sfL -o nsh.tar.gz "https://github.com/longbridge/nsh/releases/download/$NSH_VERSION/nsh-macos-arm64.tar.gz"
+          echo "$NSH_SHA256  nsh.tar.gz" | shasum -a 256 -c -
+          tar -xzf nsh.tar.gz -C "$HOME" && mv "$HOME/nsh" "$HOME/.nsh"
+          echo "$HOME/.nsh/bin" >> "$GITHUB_PATH"
+          curl -sfL -o xcodegen.zip "https://github.com/yonaskolb/XcodeGen/releases/download/$XCODEGEN_VERSION/xcodegen.zip"
+          echo "$XCODEGEN_SHA256  xcodegen.zip" | shasum -a 256 -c -
+          unzip -q xcodegen.zip -d "$RUNNER_TEMP/xcodegen"
+          echo "$(dirname "$(find "$RUNNER_TEMP/xcodegen" -type f -name xcodegen -perm -u+x | head -1)")" >> "$GITHUB_PATH"
+      # The Xcode the TestFlight builds use.
+      - run: sudo xcode-select -s /Applications/Xcode_27.0.app && xcodebuild -version
+      - name: Build the app for the simulator (Release)
+        id: build
+        run: ios/build.sh App.tsx simulator
+        working-directory: app
+      # The same build for job ios26 (a tar keeps the executable's mode, which an artifact alone drops).
+      - run: tar -C app/ios/build -cf "$RUNNER_TEMP/Herdr.app.tar" Herdr.app
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: herdr-app-xcode27-simulator
+          path: ${{ runner.temp }}/Herdr.app.tar
+          retention-days: 3
+      - name: The build has a scene
+        run: e2e/ios-scene.sh ios/build/Herdr.app
+        working-directory: app
+      # Runs whether or not the check above passed: each of the two must catch a build without a scene by itself. The
+      # runtime is the newest iOS 27 one that has an iPhone 17 (e2e/ios-opens.sh's default); exit 2 is a simulator that
+      # could not be made, not the app.
+      - name: Cold start on the newest iOS 27 simulator
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        working-directory: app
+        run: |
+          runtime=$(xcrun simctl list runtimes -j | python3 -c 'import json,sys; r=[x for x in json.load(sys.stdin)["runtimes"] if x["identifier"].startswith("com.apple.CoreSimulator.SimRuntime.iOS-27") and x["isAvailable"] and "com.apple.CoreSimulator.SimDeviceType.iPhone-17" in [d["identifier"] for d in x.get("supportedDeviceTypes", [])]]; print(max(r, key=lambda x: [int(n) for n in x["version"].split(".")])["identifier"] if r else "")')
+          [ -n "$runtime" ] || { echo "FAIL: no iOS 27 simulator runtime on this runner"; xcrun simctl list runtimes; exit 1; }
+          SIM_RUNTIME=$runtime e2e/ios-opens.sh ios/build/Herdr.app
+
+  ios26:
+    name: The same iOS 27 SDK build opens on iOS 26 (simulator)
+    # The scene change must not break the phones still on iOS 26. The xcode-27 image has no iOS 26 simulator, so job
+    # ios27's build runs here, on macos-26.
+    needs: ios27
+    if: ${{ !cancelled() }}
+    runs-on: macos-26
+    # About twice its longest recent run.
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: herdr-app-xcode27-simulator
+          path: ${{ runner.temp }}
+      - run: mkdir -p "$RUNNER_TEMP/app" && tar -C "$RUNNER_TEMP/app" -xf "$RUNNER_TEMP/Herdr.app.tar"
+      - name: Cold start on the newest iOS 26 simulator
+        working-directory: app
+        run: |
+          runtime=$(xcrun simctl list runtimes -j | python3 -c 'import json,sys; r=[x for x in json.load(sys.stdin)["runtimes"] if x["identifier"].startswith("com.apple.CoreSimulator.SimRuntime.iOS-26") and x["isAvailable"] and "com.apple.CoreSimulator.SimDeviceType.iPhone-17" in [d["identifier"] for d in x.get("supportedDeviceTypes", [])]]; print(max(r, key=lambda x: [int(n) for n in x["version"].split(".")])["identifier"] if r else "")')
+          [ -n "$runtime" ] || { echo "FAIL: no iOS 26 simulator runtime on this runner"; xcrun simctl list runtimes; exit 1; }
+          SIM_RUNTIME=$runtime e2e/ios-opens.sh "$RUNNER_TEMP/app/Herdr.app"
+
   page:
     name: Terminal page (touch and keyboard, Chromium)
+    if: ${{ !inputs.only_ios27 }}
     runs-on: macos-26
+    # About twice its longest recent run.
+    timeout-minutes: 20
     env:
       PLAYWRIGHT_VERSION: "1.58.2"
     steps:
@@ -82,6 +180,7 @@ jobs:
 
   secrets:
     name: Secret scan (gitleaks)
+    if: ${{ !inputs.only_ios27 }}
     runs-on: ubuntu-latest
     env:
       GITLEAKS_VERSION: "8.30.1"
