@@ -144,7 +144,7 @@ reach() {
 nets() { "$adb" shell dumpsys connectivity 2>/dev/null | tr -d '\r' | grep -E "Active default network|NetworkAgentInfo[{]" | cut -c1-160 | head -4 | sed 's/^/    /'; }
 # CI logs are public: no invite secret or token in what is printed.
 mask() { sed -E 's/#pair=[A-Za-z0-9_-]+/#pair=…/g; s/token=[^ &"]+/token=…/g; s/"code":"[^"]*"/"code":"…"/g'; }
-echo "before Pair: the phone to the Companion: $(reach); the emulator up $("$adb" shell cut -d' ' -f1 /proc/uptime | tr -d '\r') s; its networks:"
+echo "before Pair: the phone to the Companion: $(reach); the emulator up $("$adb" shell cat /proc/uptime | tr -d '\r' | cut -d' ' -f1) s; its networks:"
 nets
 "$adb" logcat -c || true
 tap pair # once, with the keyboard up: the tap has to reach the button
