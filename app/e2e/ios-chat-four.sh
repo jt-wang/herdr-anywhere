@@ -132,6 +132,13 @@ printf "%s\n" "$placeholder" > "$app/e2e/pair.ts"
       rm -f "$ctl/start"; echo "--- started by the test $(date +%T)" >> "$work/serve.log"
       serve && : > "$ctl/started"
     fi
+    # When the proxy (ChatFold) answered "can't tell", held an answer and let it go, in serve.log beside the answers
+    # the Companion gave: the "can't tell" never reaches the Companion, so the order is told by these times.
+    for e in no-status-sent held released; do
+      if [ -e "$ctl/$e" ] && [ ! -e "$ctl/.noted-$e" ]; then
+        : > "$ctl/.noted-$e"; echo "--- proxy: $e at $(date +%T)" >> "$work/serve.log"
+      fi
+    done
     sleep 0.3
   done
 ) &
@@ -191,6 +198,7 @@ if [ "$now" != "$before" ]; then
   echo "FAIL: the app is not the process launched (pid $before at launch, '${now}' now)"
   crash_reports 24
   [ -n "$shots" ] && cp "$work/serve.log" "$shots/serve.log"
+  [ -n "$shots" ] && [ -s "$work/proxy.log" ] && sed -E 's/(#pair=|[Bb]earer +|token=)[^ "&]*/\1<hidden>/g' "$work/proxy.log" > "$shots/proxy.log"
   exit 1
 fi
 if [ "$rc" != 0 ]; then
@@ -199,6 +207,7 @@ if [ "$rc" != 0 ]; then
   # -quiet leaves the failures' messages out of the log: they are read from the result bundle.
   "$app/e2e/ios-xcresult.sh" "$work/uitest/result.xcresult" ${shots:+"$shots/failure"}
   [ -n "$shots" ] && { cp "$work/serve.log" "$shots/serve.log"; cp "$work/uitest/test.log" "$shots/test.log"; }
+  [ -n "$shots" ] && [ -s "$work/proxy.log" ] && sed -E 's/(#pair=|[Bb]earer +|token=)[^ "&]*/\1<hidden>/g' "$work/proxy.log" > "$shots/proxy.log"
   exit 1
 fi
 xcrun simctl uninstall "$SIM_UDID" "$id" 2>/dev/null || true
