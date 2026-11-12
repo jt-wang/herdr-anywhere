@@ -17,18 +17,27 @@ id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$a
 port=7691
 while nc -z 127.0.0.1 "$port" 2>/dev/null; do port=$((port + 1)); done
 work=$(mktemp -d)
+: > "$work/started" # what e2e/ios-failure-logs.sh keeps is from after this
+"$app/e2e/ios-failure-logs.sh" --sample-load "$work/load.txt" >/dev/null 2>&1 & # the machine's load, kept with a failure
 (cd "$app/../companion" && go build -o "$work/herdr-anywhere" ./cmd/herdr-anywhere)
 run=$(mktemp -d /tmp/hmXXXX)
 mkdir -p "$work/sam/src/acme-api" "$work/state" "$work/config" "$work/data"
 : > "$work/sam/.zshrc"
+# Runs to the end and keeps the suite's status: under set -e a failed step in an EXIT trap ends the shell there (a kill of a
+# Companion that had already gone left the core, the folder and the simulator).
 cleanup() {
+  st=$?; set +e
   [ -n "${serve_pid:-}" ] && kill "$serve_pid" 2>/dev/null
   # The same session the core was started in below, or `server stop` finds no core and leaves its holder running.
   HC_SESSION="hmios-$$" HC_SOCKET="" HOME="$work/sam" XDG_RUNTIME_DIR="$run" "$hc" server stop >/dev/null 2>&1 || true
   chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run"
   xcrun simctl shutdown "$SIM_UDID" 2>/dev/null || true
+  exit "$st"
 }
-trap cleanup EXIT INT TERM
+# INT and TERM end the suite (a trap that only cleans up let it run on, against a deleted folder); EXIT cleans up.
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 (
   export HC_SESSION="hmios-$$" HC_SOCKET="" HOME="$work/sam" SHELL=/bin/zsh
   export XDG_STATE_HOME="$work/state" XDG_CONFIG_HOME="$work/config" XDG_DATA_HOME="$work/data" XDG_RUNTIME_DIR="$run"
@@ -39,7 +48,8 @@ trap cleanup EXIT INT TERM
 serve_pid=$!
 i=0
 until curl -fsS "http://127.0.0.1:$port/api/info" >/dev/null 2>&1; do
-  i=$((i + 1)); [ $i -gt 100 ] && { cat "$work/serve.log" >&2; exit 1; }
+  # A Companion slow to start under load left an empty log here, and the suite ended saying nothing: say which step.
+  i=$((i + 1)); [ $i -gt 100 ] && { echo "FAIL: the Companion did not answer on port $port within 10 s; its log:"; cat "$work/serve.log" 2>&1; exit 1; }
   sleep 0.1
 done
 link=$(HERDR_ANYWHERE_STATE="$work/companion" "$work/herdr-anywhere" pair --url "http://127.0.0.1:$port" 2>/dev/null | grep -o 'http://[^ ]*#pair=[A-Za-z0-9_-]*' | head -1)
@@ -78,11 +88,17 @@ cp -R "$app/e2e/ios-uitest" "$work/uitest"
 (cd "$work/uitest" && xcodegen generate --quiet)
 : > "$work/wheels"
 rc=0
-TEST_RUNNER_EVENTS="$work/wheels" TEST_RUNNER_SPACE=spscroll perl -e 'alarm 600; exec @ARGV' xcodebuild test -quiet -project "$work/uitest/KeyboardCheck.xcodeproj" -scheme UITests -only-testing:UITests/Scroll -destination "id=$SIM_UDID" -derivedDataPath "$work/uitest/derived" -resultBundlePath "$work/uitest/result.xcresult" > "$work/uitest/test.log" 2>&1 || rc=$?
+TEST_RUNNER_EVENTS="$work/wheels" TEST_RUNNER_SPACE=spscroll TEST_RUNNER_OUT="$work/scroll.txt" TEST_RUNNER_MISS_FIRST="${HM_SCROLL_MISS_FIRST:-}" TEST_RUNNER_SLOW_TERM="${HM_SCROLL_SLOW_TERM:-}" perl -e 'alarm 600; exec @ARGV' xcodebuild test -quiet -project "$work/uitest/KeyboardCheck.xcodeproj" -scheme UITests -only-testing:UITests/Scroll -destination "id=$SIM_UDID" -derivedDataPath "$work/uitest/derived" -resultBundlePath "$work/uitest/result.xcresult" > "$work/uitest/test.log" 2>&1 || rc=$?
 [ -n "$shot" ] && perl -e 'alarm 40; exec @ARGV' xcrun simctl io "$SIM_UDID" screenshot "${shot%.png}-scroll.png" >/dev/null 2>&1
+echo "the test's notes, and the app's lines (each space it opened, in the Companion's log; e2e/ios-touch-app.sh):"
+sed 's/^/  /' "$work/scroll.txt" 2>/dev/null || true
+"$app/e2e/app-lines.sh" "/hm-e2e/openSpace/" "$work/serve.log"
 if [ "$rc" != 0 ]; then
   echo "FAIL: the scroll test (xcodebuild test exit $rc)"
   "$app/e2e/ios-xcresult.sh" "$work/uitest/result.xcresult" ${shot:+"${shot%.png}-failure"}
+  [ -n "$shot" ] && "$app/e2e/ios-failure-logs.sh" "$work/started" "$work/serve.log" "${shot%.png}-failure" || true
+  # The screen's elements around the tap on the space, as the test noted them.
+  [ -n "$shot" ] && { mkdir -p "${shot%.png}-failure"; for f in "$work"/scroll.txt-*.txt; do [ -f "$f" ] && cp "$f" "${shot%.png}-failure/${f##*/scroll.txt-}"; done; } || true
   exit 1
 fi
 read cols rows half < "$work/wheels.layout"
@@ -109,5 +125,6 @@ if [ "$failed" = 1 ]; then
   # What the program got, in order, and the screens the test kept before and after the first drag.
   echo "the program's reports and the test's marks:"; head -60 "$work/wheels" | sed 's/^/  /'
   "$app/e2e/ios-xcresult.sh" "$work/uitest/result.xcresult" ${shot:+"${shot%.png}-test"} all
+  [ -n "$shot" ] && "$app/e2e/ios-failure-logs.sh" "$work/started" "$work/serve.log" "${shot%.png}-test" || true
 fi
 exit $failed

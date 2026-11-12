@@ -45,7 +45,14 @@ targets:
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSRequiresIPhoneOS: true
         UILaunchScreen: {}
-        UIApplicationSupportsMultipleScenes: false
+        # One window, from SceneDelegate (Sources/App.swift): iOS 27 does not launch an app built with its SDK without a
+        # scene manifest (e2e/ios-scene.sh).
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+          UISceneConfigurations:
+            UIWindowSceneSessionRoleApplication:
+              - UISceneConfigurationName: Default Configuration
+                UISceneDelegateClassName: $(PRODUCT_MODULE_NAME).SceneDelegate
         UIStatusBarStyle: UIStatusBarStyleDefault
         # On ProMotion iPhones the app's animations move at 120 Hz (NSH's docs; nsh package sets it too).
         CADisableMinimumFrameDurationOnPhone: true
