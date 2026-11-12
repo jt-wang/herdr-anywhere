@@ -13,6 +13,8 @@
 # Usage: SIM_UDID=<udid> e2e/ios-keyboard.sh [screenshot.png]
 # HM_MISS_SPACE=1 is a self-test: the first tap on the space misses, so the test must fail with its record of that
 # tap (e2e/ios-uitest/tests/OpenSpace.swift) and a second one.
+# HM_HOLD_SWEEP=1 runs e2e/ios-uitest/tests/Hold.swift instead of the keyboard test: presses on the space held for
+# several lengths, each with how long UIKit held it and whether the space opened (e2e/ios-hold-say.sh).
 # SIM_UDID is required, so the run never lands on another simulator. Needs go, nsh, hc, idb, xcodegen and Xcode.
 set -eu
 : "${SIM_UDID:?set SIM_UDID to the simulator to use}"
@@ -97,13 +99,24 @@ screen | grep -q '"AXIdentifier":"pair"\|"AXUniqueId":"pair"' && { echo "FAIL: t
 cp -R "$app/e2e/ios-uitest" "$work/uitest"
 (cd "$work/uitest" && xcodegen generate --quiet)
 sh "$app/e2e/ios-touch-log.sh" --self-test || exit 1
+[ "${HM_HOLD_SWEEP:-}" = 1 ] && { sh "$app/e2e/ios-hold-say.sh" --self-test || exit 1; }
 # The app's UIKit event dispatch while the test runs: whether a tap on the space reached the app at all.
 "$app/e2e/ios-touch-log.sh" --start "$SIM_UDID" "$work/uikit.log" & touchlog=$!
-rc=0
-TEST_RUNNER_OUT="$work/typein.txt" TEST_RUNNER_MISS_SPACE="${HM_MISS_SPACE:-}" TEST_RUNNER_RAW="$work/sam/src/acme-api/hm-raw" perl -e 'alarm 600; exec @ARGV' xcodebuild test -quiet -project "$work/uitest/KeyboardCheck.xcodeproj" -scheme UITests -only-testing:UITests/TypeIn -destination "id=$SIM_UDID" -derivedDataPath "$work/uitest/derived" -resultBundlePath "$work/uitest/result.xcresult" > "$work/uitest/test.log" 2>&1 || rc=$?
+rc=0 test=TypeIn limit=600
+[ "${HM_HOLD_SWEEP:-}" = 1 ] && test=Hold limit=900 # 35 presses, each up to 8 s with the way back
+TEST_RUNNER_OUT="$work/typein.txt" TEST_RUNNER_MISS_SPACE="${HM_MISS_SPACE:-}" TEST_RUNNER_RAW="$work/sam/src/acme-api/hm-raw" perl -e 'alarm shift; exec @ARGV' "$limit" xcodebuild test -quiet -project "$work/uitest/KeyboardCheck.xcodeproj" -scheme UITests -only-testing:"UITests/$test" -destination "id=$SIM_UDID" -derivedDataPath "$work/uitest/derived" -resultBundlePath "$work/uitest/result.xcresult" > "$work/uitest/test.log" 2>&1 || rc=$?
 { kill "$touchlog"; wait "$touchlog"; } 2>/dev/null || true; touchlog=
 [ -n "$shot" ] && perl -e 'alarm 40; exec @ARGV' xcrun simctl io "$SIM_UDID" screenshot "${shot%.png}-keyboard.png" >/dev/null 2>&1
 sed 's/^/  /' "$work/typein.txt" 2>/dev/null || true
+if [ "$test" = Hold ]; then
+  # Kept either way: each press's lines in the app's log (ios-touch-log.sh), in <screenshot>-holds/.
+  [ -n "$shot" ] && mkdir -p "${shot%.png}-holds"
+  "$app/e2e/ios-touch-log.sh" "$work/typein.txt" "$work/uikit.log" ${shot:+"${shot%.png}-holds"} > "$work/holds.txt"
+  sh "$app/e2e/ios-hold-say.sh" "$work/typein.txt" "$work/holds.txt"
+  [ "$rc" = 0 ] || { [ -n "$shot" ] && "$app/e2e/ios-failure-logs.sh" "$work/started" "$work/serve.log" "${shot%.png}-holds" || true
+    echo "FAIL: some presses on the space opened nothing (xcodebuild test exit $rc)"; exit 1; }
+  echo "PASS: every press on the space opened it"; exit 0
+fi
 [ -n "$shot" ] && { cp "$work/typein-terminal.png" "${shot%.png}-terminal.png" 2>/dev/null; cp "$work/uitest/test.log" "${shot%.png}-xctest.log" 2>/dev/null; } || true
 if [ "$rc" != 0 ]; then
   echo "FAIL: the keyboard test (xcodebuild test exit $rc)"

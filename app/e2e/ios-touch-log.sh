@@ -28,7 +28,10 @@ report() {
     count=$(printf '%s' "$lines" | grep -c . || true)
     landed=$(awk -v a="$a" -v b="$b" '{ split($2, t, /[:.]/); m = ((t[1] * 60 + t[2]) * 60 + t[3]) * 1000 + t[4]
       if (m >= a && m <= b && / hm-touch /) print }' "$log")
-    echo "  UIKit sent the app $count touch events from $from to $to ($what); the page's own record says whether it got them"
+    # The first touch event to the last (a window's line for each, "to windows:"): how long UIKit held the touch down.
+    held=$(printf '%s\n' "$lines" | awk '/UIEvent type: 0;.*to windows:/ { split($2, t, /[:.]/)
+      m = ((t[1] * 60 + t[2]) * 60 + t[3]) * 1000 + t[4]; if (f == "") f = m; l = m } END { if (f != "") print l - f }')
+    echo "  UIKit sent the app $count touch events from $from to $to ($what); the page's own record says whether it got them${held:+; UIKit held it $held ms}"
     [ -z "$landed" ] || printf '%s\n' "$landed" | sed 's/.* hm-touch /    app window: /'
     # Kept: every line in the tap's time, in time order (UIKit's other news, the system's touch handling, the window's).
     [ -n "$keep" ] && { echo "== $from to $to: $what"; awk -v a="$a" -v b="$b" '{ split($2, t, /[:.]/)
@@ -72,6 +75,9 @@ EOF
   # And what the window saw every 50 ms between (phase=watch), in order.
   grep -A3 "touch events from 10:00:27.200" "$t/said" | sed -n 3p | grep -q "app window: phase=watch +51ms" ||
     { echo "FAIL: ios-touch-log self-test: the window's look in between is not said in order: $(cat "$t/said")"; fail=1; }
+  # How long UIKit held the touch down: its first touch event to its last, 10:00:27.410 to 10:00:27.480.
+  grep -q "touch events from 10:00:27.200 .*; UIKit held it 70 ms" "$t/said" ||
+    { echo "FAIL: ios-touch-log self-test: the tap's hold by UIKit's clock is not said: $(cat "$t/said")"; fail=1; }
   grep -A1 "touch events from 10:00:05.100" "$t/said" | grep -q "app window:" &&
     { echo "FAIL: ios-touch-log self-test: a landing for a tap with no event"; fail=1; }
   [ "$(grep -c 'UIEvent type: 0;' "$t/keep/uikit-taps.txt")" = 2 ] ||
