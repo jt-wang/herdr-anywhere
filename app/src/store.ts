@@ -57,8 +57,12 @@ export type StoreIO = {
 const SLOW_SEND_MS = 5000
 /** How long the question that tells them apart may take: other calls answered in under 2 ms while a send was held. */
 const PROBE_MS = 3000
-/** How long a line, back from the background, may take to answer before it counts as gone. */
-const BACK_PROBE_MS = 3000
+/** How long a line, back from the background, may take to answer before it counts as gone: over real Tailcat relays it
+ *  answered in 1.2–2.7 s, and once took over 3 s (devices.yml, group ios-resume). */
+export const BACK_PROBE_MS = 8000
+/** For this long after the app is back in the front, a failure says only that it is reconnecting: right after, a new
+ *  tunnel can go unanswered while the computer runs (the same runs). */
+const BACK_SETTLE_MS = 30000
 
 /** What the input box of a terminal has sent and herdr-core has not answered. `held`, once it has gone unanswered
  *  SLOW_SEND_MS: `draft` when herdr-core answers other calls at once, so it is holding this one for a line typed in
@@ -220,6 +224,7 @@ export class Store {
       await Promise.all(this.machineNames().map((m) => this.readDoc(m)))
       this.retry = 0
       this.staleRetried = false
+      this.backAt = undefined
       this.firstSync = true
       this.sync()
       this.conn.set('ready')
@@ -293,9 +298,11 @@ export class Store {
     }
     this.conn.set('reconnecting')
     const plain = reason === 'network' || reason === 'closed' || reason === 'retry failed'
-    const why = !plain || this.opened ? reason
+    const found = !plain || this.opened ? reason
       : this.io.tunnelled() ? 'no-answer'
       : this.io.now() - this.attemptAt < REFUSED_MS ? 'refused' : 'unreachable'
+    const settling = this.backAt !== undefined && this.io.now() - this.backAt < BACK_SETTLE_MS
+    const why = settling && (found === 'no-answer' || found === 'refused' || found === 'unreachable') ? 'stale' : found
     this.lostWhy.set(why)
     this.error.set(LOST_TEXT[why] ? tr(LOST_TEXT[why]) : plain ? tr('lostNetwork') : tr('lostReason', { reason }))
     if (this.retrying) return
@@ -313,11 +320,14 @@ export class Store {
   }
 
   private staleRetried = false
+  /** When the app last came back to the front, until the line is up again. */
+  private backAt?: number
 
   /** The app is back in the front (ios/Sources/App.swift). The line may have died while the app was suspended, with no
    *  close to say so, and the quiet check would take 15 s to notice: ask it something now. A line that answers is kept;
    *  one that doesn't is dropped with its tunnel and a new one opened at once. A line already down tries again now. */
   foreground() {
+    this.backAt = this.io.now()
     const hc = this.hc
     if (!hc || this.conn.get() !== 'ready') return this.reconnectNow()
     const asked = this.io.now()

@@ -1,5 +1,5 @@
 import { expect, test } from 'nsh/test'
-import { Store } from './store.ts'
+import { BACK_PROBE_MS, Store } from './store.ts'
 import { t as tr } from './strings/index.ts'
 import { FakeCore, settle } from './testing/fakecore.ts'
 import { panes, terminalOf } from './model/layout.ts'
@@ -361,6 +361,46 @@ test('back in the front, a line that no longer answers is dropped within the pro
   await until(() => store.conn.get() === 'ready')
   expect(made).toBe(2)
   expect(store.error.get()).toBe('')
+})
+
+// Over real Tailcat relays (devices.yml, group ios-resume) the line back from the background answered in 1.2–2.7 s,
+// and once took over 3 s: that line was dropped, and the new one did not come in time.
+test('back in the front, the line has 8 s to answer before it counts as gone', () => {
+  expect(BACK_PROBE_MS).toBe(8000)
+})
+
+// The same run: right after coming back, a new tunnel was left unanswered and the app said the computer doesn't answer
+// within 5 s, though the computer ran. Back in the front, for 30 s, a failure only says it is reconnecting.
+test("back in the front, for 30 s a computer that doesn't answer is still being reconnected to; after that it is said", async () => {
+  let now = 1_000_000
+  let mode: 'up' | 'silent' = 'up'
+  const core = new FakeCore()
+  const pipe = () => {
+    if (mode === 'up') return core
+    const c = new FakeCore()
+    c.send = () => c.drop('no-answer')
+    return c
+  }
+  const timers: { f: () => void; ms: number }[] = []
+  const store = new Store({ pipe, now: () => now, setInterval: (() => 0) as any, clearInterval: (() => {}) as any,
+    setTimeout: ((f: () => void, ms: number) => { timers.push({ f, ms }); return 0 }) as any, tunnelled: () => true })
+  await store.connect()
+  mode = 'silent'
+  core.drop('network')
+  await settle()
+  store.foreground()
+  await settle(20)
+  expect(store.error.get()).toBe('Reconnecting to your computer…')
+  expect(store.lostWhy.get()).toBe('stale')
+  now += 20_000
+  timers.shift()!.f()
+  await settle(20)
+  expect(store.error.get()).toBe('Reconnecting to your computer…')
+  now += 11_000
+  timers.shift()!.f()
+  await settle(20)
+  expect(store.lostWhy.get()).toBe('no-answer')
+  expect(store.error.get()).toBe("Your computer doesn't answer. Run this on it:")
 })
 
 test('back in the front while the line is down, it tries again at once instead of waiting out its back-off', async () => {
