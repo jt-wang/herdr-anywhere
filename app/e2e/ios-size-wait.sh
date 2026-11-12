@@ -34,7 +34,7 @@ if [ "${1:-}" = --self-test ]; then
     [ "$line" = fail ] && return 1
     echo "$line"
   }
-  sizes() { rm -f "$t/calls" "$t/out"; : > "$t/sizes"; for s in "$@"; do echo "$s" >> "$t/sizes"; done; }
+  sizes() { rm -f "${t:?}/calls" "${t:?}/out"; : > "$t/sizes"; for s in "$@"; do echo "$s" >> "$t/sizes"; done; }
   # 1. The test is built and launched for minutes before it opens the space: the size changes after 150 calls.
   sizes $(i=0; while [ $i -lt 150 ]; do echo 80x24; i=$((i + 1)); done) 40x30
   sed -i.bak 's/x/ /' "$t/sizes"
@@ -56,6 +56,6 @@ if [ "${1:-}" = --self-test ]; then
   HM_SIZE_POLL=0.05 size_wait "80 24" "$t/out" "$p" > "$t/said"
   [ -e "$t/out" ] && { echo "FAIL: ios-size-wait self-test: a size was written though it never changed"; fail=1; }
   grep -q "never changed" "$t/said" || { echo "FAIL: ios-size-wait self-test: it says: $(cat "$t/said")"; fail=1; }
-  rm -rf "$t"
+  rm -rf "${t:?}"
   [ "$fail" = 0 ] && echo "PASS: ios-size-wait self-test" || exit 1
 fi

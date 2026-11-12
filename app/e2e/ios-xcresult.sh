@@ -15,7 +15,7 @@ tidy() {
   find "$1" -type f ! -name '*.png' ! -name '*.jpg' ! -name '*.jpeg' ! -name '*.txt' | while IFS= read -r f; do
     case $(file -b --mime-type "$f") in
       text/*) mv "$f" "$f.txt" ;;
-      *) echo "  left out: $(basename "$f") ($(file -b --mime-type "$f"))"; rm -f "$f" ;;
+      *) echo "  left out: $(basename "$f") ($(file -b --mime-type "$f"))"; rm -f "${f:?}" ;;
     esac
   done
   # The upload refuses a whole artifact for one name with " : < > | * or ? in it, and Xcode names a debug description
@@ -45,7 +45,7 @@ if [ "${1:-}" = --self-test ]; then
   [ "$(cat "$t/two_one.txt" "$t/two_one-2.txt" 2>/dev/null | sort | tr '\n' ' ')" = "one two " ] ||
     { echo "FAIL: ios-xcresult self-test: two names that become the same did not both stay"; fail=1; }
   [ "$(find "$t" -type f | wc -l | tr -d ' ')" = 5 ] || { echo "FAIL: ios-xcresult self-test: files went missing: $(ls "$t" | tr '\n' ';')"; fail=1; }
-  rm -rf "$t"
+  rm -rf "${t:?}"
   [ $fail = 0 ] && echo "ok: ios-xcresult self-test: names the upload refuses are renamed, contents kept"
   exit $fail
 fi
@@ -76,10 +76,10 @@ for test in json.load(open(os.path.join(d, "manifest.json"))):
         old = os.path.join(d, a.get("exportedFileName", ""))
         if new and os.path.isfile(old) and not os.path.exists(os.path.join(d, new)):
             os.rename(old, os.path.join(d, new))' "$folder"
-  rm -f "$folder/manifest.json"
+  rm -f "${folder:?}/manifest.json"
   tidy "$folder"
   n=$(find "$folder" -type f | wc -l | tr -d ' ')
-  [ "$n" = 0 ] && rmdir "$folder" 2>/dev/null
+  [ "$n" = 0 ] && rmdir "${folder:?}" 2>/dev/null
   echo "  $n files${which:+ at the failures} (screenshots and what XCTest wrote)"
 fi
 exit 0
