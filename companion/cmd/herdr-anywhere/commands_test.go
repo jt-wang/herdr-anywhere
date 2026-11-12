@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
@@ -49,5 +51,23 @@ func TestTrackHasExactlyTheseSubcommands(t *testing.T) {
 	want := []string{"add", "file", "move", "place", "queue", "report", "scan", "set", "status", "tree", "watch"}
 	if got := helpCommands(t, []string{"track", "--help"}, "herdr-anywhere", "track"); !reflect.DeepEqual(got, want) {
 		t.Fatalf("herdr-anywhere track --help lists %v, want %v", got, want)
+	}
+}
+
+// A command's help, or a word it does not know, writes nothing: not even the state folder. progress --help made an
+// empty ~/.config/herdr-anywhere, in the real home when the test ran with it.
+func TestHelpLeavesTheStateFolderAlone(t *testing.T) {
+	t.Setenv("HERDR_ANYWHERE_STATE", "")
+	for _, args := range [][]string{{"--help"}, {"progress"}, {"progress", "--help"}, {"progress", "nope"},
+		{"chat-setup", "--help"}, {"devices", "--help"}, {"install-dialog", "--help"}, {"language", "--help"},
+		{"pair", "--help"}, {"revoke", "--help"}, {"serve", "--help"}, {"start", "--help"}, {"stop", "--help"},
+		{"track", "--help"}, {"update", "--help"}} {
+		home := t.TempDir()
+		setHome(t, home)
+		var out, errb bytes.Buffer
+		run(args, &out, &errb)
+		if _, err := os.Stat(filepath.Join(home, ".config", "herdr-anywhere")); err == nil {
+			t.Errorf("herdr-anywhere %s made the state folder", strings.Join(args, " "))
+		}
 	}
 }

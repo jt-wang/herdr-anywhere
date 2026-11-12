@@ -18,6 +18,8 @@
 //	CHANGE a Read of notes.txt, an Edit of it (one line becomes three), then a sentence
 //	BREAK  a Bash call that prints two lines and exits 3, then a sentence
 //	RENDER a sentence naming the files it made: a video and a PDF, by paths in the session's folder
+//	WORK   three Bash calls of 6 s each, a sentence before each, then a sentence: time to send a message while it works
+//	ROWS   a list of 150 numbered rows ("- acme-api line 1" …), long enough to scroll
 //
 // Anything else (side requests such as titles, prompts with none of these words) gets "OK.".
 package fakeapi
@@ -30,6 +32,8 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+
+	"herdr-anywhere/companion/internal/chat/fakeresponses"
 )
 
 type block = map[string]any
@@ -54,6 +58,7 @@ func scripts(cwd string) map[string][]Step {
 	return map[string][]Step{
 		"HELLO":  {{[]block{text("Hello from the fake model.")}, "end_turn", 0}},
 		"RENDER": {{[]block{text("Rendered `renders/demo.mp4` (3 s). The guide is in docs/guide.pdf.")}, "end_turn", 0}},
+		"ROWS":   {{[]block{text(fakeresponses.Rows(150))}, "end_turn", 0}},
 		"LIST": {
 			{[]block{text("I'll list the files."), tool("toolu_fake_list", "Bash", map[string]any{"command": "ls", "description": "List files"})}, "tool_use", 0},
 			{[]block{text("There are two files: notes.txt and todo.txt.")}, "end_turn", 0},
@@ -72,6 +77,12 @@ func scripts(cwd string) map[string][]Step {
 		"SLOW": {
 			{[]block{tool("toolu_fake_slow", "Bash", map[string]any{"command": "python3 -c 'import time; time.sleep(60)'", "description": "Wait a minute"})}, "tool_use", 0},
 			{[]block{text("Done waiting.")}, "end_turn", 0},
+		},
+		"WORK": {
+			{[]block{text("Step one."), tool("toolu_fake_w1", "Bash", map[string]any{"command": "python3 -c 'import time; time.sleep(6)'", "description": "First step"})}, "tool_use", 0},
+			{[]block{text("Step two."), tool("toolu_fake_w2", "Bash", map[string]any{"command": "python3 -c 'import time; time.sleep(6)'", "description": "Second step"})}, "tool_use", 0},
+			{[]block{text("Step three."), tool("toolu_fake_w3", "Bash", map[string]any{"command": "python3 -c 'import time; time.sleep(6)'", "description": "Third step"})}, "tool_use", 0},
+			{[]block{text("All three steps are done.")}, "end_turn", 0},
 		},
 		"THINK": {{[]block{thinking("The notes and the todo list may disagree.\nRead both before planning."), text("Plan: read both files, then merge them.")}, "end_turn", 0}},
 		"LOOK": {
@@ -101,7 +112,7 @@ func scripts(cwd string) map[string][]Step {
 	}
 }
 
-var word = regexp.MustCompile(`\b(HELLO|LIST|EDIT|ASK|SLOW|THINK|LOOK|FIND|HELP|WRITE|FAIL|CHANGE|BREAK|RENDER)\b`)
+var word = regexp.MustCompile(`\b(HELLO|LIST|EDIT|ASK|SLOW|THINK|LOOK|FIND|HELP|WRITE|FAIL|CHANGE|BREAK|RENDER|WORK|ROWS)\b`)
 var cwdLine = regexp.MustCompile(`Primary working directory: ([^\s\\"]+)`)
 
 // Server answers /v1/messages. Requests lists the paths it was asked for, for a test to look at.
