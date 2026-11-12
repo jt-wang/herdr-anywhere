@@ -3,7 +3,8 @@ import XCTest
 // little while it is down, as a real one does, keeps a space's row on home from opening. Presses the space for HOLD
 // seconds and then moves DRIFT points down at a slow finger's speed, for each drift in DRIFTS by turns, ROUNDS times
 // over (0: a press with no move). After each, whether the space's page came up within 3 s; then back home with the
-// page's back button. With busy, the test app also keeps its main thread busy after each press begins (the window's
+// page's back button. A press the app took as a long press opens the space's menu instead: counted apart, and
+// closed. With busy, the test app also keeps its main thread busy after each press begins (the window's
 // busy=, e2e/ios-touch-window.swift). A note "tapping …" just before each press and one just after, for
 // e2e/ios-touch-log.sh and e2e/ios-hold-say.sh. Fails when any press opened nothing, after all of them.
 final class Drift: XCTestCase {
@@ -26,7 +27,7 @@ final class Drift: XCTestCase {
     let el = { (id: String) in app.descendants(matching: .any)[id].firstMatch }
     let tile = el("space-spios")
     XCTAssertTrue(tile.waitForExistence(timeout: 40), "home does not list the space")
-    var missed: [String: Int] = [:], made: [String: Int] = [:]
+    var missed: [String: Int] = [:], made: [String: Int] = [:], menus: [String: Int] = [:]
     for round in 1...rounds {
       for drift in drifts {
         let d = String(format: "drift %.0f pt", drift)
@@ -46,6 +47,17 @@ final class Drift: XCTestCase {
           let home = tile.waitForExistence(timeout: 10)
           note("back home: \(home)")
           if !home { XCTFail("the page's back button did not bring home back"); return }
+        } else if app.sheets.firstMatch.exists {
+          // The app took it as a long press (a busy main thread can hold the lift back that long): the space's menu.
+          // Not a lost tap; the menu is closed with its Cancel, or the next press would only close it.
+          menus[d, default: 0] += 1
+          note("\(d): the space's menu opened (a long press)")
+          let cancel = app.sheets.firstMatch.buttons["Cancel"].firstMatch
+          if cancel.exists { cancel.tap() } else { app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.05)).tap() }
+          let closed = XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"),
+            object: app.sheets.firstMatch)], timeout: 5) == .completed
+          note("menu closed: \(closed)")
+          if !closed { XCTFail("the space's menu did not close"); return }
         } else {
           missed[d, default: 0] += 1
           note("\(d): opened nothing in 3 s")
@@ -55,7 +67,7 @@ final class Drift: XCTestCase {
     }
     for drift in drifts {
       let d = String(format: "drift %.0f pt", drift)
-      note("\(d): \(missed[d] ?? 0) of \(made[d] ?? 0) opened nothing")
+      note("\(d): \(missed[d] ?? 0) of \(made[d] ?? 0) opened nothing, \(menus[d] ?? 0) opened the space's menu")
     }
     let total = missed.values.reduce(0, +)
     XCTAssertEqual(total, 0, "\(total) presses on the space opened nothing")
