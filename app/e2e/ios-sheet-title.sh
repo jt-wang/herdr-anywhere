@@ -22,7 +22,9 @@ mkdir -p "$shots" "$work/me/src/acme-api" "$work/me/src/acme-web" "$work/state" 
 : > "$work/me/.zshrc"
 placeholder=$(cat "$app/e2e/pair.ts")
 # This computer's side under its own home; xcrun and xcodebuild keep the real one (the simulators live under it).
-L() { env HC_SESSION="hmtitle-$$" HC_SOCKET="" HOME="$work/me" SHELL=/bin/sh XDG_STATE_HOME="$work/state" XDG_CONFIG_HOME="$work/config" \
+# HERDR_ANYWHERE_AUTOSTART_NAME: a start or pair that starts the Companion itself sets up this test's own login
+# entry, never the person's (io.jingtao.herdranywhere.companion).
+L() { env HC_SESSION="hmtitle-$$" HC_SOCKET="" HOME="$work/me" HERDR_ANYWHERE_AUTOSTART_NAME="io.example.ios-sheet-title-$$" SHELL=/bin/sh XDG_STATE_HOME="$work/state" XDG_CONFIG_HOME="$work/config" \
   XDG_DATA_HOME="$work/data" XDG_RUNTIME_DIR="$run" GIT_CONFIG_GLOBAL="$work/me/.gitconfig" "$@"; }
 box="env HOME=$work/box PATH=$work/box/bin:$work/box/.local/bin:/usr/bin:/bin:/usr/sbin:/sbin XDG_RUNTIME_DIR=$boxrun XDG_STATE_HOME=$work/boxstate HC_SESSION=hmtitlebox-$$"
 dock="env HOME=$work/dock PATH=$work/dock/bin:$work/dock/.local/bin:/usr/bin:/bin:/usr/sbin:/sbin XDG_RUNTIME_DIR=$dockrun XDG_STATE_HOME=$work/dockstate HC_SESSION=hmtitledock-$$"
@@ -34,7 +36,7 @@ cleanup() {
   trap - EXIT INT TERM HUP
   set +e
   # The sampler first: a sample written while rm -rf runs makes load.txt again, and the folder is not deleted.
-  { kill "$sampler"; wait "$sampler"; } 2>/dev/null
+  { kill "$sampler"; wait "$sampler"; } 2>/dev/null || true
   [ -n "$test_pid" ] && kill "$test_pid" 2>/dev/null
   [ -n "$serve_pid" ] && kill "$serve_pid" 2>/dev/null
   printf "%s\n" "$placeholder" > "$app/e2e/pair.ts"
