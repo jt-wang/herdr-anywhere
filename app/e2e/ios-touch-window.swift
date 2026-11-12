@@ -4,18 +4,61 @@
 // of views above it; the gesture recognizers on that view, and every one the touch went to, each with its state; and
 // the views a picture sheet puts on the window (an id starting "picture", or a scroll view that zooms) still on it,
 // with whether the touched view is inside one. Written after UIKit has handled the event, so the states are its own.
+// Each view and recognizer is named with its address, so a line at the lift tells the same object from a new one. From
+// the touch's start to its end, every 50 ms (the run loop's common modes, so also while a list tracks the finger), a
+// "phase=watch" line whenever what the touch's recognizers are or say has changed: when, and by whom, it was let go.
 final class HMTouchWindow: UIWindow {
+  /** A touch being watched. The view is held weakly: the watch must not keep a view the app let go of alive. */
+  private final class Watch {
+    let touch: UITouch, began = Date(), timer: Timer
+    weak var view: UIView?
+    var last: String
+    init(_ touch: UITouch, _ timer: Timer) { self.touch = touch; self.timer = timer; view = touch.view; last = HMTouchWindow.watching(touch, view: touch.view) }
+  }
+  private var watched: [ObjectIdentifier: Watch] = [:]
+
   override func sendEvent(_ event: UIEvent) {
     super.sendEvent(event)
     guard event.type == .touches, let touches = event.allTouches else { return }
     for touch in touches where touch.phase == .began || touch.phase == .ended || touch.phase == .cancelled {
-      NSLog("%@", HMTouchWindow.line(touch, in: self))
+      let id = ObjectIdentifier(touch)
+      var extra = ""
+      if touch.phase == .began {
+        watched[id]?.timer.invalidate()
+        let timer = Timer(timeInterval: 0.05, target: self, selector: #selector(look(_:)), userInfo: id, repeats: true)
+        RunLoop.main.add(timer, forMode: .common)
+        watched[id] = Watch(touch, timer)
+      } else if let w = watched.removeValue(forKey: id) {
+        w.timer.invalidate()
+        extra = " +\(Int(Date().timeIntervalSince(w.began) * 1000))ms began-view=\(HMTouchWindow.name(w.view)) began-view-in-window=\(HMTouchWindow.inWindow(w.view))"
+      }
+      NSLog("%@", HMTouchWindow.line(touch, in: self) + extra)
     }
   }
 
+  @objc private func look(_ timer: Timer) {
+    guard let id = timer.userInfo as? ObjectIdentifier, let w = watched[id] else { timer.invalidate(); return }
+    let ms = Int(Date().timeIntervalSince(w.began) * 1000)
+    if ms > 10_000 { timer.invalidate(); watched.removeValue(forKey: id); return }
+    let now = HMTouchWindow.watching(w.touch, view: w.view)
+    guard now != w.last else { return }
+    w.last = now
+    NSLog("%@", "hm-touch phase=watch +\(ms)ms \(now)")
+  }
+
+  /** What a look in between says: whether the view the touch began on is still on the window, and its recognizers. */
+  static func watching(_ touch: UITouch, view: UIView?) -> String {
+    "view-in-window=\(inWindow(view)) touch-view=\(name(touch.view)) touch-gestures=\(gestures(touch.gestureRecognizers))"
+      + " view-gestures=\(gestures(view?.gestureRecognizers))"
+  }
+
+  static func inWindow(_ view: UIView?) -> String { view == nil ? "gone" : view?.window != nil ? "yes" : "no" }
+
+  static func address(_ o: AnyObject) -> String { "@\(Unmanaged.passUnretained(o).toOpaque())" }
+
   static func name(_ view: UIView?) -> String {
     guard let view else { return "none" }
-    var s = String(describing: type(of: view))
+    var s = String(describing: type(of: view)) + address(view)
     if let id = view.accessibilityIdentifier, !id.isEmpty { s += "#" + id }
     if view.isHidden { s += "(hidden)" }
     if view.alpha < 0.01 { s += "(clear)" }
@@ -37,7 +80,7 @@ final class HMTouchWindow: UIWindow {
 
   static func gestures(_ list: [UIGestureRecognizer]?) -> String {
     "[" + (list ?? []).map { g in
-      "\(type(of: g)) \(state(g))\(g.isEnabled ? "" : " off")\(g.cancelsTouchesInView ? " cancels" : "") on \(name(g.view))"
+      "\(type(of: g))\(address(g)) \(state(g))\(g.isEnabled ? "" : " off")\(g.cancelsTouchesInView ? " cancels" : "") on \(name(g.view))"
     }.joined(separator: ", ") + "]"
   }
 
