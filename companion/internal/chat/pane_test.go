@@ -79,6 +79,19 @@ func TestSessionRememberedAfterTheTurn(t *testing.T) {
 	}
 }
 
+// An event line over 4 MB (a terminal's long output or title) is passed over; the stream goes on, and the session id
+// reported after it is kept.
+func TestFollowPassesOverALongEvent(t *testing.T) {
+	r := &paneReader{fakeReader: fakeReader{path: "/db#ses", turns: doneTurn}}
+	s := paneService(ocIdle, r)
+	long := `{"jsonrpc":"2.0","method":"event","params":{"data":{"text":"` + strings.Repeat("z", 5<<20) + `"},"seq":3,"terminal":"t2","type":"output"}}`
+	s.follow(strings.NewReader(long + "\n" + ocTurn))
+	s.Chat("t1")
+	if got := r.panes[0].Sessions; !reflect.DeepEqual(got, []string{"ses_486922732ffe1Oe1UHic1xuAFb"}) {
+		t.Fatalf("after a long event: %v", got)
+	}
+}
+
 // Following `hc events` starts with the first chat of a pane whose reader needs it, not with serve: a Companion
 // whose phone never opens such a chat asks herdr-core nothing more than before.
 func TestFollowStartsWithTheFirstPaneChat(t *testing.T) {

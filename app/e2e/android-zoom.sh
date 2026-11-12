@@ -5,17 +5,22 @@
 # The app is e2e/picture-app.tsx (the made-up computer of fixtures/fake.tsx with the drawn sunset open), packaged
 # under its own id by e2e/zoom-package.sh, so an installed Herdr Anywhere stays as it is. Fake data only; needs no
 # computer of its own.
-# Usage: ANDROID_SERIAL=emulator-5554 e2e/android-zoom.sh [APK] [folder for screenshots and the recording]
+# CHAT=1: the sunset is in a chat (e2e/chat-picture-params.ts) and is opened from there with a tap, on the whole
+# screen. Then also: Close and back go back to the chat, a swipe down closes it, and a drag down while zoomed in
+# moves the picture instead. The APK given must be packaged with CHAT=1 too.
+# Usage: [CHAT=1] ANDROID_SERIAL=emulator-5554 e2e/android-zoom.sh [APK] [folder for screenshots and the recording]
 # Without an APK it packages one (nsh and a JDK). Needs the SDK, python3 with Pillow, and an emulator (adb emu).
 set -eu
 : "${ANDROID_SERIAL:?set ANDROID_SERIAL to the emulator to use}"
 app=$(cd "$(dirname "$0")/.." && pwd)
 apk=""; case ${1:-} in *.apk) apk=$1; shift;; esac
 out=${1:-}
+chat=${CHAT:-}
 export ANDROID_HOME="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
 adb="$ANDROID_HOME/platform-tools/adb"; command -v adb >/dev/null 2>&1 && adb=$(command -v adb)
 id=io.jingtao.herdranywhere.zoomcheck
 work=$(mktemp -d)
+events_pid=""
 . "$app/e2e/zoom-checks.sh"
 density=$("$adb" shell wm density | tr -d '\r' | grep -o 'Override density: [0-9]*' | grep -o '[0-9]*$' || true)
 night=$("$adb" shell cmd uimode night | tr -d '\r' | sed 's/Night mode: //')
@@ -23,6 +28,10 @@ cleanup() {
   status=$?
   trap - EXIT INT TERM HUP
   set +e
+  if [ -n "$events_pid" ]; then
+    "$adb" shell 'kill "$(cat /data/local/tmp/hz-events.pid)"; rm -f /data/local/tmp/hz-events.pid' >/dev/null 2>&1
+    wait "$events_pid" 2>/dev/null
+  fi
   "$adb" uninstall "$id" >/dev/null 2>&1
   if [ -n "$density" ]; then "$adb" shell wm density "$density" >/dev/null; else "$adb" shell wm density reset >/dev/null; fi
   "$adb" shell cmd uimode night "$night" >/dev/null
@@ -53,13 +62,37 @@ say() { echo "$1"; case $1 in FAIL*) failed=1;; esac; }
 # Touches as a finger's, through the emulator's console: its axes run 0..32767 over the screen's pixels.
 ex() { echo $(($1 * 32767 / sw)); }
 ey() { echo $(($1 * 32767 / sh)); }
-emu() { HOME=${EMU_HOME:-$HOME} "$adb" emu event send "$@" | grep -v '^OK' >&2 || true; }
+emu() {
+  reply=$(HOME=${EMU_HOME:-$HOME} "$adb" emu event send "$@") || return 1
+  case "$reply" in *KO:*) echo "$reply" >&2; return 1;; esac
+  printf '%s\n' "$reply" | sed '/^OK\r*$/d' >&2
+}
 down() { emu EV_ABS:ABS_MT_SLOT:$1 EV_ABS:ABS_MT_TRACKING_ID:$(($1 + 1)) EV_ABS:ABS_MT_POSITION_X:$(ex $2) EV_ABS:ABS_MT_POSITION_Y:$(ey $3) EV_ABS:ABS_MT_PRESSURE:50 EV_KEY:BTN_TOUCH:1 EV_SYN:0:0; }
 move() { emu EV_ABS:ABS_MT_SLOT:$1 EV_ABS:ABS_MT_POSITION_X:$(ex $2) EV_ABS:ABS_MT_POSITION_Y:$(ey $3) EV_SYN:0:0; }
 up() { emu EV_ABS:ABS_MT_SLOT:$1 EV_ABS:ABS_MT_TRACKING_ID:-1 EV_SYN:0:0; }
 lift() { emu EV_KEY:BTN_TOUCH:0 EV_SYN:0:0; }
-tap2() { # x y: two taps 120 ms apart, each 60 ms down
-  for _ in 1 2; do down 0 $1 $2; sleep 0.06; up 0; lift; sleep 0.12; done
+# Fixed positions, like the pinch below. `input swipe` stops producing MOVE events when its wall-clock budget runs
+# out, including time blocked in input injection. A stalled call can skip most of the path and jump straight to UP.
+swipe_finger() {
+  sx=$1 sy=$2 dx=$(($3 - $1)) dy=$(($4 - $2))
+  down 0 "$sx" "$sy"
+  for step in $(seq 1 12); do
+    move 0 $((sx + dx * step / 12)) $((sy + dy * step / 12)); sleep 0.02
+  done
+  up 0; lift
+}
+tap_id() { wait_for "$1"; set -- $B; "$adb" shell input tap $((($1 + $3) / 2)) $((($2 + $4) / 2)); }
+tap2() { # x y: two taps about 100 ms apart, each one console command (finger down, up), so a slow console (a CI
+  # runner's) doesn't push the second past the app's 300 ms for a double tap
+  for _ in 1 2; do
+    emu EV_ABS:ABS_MT_SLOT:0 EV_ABS:ABS_MT_TRACKING_ID:1 EV_ABS:ABS_MT_POSITION_X:$(ex $1) EV_ABS:ABS_MT_POSITION_Y:$(ey $2) EV_ABS:ABS_MT_PRESSURE:50 EV_KEY:BTN_TOUCH:1 EV_SYN:0:0 \
+      EV_ABS:ABS_MT_TRACKING_ID:-1 EV_KEY:BTN_TOUCH:0 EV_SYN:0:0
+    sleep 0.1
+  done
+}
+settle() { # until two screenshots 0.4 s apart are the same (at most about 8 s): a zoom's animation, or the sheet's,
+  # has ended. On a CI runner it outlasted a fixed wait, and the next tap only stopped it.
+  sp=""; for _ in $(seq 1 20); do sc=$("$adb" exec-out screencap -p | cksum); [ "$sc" = "$sp" ] && return 0; sp=$sc; sleep 0.4; done
 }
 pinch() { # x y from to: two fingers on a level line through (x, y), from `from` px apart to `to`, in 12 steps
   px=$1 py=$2 p0=$(($3 / 2)) p1=$(($4 / 2)) # names of its own: sh has no locals, and the box is l t r b
@@ -68,12 +101,27 @@ pinch() { # x y from to: two fingers on a level line through (x, y), from `from`
   sleep 0.2; up 1; up 0; lift
 }
 
+python3 "$app/e2e/android-swipe-check.py" --self-test
+# Record actual emulator input events, including the pinch and taps that establish each slot's current position.
+# Axis values can be omitted when unchanged, so retain the recording from before the first finger goes down.
+"$adb" shell 'getevent -lt & p=$!; echo "$p" > /data/local/tmp/hz-events.pid; wait "$p"' > "$work/events.txt" 2>&1 & events_pid=$!
+sleep 0.2
+check_swipe() {
+  sleep 0.2
+  cp "$work/events.txt" "$work/$1-events.txt"
+  [ -z "$out" ] || cp "$work/$1-events.txt" "$out/$1-events.txt"
+  python3 "$app/e2e/android-swipe-check.py" "$work/$1-events.txt" "$(ex "$2")" "$(ey "$3")" "$(ex "$4")" "$(ey "$5")"
+}
+
 for scheme in light dark; do
   "$adb" shell cmd uimode night $([ $scheme = dark ] && echo yes || echo no) >/dev/null
   "$adb" shell am force-stop "$id"
+  "$adb" logcat -c
   "$adb" shell am start -n "$id/com.longbridge.nsh.AppActivity" >/dev/null
   # The box: the zooming scroll view, which stays put while the picture in it zooms (a build from before zoom has
   # only the picture, which is as big as the box until then).
+  # In a chat: the pane opens in its chat view (shot as it is); a tap on the image there opens it.
+  [ "$chat" != 1 ] || { tap_id space-sp1; wait_for image-u1.1; sleep 1; shot $scheme-chat; tap_id image-u1.1; }
   wait_for picture-image; box=$(xml | bounds picture-zoom); [ -n "$box" ] || box=$B; set -- $box; l=$1 t=$2 r=$3 b=$4; cx=$(((l + r) / 2)); cy=$(((t + b) / 2)); w=$((r - l))
   bg=$([ $scheme = dark ] && echo '#25272b' || echo '#ffffff') # the sheet's colour (nsh.json popover)
   sleep 1; shot $scheme-fitted
@@ -91,9 +139,17 @@ for scheme in light dark; do
   "$adb" shell input swipe $fx $fy $tx $ty 400; sleep 1.5; shot $scheme-corner-again
   if ! has 'resource-id="picture-image"'; then say "FAIL: the drags closed the sheet"; continue; fi
   say "ok: the sheet stays open under the drags"
-  tap2 $cx $cy; sleep 1.2; shot $scheme-out
-  tap2 $((l + w / 4)) $((t + (b - t) / 4)); sleep 1.2; shot $scheme-doubletap
-  tap2 $cx $cy; sleep 1.2; shot $scheme-out2
+  settle; tap2 $cx $cy; sleep 0.5; settle; shot $scheme-out
+  tap2 $((l + w / 4)) $((t + (b - t) / 4)); sleep 0.5; settle; shot $scheme-doubletap
+  tap2 $cx $cy; sleep 0.5; settle; shot $scheme-out2
+  # What the zoom did (e2e/picture-app.tsx's "hm-zoom" lines): each double tap, and the last report the scroll view
+  # sent after it, before the next.
+  "$adb" logcat -d | tr -d '\r' | grep -o 'hm-zoom .*' > "$work/$scheme-zoom-trace.txt" || true
+  [ -z "$out" ] || cp "$work/$scheme-zoom-trace.txt" "$out/$scheme-zoom-trace.txt"
+  if [ -s "$work/$scheme-zoom-trace.txt" ]; then
+    awk '/double tap to/ { if (d) print "note: " d " -> last report: " (r ? r : "none"); d = $0; r = "" } /report/ { r = $0 }
+      END { if (d) print "note: " d " -> last report: " (r ? r : "none") }' "$work/$scheme-zoom-trace.txt"
+  else echo "note: no hm-zoom lines in the device's log"; fi
   zoom_checks "$work" $scheme "$box" "$bg"
   if [ -n "$rec" ]; then
     "$adb" shell pkill -INT screenrecord >/dev/null 2>&1 || true; wait $rec 2>/dev/null || true; sleep 1
@@ -112,5 +168,39 @@ for scheme in light dark; do
   fi
   wait_for picture-close; set -- $B; "$adb" shell input tap $((($1 + $3) / 2)) $((($2 + $4) / 2)); sleep 1.5
   has 'resource-id="picture-sheet"' && say "FAIL: Close left the sheet open" || say "ok: Close closes the sheet"
+  if [ "$chat" = 1 ]; then
+    has 'resource-id="image-u1.1"' && say "ok: Close goes back to the chat" || say "FAIL: Close did not go back to the chat"
+    # On the whole screen: the sheet from the top (under the status bar) to the bottom.
+    tap_id image-u1.1; wait_for picture-sheet; set -- $B
+    [ "$2" -lt $((sh / 10)) ] && [ "$4" -gt $((sh * 9 / 10)) ] && say "ok: the picture opens on the whole screen" || say "FAIL: the sheet is not on the whole screen: $B"
+    "$adb" shell input keyevent 4; sleep 1.5
+    xml > "$work/back.xml"
+    ! grep -qF 'resource-id="picture-sheet"' "$work/back.xml" && grep -qF 'resource-id="image-u1.1"' "$work/back.xml" \
+      && say "ok: back closes the picture, back in the chat" || say "FAIL: back did not go back to the chat"
+    tap_id image-u1.1; wait_for picture-image; sleep 1; settle; shot $scheme-before-swipe
+    if [ "$scheme" = light ]; then
+      # Fault injection: the same gesture with every MOVE removed must fail the path check and leave the sheet open.
+      ( move() { :; }; swipe_finger "$cx" "$cy" "$cx" "$((sh * 9 / 10))" )
+      if check_swipe "$scheme-missing-moves" "$cx" "$cy" "$cx" "$((sh * 9 / 10))" > "$work/missing-moves-check.txt" 2>&1; then
+        say "FAIL: the path check accepted a swipe with no MOVE"
+      else
+        say "ok: the path check rejects a swipe with no MOVE"
+      fi
+      has 'resource-id="picture-sheet"' && say "ok: no MOVE leaves the picture open" || say "FAIL: no MOVE closed the picture"
+    fi
+    "$adb" shell screenrecord --time-limit 10 /sdcard/hz-swipe.mp4 & swipe_rec=$!; sleep 1
+    swipe_finger "$cx" "$cy" "$cx" "$((sh * 9 / 10))"; sleep 1.5
+    "$adb" shell pkill -INT screenrecord >/dev/null 2>&1 || true; wait $swipe_rec 2>/dev/null || true
+    [ -z "$out" ] || "$adb" pull /sdcard/hz-swipe.mp4 "$out/$scheme-swipe.mp4" >/dev/null 2>&1
+    check_swipe "$scheme-swipe" "$cx" "$cy" "$cx" "$((sh * 9 / 10))" || say "FAIL: incomplete swipe input"
+    shot $scheme-after-swipe
+    has 'resource-id="picture-sheet"' && say "FAIL: a swipe down left the picture open" || say "ok: a swipe down closes the picture"
+    tap_id image-u1.1; wait_for picture-image; sleep 1; settle
+    pinch $cx $cy $((w / 5)) $((w * 4 / 5)); sleep 1
+    swipe_finger "$cx" "$((t + (b - t) / 5))" "$cx" "$((b - (b - t) / 5))"; sleep 1.5
+    check_swipe "$scheme-zoomed-swipe" "$cx" "$((t + (b - t) / 5))" "$cx" "$((b - (b - t) / 5))" || say "FAIL: incomplete zoomed swipe input"
+    has 'resource-id="picture-image"' && say "ok: zoomed in, a drag down moves the picture and leaves it open" || say "FAIL: zoomed in, a drag down closed the picture"
+    tap_id picture-close; sleep 1.5
+  fi
 done
 [ $failed = 0 ] && echo PASS || { echo FAILED; exit 1; }
