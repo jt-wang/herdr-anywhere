@@ -67,9 +67,10 @@ func TestChat(t *testing.T) {
 		{"done and the last turn done", done, &fakeReader{path: "/s", turns: doneTurn}, Answer{Chat: true, Turns: doneTurn}},
 		{"blocked on a question", strings.Replace(working, `"working"`, `"blocked"`, 1), &fakeReader{path: "/s", turns: openTurn}, Answer{Chat: true, Turns: openTurn}},
 		{"idle with no turns yet", strings.Replace(done, `"done"`, `"idle"`, 1), &fakeReader{path: "/s", turns: []Turn{}}, Answer{Chat: true, Turns: []Turn{}}},
-		{"done but the record has not caught up", done, &fakeReader{path: "/s", turns: openTurn}, Answer{Chat: true, Unknown: Behind}},
-		{"working on a prompt the record doesn't have yet", working, &fakeReader{path: "/s", turns: doneTurn}, Answer{Chat: true, Unknown: Behind}},
-		{"working and no turns in the record", working, &fakeReader{path: "/s", turns: []Turn{}}, Answer{Chat: true, Unknown: Behind}},
+		// Behind: the screen and the record disagree; the phone still shows what the record has, marked.
+		{"done but the record has not caught up", done, &fakeReader{path: "/s", turns: openTurn}, Answer{Chat: true, Unknown: Behind, Turns: openTurn}},
+		{"working on a prompt the record doesn't have yet", working, &fakeReader{path: "/s", turns: doneTurn}, Answer{Chat: true, Unknown: Behind, Turns: doneTurn}},
+		{"working and no turns in the record", working, &fakeReader{path: "/s", turns: []Turn{}}, Answer{Chat: true, Unknown: Behind, Turns: []Turn{}}},
 		{"no sure match", working, &fakeReader{findErr: &Miss{Reason: NoMatch}}, Answer{Chat: true, Unknown: NoMatch}},
 		{"a format the reader doesn't know", working, &fakeReader{path: "/s", version: "9.9.9", turnsErr: Formatf("content block %q", "hologram")}, Answer{Chat: true, Unknown: Format}},
 		{"another agent", `{"status":{"app":"pi","state":"done"},"foreground":{"pid":1}}`, &fakeReader{}, Answer{}},

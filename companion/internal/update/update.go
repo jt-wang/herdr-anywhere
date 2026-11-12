@@ -332,8 +332,10 @@ type Manager struct {
 	Logf    func(string, ...any)
 
 	mu       sync.Mutex
-	failed   string    // the version an automatic update already failed on
-	looked   time.Time // when GitHub last answered, on schedule or asked from a phone
+	failed   string        // the version an automatic update already failed on
+	looked   time.Time     // when GitHub last answered, on schedule or asked from a phone
+	asking   int           // looks still waiting on GitHub
+	answered chan struct{} // closed once none are; Run waits on it rather than ask beside a phone's check
 	applying bool
 	wake     chan struct{}
 }
@@ -473,6 +475,19 @@ func (m *Manager) poke() {
 
 // look asks GitHub once and keeps what it found, for phones and for after a restart.
 func (m *Manager) look(ctx context.Context) (Release, error) {
+	m.mu.Lock()
+	if m.asking == 0 {
+		m.answered = make(chan struct{})
+	}
+	m.asking++
+	m.mu.Unlock()
+	defer func() {
+		m.mu.Lock()
+		if m.asking--; m.asking == 0 {
+			close(m.answered)
+		}
+		m.mu.Unlock()
+	}()
 	rel, err := m.Client.Latest(ctx)
 	if err != nil {
 		return rel, err
@@ -589,7 +604,24 @@ func (m *Manager) Run(ctx context.Context) {
 		if m.Checks() != "on" {
 			continue
 		}
-		// A phone that just checked already asked; installing by itself still needs its own look.
+		// A phone that just checked already asked; installing by itself still needs its own look. A phone's check
+		// still waiting on GitHub (the same yes often comes with one) is waited for, and counts once it answers.
+		m.mu.Lock()
+		answered := m.answered
+		if m.asking == 0 {
+			answered = nil
+		}
+		m.mu.Unlock()
+		if answered != nil {
+			select {
+			case <-ctx.Done():
+				return
+			case <-answered:
+			}
+			if m.Checks() != "on" { // the person may have said no meanwhile
+				continue
+			}
+		}
 		m.mu.Lock()
 		since := time.Since(m.looked)
 		m.mu.Unlock()
