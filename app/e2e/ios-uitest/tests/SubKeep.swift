@@ -2,7 +2,7 @@ import XCTest
 // Run by e2e/ios-subkeep.sh, once a theme, for its sub-agent KID: the sub-agent's row on home opens a peek, Keep makes it
 // a tab, and back on home the row is tapped again. Notes in $OUT what that second tap opened ("second tap: tab", "peek"
 // or "neither"); before the fix it was a peek, and this then presses Keep once more, as a person would. Then the
-// switcher. A screenshot at each step, $SHOTS-<n>-<step>.png. The script judges, with what herdr-core holds after.
+// switcher, on the space's page. A screenshot at each step, $SHOTS-<n>-<step>.png. The script judges, with what herdr-core holds after.
 final class SubKeep: XCTestCase {
   func test() {
     let env = ProcessInfo.processInfo.environment
@@ -26,6 +26,13 @@ final class SubKeep: XCTestCase {
     guard row.waitForExistence(timeout: 90) else { elements("home"); XCTFail("home does not list the sub-agent \(kid)"); return }
     sleep(1); shot("1-home")
     row.tap()
+    // A first tap that opens nothing (the first CI run after the fix: the row listed, the tap sent, no peek in 15 s) is
+    // noted with the screen's elements, and tapped again, to tell a lost tap from a row that opens nothing.
+    if !keep.waitForExistence(timeout: 5) {
+      elements("first-tap")
+      note("first tap on the row: nothing opened in 5 s; \(row.exists ? "the row still listed" : "the row gone"); tapping again")
+      if row.exists { row.tap() }
+    }
     guard keep.waitForExistence(timeout: 15) else { elements("peek"); shot("2-peek"); XCTFail("the sub-agent's row opened no peek"); return }
     sleep(1); shot("2-peek")
     keep.tap()
@@ -40,8 +47,10 @@ final class SubKeep: XCTestCase {
     elements("second-tap")
     shot("4-second-tap")
     if second == "peek" { keep.tap(); sleep(3) }
-    let switcher = el("switcher")
-    if switcher.waitForExistence(timeout: 10) { switcher.tap(); sleep(2); shot("5-switcher") }
+    // The switcher is on the space's page: before the fix Keep left the app on home, so the space is opened first.
+    let switcher = el("switcher"), space = el("space-" + (env["SPACE"] ?? "spsk"))
+    if !switcher.waitForExistence(timeout: 5) && space.exists { space.tap() }
+    if switcher.waitForExistence(timeout: 10) { switcher.tap(); sleep(2); shot("5-switcher") } else { note("no switcher"); elements("no-switcher") }
     note("done")
   }
 }
