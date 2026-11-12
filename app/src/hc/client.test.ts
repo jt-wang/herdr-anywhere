@@ -90,6 +90,20 @@ test('a call with no answer times out', async () => {
   await expect(() => hc.call('terminal.list', {})).rejects.toThrow('timed out')
 })
 
+test('a call told to take as long as it needs has no time limit, and fails only when the line goes', async () => {
+  const core = new FakeCore()
+  const hc = new HcClient(core, { timeoutMs: 20 })
+  await hc.hello()
+  core.answer = () => undefined
+  let failed: unknown = null
+  const call = hc.call('terminal.send', { terminal: 't1', text: 'hi' }, { timeoutMs: 0 }).catch((e) => { failed = e })
+  await new Promise((r) => setTimeout(r, 80))
+  expect(String(failed)).toBe('null')
+  core.onClose?.('network')
+  await call
+  expect(failed instanceof HcError && failed.kind).toBe('disconnected')
+})
+
 test('events arrive as lines split anywhere across frames, and each chunk is credited', async () => {
   const core = new FakeCore()
   const hc = new HcClient(core)

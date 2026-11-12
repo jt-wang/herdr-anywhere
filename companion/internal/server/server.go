@@ -16,7 +16,6 @@ import (
 
 	"github.com/coder/websocket"
 
-	"herdr-anywhere/companion/internal/chat"
 	"herdr-anywhere/companion/internal/store"
 )
 
@@ -38,10 +37,6 @@ type Config struct {
 	Logger    *log.Logger
 	// Updates answers about new versions; nil means this companion doesn't know of any.
 	Updates Updates
-	// Chat answers /api/chat; nil answers that no terminal has a chat.
-	Chat *chat.Service
-	// ChatSetups are the small files some agents' chats need, by agent (/api/chat-setups; chat.Setup).
-	ChatSetups map[string]chat.Setup
 	// RevokePoll is how often live sockets are checked against the device
 	// list (default 500 ms), so `revoke` from another process takes effect.
 	RevokePoll time.Duration
@@ -63,9 +58,6 @@ type Server struct {
 	maxUpload    int64
 	machineChunk int
 	maxImage     int64
-	// Links a player opens a file by (POST /api/file/link): key → what it opens; a link ends after fileLinkIdle unused.
-	fileLinks    map[string]*fileLink
-	fileLinkIdle time.Duration
 	// The temp folders a picture on another machine may be in; nil: that machine's /tmp and $TMPDIR (tests set it).
 	remoteTemp []string
 }
@@ -110,19 +102,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/files", s.upload)
 	mux.HandleFunc("GET /api/image", s.image)
 	mux.HandleFunc("POST /api/image/check", s.imageCheck)
-	mux.HandleFunc("GET /api/file", s.file)
-	mux.HandleFunc("POST /api/file/check", s.fileCheck)
-	mux.HandleFunc("POST /api/file/link", s.fileLinkNew)
 	mux.HandleFunc("POST /api/update", s.update)
 	mux.HandleFunc("POST /api/update/auto", s.updateAuto)
 	mux.HandleFunc("POST /api/update/checks", s.updateChecks)
 	mux.HandleFunc("POST /api/update/check", s.updateCheck)
-	mux.HandleFunc("GET /api/chat/{addr}", s.chat)
-	mux.HandleFunc("GET /api/chat-setups", s.chatSetups)
-	mux.HandleFunc("PUT /api/chat-setups/{agent}", s.chatSetupSet)
-	mux.HandleFunc("DELETE /api/chat-setups/{agent}", s.chatSetupSet)
-	mux.HandleFunc("GET /api/chat/{addr}/steps/{step}", s.chatStep)
-	mux.HandleFunc("GET /api/chat/{addr}/images/{id}", s.chatImage)
 	mux.HandleFunc("/hc", s.hc)
 	mux.Handle("/", s.static)
 	return s.logRequests(mux)
