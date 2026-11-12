@@ -61,9 +61,7 @@ cols() { tail -1 "$sizes" | awk '{print $2}'; }
 connections() { grep -c ' connected (' "$work/serve.log" || true; }
 
 "$adb" shell am start -W -n "$id/.MainActivity" >/dev/null
-tap pair-link
-rest=$invite
-while [ -n "$rest" ]; do "$adb" shell input text "'$(printf %s "$rest" | cut -c1-80)'" < /dev/null; rest=$(printf %s "$rest" | cut -c81-); sleep 0.5; done
+"$(dirname "$0")/android-type-link.sh" "$invite"
 tap pair
 tap space-spwd
 for _ in $(seq 1 20); do [ "$(cols)" != 32 ] && [ -n "$(cols)" ] && break; sleep 1; done

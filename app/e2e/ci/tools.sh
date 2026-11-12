@@ -57,6 +57,8 @@ shots() {
   python3 -m venv "$tmp/shots-py"
   "$tmp/shots-py/bin/pip" install --disable-pip-version-check -q zxing-cpp==3.1.1 pillow==13.0.0
   echo "HM_SHOTS_PYTHON=$tmp/shots-py/bin/python" >> "$env_"
+  # First on PATH too: the suites' python3 needs Pillow (android-glyphs.sh crops with it), which the runner's lacks.
+  echo "$tmp/shots-py/bin" >> "$path_"
   # tesseract on both: a Mac runner's Vision read no word of the self-test's picture, which Vision on a Mac at a desk
   # reads. Homebrew has no versioned tesseract formula, so the runner image's formula is taken (no update) and a
   # major version other than 5 stops here.

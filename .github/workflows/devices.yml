@@ -134,8 +134,8 @@ jobs:
             key: progress
           - name: pictures and letters
             key: picture
-          - name: typing with Gboard
-            key: typing
+          # android-typing.sh stays on a Mac: it needs Gboard with pinyin added as its second language, which is set by
+          # hand in Gboard's settings.
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -185,10 +185,12 @@ jobs:
               fresh; HM_UPLOAD_MB=100 HERDR_ANYWHERE_BIN="$COMPANION" $s quiet e2e/android-quiet.sh "$APK" "$OUT/quiet"
               fresh; HERDR_ANYWHERE_BIN="$COMPANION" $s reconnect e2e/android-reconnect.sh "$APK" "$OUT/reconnect" ;;
             notify)
-              mkdir -p "$OUT/locale" "$OUT/notify" "$OUT/notify-folded"
+              mkdir -p "$OUT/locale" "$OUT/notify"
               fresh; $s locale e2e/android-locale.sh "$APK" "$OUT/locale"
               fresh; $s notify e2e/android-notify.sh "$APK" "$COMPANION" "$OUT/notify"
-              fresh; $s notify-folded e2e/android-notify-folded.sh "$APK" "$OUT/notify-folded" ;;
+              # android-notify-folded.sh stays on a Mac for now: this image's shade puts the app's alert and its
+              # silent keep-alive in two sections, so there is no group row to read the folded line from.
+              ;;
             progress)
               mkdir -p "$OUT/progress-light" "$OUT/progress-dark"
               fresh; $s progress-light e2e/android-progress.sh "$APK" "$OUT/progress-light"
@@ -197,14 +199,6 @@ jobs:
               mkdir -p "$OUT/picture" "$OUT/glyphs"
               fresh; $s picture e2e/android-picture.sh "$APK" "$COMPANION" "$OUT/picture"
               fresh; $s glyphs e2e/android-glyphs.sh "$APK" "$OUT/glyphs/shot.png" ;;
-            typing)
-              mkdir -p "$OUT/typing"
-              # Gboard, with English (US) and pinyin, is what the suite taps. Without it the suite stays on a Mac.
-              if "$ANDROID_HOME/platform-tools/adb" shell ime list -s | grep -q com.google.android.inputmethod.latin; then
-                fresh; $s typing e2e/android-typing.sh "$APK" "$OUT/typing"
-              else
-                echo "::error title=typing::this emulator image has no Gboard"; echo "typing FAIL 0s" >> "$OUT/results.txt"
-              fi ;;
           esac
           $s --finish
       - name: Check what is uploaded
@@ -253,16 +247,7 @@ jobs:
           $s update e2e/android-update.sh "$U/old.apk" "$U/new.apk" "$U/other.apk" "$U/old-companion" "$U/new-companion" 9.9.9 "$OUT/update"
           $adb uninstall $id >/dev/null 2>&1 || true
           $s notify-upgrade e2e/android-notify-upgrade.sh "$U/prev.apk" "$U/old.apk" "$OUT/notify-upgrade"
-          over_prev() {
-            $adb uninstall $id >/dev/null 2>&1 || true
-            $adb install "$U/prev.apk" | tail -1
-            $adb shell am start -W -n $id/.MainActivity >/dev/null; sleep 4
-            $adb install -r "$U/old.apk" | tail -1
-            $adb shell am start -W -n $id/.MainActivity >/dev/null; sleep 5
-            $adb shell dumpsys package $id | grep -m1 versionName | tr -d ' '
-            [ -n "$($adb shell pidof $id | tr -d '\r')" ] && echo "PASS: this commit's app runs, installed over $(cat "$U/prev-tag")"
-          }
-          $s over-previous over_prev
+          $s over-previous e2e/ci/over-previous.sh "$U/prev.apk" "$U/old.apk"
           $s --finish
       - name: Check what is uploaded
         id: check

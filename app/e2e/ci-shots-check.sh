@@ -14,8 +14,9 @@ here=$(cd "$(dirname "$0")" && pwd)
 py=${HM_SHOTS_PYTHON:-python3}
 shapes='herdr[0-9]:[A-Za-z0-9_-]{16,}|#pair=[A-Za-z0-9_-]{8,}|token=[A-Za-z0-9_-]{8,}'
 # What OCR makes of the same, matched with the spaces it reads taken out: it splits a long token with spaces at random
-# (1 run in 10 here read "pair=…" as two words), reads : as ; and _ - as other marks.
-seen_shapes='[Hh]erdr[0-9][:;][^ ]{8,}|pair[=:][^ ]{8,}|token[=:][^ ]{8,}'
+# (1 run in 10 here read "pair=…" as two words), reads : as ; and = as - (a Mac runner's tesseract read "#pair-…"),
+# and _ - as other marks.
+seen_shapes='[Hh]erdr[0-9][:;][^ ]{8,}|pair[=:-][^ ]{8,}|token[=:-][^ ]{8,}'
 
 check() {
   local folder=$1; shift
