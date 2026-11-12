@@ -152,3 +152,21 @@ test("OpenCode's permission: its three buttons in a row, no numbers, each sends 
   await app.clock.runFor(3000)
   expect(keys(app)).toEqual([['right', 'right', 'enter']])
 })
+
+// The Companion says "behind" when the screen is blocked and the record's last turn is closed (the record hasn't
+// written the step that asks yet), and sends the turns it has (companion/internal/chat/service.go). The first time
+// the chat opens, those turns and the card show, not only "hasn't caught up".
+test('a permission while the record is behind, the first time the chat opens: the turns it has and the card', async () => {
+  const done = [{ id: 'u0', from: 'you', said: 'HELLO there', end: 'done', reply: 'Hello from the fake model.', steps: [] }]
+  const app = await open('./fixtures/fake.tsx', { host: { params: { scene: 'single', argv: 'claude', status: 'working', chat: JSON.stringify({ chat: true, unknown: 'behind', turns: done }) } }, clock: {} })
+  await app.clock.runFor(100)
+  await app.press('id:space-sp1')
+  await app.waitFor('id:terminal-t1')
+  await app.host.send('fake.status', { address: 't1', screen: TOUCH, state: 'blocked', kind: 'permission', msg: 'approve Bash: touch made-by-fake.txt' })
+  await app.clock.runFor(3000)
+  await app.press('id:show-chat')
+  await app.clock.runFor(3000)
+  expect(app.shows('id:chat-unknown')).toBe(false)
+  expect(app.shows('text:Hello from the fake model.')).toBe(true)
+  expect(app.shows('id:ask-card')).toBe(true)
+})

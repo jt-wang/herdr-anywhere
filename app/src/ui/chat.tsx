@@ -51,7 +51,8 @@ export function ChatView(props: { store: Store; address: string; status: () => s
   // what was opened stays open. Any other doubt shows no turn at all.
   let lastTurns: ChatTurn[] | undefined
   const turns = () => { const a = answer(); if (a?.turns) lastTurns = a.turns; return a?.turns ?? (a?.unknown === 'behind' ? lastTurns : undefined) }
-  const behind = () => answer()?.unknown === 'behind' && !!lastTurns
+  // Behind with turns to show: the answer's own (the first time the chat opens) or the last ones seen.
+  const behind = () => { const a = answer(); return a?.unknown === 'behind' && !!(a.turns ?? lastTurns) }
   // Said above the turns only when it lasts: over 10 s behind.
   const behindLong = signal(false)
   let behindTimer: ReturnType<typeof setTimeout> | undefined
