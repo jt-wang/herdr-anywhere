@@ -21,8 +21,11 @@ final class SheetTitle: XCTestCase {
       let add = el("add-agent-" + space); XCTAssertTrue(add.waitForExistence(timeout: 40), "\(name): no add-agent-\(space)"); add.tap(); sleep(3)
       let title = app.staticTexts.matching(NSPredicate(format: "label == %@", "Add an agent")).firstMatch
       XCTAssertTrue(title.waitForExistence(timeout: 10), "\(name): the sheet has no title Add an agent")
-      try? XCUIScreen.main.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: "\(dir)/\(name).png"))
-      let f = title.frame, k = XCUIScreen.main.scale
+      let shot = XCUIScreen.main.screenshot()
+      try? shot.pngRepresentation.write(to: URL(fileURLWithPath: "\(dir)/\(name).png"))
+      // Points to the picture's pixels: its width in pixels over the app's in points.
+      let f = title.frame, k = CGFloat(shot.image.cgImage?.width ?? 0) / app.frame.width
+      XCTAssertGreaterThan(k, 0, "\(name): the screenshot has no width")
       frames += "\(name) \(Int(f.minX * k)) \(Int(f.minY * k)) \(Int(f.maxX * k)) \(Int(f.maxY * k))\n"
       try? frames.write(toFile: "\(dir)/frames.txt", atomically: true, encoding: .utf8)
       app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08)).tap(); sleep(2)   // above the sheet: closes it
