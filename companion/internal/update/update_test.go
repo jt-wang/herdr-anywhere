@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -482,12 +483,14 @@ func TestRunAsksGitHubNothingUntilThePersonSaysYes(t *testing.T) {
 	}
 }
 
-// The phone checks the moment the person says yes; the schedule that wakes on the same yes doesn't ask again.
+// The phone checks the moment the person says yes; the schedule that wakes on the same yes doesn't ask again. The
+// schedule's 300 ms is long beside the step from the yes to the check, even on a busy machine: one that came due
+// before the phone's check began would ask first, rightly, and the phone's check would then ask again.
 func TestAYesThatTheAppCheckedOnAsksGitHubOnce(t *testing.T) {
 	bin := program(t, "0.1.6")
 	srv, checks := fakeGitHub(t, "v0.1.6", bin, digestOf(bin))
 	m := manager(t, srv, installed(t), func() {})
-	m.First = 20 * time.Millisecond
+	m.First = 300 * time.Millisecond
 	m.Every = time.Hour
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -499,9 +502,61 @@ func TestAYesThatTheAppCheckedOnAsksGitHubOnce(t *testing.T) {
 	if _, err := m.CheckNow(ctx); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(150 * time.Millisecond)
+	time.Sleep(600 * time.Millisecond)
 	if checks.Load() != 1 {
 		t.Fatalf("asked GitHub %d times for one yes", checks.Load())
+	}
+}
+
+// The phone's check is still waiting on GitHub when the schedule that woke on the same yes comes due: the schedule
+// waits for that answer and asks nothing. GitHub's answer here is held back until well after the schedule's time.
+func TestTheScheduleWaitsForAPhoneCheckStillAsking(t *testing.T) {
+	bin := program(t, "0.1.6")
+	srv, checks := fakeGitHub(t, "v0.1.6", bin, digestOf(bin))
+	release := make(chan struct{})
+	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, ".sig") {
+			<-release // the manifest came back; the signature, the rest of this check, waits
+		}
+		req, _ := http.NewRequest(http.MethodGet, srv.URL+r.URL.Path, nil)
+		req.Header.Set("User-Agent", r.Header.Get("User-Agent"))
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer res.Body.Close()
+		w.WriteHeader(res.StatusCode)
+		io.Copy(w, res.Body)
+	}))
+	defer slow.Close()
+	defer close(release)
+	m := manager(t, slow, installed(t), func() {})
+	m.First = 20 * time.Millisecond
+	m.Every = time.Hour
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go m.Run(ctx)
+	time.Sleep(50 * time.Millisecond)
+	if err := m.SetChecks(true); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { _, err := m.CheckNow(ctx); done <- err }()
+	for checks.Load() < 1 {
+		time.Sleep(time.Millisecond)
+	}
+	time.Sleep(200 * time.Millisecond) // ten times the schedule's 20 ms, with the phone's check still asking
+	if n := checks.Load(); n != 1 {
+		t.Fatalf("asked GitHub %d times while the phone's check was still asking", n)
+	}
+	release <- struct{}{}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(100 * time.Millisecond)
+	if n := checks.Load(); n != 1 {
+		t.Fatalf("asked GitHub %d times for one yes, after the phone's check came back", n)
 	}
 }
 
