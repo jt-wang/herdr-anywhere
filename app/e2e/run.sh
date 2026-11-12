@@ -26,7 +26,7 @@ cleanup() {
   rm -rf "$work" "$run"
   printf "%s\n" "$placeholder" > "$app/e2e/pair.ts"
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT; trap 'exit 130' INT; trap 'exit 143' TERM
 
 port=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')
 "$work/herdr-anywhere" serve --listen "127.0.0.1:$port" --hc "$hc" > "$work/serve.log" 2>&1 &
