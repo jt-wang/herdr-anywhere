@@ -25,6 +25,11 @@ readonly id
 port=7691
 while nc -z 127.0.0.1 "$port" 2>/dev/null; do port=$((port + 1)); done
 work=$(mktemp -d)
+# Each adb call that fails is written down, so a stop on one says which (CI: exit 137 with nothing to tell which).
+. "$app/e2e/adb-note.sh"
+. "$app/e2e/android-ime-down.sh"
+sh "$app/e2e/android-ime-down.sh" --self-test || exit 1
+adb_note "$adb" "$work/adb-failed"
 (cd "$app/../companion" && go build -o "$work/herdr-anywhere" ./cmd/herdr-anywhere)
 run=$(mktemp -d /tmp/hmXXXX)
 mkdir -p "$work/home/src/acme-api" "$work/home/src/beta-web" "$work/state" "$work/config" "$work/data"
@@ -47,12 +52,16 @@ show_terms() {
 }
 cleanup() {
   status=$?
-  [ "$status" -ne 0 ] && { echo "--- exit status $status"; show_terms; }
+  if [ "$status" -ne 0 ]; then
+    echo "--- the script stopped with exit $status; adb sees the phone as: $("$adb_real" get-state 2>&1 | tr -d "\r")"
+    show_terms
+    adb_failures
+  fi
   [ -n "${serve_pid:-}" ] && kill "$serve_pid" 2>/dev/null
   "$hc" server stop >/dev/null 2>&1 || true
   chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run"
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT; trap 'exit 130' INT; trap 'exit 143' TERM
 "$work/herdr-anywhere" serve --listen "127.0.0.1:$port" --hc "$hc" > "$work/serve.log" 2>&1 &
 serve_pid=$!
 sleep 1
@@ -119,6 +128,25 @@ for _ in 1 2 3 4 5 6 7 8; do
 done
 got=$(typed)
 [ "$got" = "$link" ] || { echo "FAIL: the link field never held the whole link"; exit 1; }
+# Whether the phone reaches the Companion at the invite's address, asked from the phone's own shell (toybox nc) for
+# /api/info: answered, refused, no answer, or no nc on the phone. Twice on CI the phone said "Can't reach 10.0.2.2"
+# after Pair while the Companion, which logs every request, got none; this tells the emulator's network from the app.
+reach() {
+  r=$("$adb" shell "printf 'GET /api/info HTTP/1.0\\r\\n\\r\\n' | toybox nc -w 5 10.0.2.2 $port 2>&1; echo nc-exit=\$?" 2>&1 | tr -d '\r')
+  case $r in
+    HTTP/*" 200"*) echo answered ;;
+    *"not found"*|*"unknown"*|*"inaccessible"*|*"No such"*) echo "no nc" ;;
+    *[Rr]efused*) echo refused ;;
+    *) echo "no answer ($(printf '%s' "$r" | tr '\n' ' ' | cut -c1-80))" ;;
+  esac
+}
+# The phone's networks as Android sees them: which is the default, and each one's kind and state.
+nets() { "$adb" shell dumpsys connectivity 2>/dev/null | tr -d '\r' | grep -E "Active default network|NetworkAgentInfo[{]" | cut -c1-160 | head -4 | sed 's/^/    /'; }
+# CI logs are public: no invite secret or token in what is printed.
+mask() { sed -E 's/#pair=[A-Za-z0-9_-]+/#pair=…/g; s/token=[^ &"]+/token=…/g; s/"code":"[^"]*"/"code":"…"/g'; }
+echo "before Pair: the phone to the Companion: $(reach); the emulator up $("$adb" shell cut -d' ' -f1 /proc/uptime | tr -d '\r') s; its networks:"
+nets
+"$adb" logcat -c || true
 tap pair # once, with the keyboard up: the tap has to reach the button
 
 ok=""
@@ -131,11 +159,30 @@ if [ -z "$ok" ]; then
   echo "FAIL: not connected over binary within 30 s"
   dump
   "$adb" shell cat /sdcard/hm.xml | tr '>' '\n' | grep 'resource-id="pair-error"' | sed -E 's/.*text="([^"]*)".*/  phone says: \1/' || true
-  grep -vE " GET /assets/" "$work/serve.log" | tail -5 | sed -E 's/token=[^ &]+/token=…/'
+  grep -vE " GET /assets/" "$work/serve.log" | tail -5 | mask
+  echo "  the Companion got $(grep -c ' /api/pair ' "$work/serve.log" || true) POST /api/pair"
+  echo "  the phone to the Companion now: $(reach); its networks:"
+  nets
+  echo "  the phone's log since Pair, on its network and the app's errors:"
+  "$adb" logcat -d -v time 2>/dev/null | grep -iE "ConnectivityService|NetworkMonitor|WifiClientModeImpl|$id|SocketTimeout|ConnectException|UnknownHost|ENETUNREACH|EHOSTUNREACH|ECONNREFUSED|cleartext" | tail -25 | mask | sed 's/^/    logcat: /'
+  # Whether a second Pair goes through, as a person would tap it again: tells a moment's loss from a lasting one. The
+  # run fails either way.
+  tap pair
+  again="no answer in 20 s"
+  for _ in $(seq 1 20); do
+    if grep -q "device .* connected (binary," "$work/serve.log"; then again=connected; break; fi
+    said=$(xml | tr '>' '\n' | grep 'resource-id="pair-error"' | sed -E 's/.*text="([^"]*)".*/\1/' | mask)
+    [ -n "$said" ] && [ "$(grep -c ' /api/pair ' "$work/serve.log" || true)" -gt 0 ] && { again="the Companion got it; phone says: $said"; break; }
+    sleep 1
+  done
+  echo "  a second Pair: $again (the Companion got $(grep -c ' /api/pair ' "$work/serve.log" || true) POST /api/pair in all)"
   exit 1
 fi
 # The keyboard's window on screen (input_method's mInputShown stayed true with the keyboard gone; checked both ways).
 keyboard_up() { sleep 1; "$adb" shell dumpsys window InputMethod | grep -q "isOnScreen=true"; }
+# The keyboard's state now, and the system's record of each show and hide, for e2e/android-ime-down.sh.
+ime_now() { o=$("$adb" shell dumpsys window InputMethod) || return 1; printf '%s\n' "$o" | grep -q "isOnScreen=true" && echo up || echo down; }
+ime_log() { "$adb" logcat -d -v time -t 600 | grep -E "ImeTracker|InputMethodManagerService" | tail -30 | sed 's/^/  logcat: /'; }
 keyboard_up && { echo "FAIL: the keyboard is still up after pairing"; exit 1; }
 echo "ok: paired with one tap, connected over binary, home lists acme-api, keyboard closed"
 
@@ -150,7 +197,9 @@ keyboard_up && { echo "FAIL: a drag across the terminal brought the keyboard up"
 echo "ok: a tap and a drag on the terminal leave the keyboard down"
 # The composer does, and ⋯ types in the terminal itself.
 tap compose-input
-keyboard_up || { echo "FAIL: a tap on the composer brought no keyboard"; exit 1; }
+# Watched until it stays up (e2e/android-ime-down.sh): one look a second after the tap failed on a busy runner with the
+# keyboard on its way, the app already showing its own hide-keyboard key.
+ime_comes_up "a tap on the composer" || exit 1
 # Return in the composer starts a new line, the box grows, and send sends both lines as one.
 height() { dump; "$adb" shell cat /sdcard/hm.xml | tr '>' '\n' | grep 'resource-id="compose-input"' | sed -E 's/.*bounds="\[[0-9]+,([0-9]+)\]\[[0-9]+,([0-9]+)\]".*/\1 \2/' | awk '{print $2-$1}'; }
 one=$(height)
@@ -184,7 +233,9 @@ typein() {
   up=""; for _ in 1 2 3 4 5; do keyboard_up && { up=1; break; }; done
   [ -n "$up" ] || { echo "FAIL: Type in the terminal $1 did not bring the keyboard up"; exit 1; }
 }
-keyboard_up && { echo "FAIL: the back key left the keyboard up"; exit 1; }
+# The back key above put the keyboard away and it stays away (e2e/android-ime-down.sh): one look about 2 s after the
+# key could not tell a hide that was only slow on a busy runner from one that never came or was undone.
+ime_stays_down "the back key" || exit 1
 typein "after the back key"
 run_typed 'touch hm-typed'
 for _ in $(seq 1 15); do [ -e "$work/home/src/acme-api/hm-typed" ] && break; sleep 1; done
