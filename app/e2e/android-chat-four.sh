@@ -33,6 +33,7 @@ port=7762; while nc -z 127.0.0.1 "$port" 2>/dev/null; do port=$((port + 1)); don
 work=$(mktemp -d); run=$(mktemp -d /tmp/hmXXXX); state=$(mktemp -d /tmp/hmtcXXXX)
 mkdir -p "$work/u" "$work/state" "$work/config" "$work/data" "$work/claude" "$work/codex" "$work/pi"
 : > "$work/u/.zshrc"
+step="building the fakes"
 (cd "$companion" && CGO_ENABLED=0 go build -buildvcs=false -o "$work/fakeagent" ./internal/testfake/fakeagent)
 # herdr-core gives every terminal the environment of what started it: the agents' folders are set here, for the
 # fakes and for the Companion's readers alike.
@@ -42,10 +43,13 @@ clean() {
     CLAUDE_CONFIG_DIR="$work/claude" CODEX_HOME="$work/codex" PI_CODING_AGENT_DIR="$work/pi" "$@"
 }
 lhc() { clean "$hc" "$@"; }
-serve_pid=
+serve_pid=; step=start
 cleanup() {
+  status=$?
   trap - EXIT; trap '' INT TERM HUP
   set +e
+  # A command that failed under set -e says nothing of itself: say where, and what the Companion wrote.
+  [ "$status" != 0 ] && { echo "FAIL: exit $status during: $step"; tail -20 "$work/serve.log" 2>/dev/null | sed 's/^/  serve: /'; }
   [ -n "$serve_pid" ] && { pkill -P "$serve_pid" 2>/dev/null; kill "$serve_pid" 2>/dev/null; }
   pkill -f -- "--state $state" 2>/dev/null || true
   lhc server stop >/dev/null 2>&1 || true; chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run" "$state"
@@ -53,6 +57,7 @@ cleanup() {
 trap cleanup EXIT
 trap 'cleanup; exit 130' INT
 trap 'cleanup; exit 143' TERM HUP
+step="starting the fakes in herdr-core"
 for a in $agents; do
   s=$(printf %s "$a" | tr -d -)
   mkdir -p "$work/u/src/demo-$s"
@@ -65,6 +70,7 @@ serve() {
   serve_pid=$!
   i=0; until curl -fsS "http://127.0.0.1:$port/api/info" >/dev/null 2>&1; do i=$((i + 1)); [ $i -gt 100 ] && { cat "$work/serve.log" >&2; return 1; }; sleep 0.1; done
 }
+step="starting the Companion"
 serve
 # HM_CHAT4_DRY=1: no simulator. Only the core, the fakes and the Companion: each terminal must be known as its agent.
 if [ "${HM_CHAT4_DRY:-}" = 1 ]; then
@@ -76,6 +82,7 @@ if [ "${HM_CHAT4_DRY:-}" = 1 ]; then
   done
   echo PASS; exit 0
 fi
+step="pairing and installing the app"
 invite=$(clean "$bin" pair --url "http://10.0.2.2:$port" --state "$state" 2>/dev/null | grep -o 'http://[^ ]*#pair=[A-Za-z0-9_-]*' | head -1)
 [ -n "$invite" ] || { echo "FAIL: no invite"; exit 1; }
 "$adb" uninstall "$id" >/dev/null 2>&1 || true
@@ -88,7 +95,6 @@ xml() { "$adb" shell rm -f /sdcard/hm.xml; "$adb" shell uiautomator dump /sdcard
 last_bounds() { tr '>' '\n' | grep -F "resource-id=\"$1" | grep -F "${2:-}" | tail -1 | sed -E 's/.*bounds="\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\]".*/\1 \2 \3 \4/'; }
 centre() { awk 'NF == 4 {print int(($1+$3)/2), int(($2+$4)/2)}'; }
 has() { xml | grep -qF "$1"; }
-count() { xml | tr '>' '\n' | grep -cF "$1" || true; }
 snap() { [ -n "$shot" ] && "$adb" exec-out screencap -p > "$shot/$1.png" || true; }
 fail() {
   echo "FAIL: $1"; snap fail; [ -n "$shot" ] && { xml > "$shot/fail.xml"; cp "$work/serve.log" "$shot/serve.log"; }
@@ -122,6 +128,7 @@ size=$("$adb" shell wm size | tr -d '\r' | sed -n 's/^Physical size: //p' | tail
 # A node whose text starts with $1 lies on the screen, between the header and the composer.
 on_screen() { xml | tr '>' '\n' | grep -F "text=\"$1" | sed -E 's/.*bounds="\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\]".*/\2 \4/' | awk -v h="$h" '$1 > h * 0.08 && $2 < h * 0.9 {f=1} END {exit !f}'; }
 
+step="launching the app"
 "$adb" shell am start -W -n "$id/.MainActivity" >/dev/null
 pid=$("$adb" shell pidof "$id" | tr -d '\r')
 [ -n "$pid" ] || fail "the app did not start"
@@ -134,8 +141,10 @@ wait_for 'resource-id="space-' "the phone did not pair"
 first=1
 for a in $agents; do
   s=$(printf %s "$a" | tr -d -)
+  step="$a"
   tap_last "space-spc$s"
-  tap_last show-chat
+  # After the first agent a pane opens in its chat (the view picked last), with no chat button.
+  sleep 2; has 'resource-id="chat-view"' || tap_last show-chat
   wait_for 'resource-id="chat-view"' "$a: no chat view"
   # open
   if [ "$a" = opencode ]; then
@@ -152,13 +161,15 @@ for a in $agents; do
   tap_last run-all-
   sleep 2; snap "$a-long"; alive "$a long"; echo "ok: $a long: Show all 500 lines"
   # image
-  before=$(count 'resource-id="image-')
+  # A new picture: one whose id wasn't there (the chat holds 30 turns, so the oldest one's may go as one comes).
+  images() { xml | tr '>' '\n' | grep -oE 'resource-id="image-[^"]+"' | grep -v 'image-source-' | sort -u; }
+  before=$(images)
   if [ "$a" = claude-code ]; then sent "HELLO, what is in this picture?" "$a image"; else
     sent "LOOK at shot.png" "$a image"; tap_last fold-; tap_last step- fake_look
   fi
-  n=$before; for _ in $(seq 1 20); do n=$(count 'resource-id="image-'); [ "$n" -gt "$before" ] && break; sleep 1; done
-  [ "$n" -gt "$before" ] || fail "$a image: no picture showed ($before before, $n after)"
-  snap "$a-image"; alive "$a image"; echo "ok: $a image: pictures $before → $n"
+  new=""; for _ in $(seq 1 20); do new=$(images | grep -vxF "$before" || true); [ -n "$new" ] && break; sleep 1; done
+  [ -n "$new" ] || fail "$a image: no new picture showed"
+  snap "$a-image"; alive "$a image"; echo "ok: $a image: new pictures $(echo $new)"
   # scroll: the chat holds the last 30 turns; the oldest is numbered 01x
   top=""; for _ in $(seq 1 40); do on_screen "01" && { top=1; break; }; "$adb" shell input swipe $((w / 2)) $((h * 3 / 10)) $((w / 2)) $((h * 7 / 10)) 150; done
   [ -n "$top" ] || fail "$a scroll: did not reach the oldest turns"

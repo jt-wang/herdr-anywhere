@@ -69,11 +69,14 @@ final class ChatFour: XCTestCase {
     }
     for (n, agent) in agents.enumerated() {
       let a = agent.replacingOccurrences(of: "-", with: "")
-      XCTAssertTrue(el("space-spc" + a).waitForExistence(timeout: 40), "\(agent): home does not list its space")
+      guard el("space-spc" + a).waitForExistence(timeout: 40) else { XCTFail("\(agent): home does not list its space"); return }
       el("space-spc" + a).tap()
-      XCTAssertTrue(el("show-chat").waitForExistence(timeout: 20), "\(agent): no chat button")
-      el("show-chat").tap()
-      XCTAssertTrue(el("chat-view").waitForExistence(timeout: 10), "\(agent): no chat view")
+      // After the first agent a pane opens in its chat (the view picked last), with no chat button.
+      if !el("chat-view").waitForExistence(timeout: 5) {
+        guard el("show-chat").waitForExistence(timeout: 20) else { XCTFail("\(agent): no chat button"); return }
+        el("show-chat").tap()
+      }
+      guard el("chat-view").waitForExistence(timeout: 10) else { XCTFail("\(agent): no chat view"); return }
       // open
       if agent == "opencode" {
         let not = el("chat-unknown").waitForExistence(timeout: 20)
@@ -97,15 +100,17 @@ final class ChatFour: XCTestCase {
       note("\(agent) long: the last line shown: \(end)")
       shot("\(agent)-long"); alive("\(agent) long")
       // image
-      let before = ids("image-").count
+      // A new picture: one whose id wasn't there (the chat holds 30 turns, so the oldest one's may go as one comes).
+      let names = { () -> Set<String> in Set(ids("image-").allElementsBoundByIndex.map { $0.identifier }.filter { !$0.hasPrefix("image-source-") }) }
+      let before = names()
       if agent == "claude-code" { sent("HELLO, what is in this picture?", "\(agent) image") } else {
         sent("LOOK at shot.png", "\(agent) image")
         XCTAssertTrue(openLast(), "\(agent) image: no fold")
         let look = all().matching(NSPredicate(format: "identifier BEGINSWITH 'step-' AND identifier CONTAINS 'fake_look'"))
         if look.count > 0 { look.element(boundBy: look.count - 1).tap() }
       }
-      let pics = until(20) { ids("image-").count > before }
-      note("\(agent) image: pictures \(before) → \(ids("image-").count)")
+      let pics = until(20) { !names().subtracting(before).isEmpty }
+      note("\(agent) image: new pictures \(names().subtracting(before).sorted())")
       XCTAssertTrue(pics, "\(agent) image: no picture showed")
       shot("\(agent)-image"); alive("\(agent) image")
       // scroll: the chat holds the last 30 turns; the oldest is numbered 01x

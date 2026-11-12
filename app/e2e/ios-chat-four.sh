@@ -138,6 +138,13 @@ if [ "$now" != "$before" ]; then
   [ -n "$shots" ] && cp "$work/serve.log" "$shots/serve.log"
   exit 1
 fi
-[ "$rc" = 0 ] || { echo "FAIL: xcodebuild test exit $rc"; grep -E "error:|XCTAssert|failed" "$work/uitest/test.log" | head -12; [ -n "$shots" ] && cp "$work/serve.log" "$shots/serve.log"; exit 1; }
+if [ "$rc" != 0 ]; then
+  echo "FAIL: xcodebuild test exit $rc"
+  # Its failures, else its end: what XCUITest said went wrong.
+  grep -iE "error|fail|XCT" "$work/uitest/test.log" | head -20 | sed 's/^/  /'
+  grep -qiE "error|fail|XCT" "$work/uitest/test.log" || tail -30 "$work/uitest/test.log" | sed 's/^/  /'
+  [ -n "$shots" ] && { cp "$work/serve.log" "$shots/serve.log"; cp "$work/uitest/test.log" "$shots/test.log"; }
+  exit 1
+fi
 xcrun simctl uninstall "$SIM_UDID" "$id" 2>/dev/null || true
 echo PASS
