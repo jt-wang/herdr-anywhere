@@ -6,8 +6,7 @@ import { PrefStore } from './prefs.ts'
 import { Store } from './store.ts'
 import { Root } from './ui/root.tsx'
 import { nativeTunnel } from './tunnel.ts'
-import '../assets/fonts/Geist.ttf'
-import '../assets/fonts/JetBrainsMono-Variable.ttf'
+import './fonts.ts'
 
 // TailPocket lives in the phone apps' host projects; a browser pairs over the LAN, or through the page's computer.
 const tunnel = platform.os !== 'web' && host.available() ? nativeTunnel : undefined

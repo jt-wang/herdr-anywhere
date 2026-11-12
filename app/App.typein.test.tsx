@@ -56,16 +56,17 @@ test('a tap on the toast keeps the terminal for every pane, and the phone rememb
 test('typing in the terminal, Attach is in the ⋯ menu; with the input box it is the + next to it', async () => {
   const app = await open('./fixtures/fake.tsx', { host: { params: { scene: 'busy' } } })
   await openWeb(app)
-  app.onDialog((d) => (d.buttons.includes('Rename space') ? 'Cancel' : null))
   await app.press('id:space-more')
-  await app.wait(100)
-  expect(app.dialogs().at(-1)!.buttons.includes('Attach')).toBe(false)
+  await app.waitFor('id:menu')
+  expect(app.count('id:menu-attach')).toBe(0)
+  await app.press('id:menu-cancel')
+  await app.waitUntil(() => app.count('id:menu') === 0)
   await app.press('id:to-terminal')
   await app.waitUntil(() => terminalMode(app))
   expect(app.count('id:attach')).toBe(0)
   await app.press('id:space-more')
-  await app.wait(100)
-  expect(app.dialogs().at(-1)!.buttons.includes('Attach')).toBe(true)
+  await app.waitFor('id:menu')
+  expect(app.count('id:menu-attach')).toBe(1)
 })
 
 test('held Shift and Ctrl change only their own keys: every other label stays as it was', async () => {

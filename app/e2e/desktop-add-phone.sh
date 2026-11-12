@@ -11,10 +11,14 @@
 # presses them under node). HM_DESKTOP_FOCUS=1 presses them in the window instead,
 # bringing it to the front again and again: only for a Mac nobody is using.
 set -eu
+. "$(dirname "$0")/autostart-guard.sh"; autostart_guard desktop-add-phone # a login entry of its own, never the person's
 here=$(cd "$(dirname "$0")" && pwd)
 companion="$here/../../companion"
 work=$(mktemp -d /tmp/hmap.XXXX) # sockets must fit macOS's 104 bytes
-mkdir -p "$work/app" "$work/s" "$work/x"
+mkdir -p "$work/app" "$work/s" "$work/x" "$work/h/.local/bin"
+# A home of its own too, for the companion and the window's dialog that runs it: the entry start makes at login goes
+# under HOME. hc and herdr-core are where Herdr looks for them in a home.
+for b in hc herdr-core; do bp=$(command -v "$b" || echo "$HOME/.local/bin/$b"); [ ! -e "$bp" ] || ln -s "$bp" "$work/h/.local/bin/$b"; done
 export HERDR_APP_HOME="$work/app" HC_SESSION="hmap-$$" HC_SOCKET="" XDG_STATE_HOME="$work/x/state" XDG_CONFIG_HOME="$work/x/config" XDG_RUNTIME_DIR="$work/x"
 unset HERDR_ENV HERDR_PANE_ID HERDR_SOCKET_PATH HERDR_TAB_ID HERDR_WORKSPACE_ID HERDR_BIN_PATH HERDR_ANYWHERE_STATE
 # The dialog speaks the Mac's language; the words this script looks for are its English ones.
@@ -61,6 +65,7 @@ finish() {
   sleep 1; focus_check || status=1
   hc server stop >/dev/null 2>&1 || true
   rm -rf "${work:?}"
+  autostart_guard_end || status=1
   [ "$status" = 0 ] && echo "PASS" || echo "FAIL"
   exit "$status"
 }
@@ -95,14 +100,15 @@ start=$(frontmost)
 # opens behind and stays there (the focus check below fails if that changes). -n: a second Herdr beside the person's.
 open -g -n /Applications/Herdr.app --stdout "$work/app.log" --stderr "$work/app.log" \
   --env HERDR_APP_HOME="$HERDR_APP_HOME" --env HC_SESSION="$HC_SESSION" --env HC_SOCKET= --env XDG_STATE_HOME="$XDG_STATE_HOME" \
-  --env XDG_CONFIG_HOME="$XDG_CONFIG_HOME" --env XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" --env HERDR_ANYWHERE_LANG=en
+  --env XDG_CONFIG_HOME="$XDG_CONFIG_HOME" --env XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" --env HERDR_ANYWHERE_LANG=en \
+  --env HOME="$work/h" --env HERDR_ANYWHERE_AUTOSTART_NAME="$HERDR_ANYWHERE_AUTOSTART_NAME"
 for _ in $(seq 1 30); do [ -f "$work/app/keys.json" ] && [ -S "$work/app/herdr-app.sock" ] && break; sleep 1; done
 [ -f "$work/app/keys.json" ] || fail "no window"
 window=$(lsof -t "$work/app/herdr-app.sock" 2>/dev/null | head -1); window_pid=$window
 [ -n "$window" ] || fail "no process holds the window's socket"
 echo "$window" >"$work/window.pid"
 
-hm() { "$work/herdr-anywhere" "$@" --state "$work/s"; }
+hm() { HOME="$work/h" "$work/herdr-anywhere" "$@" --state "$work/s"; }
 "$work/herdr-anywhere" install-dialog --state "$work/s" >/dev/null
 herdr-app check "$work/app/mods/add-phone" >/dev/null || fail "herdr-app check"
 grep -q '"cmd-shift-m": "mod.open:add-phone"' "$work/app/keys.json" || fail "no key"

@@ -47,7 +47,7 @@ func TestLiveLoginEntry(t *testing.T) {
 
 	b := make([]byte, 4)
 	rand.Read(b)
-	s := &autostart.Service{Name: "io.jingtao.herdranywhere.test-" + hex.EncodeToString(b), Home: t.TempDir()}
+	s := &autostart.Service{Name: "io.example.herdranywhere.test.login-live-" + hex.EncodeToString(b), Home: t.TempDir()}
 	t.Cleanup(func() { s.Remove() })
 	log := filepath.Join(dir, "serve.log")
 	e := autostart.Entry{Exe: exe, Args: []string{"serve", "--listen", "127.0.0.1:0", "--hc", hc, "--state", dir},
