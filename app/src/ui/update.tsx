@@ -2,7 +2,7 @@
 import { Clipboard, cleanup, openUrl, signal, Text, View } from 'nsh'
 import { AlertDialog } from 'nsh/base'
 import { t } from '../strings/index.ts'
-import type { Notice, Updates } from '../updates.ts'
+import { sameUpdate, updateKey, type Notice, type Updates } from '../updates.ts'
 import type { PrefStore } from '../prefs.ts'
 import { useSignal } from './kit.tsx'
 
@@ -71,7 +71,7 @@ export function UpdateBanner(props: { updates: Updates; prefs: PrefStore }) {
   const state = useUpdates(props.updates)
   const prefs = useSignal(props.prefs.prefs)
   const notice = () => state().notice
-  const hidden = () => !notice() || prefs().dismissedUpdate === notice()!.version
+  const hidden = () => !notice() || sameUpdate(prefs().dismissedUpdate, notice()!)
   const busy = () => state().busy
   return (
     <If when={busy() || !hidden()}>
@@ -80,7 +80,7 @@ export function UpdateBanner(props: { updates: Updates; prefs: PrefStore }) {
           {busy() ? busyWord(busy(), state().progress) : t('updateAvailable', { version: notice()?.version ?? '' })}
         </Text>
         <If when={!busy()}>
-          <View role="button" testID="update-later" onPress={() => props.prefs.set({ dismissedUpdate: notice()!.version })} class="px-2 py-2 rounded-[6px] active:bg-accent">
+          <View role="button" testID="update-later" onPress={() => props.prefs.set({ dismissedUpdate: updateKey(notice()!) })} class="px-2 py-2 rounded-[6px] active:bg-accent">
             <Text class="text-[13px] text-muted-foreground">{t('dismissUpdate')}</Text>
           </View>
           <View role="button" testID="update-now" onPress={() => void runUpdate(props.updates, notice()!)} class="px-3 py-2 rounded-[6px] bg-background active:bg-accent">

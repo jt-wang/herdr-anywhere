@@ -1,0 +1,16 @@
+❯ QTHREE please
+──────────────────────────────────────────────
+←  ☒ Shelf  ☐ Color  ☐ Count  ✔ Submit  →
+
+Which color should the fake lamp be?
+
+❯ 1. Amber
+     Warm light
+  2. White
+     Plain light
+  3. Type something.
+──────────────────────────────────────────────
+  4. Chat about this
+
+Enter to select · Tab/Arrow keys to navigate ·
+Esc to cancel
