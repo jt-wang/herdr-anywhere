@@ -36,12 +36,17 @@ final class Notifications: XCTestCase {
   }
   func stamp() -> Int { Int(Date().timeIntervalSince1970) }
   /** Notification Center, pulled down over the home screen: whether it lists a notification with these words. */
+  /** The pull sometimes leaves the home screen as it was (a CI run's shot showed the icons), so it is tried 3 times. */
   func listed(_ words: String) -> XCUIElement? {
-    let top = springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.005))
-    top.press(forDuration: 0.1, thenDragTo: springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.7)))
-    sleep(2)
-    let found = springboard.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", words)).firstMatch
-    return found.waitForExistence(timeout: 3) ? found : nil
+    for _ in 0..<3 {
+      let top = springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.005))
+      top.press(forDuration: 0.1, thenDragTo: springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.7)))
+      sleep(2)
+      let found = springboard.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", words)).firstMatch
+      if found.waitForExistence(timeout: 3) { return found }
+      closeCenter()
+    }
+    return nil
   }
   func closeCenter() { XCUIDevice.shared.press(.home); sleep(1) }
 
@@ -83,7 +88,9 @@ final class Notifications: XCTestCase {
         if let n, !tapped {
           shot("update-notification")
           n.tap()
-          XCTAssertTrue(el("update-banner").waitForExistence(timeout: 30), "the tap did not open home with the notice")
+          // Once on CI the app did not come forward after the tap: a second tap, said in the results.
+          if !app.wait(for: .runningForeground, timeout: 10), n.exists { say("tap: the app did not come forward, tapped again"); n.tap() }
+          XCTAssertTrue(el("update-banner").waitForExistence(timeout: 30), "the tap did not open home with the notice (app state \(app.state.rawValue))")
           shot("update-home")
           tapped = true
         } else {
@@ -141,9 +148,13 @@ final class Notifications: XCTestCase {
 
   func testSettings() {
     app.activate()
+    // The dark run starts where the light run left the app: on Settings already.
     let open = el("settings")
-    XCTAssertTrue(open.waitForExistence(timeout: 60), "no Settings button")
-    open.tap()
+    for _ in 0..<60 where !open.exists && !el("alert-done").exists { sleep(1) }
+    if !el("alert-done").exists {
+      XCTAssertTrue(open.exists, "no Settings button")
+      open.tap()
+    }
     XCTAssertTrue(el("alert-done").waitForExistence(timeout: 30), "Settings shows no alerts")
     let line = el("ios-notify-limit")
     let last = env["AFTER"] == "1" ? line : el("alert-done")
