@@ -1,0 +1,17 @@
+❯ QMULTI please
+
+⏺ User answered Claude's questions:
+  ⎿  · Which plan should the fake shop use? →
+     Wait for the full rewrite
+     · Which pages should get the new banner?
+     → Home, Help
+
+⏺ Noted your answers.
+
+✻ Brewed for 0s
+
+                          ◐ medium · /effort
+──────────────────────────────────────────────
+❯
+──────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle)
