@@ -55,6 +55,10 @@ export function AgentName(props: { store: Store; a: AgentInfo; class: string; te
 export function AgentRow(props: {
   store: Store; a: AgentInfo; full?: boolean; testID: string; class: string; iconSize?: number
   subClass: string; subPrefix: string; onPress: () => void; onLongPress?: () => void; onSub: (address: string) => void
+  /** More for the row's own view: Pinned's touch handlers, for dragging it (home.tsx). */
+  touch?: Record<string, unknown>
+  /** The screen reader's actions on the row (Pinned's move up and down, unpin, close). */
+  actions?: { name: string; label: string }[]
 }) {
   const s = props.store
   const words = agentWords(s)
@@ -67,7 +71,7 @@ export function AgentRow(props: {
     <View>
       <View role="button" testID={props.testID}
         accessibilityLabel={listOf(a().programName, `${a().space_name}${words.title(a()) ? ` · ${words.title(a())}` : ''}`, statusLabel(a().status))}
-        onPress={props.onPress} onLongPress={props.onLongPress} class={props.class}>
+        onPress={props.onPress} onLongPress={props.onLongPress} class={props.class} accessibilityActions={props.actions} {...(props.touch ?? {})}>
         <View class="flex-row items-center gap-2">
           <View style={{ opacity: idle() ? (colorScheme() === 'dark' ? 0.55 : 0.7) : 1 }}><ProgramIcon icon={s.program(a().address).icon} size={size()} /></View>
           <If when={props.full}><Text class="shrink-0 max-w-[30%] text-[12.5px] text-sidebar-foreground" numberOfLines={1}>{a().space_name}</Text></If>

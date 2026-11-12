@@ -144,8 +144,14 @@ func TestTheFilingRulesSayTheQueueIsAllItNeeds(t *testing.T) {
 // When the user tells the filing pane itself that a task's stage or place is
 // wrong ("version 2.1 shipped weeks ago"), it can put it right: its rules say how
 // and Claude Code may run those two commands without asking.
+//
+// promptSuggestionEnabled is the setting name in Claude Code 2.1.325's program ("When false, prompt suggestions
+// are disabled"). In the filing eval on Claude Code 2.1.325 with Haiku 5.5, seven languages run with it and seven
+// without, the input box was empty before the correction every time (no suggestion either way), so what it
+// changes is not shown yet; organizerKick's screen check does not rely on it. Re-check: companion/eval/filing/run.sh
+// keeps each language's before-correction.txt.
 func TestTheFilingPaneCanApplyWhatTheUserCorrects(t *testing.T) {
-	for _, want := range []string{"Bash(herdr-anywhere track set:*)", "Bash(herdr-anywhere track move:*)"} {
+	for _, want := range []string{"Bash(herdr-anywhere track set:*)", "Bash(herdr-anywhere track move:*)", `"promptSuggestionEnabled": false`} {
 		if !strings.Contains(organizerSettings, want) {
 			t.Errorf("settings lack %s", want)
 		}
