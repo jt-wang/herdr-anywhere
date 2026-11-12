@@ -47,7 +47,9 @@ for scheme in light dark; do
   xcrun simctl terminate "$SIM_UDID" "$id" 2>/dev/null || true
   xcrun simctl launch "$SIM_UDID" "$id" >/dev/null
   rec=""
-  if [ $scheme = light ] && [ -n "$out" ]; then xcrun simctl io "$SIM_UDID" recordVideo --force "$out/zoom-ios.mp4" > "$out/record.log" 2>&1 & rec=$!; fi
+  # ZOOM_VIDEO=0: no recording. On a CI Mac it slowed the light run (the one recorded) until a step failed or hung,
+  # a different step each time, while the dark run passed; the video was thrown away there anyway.
+  if [ $scheme = light ] && [ -n "$out" ] && [ "${ZOOM_VIDEO:-1}" != 0 ]; then xcrun simctl io "$SIM_UDID" recordVideo --force "$out/zoom-ios.mp4" > "$out/record.log" 2>&1 & rec=$!; fi
   rc=0
   TEST_RUNNER_OUT="$work/$scheme.txt" TEST_RUNNER_SHOTS="$work/$scheme" TEST_RUNNER_BUNDLE=$id TEST_RUNNER_CHAT=${CHAT:-} \
     perl -e 'alarm 600; exec @ARGV' xcodebuild test -quiet -project "$work/uitest/KeyboardCheck.xcodeproj" -scheme UITests \
