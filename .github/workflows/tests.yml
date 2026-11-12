@@ -178,11 +178,14 @@ jobs:
       - name: Shut the simulator
         if: always()
         run: '[ -z "${SIM_UDID:-}" ] || { xcrun simctl shutdown "$SIM_UDID"; xcrun simctl delete "$SIM_UDID"; }'
+      # Logs only: a failed run's screenshot can show the pairing link, and 0.1.24 has no check for what is uploaded.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: ios-main-${{ matrix.ios }}
-          path: ${{ runner.temp }}/out
+          path: |
+            ${{ runner.temp }}/out/*.log
+            ${{ runner.temp }}/out/results.txt
           retention-days: 7
 
   page:
