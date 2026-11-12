@@ -185,6 +185,28 @@ test('images sent with a prompt, and in a step\'s result, show as pictures', asy
   await app.waitFor('id:image-toolu_img.0')
 })
 
+test('a picture is fetched once, not again at each 3 s ask while the agent works', async () => {
+  const pics = [{ ...turns[0], images: [{ id: 'u1.1' }] }]
+  const app = await pane({ status: 'working', chat: JSON.stringify({ chat: true, turns: pics }) })
+  await app.press('id:show-chat')
+  await app.waitFor('id:image-u1.1')
+  // The turn grows (a step, then another), the record falls behind for a moment, and a new turn comes.
+  const open = { id: 'u2', from: 'you', said: 'go on', end: 'open', reply: '', steps: [] as any[] }
+  const sends = [
+    { chat: true, turns: [...pics, { ...open, steps: [{ id: 's1', kind: 'run', title: 'make' }] }] },
+    { chat: true, turns: [...pics, { ...open, steps: [{ id: 's1', kind: 'run', title: 'make' }, { id: 's2', kind: 'run', title: 'make test' }] }] },
+    { chat: true, unknown: 'behind' },
+    { chat: true, turns: [...pics, { ...open, end: 'done', reply: 'Done.', steps: [{ id: 's1', kind: 'run', title: 'make' }] }] },
+  ]
+  for (const a of sends) {
+    app.host.send('fake.chat', a)
+    await app.clock.runFor(3100)
+  }
+  await pollUntil(app, 'Done.')
+  expect(asks(app).filter((x) => x === '/api/chat/t1/images/u1.1').length).toBe(1)
+  expect(app.count('id:image-u1.1')).toBe(1)
+})
+
 test('an image shows under the path it came from, which can be selected and copied', async () => {
   const pics = [{ ...turns[0], images: [{ id: 'u1.1', source: '/tmp/claude/x/images/1.png' }, { id: 'u1.2' }], steps: [{ id: 'toolu_img', kind: 'read', title: 'shot.png' }] }]
   const app = await pane({ chat: JSON.stringify({ chat: true, turns: pics }) })
@@ -328,6 +350,23 @@ test('the files a reply names show under it as cards, by what they are, when the
   for (const x of ['demo.mp4', 'Video · 18.4 MB', 'guide.pdf', 'PDF · 2.4 MB', 'NOTES.md', 'Text · 3.1 KB']) expect(app.texts()).toContain(x)
 })
 
+test('the files a reply names are asked about once, not again at each 3 s ask while the agent works', async () => {
+  const done = JSON.parse(withFiles())
+  const app = await pane({ status: 'working', chat: JSON.stringify(done) })
+  await app.press('id:show-chat')
+  await app.waitFor('id:file-renders/demo.mp4')
+  const fileAsks = () => JSON.parse(app.storage()['fake-file-asks'] ?? '[]').filter((x: string) => x.startsWith('check ')).length
+  const once = fileAsks()
+  const open = { id: 'u2', from: 'you', said: 'go on', end: 'open', reply: '', steps: [] as any[] }
+  for (const n of [1, 2]) {
+    app.host.send('fake.chat', { ...done, turns: [...done.turns, { ...open, steps: Array.from({ length: n }, (_, i) => ({ id: `s${i}`, kind: 'run', title: 'make' })) }] })
+    await app.clock.runFor(3100)
+  }
+  expect(app.texts().filter((x: string) => x === 'make').length).toBe(2)
+  expect(once).toBe(1)
+  expect(fileAsks()).toBe(1)
+})
+
 test('notes a reply names open in the app, as Markdown', async () => {
   const app = await pane({ chat: withFiles() })
   await app.press('id:show-chat')
@@ -393,4 +432,33 @@ test('a file no app on the phone opens, or one that could not be fetched, says s
   await failed.press('id:show-chat')
   await failed.press('id:file-docs/guide.pdf')
   await failed.waitFor("text:Couldn't get the file from the computer.")
+})
+
+// Diagnostics (src/diag.ts) for an open chat view that closes with no tap: on iOS 27 CI it once went for 23 s, the
+// computer asked nothing, and the steps' "Show all 500 lines" was never seen (e2e/ios-chat-four.sh). Only that path
+// says anything; a view that stays says nothing.
+const diags = (app: any): string[] => JSON.parse(app.storage()['fake-diag'] ?? '[]')
+
+test('an open chat view the computer stops offering says so for the diagnostics; one that stays says nothing', async () => {
+  const app = await pane({ chat: JSON.stringify({ chat: true, turns }) })
+  await app.press('id:show-chat')
+  await app.waitFor('id:chat-view')
+  await app.host.send('fake.status', { address: 't1', state: 'working' })
+  await app.clock.runFor(3100)
+  expect(diags(app)).toEqual([])
+  await app.host.send('fake.chat', { chat: false })
+  await app.host.send('fake.status', { address: 't1', state: 'done' })
+  await app.clock.runFor(3100)
+  expect(app.count('id:chat-view')).toBe(0)
+  expect(diags(app)).toEqual(['chat-gone addr=t1 agent=true program=claude'])
+})
+
+test('an open chat view whose pane stops being an agent says why for the diagnostics', async () => {
+  const app = await pane({ argv: 'fakeagent', chat: JSON.stringify({ chat: true, turns }) })
+  await app.press('id:show-chat')
+  await app.waitFor('id:chat-view')
+  await app.host.send('fake.status', { address: 't1', state: 'done', app: '' })
+  await app.clock.runFor(3100)
+  expect(app.count('id:chat-view')).toBe(0)
+  expect(diags(app)).toEqual(['chat-closed addr=t1 agent=false program=program chat=true'])
 })

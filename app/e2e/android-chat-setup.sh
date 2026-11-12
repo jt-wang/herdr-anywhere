@@ -104,6 +104,19 @@ latin() {
   only=$(printf %s "$ime_found" | tr ':' '\n' | awk -v ime="$ime" -v en="$en_sub" 'index($0, ime ";") == 1 || $0 == ime { $0 = ime ";" en } 1' | paste -sd: -)
   put enabled_input_methods "$only"; put selected_input_method_subtype "$en_sub"; "$adb" shell ime set "$ime" </dev/null >/dev/null
 }
+# latin with a box in focus, then type only once Gboard is up again on the English layout. latin restarts Gboard
+# under the focused box (it must come after the tap: on focus Gboard goes back to pinyin), and letters typed while it
+# restarts are lost: typed at once, the first typing in Pi's chat lost its first one or two letters in 5 of 6 tries
+# ("ELLO there"); typed after this wait, none in 6.
+latin_focused() {
+  latin
+  for _ in $(seq 1 40); do
+    "$adb" shell dumpsys input_method </dev/null | grep -q 'mInputShown=true' &&
+      [ "$("$adb" shell settings get secure selected_input_method_subtype </dev/null | tr -d '\r')" = "$en_sub" ] && break
+    sleep 0.25
+  done
+  sleep 1
+}
 file="$agent/extensions/herdr-anywhere.ts"
 
 "$adb" shell am start -W -n "$id/.MainActivity" >/dev/null
@@ -148,7 +161,7 @@ for _ in $(seq 1 20); do has 'resource-id="chat-setup-reload"' || break; sleep 1
 has 'resource-id="chat-setup-reload"' && { echo "FAIL: /reload typed, the chat still waits for it"; exit 1; }
 echo "ok: the phone typed /reload and Pi's conversation is found"
 tap compose-input
-latin
+latin_focused
 type_text "HELLO there"
 has 'text="HELLO there"' || { echo "FAIL: the keyboard changed what was typed"; snap fail; exit 1; }
 tap compose-send
