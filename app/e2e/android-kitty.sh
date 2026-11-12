@@ -48,6 +48,8 @@ providers:
         name: Test Model
         input: [text, image]
 EOF
+# The Companion's own autostart entry, if pair or serve ever makes one: never the person's (launchd labels are per user, not per HOME).
+export HERDR_ANYWHERE_AUTOSTART_NAME="hm-test-kitty-$$"
 export HC_SESSION="hmkitty-$$" HC_SOCKET="" HOME="$work/u" SHELL=/bin/zsh PATH="$work/bin:$PATH"
 export XDG_STATE_HOME="$work/state" XDG_CONFIG_HOME="$work/config" XDG_DATA_HOME="$work/data" XDG_RUNTIME_DIR="$run"
 serve_pid="" model_pid=""
