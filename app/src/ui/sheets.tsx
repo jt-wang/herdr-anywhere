@@ -27,11 +27,16 @@ export function NewSheet(props: { store: Store; target: Signal<NewTarget | null>
   const busy = signal(false)
   const error = signal('')
   const open = () => props.target() !== null
+  /** The machine the new tab goes on: a space's, or this computer for a new space. */
+  const machine = () => { rev(); const t = props.target(); return t?.kind === 'tab' ? s.model.space(t.space)?.machine : undefined }
   const agents = computed(() => {
     rev()
-    const have = s.installed.get('')
+    const have = s.installedOn(machine())
     return have ? startable().filter((p) => p.agent && have.includes(p.run![0])) : []
   })
+  // Asked again each time it opens, so an agent installed since shows; the last answer shows meanwhile.
+  // Only the target is read here: the store's own changes (rev) would ask again after every answer.
+  effect(() => { const t = props.target(); if (t) void s.refreshInstalled(t.kind === 'tab' ? s.model.space(t.space)?.machine : undefined) })
   const close = () => { props.target.set(null); picked.set(null); task.set(''); folder.set(''); picking.set(true); error.set(''); busy.set(false) }
   const where = () => {
     rev()

@@ -30,6 +30,8 @@ export class FakeCore implements Pipe {
   home = '/Users/sam'
   shell = '/bin/zsh'
   installed = ['claude', 'codex']
+  /** What another machine has installed, by name (`hc machine add`); asked each time, so a list can grow. */
+  installedOn = new Map<string, () => string[]>()
   /** `git status --porcelain=v2 --branch` output by folder, for the spaces list's branch. */
   git = new Map<string, string>()
   private framed = false
@@ -126,8 +128,7 @@ export class FakeCore implements Pipe {
       // What herdr-core answers for each (hc get): Codex is its node launcher in the foreground.
       if (t.foreground) term.foreground = t.argv[0] === 'codex' ? { name: 'node', argv: ['node', '/usr/local/bin/codex'], cwd: folder } : { name: t.argv[0], argv: t.argv, cwd: folder }
       if (t.screen) this.screens.set(term.address, t.screen)
-      // What each program reports as its status.app in OSC 7501; anything else here stands for Claude Code.
-      if (t.status) this.setStatus(term.address, t.status, ['codex', 'pi', 'opencode'].includes(t.argv[0]) ? t.argv[0] : 'claude-code', { kind: t.kind, msg: t.msg })
+      if (t.status) this.setStatus(term.address, t.status, t.argv[0] === 'codex' ? 'codex' : 'claude-code', { kind: t.kind, msg: t.msg })
       if (t.title) term.title = t.title
       s.tabs.push({ id: t.id, name: t.name ?? '', root: { id: t.id, type: 'row', children: [{ id: `p-${t.id}`, type: 'block', content: { terminal: term.address } }] } })
     }
@@ -277,7 +278,7 @@ export class FakeCore implements Pipe {
         if (own) return ok({ code: own.code ?? 0, stdout: b64utf8(own.stdout), stderr: b64utf8(own.stderr ?? ''), ms: 1, signal: null, timed_out: false })
         let stdout = ''
         if (line.includes('$HOME')) stdout = `${this.home}\n${this.shell}\n`
-        else if (line.includes('herdr-has')) stdout = this.installed.map((c) => `herdr-has:${c}\n`).join('')
+        else if (line.includes('herdr-has')) stdout = (pr.on ? this.installedOn.get(pr.on)?.() ?? [] : this.installed).map((c) => `herdr-has:${c}\n`).join('')
         else if (line.startsWith('git ')) {
           const g = this.git.get(pr.cwd ?? '')
           if (g === undefined) return ok({ code: 128, stdout: '', stderr: btoa('not a git repository'), ms: 1, signal: null, timed_out: false })

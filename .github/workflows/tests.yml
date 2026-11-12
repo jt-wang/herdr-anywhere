@@ -1,13 +1,14 @@
 name: Tests
 
-# Every pull request and every push to main or ci (where a release's commit is tested before main) runs the
+# Every pull request and every push to main, ci (where a release's commit is tested before main) or a ci-* branch (a
+# change tried on its own, beside the others) runs the
 # tests a contributor runs locally, plus a secret scan over the whole history. The device suites (app/e2e/android*.sh,
 # ios*.sh) and user-path.sh run in devices.yml, on emulators and simulators; app/e2e/run.sh runs in computers.yml,
 # with herdr-core.
 on:
   pull_request:
   push:
-    branches: [main, ci]
+    branches: [main, ci, "ci-*"]
   workflow_dispatch:
 
 permissions:
@@ -35,9 +36,7 @@ jobs:
         with:
           go-version-file: companion/go.mod
           cache-dependency-path: companion/go.sum
-      # cmd/herdr-anywhere cross-compiles each release file: on this runner the package takes close to go test's
-      # default 10 minutes with no test failing (computers.yml gives it 30 for the same reason).
-      - run: go vet ./... && go test -timeout 30m ./...
+      - run: go vet ./... && go test ./...
         working-directory: companion
       # The filing agent's last evaluation (eval/filing/last-report.json) is for the rules and code as they are now and
       # passed. The evaluation itself needs an agent's login, so it runs where that is: run.sh.

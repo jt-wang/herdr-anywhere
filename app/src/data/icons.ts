@@ -79,6 +79,7 @@ import i_nuxt from '../../assets/icons/nuxt.svg'
 import i_nvim from '../../assets/icons/nvim.svg'
 import i_ocaml from '../../assets/icons/ocaml.svg'
 import i_ollama from '../../assets/icons/ollama.svg'
+import i_omp from '../../assets/icons/omp.svg'
 import i_opencode from '../../assets/icons/opencode.svg'
 import i_pacman from '../../assets/icons/pacman.svg'
 import i_perl from '../../assets/icons/perl.svg'
@@ -202,6 +203,7 @@ export const PROGRAM_ICONS: Record<string, any> = {
   "nvim": i_nvim,
   "ocaml": i_ocaml,
   "ollama": i_ollama,
+  "omp": i_omp,
   "opencode": i_opencode,
   "pacman": i_pacman,
   "perl": i_perl,

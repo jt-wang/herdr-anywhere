@@ -7,10 +7,11 @@ name: Devices
 # the check first proves on a real pairing link that it finds one.
 # Android: API 35 emulators on Linux runners (app/e2e/ci/android-up.sh). iOS: iOS 26.5 simulators on macOS runners
 # (app/e2e/ci/ios-up.sh); the app is built for the simulator, unsigned.
-# It runs on main, on release tags and on the public branch ci, where each release's commit must pass before main.
+# It runs on main, on release tags, on the public branch ci, where each release's commit must pass before main, and
+# on ci-* branches, where a change is tried on its own beside the others. Each branch has its own concurrency group.
 on:
   push:
-    branches: [main, ci]
+    branches: [main, ci, "ci-*"]
     tags: ["v*"]
   workflow_dispatch:
     inputs:
@@ -18,12 +19,17 @@ on:
         description: "Also measure what a phone sees over Tailcat when it can't connect (after a Tailcat or TailPocket update)"
         type: boolean
         default: false
-      # A suite that passes one run and fails the next needs more runs to show why: this many copies of the iOS main
-      # group at once, on the commit asked for, and no other suite. Each uploads its own folder, checked as always.
-      # 5 at most: GitHub runs 5 macOS jobs at a time for an account on the Free, Pro or Team plan, across all its
-      # repositories (docs.github.com/en/actions/reference/limits); more would only wait.
+      # A suite that passes one run and fails the next needs more runs to show why: this many copies of one iOS group
+      # at once, on the commit asked for, and no other suite. Each uploads its own folder, checked as always. With both
+      # set, the main group's. 5 at most: GitHub runs 5 macOS jobs at a time for an account on the Free, Pro or Team
+      # plan, across all its repositories (docs.github.com/en/actions/reference/limits); more would only wait.
       ios_main_repeat:
         description: "Run only the iOS main group, this many copies at once (0: the usual run)"
+        type: choice
+        options: ["0", "1", "2", "3", "4", "5"]
+        default: "0"
+      ios_b_repeat:
+        description: "Run only the iOS Tailcat and pictures group, this many copies at once (0: the usual run)"
         type: choice
         options: ["0", "1", "2", "3", "4", "5"]
         default: "0"
@@ -33,7 +39,7 @@ permissions:
 
 concurrency:
   # A run of copies has a group of its own, so it doesn't cancel the branch's usual run, nor that run it.
-  group: devices-${{ github.ref }}${{ (inputs.ios_main_repeat || '0') != '0' && '-repeat' || '' }}
+  group: devices-${{ github.ref }}${{ ((inputs.ios_main_repeat || '0') != '0' || (inputs.ios_b_repeat || '0') != '0') && '-repeat' || '' }}
   cancel-in-progress: true
 
 env:
@@ -42,7 +48,7 @@ env:
 jobs:
   build:
     name: Build the APK and the Linux companion
-    if: github.repository == 'jt-wang/herdr-anywhere' && (inputs.ios_main_repeat || '0') == '0'
+    if: github.repository == 'jt-wang/herdr-anywhere' && (inputs.ios_main_repeat || '0') == '0' && (inputs.ios_b_repeat || '0') == '0'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     outputs:
@@ -85,7 +91,7 @@ jobs:
   # as 9.9.9, that one under another key, the previous release's APK built from its tag, and the companions.
   build-update:
     name: Build the update test's files
-    if: github.repository == 'jt-wang/herdr-anywhere' && (inputs.ios_main_repeat || '0') == '0'
+    if: github.repository == 'jt-wang/herdr-anywhere' && (inputs.ios_main_repeat || '0') == '0' && (inputs.ios_b_repeat || '0') == '0'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -200,6 +206,7 @@ jobs:
               fresh; $s notify e2e/android-notify.sh "$APK" "$COMPANION" "$OUT/notify"
               # android-notify-folded.sh stays on a Mac for now: this image's shade puts the app's alert and its
               # silent keep-alive in two sections, so there is no group row to read the folded line from.
+              fresh; $s sheet-title e2e/android-sheet-title.sh "$APK" "$COMPANION" "$OUT/sheet-title"
               ;;
             progress)
               mkdir -p "$OUT/progress-light" "$OUT/progress-dark"
@@ -318,7 +325,7 @@ jobs:
   # INSTALL.md's Mac steps from a folder of release files with no Go on the path, then start through Tailcat and a code.
   user-path:
     name: Install steps from the release files (Mac)
-    if: github.repository == 'jt-wang/herdr-anywhere' && (inputs.ios_main_repeat || '0') == '0'
+    if: github.repository == 'jt-wang/herdr-anywhere' && (inputs.ios_main_repeat || '0') == '0' && (inputs.ios_b_repeat || '0') == '0'
     runs-on: macos-26
     timeout-minutes: 30
     steps:
@@ -364,9 +371,9 @@ jobs:
       fail-fast: false
       matrix:
         # a: main, keyboard, letters, languages, scrolling; b: Tailcat, pictures. copy 0 is the usual run; a run of
-        # copies (ios_main_repeat) has only a, numbered from 1.
-        key: ${{ fromJSON((inputs.ios_main_repeat || '0') != '0' && '["a"]' || '["a", "b"]') }}
-        copy: ${{ fromJSON(inputs.ios_main_repeat == '1' && '[1]' || inputs.ios_main_repeat == '2' && '[1, 2]' || inputs.ios_main_repeat == '3' && '[1, 2, 3]' || inputs.ios_main_repeat == '4' && '[1, 2, 3, 4]' || inputs.ios_main_repeat == '5' && '[1, 2, 3, 4, 5]' || '[0]') }}
+        # copies (ios_main_repeat or ios_b_repeat) has only that group, numbered from 1.
+        key: ${{ fromJSON(inputs.ios_main_repeat != '0' && inputs.ios_main_repeat && '["a"]' || inputs.ios_b_repeat != '0' && inputs.ios_b_repeat && '["b"]' || '["a", "b"]') }}
+        copy: ${{ fromJSON('{"0":[0],"1":[1],"2":[1,2],"3":[1,2,3],"4":[1,2,3,4],"5":[1,2,3,4,5]}')[inputs.ios_main_repeat != '0' && inputs.ios_main_repeat || inputs.ios_b_repeat != '0' && inputs.ios_b_repeat || '0'] }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

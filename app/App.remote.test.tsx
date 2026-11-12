@@ -32,3 +32,45 @@ test('every space on this computer: no machine name, as before', async () => {
   await app.wait(300)
   expect(app.texts()).not.toContain('studio')
 })
+
+// What a new tab can run is what its machine has: herdr-core's `machine.exec --on` asks that machine, as for this one.
+const newAgents = (app: any) => ['claude', 'codex', 'pi'].filter((k) => app.count(`id:new-${k}`) > 0)
+
+test("adding an agent on a server lists the server's agents, not this computer's", async () => {
+  const app = await home('both')
+  await app.waitFor('id:space-sp9')
+  await app.press('id:add-agent-my-server/sp1')
+  await app.waitFor('id:new-pi')
+  expect(newAgents(app)).toEqual(['pi'])
+})
+
+test("adding an agent on this computer still lists this computer's agents", async () => {
+  const app = await home('both')
+  await app.waitFor('id:space-sp9')
+  await app.waitFor('text:my-server')
+  await app.press('id:add-agent-sp9')
+  await app.waitFor('id:new-claude')
+  expect(newAgents(app)).toEqual(['claude', 'codex'])
+})
+
+test("the switcher's new agents in a server's space are the server's", async () => {
+  const app = await home('both')
+  await app.waitFor('id:space-sp9')
+  await app.press('id:space-my-server/sp1')
+  await app.press('id:switcher')
+  await app.waitFor('id:switch-new-pi')
+  expect(['claude', 'codex', 'pi'].filter((k) => app.count(`id:switch-new-${k}`) > 0)).toEqual(['pi'])
+})
+
+test('an agent installed on the server later shows the next time the menu opens', async () => {
+  const app = await open('./fixtures/fake.tsx', { host: { params: { scene: 'busy', remote: 'both', remoteInstalls: 'later' } } })
+  await app.waitFor('id:space-sp9')
+  await app.press('id:add-agent-my-server/sp1')
+  await app.waitFor('id:new-pi')
+  expect(newAgents(app)).toEqual(['pi'])
+  await app.back()
+  await app.wait(300)
+  await app.press('id:add-agent-my-server/sp1')
+  await app.waitFor('id:new-codex')
+  expect(newAgents(app)).toEqual(['codex', 'pi'])
+})

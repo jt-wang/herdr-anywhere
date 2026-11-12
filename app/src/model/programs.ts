@@ -95,7 +95,9 @@ export function agentArgv(argv: string[] | undefined, task: string | undefined, 
   if (!argv || !argv.length) return undefined
   const t = task?.trim()
   const cmd = t ? [...argv, t] : [...argv]
-  if (on) return ['sh', '-c', '"$@"; exec "${SHELL:-sh}" -i', 'sh', ...cmd]
+  // Another machine: its own shell, interactive like this computer's, so its ~/.zshrc PATH is there (the menu's probe
+  // asks the same way, store.ts refreshInstalled). sh when it has no SHELL (a container reached with docker exec).
+  if (on) return ['sh', '-c', 'exec "${SHELL:-sh}" -ic \'"$@"; exec "$0" -i\' "${SHELL:-sh}" "$@"', 'sh', ...cmd]
   return [shell, '-ic', '"$@"; exec "$0" -i', shell, ...cmd]
 }
 
