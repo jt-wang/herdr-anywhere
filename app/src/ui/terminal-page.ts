@@ -666,8 +666,12 @@ const BOOT = `(function () {
   // Rows of finger travel per step.
   function rowsPerStep() { return term.modes.mouseTrackingMode !== 'none' ? wheelRows() : 1; }
   // x, y: where the finger went down. It picks the panel, and a program can ignore a wheel elsewhere (OpenCode's prompt box).
+  // No further left than column 3: OpenCode 1.19.0 takes no wheel on its first two columns, where a finger at the
+  // screen's left edge lands (iOS's swipe back strip), measured through herdr-core (companion TestLiveOpenCodeWheelColumns).
   function scrollView(lines, x, y) {
     if (!ownScroll()) { term.scrollLines(-lines); if (term.buffer.active.viewportY > live()) term.scrollToLine(live()); return where(); }
+    var r = term.element.querySelector('.xterm-screen').getBoundingClientRect();
+    x = Math.max(x, r.left + (r.width / term.cols) * 2.5);
     for (var i = Math.abs(lines); i > 0; i--) term.element.dispatchEvent(new WheelEvent('wheel', { deltaY: lines > 0 ? -1 : 1, deltaMode: 1, clientX: x, clientY: y, bubbles: true, cancelable: true }));
   }
   // A click where the finger was, for a program that follows the mouse. touchend stops the mouse events a tap would
