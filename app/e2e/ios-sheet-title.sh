@@ -82,6 +82,12 @@ while kill -0 "$test_pid" 2>/dev/null; do
 done
 rc=0; wait "$test_pid" || rc=$?; test_pid=""
 cp "$work"/t/*.png "$shots/" 2>/dev/null || true
+# A first tap that opened nothing (SheetTitle notes it, with the screen's elements, and taps again): said here, and
+# the elements kept beside the pictures, unless they hold anything of the pairing.
+if [ -f "$work/t/notes.txt" ]; then
+  sed 's/^/NOTE: /' "$work/t/notes.txt"
+  for f in "$work"/t/*-first-tap.txt; do [ -f "$f" ] && ! grep -qE 'pair=|token=' "$f" && cp "$f" "$shots/"; done
+fi
 if [ "$rc" != 0 ]; then
   # xcodebuild -quiet leaves the failures' messages out of its log: they are in the result bundle, with XCTest's
   # screenshots at each; the Companion's log, the simulator's crash reports and the machine's load go with them.
