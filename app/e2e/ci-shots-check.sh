@@ -116,6 +116,8 @@ self_test() {
   case_ "a picture showing the link, no secret file given" fail "$t/words-bare"
   mkdir -p "$t/words-grey"; cp "$t/sample/words-grey.png" "$t/words-grey/"
   case_ "a phone screen showing the link in a field's grey, no secret file given" fail "$t/words-grey"
+  mkdir -p "$t/words-grey-small"; cp "$t/sample/words-grey-small.png" "$t/words-grey-small/"
+  case_ "a phone screen showing a made-up link in a smaller grey, no secret file given" fail "$t/words-grey-small"
   if [ -f "$t/sample/words.mp4" ]; then
     mkdir -p "$t/video"; cp "$t/sample/words.mp4" "$t/video/"
     case_ "a screen recording showing the link for 2 s, no secret file given" fail "$t/video"

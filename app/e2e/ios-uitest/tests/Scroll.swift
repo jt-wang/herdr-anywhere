@@ -36,8 +36,11 @@ final class Scroll: XCTestCase {
       app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.01)).tap()
       note("tapped beside the space (MISS_FIRST)")
     } else {
+      // Where and when, read before the tap: once the space opens the tile is gone, and reading it then failed the
+      // test ("Failed to get matching snapshot").
+      let at = NSCoder.string(for: tile.frame), after = Date().timeIntervalSince(seen)
       tile.tap()
-      note(String(format: "tapped the space at %@, %.1f s after the test saw it listed", NSCoder.string(for: tile.frame), Date().timeIntervalSince(seen)))
+      note(String(format: "tapped the space at %@, %.1f s after the test saw it listed", at, after))
     }
     // The terminal itself, not its "Connecting…" line (terminal-state), which the same prefix also finds. On a CI run the
     // first drag, 4 s after the terminal showed, sent the program nothing and the later ones worked, most likely as the page was not
