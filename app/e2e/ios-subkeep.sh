@@ -64,8 +64,15 @@ keep() { # THEME KID
   if [ "$rc" != 0 ]; then
     echo "FAIL: $theme (xcodebuild test exit $rc)"
     "$app/e2e/ios-xcresult.sh" "$work/uitest/result-$theme.xcresult" "$out/$theme-failure" all
-    exit 1
+    mkdir -p "$out/$theme-failure"
+    # The screen's elements where the test stopped (SubKeep.swift), unless they hold a pairing link.
+    for f in "$work/$theme.txt"-*.txt; do
+      [ -f "$f" ] && ! grep -qE 'pair=|herdr[0-9]:|token=' "$f" && cp "$f" "$out/$theme-failure/elements-${f##*/$theme.txt-}"
+    done
+    tail -30 "$work/uitest/test-$theme.log" | sed 's/^/  /'
+    failed=1; return
   fi
+  grep -q '^first tap on the row: nothing opened' "$work/$theme.txt" && echo "NOTE: $theme: the first tap on the row opened nothing; the second did"
   second=$(sed -n 's/^second tap: //p' "$work/$theme.txt")
   tabs=$(sk_tabs "$kid"); state=$(sk_state "$kid")
   echo "$theme: tapping its row again opened: $second; tabs for it in the shared layout: $tabs; it is $state"
