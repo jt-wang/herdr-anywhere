@@ -20,7 +20,7 @@ out=${2:?output dir}
 mkdir -p "$out"
 expect_new=1; [ "${HM_E2E_EXPECT:-new}" = old ] && expect_new=""
 adb="${ANDROID_HOME:-$HOME/Library/Android/sdk}/platform-tools/adb"
-hc=$(command -v hc || echo "$HOME/.local/bin/hc")
+hc=${HM_TEST_HC:-$(command -v hc || echo "$HOME/.local/bin/hc")}
 id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$app/nsh.json")
 
 port=7691

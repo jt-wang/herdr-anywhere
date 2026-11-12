@@ -17,7 +17,7 @@ shot=${2:-}
 # a request from this computer reads as local.
 mask='s/token=[^ &]+/token=…/; s/ (127\.0\.0\.1|::1) (GET|POST)/ @loopback:\1@ \2/; s/[0-9a-f:.]{7,} (GET|POST)/<addr> \1/; s/@loopback:([^@]*)@/\1/'
 adb="${ANDROID_HOME:-$HOME/Library/Android/sdk}/platform-tools/adb"
-hc=$(command -v hc || echo "$HOME/.local/bin/hc")
+hc=${HM_TEST_HC:-$(command -v hc || echo "$HOME/.local/bin/hc")}
 id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$app/nsh.json")
 
 port=7691

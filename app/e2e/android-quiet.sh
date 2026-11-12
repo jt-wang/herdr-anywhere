@@ -11,7 +11,7 @@ app=$(cd "$(dirname "$0")/.." && pwd)
 apk=${1:-$app/android/build/Herdr.apk}
 shot=${2:-}
 adb="${ANDROID_HOME:-$HOME/Library/Android/sdk}/platform-tools/adb"
-hc=$(command -v hc || echo "$HOME/.local/bin/hc")
+hc=${HM_TEST_HC:-$(command -v hc || echo "$HOME/.local/bin/hc")}
 id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$app/nsh.json")
 
 port=7691
@@ -148,7 +148,7 @@ if [ -n "${HM_UPLOAD_MB:-}" ]; then
   t0=$(date +%s)
   got=""; for _ in $(seq 1 600); do
     for f in "$work"/home/.cache/herdr-anywhere/uploads/*/"$big"; do
-      [ -f "$f" ] && screen_has "$big" && [ "$(stat -f %z "$f")" = "$(stat -f %z "$work/$big")" ] && { got=$f; break 2; }
+      [ -f "$f" ] && screen_has "$big" && [ "$(wc -c < "$f")" = "$(wc -c < "$work/$big")" ] && { got=$f; break 2; }
     done
     sleep 1
   done

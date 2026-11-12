@@ -9,7 +9,7 @@ set -eu
 apk=$1; bin=$2; shots=${3:-}
 app=$(cd "$(dirname "$0")/.." && pwd)
 adb="${ANDROID_HOME:-$HOME/Library/Android/sdk}/platform-tools/adb"
-hc=$(command -v hc || echo "$HOME/.local/bin/hc")
+hc=${HM_TEST_HC:-$(command -v hc || echo "$HOME/.local/bin/hc")}
 id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$app/nsh.json")
 port=7791; while nc -z 127.0.0.1 "$port" 2>/dev/null; do port=$((port + 1)); done
 work=$(mktemp -d); run=$(mktemp -d /tmp/hmXXXX); state=$(mktemp -d /tmp/hmtcXXXX)
