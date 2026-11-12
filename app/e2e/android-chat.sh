@@ -7,6 +7,7 @@
 # languages, light and dark. Fake data only.
 # Usage: ANDROID_SERIAL=emulator-5554 e2e/android-chat.sh APK COMPANION [folder for screenshots]
 set -eu
+. "$(dirname "$0")/autostart-guard.sh"; autostart_guard android-chat # a login entry of its own, never the person's
 : "${ANDROID_SERIAL:?set ANDROID_SERIAL to the device to use}"
 apk=$1; bin=$2; shot=${3:-}
 [ -z "$shot" ] || mkdir -p "$shot"
@@ -25,14 +26,14 @@ cp "$app/e2e/files/clip.mp4" "$work/home/src/acme-api/renders/demo.mp4"; cp "$ap
 : > "$work/home/.zshrc"
 # herdr-core passes the environment of whatever first started it to every terminal: started from inside a Claude Code
 # session, every Claude in it inherits CLAUDE_CODE_CHILD_SESSION=1 and saves no transcript (seen with Claude Code 2.1.319).
+. "$app/e2e/companion.sh"  # companion_start, companion_stop
 clean() {
-  env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin HOME="$work/home" SHELL=/bin/zsh TERM=xterm-256color LANG=en_US.UTF-8 \
+  env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin HOME="$work/home" HERDR_ANYWHERE_AUTOSTART_NAME="$HERDR_ANYWHERE_AUTOSTART_NAME" SHELL=/bin/zsh TERM=xterm-256color LANG=en_US.UTF-8 \
     HC_SESSION="hmac-$$" HC_SOCKET="" XDG_STATE_HOME="$work/state" XDG_CONFIG_HOME="$work/config" XDG_DATA_HOME="$work/data" XDG_RUNTIME_DIR="$run" \
     CLAUDE_CONFIG_DIR="$work/claude" "$@"
 }
 lhc() { clean "$hc" "$@"; }
 # Every way out (done, a failed step, Ctrl-C, kill) stops the companion and the core and removes the temp files.
-serve_pid=
 # Dark mode as found ("Night mode: no" → no), put back on the way out.
 # Screen density and text size as found, put back on the way out (the narrow check changes both).
 density=$("$adb" shell wm density | tr -d '\r' | sed -n 's/^Override density: //p'); font=$("$adb" shell settings get system font_scale | tr -d '\r')
@@ -42,12 +43,14 @@ cleanup() {
   # herdr-core, the agents' own background servers and the Companion would stay running.
   trap - EXIT; trap '' INT TERM HUP
   set +e  # under set -e, the first thing not found (pkill with nothing to stop) would end the script here
-  [ -n "$serve_pid" ] && { pkill -P "$serve_pid" 2>/dev/null; kill "$serve_pid" 2>/dev/null; }
-  pkill -f -- "--state $state" 2>/dev/null || true
+  companion_stop || stop_failed=1
   if [ -n "$density" ]; then "$adb" shell wm density "$density"; else "$adb" shell wm density reset; fi >/dev/null 2>&1 || true
   case $font in ''|null) "$adb" shell settings delete system font_scale ;; *) "$adb" shell settings put system font_scale "$font" ;; esac >/dev/null 2>&1 || true
   "$adb" shell cmd uimode night "$night" >/dev/null 2>&1 || true; "$adb" shell cmd locale set-app-locales "$id" --locales "" </dev/null >/dev/null 2>&1 || true
   lhc server stop >/dev/null 2>&1 || true; chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run" "$state"
+  autostart_guard_end || exit 1
+  # A Companion that did not end fails the run (companion_stop said which).
+  [ -z "${stop_failed:-}" ] || exit 1
 }
 trap cleanup EXIT
 trap 'cleanup; exit 130' INT
@@ -55,10 +58,7 @@ trap 'cleanup; exit 143' TERM HUP
 lhc run --bg --keep --cwd "$work/home/src/acme-api" --name claude --label herdr.space=spac1 --label herdr.tab=tbac1 \
   python3 "$app/e2e/fake-claude.py" "$fixtures/turns.jsonl" "$fixtures/steps.jsonl" "$fixtures/files.jsonl" "$fixtures/gallery.jsonl" >/dev/null
 lhc run --bg --keep --cwd "$work/home/notes" --label herdr.space=spac2 --label herdr.tab=tbac2 >/dev/null
-clean "$bin" serve --listen "127.0.0.1:$port" --hc "$hc" --state "$state" > "$work/serve.log" 2>&1 &
-# $! is the subshell that runs clean; the companion is its child, and killing only the subshell leaves it running.
-serve_pid=$!
-sleep 1
+companion_start "$work/serve.log" clean "$bin" serve --listen "127.0.0.1:$port" --hc "$hc" --state "$state" || exit 1
 invite=$(clean "$bin" pair --url "http://10.0.2.2:$port" --state "$state" 2>/dev/null | grep -o 'http://[^ ]*#pair=[A-Za-z0-9_-]*' | head -1)
 [ -n "$invite" ] || { echo "FAIL: no invite"; exit 1; }
 "$adb" uninstall "$id" >/dev/null 2>&1 || true

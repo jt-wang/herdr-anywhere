@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.1.25
+
+- A chat view for Claude Code, Codex, Pi and OpenCode. A chat button on the pane shows the conversation over the terminal as a chat: what you said, each step, the reply, and the question the agent is waiting on. Another tap goes back to the terminal. It needs Companion 0.1.25 on your computer.
+- Pictures from the terminal zoom with a pinch or a double tap.
+- The input box fits its whole hint at any text size. A message herdr-core holds back stays in the box and says why. The keyboard stays up while a message sends, so you can write the next one, and a message the app closed on comes back to the box the next time it opens.
+- A quick tap on a busy terminal page, on a picture for example, is a tap, not a touch and hold.
+- On a wide screen, the first tap on another tab after a line sent from the input box switches to it.
+- A terminal page that is slow to load says "The terminal is still loading…" with Try again, instead of "The terminal didn't load."
+- Android notifications keep the words an agent reports just as it finishes, so a finish says what the agent did.
+
+Android: `Herdr-Anywhere.apk`; an installed 0.1.6 or later can update to it from home. Intel Mac: `herdr-anywhere-macos-amd64`.
+
 ## v0.1.24
 
 - A picture path that an agent breaks over several rows opens again. In 0.1.23 a long path Claude Code listed beside the file's size could not be tapped; now every row of the path is underlined and a tap on any of them opens the picture. Checked with Claude Code, Codex, OpenCode, Pi and Kimi Code at phone widths.

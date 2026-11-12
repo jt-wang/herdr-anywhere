@@ -99,6 +99,41 @@ func organizerDue(q []track.Pending, cfg organizerConfig, now time.Time) bool {
 	return now.Sub(time.UnixMilli(oldest)) >= cfg.Wait
 }
 
+// inputBoxEmpty says whether the bottom of a Claude Code screen is an empty
+// input box. From the bottom up, the first ❯ starts the prompt: a rule above
+// and below it, and nothing after ❯ but whitespace, make it empty. A suggestion
+// or a user's half-typed draft is not empty, and neither is a choice dialog,
+// whose ❯ has no rules around it.
+func inputBoxEmpty(screen string) bool {
+	lines := strings.Split(screen, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimLeft(strings.TrimSuffix(lines[i], "\r"), " \t")
+		if !strings.HasPrefix(line, "❯") {
+			continue
+		}
+		if i == 0 || i+1 >= len(lines) {
+			return false
+		}
+		return ruleLine(lines[i-1]) && ruleLine(lines[i+1]) &&
+			strings.TrimSpace(strings.TrimPrefix(line, "❯")) == ""
+	}
+	return false
+}
+
+// ruleLine is one of the two horizontal lines around Claude Code's input box.
+func ruleLine(line string) bool {
+	line = strings.TrimSpace(strings.TrimSuffix(line, "\r"))
+	if line == "" {
+		return false
+	}
+	for _, r := range line {
+		if r != '─' {
+			return false
+		}
+	}
+	return true
+}
+
 // organizerKick starts the filing pane if needed and, when a batch is due and the
 // pane is idle or done, types the batch prompt. It returns what it did.
 func organizerKick(hc, state string, st *track.Store, now time.Time) (string, error) {
@@ -123,10 +158,45 @@ func organizerKick(hc, state string, st *track.Store, now time.Time) (string, er
 	if ps.TermState != "live" || (ps.State != "idle" && ps.State != "done") {
 		return "", nil // busy, or on a dialog the user sees under Needs you
 	}
+	// An idle Claude Code pane can still show a suggestion or the user's own draft
+	// in its input box; Enter would submit that instead of the batch. Only an empty
+	// box takes the batch, and nothing here clears a box to make room. The check
+	// reads Claude Code's input box; other agents draw theirs differently.
+	if cfg.claudeCode() {
+		if empty, err := paneInputEmpty(hc, addr); err != nil || !empty {
+			return "", err
+		}
+	}
 	if out, err := runFor(10*time.Second, hc, "send", addr, organizerKickFor(cfg)); err != nil {
 		return "", fmt.Errorf("hc send %s: %v %s", addr, err, out)
 	}
 	return fmt.Sprintf("handed %d to the filing pane %s", len(f.Queue), addr), nil
+}
+
+// claudeCode says whether the filing pane runs Claude Code: the agent the user
+// picked, or before a pick the command it was given.
+func (c organizerConfig) claudeCode() bool {
+	if c.Agent != "" {
+		return c.Agent == "claude-code"
+	}
+	f := strings.Fields(c.Cmd)
+	return len(f) > 0 && filepath.Base(f[0]) == "claude"
+}
+
+// paneInputEmpty reads the pane's screen and says whether it ends in an empty
+// Claude Code input box.
+func paneInputEmpty(hc, addr string) (bool, error) {
+	out, err := runFor(5*time.Second, hc, "read", addr, "--json")
+	if err != nil {
+		return false, fmt.Errorf("hc read %s: %v %s", addr, err, out)
+	}
+	var screen struct {
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(out, &screen); err != nil {
+		return false, fmt.Errorf("hc read %s: %w", addr, err)
+	}
+	return inputBoxEmpty(screen.Text), nil
 }
 
 // organizerPane is the filing pane's command. Codex runs in its sandbox, where it
@@ -143,6 +213,7 @@ func organizerPane(cfg organizerConfig, state string) rolePane {
 // folder: it may run the track commands its rules name without asking, nothing else.
 // Other harnesses ask the user, which shows up as the pane waiting.
 const organizerSettings = `{
+  "promptSuggestionEnabled": false,
   "permissions": {
     "allow": ["Bash(herdr-anywhere track queue:*)", "Bash(herdr-anywhere track place:*)", "Bash(herdr-anywhere track tree:*)",
       "Bash(herdr-anywhere track set:*)", "Bash(herdr-anywhere track move:*)"]
@@ -455,6 +526,15 @@ func progressCommand(args []string, stdout, stderr io.Writer) error {
 		fmt.Fprint(stdout, progressUsage)
 		return usageError{errors.New("missing subcommand")}
 	}
+	switch args[0] {
+	case "-h", "--help", "help":
+		fmt.Fprint(stdout, progressUsage)
+		return nil
+	case "on", "off", "once", "status", "lang", "agents", "organizer":
+	default:
+		return usageError{fmt.Errorf("unknown progress subcommand %q", args[0])}
+	}
+	// The state folder is made only for a subcommand: help and a word it does not know write nothing.
 	home, _ := os.UserHomeDir()
 	state := stateDir("", os.Getenv("HERDR_ANYWHERE_STATE"), home)
 	if err := os.MkdirAll(state, 0o700); err != nil {
@@ -536,9 +616,6 @@ func progressCommand(args []string, stdout, stderr io.Writer) error {
 			}
 		}
 		return writeJSON(stdout, cfg)
-	case "-h", "--help", "help":
-		fmt.Fprint(stdout, progressUsage)
-		return nil
 	}
-	return usageError{fmt.Errorf("unknown progress subcommand %q", args[0])}
+	return nil
 }
