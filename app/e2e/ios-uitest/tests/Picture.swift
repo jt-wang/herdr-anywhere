@@ -7,7 +7,8 @@ import XCTest
 // Around the tap on the path it notes the terminal's frame, how long after the script switched the appearance
 // (SWITCHED, seconds since 1970) it came, and the screen's elements in $OUT-<name>.txt. If the tap opens no picture: the
 // frame and elements again, then a second tap only to see whether that one opens it; the test fails all the same. For
-// the script's self-test, MISS_FIRST=1 makes the first tap land at the top of the screen, beside the path.
+// the script's self-test, MISS_FIRST=1 makes the first tap land at the top of the screen, beside the path, and
+// NO_TAP_FIRST=1 makes no first tap at all (only its notes), for the touch log to tell a tap never made from one made.
 final class Picture: XCTestCase {
   func test() {
     let env = ProcessInfo.processInfo.environment
@@ -64,10 +65,16 @@ final class Picture: XCTestCase {
     let switched = Double(env["SWITCHED"] ?? "").map { String(format: "%.1f s after the appearance switch", Date().timeIntervalSince1970 - $0) } ?? "no appearance switch time given"
     let frame = term.frame
     elements("before-tap")
+    // "tapping" just before each tap: e2e/ios-touch-log.sh counts the touches UIKit sent the app from there to the next note.
     if env["MISS_FIRST"] == "1" {
+      note("tapping beside the path (MISS_FIRST)")
       app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.01)).tap()
       note("tapped beside the path (MISS_FIRST), \(switched); terminal at \(NSCoder.string(for: frame))")
+    } else if env["NO_TAP_FIRST"] == "1" {
+      note("tapping the path (NO_TAP_FIRST: no tap is made)")
+      note("did not tap the path (NO_TAP_FIRST), \(switched); terminal at \(NSCoder.string(for: frame))")
     } else {
+      note("tapping the path")
       cell(0, 12).tap()
       note("tapped the path, \(switched); terminal at \(NSCoder.string(for: frame))")
     }
@@ -80,7 +87,9 @@ final class Picture: XCTestCase {
       elements("no-picture")
       sleep(1); touches("tap the path")
       // Only to see whether the page takes a tap now; the test fails all the same.
+      note("tapping the path again")
       cell(0, 12).tap()
+      note("tapped the path again")
       opened = el("picture-image").waitForExistence(timeout: 20)
       note("tapped a second time, picture shown: \(opened)")
       if !opened { elements("after-second-tap"); sleep(1); touches("second tap") }
