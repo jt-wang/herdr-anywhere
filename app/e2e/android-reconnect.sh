@@ -47,7 +47,8 @@ cleanup() {
   chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run" "$state"
 }
 trap 'adb_exit $? cleanup' EXIT
-trap cleanup INT TERM
+# INT and TERM end the suite; the EXIT trap cleans up (a handler that only cleans up lets the script go on).
+trap 'exit 130' INT; trap 'exit 143' TERM
 
 "$adb" install -r "$apk" >/dev/null
 "$adb" shell pm clear "$id" >/dev/null

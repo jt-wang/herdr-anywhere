@@ -20,7 +20,7 @@ cleanup() {
   rm -rf "$work"
   xcrun simctl shutdown "$SIM_UDID" 2>/dev/null || true
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT; trap 'exit 130' INT; trap 'exit 143' TERM
 
 if [ -z "$bundle" ]; then
   "$app/ios/build.sh" App.tsx simulator >/dev/null 2>&1 || { echo "FAIL: ios/build.sh"; exit 1; }

@@ -108,6 +108,9 @@ jobs:
           MAIN_REPEAT: ${{ inputs.ios_main_repeat || '0' }}
           B_REPEAT: ${{ inputs.ios_b_repeat || '0' }}
         run: |
+          # Every script's trap on INT or TERM ends it (a cancelled or timed-out job sends one), and the check finds one that doesn't.
+          sh app/e2e/ci/traps.sh --self-test
+          sh app/e2e/ci/traps.sh
           sh app/e2e/ci/groups.sh --self-test
           sh app/e2e/ci/groups.sh "$HM_GROUPS" "$MAIN_REPEAT" "$B_REPEAT" > "$RUNNER_TEMP/groups"
           cat "$RUNNER_TEMP/groups"
