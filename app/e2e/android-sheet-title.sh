@@ -17,8 +17,10 @@ adb="${ANDROID_HOME:-$HOME/Library/Android/sdk}/platform-tools/adb"
 hc=$(command -v hc || echo "$HOME/.local/bin/hc")
 id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$app/nsh.json")
 port=7791; while nc -z 127.0.0.1 "$port" 2>/dev/null; do port=$((port + 1)); done
-work=$(mktemp -d); run=$(mktemp -d /tmp/hmXXXX); boxrun=$(mktemp -d /tmp/hbXXXX); dockrun=$(mktemp -d /tmp/hdXXXX); state=$(mktemp -d /tmp/hmtcXXXX)
-mkdir -p "$shots" "$work/me/src/acme-api" "$work/box/src/acme-web" "$work/state" "$work/config" "$work/data" "$work/boxstate" "$work/dock/src/acme-docs" "$work/dockstate"
+work=$(cd "$(mktemp -d)" && pwd -P); run=$(mktemp -d /tmp/hmXXXX); boxrun=$(mktemp -d /tmp/hbXXXX); dockrun=$(mktemp -d /tmp/hdXXXX); state=$(mktemp -d /tmp/hmtcXXXX)
+# Every machine's folder is under this computer's home (its real path, as the machines report folders), so the sheet shows
+# it as ~/src/<name>, a made-up name, never a path of this computer.
+mkdir -p "$shots" "$work/me/src/acme-api" "$work/me/src/acme-web" "$work/state" "$work/config" "$work/data" "$work/boxstate" "$work/me/src/acme-docs" "$work/dockstate"
 : > "$work/me/.zshrc"
 export HC_SESSION="hmtitle-$$" HC_SOCKET="" HOME="$work/me" SHELL=/bin/sh
 export XDG_STATE_HOME="$work/state" XDG_CONFIG_HOME="$work/config" XDG_DATA_HOME="$work/data" XDG_RUNTIME_DIR="$run" GIT_CONFIG_GLOBAL="$work/me/.gitconfig"
@@ -39,9 +41,9 @@ trap cleanup EXIT INT TERM
 # and nothing this computer has installed.
 for m in box dock; do mkdir -p "$work/$m/bin"; (cd "$app/e2e/fake-claude" && GO111MODULE=off go build -o "$work/$m/bin/claude" main.go); done
 "$hc" machine add --via "$box sh -c" --name box --install >/dev/null
-"$hc" run --on box --bg --keep --cwd "$work/box/src/acme-web" --label herdr.space=spweb --label herdr.tab=tbweb -- sh -i >/dev/null
+"$hc" run --on box --bg --keep --cwd "$work/me/src/acme-web" --label herdr.space=spweb --label herdr.tab=tbweb -- sh -i >/dev/null
 "$hc" machine add --via "$dock sh -c" --name dock --install >/dev/null
-"$hc" run --on dock --bg --keep --cwd "$work/dock/src/acme-docs" --label herdr.space=spdocs --label herdr.tab=tbdocs -- sh -i >/dev/null
+"$hc" run --on dock --bg --keep --cwd "$work/me/src/acme-docs" --label herdr.space=spdocs --label herdr.tab=tbdocs -- sh -i >/dev/null
 "$bin" serve --listen "127.0.0.1:$port" --hc "$hc" --state "$state" > "$work/serve.log" 2>&1 &
 serve_pid=$!
 sleep 1

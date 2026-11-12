@@ -15,8 +15,10 @@ app=$(cd "$(dirname "$0")/.." && pwd)
 hc=$(command -v hc || echo "$HOME/.local/bin/hc")
 id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$app/nsh.json")
 port=7791; while nc -z 127.0.0.1 "$port" 2>/dev/null; do port=$((port + 1)); done
-work=$(mktemp -d); run=$(mktemp -d /tmp/hmXXXX); boxrun=$(mktemp -d /tmp/hbXXXX); dockrun=$(mktemp -d /tmp/hdXXXX); state=$(mktemp -d /tmp/hmtcXXXX)
-mkdir -p "$shots" "$work/me/src/acme-api" "$work/box/src/acme-web" "$work/state" "$work/config" "$work/data" "$work/boxstate" "$work/dock/src/acme-docs" "$work/dockstate" "$work/t"
+work=$(cd "$(mktemp -d)" && pwd -P); run=$(mktemp -d /tmp/hmXXXX); boxrun=$(mktemp -d /tmp/hbXXXX); dockrun=$(mktemp -d /tmp/hdXXXX); state=$(mktemp -d /tmp/hmtcXXXX)
+# Every machine's folder is under this computer's home (its real path, as the machines report folders), so the sheet shows
+# it as ~/src/<name>, a made-up name, never a path of this computer.
+mkdir -p "$shots" "$work/me/src/acme-api" "$work/me/src/acme-web" "$work/state" "$work/config" "$work/data" "$work/boxstate" "$work/me/src/acme-docs" "$work/dockstate" "$work/t"
 : > "$work/me/.zshrc"
 placeholder=$(cat "$app/e2e/pair.ts")
 # This computer's side under its own home; xcrun and xcodebuild keep the real one (the simulators live under it).
@@ -43,9 +45,9 @@ trap cleanup EXIT; trap 'exit 130' INT; trap 'exit 143' TERM HUP
 
 for m in box dock; do mkdir -p "$work/$m/bin"; (cd "$app/e2e/fake-claude" && GO111MODULE=off go build -o "$work/$m/bin/claude" main.go); done
 L "$hc" machine add --via "$box sh -c" --name box --install >/dev/null
-L "$hc" run --on box --bg --keep --cwd "$work/box/src/acme-web" --label herdr.space=spweb --label herdr.tab=tbweb -- sh -i >/dev/null
+L "$hc" run --on box --bg --keep --cwd "$work/me/src/acme-web" --label herdr.space=spweb --label herdr.tab=tbweb -- sh -i >/dev/null
 L "$hc" machine add --via "$dock sh -c" --name dock --install >/dev/null
-L "$hc" run --on dock --bg --keep --cwd "$work/dock/src/acme-docs" --label herdr.space=spdocs --label herdr.tab=tbdocs -- sh -i >/dev/null
+L "$hc" run --on dock --bg --keep --cwd "$work/me/src/acme-docs" --label herdr.space=spdocs --label herdr.tab=tbdocs -- sh -i >/dev/null
 L "$bin" serve --listen "127.0.0.1:$port" --hc "$hc" --state "$state" > "$work/serve.log" 2>&1 &
 serve_pid=$!
 i=0; until curl -fsS "http://127.0.0.1:$port/api/info" >/dev/null 2>&1; do i=$((i + 1)); [ $i -gt 100 ] && { echo "FAIL: the companion did not start"; exit 1; }; sleep 0.1; done
