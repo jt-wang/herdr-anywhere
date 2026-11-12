@@ -2,7 +2,7 @@
 import type { Table } from './index.ts'
 
 export const ru: Table = {
-  needsYou: 'Ждёт вас', done: 'Готово', working: 'Работает', idle: 'Простаивает', unknown: 'Неизвестно', pinned: 'Закреплённые', pinToTop: 'Закрепить сверху', unpin: 'Открепить',
+  needsYou: 'Ждёт вас', done: 'Готово', working: 'Работает', idle: 'Простаивает', unknown: 'Неизвестно', pinned: 'Закреплённые', pinToTop: 'Закрепить сверху', unpin: 'Открепить', dragHint: 'Перетащите на нужное место и отпустите', moveUp: 'Переместить выше', moveDown: 'Переместить ниже',
   notConnected: 'Нет соединения', notConnectedLower: 'нет соединения', connecting: 'Подключение…', reconnecting: 'Переподключение…',
   lastUpdatedNow: 'Обновлено только что', lastUpdated: 'Обновлено {age} назад',
   lostNoCore: 'На компьютере не установлен herdr-core. Установите его, и соединение восстановится само.',
@@ -107,7 +107,7 @@ export const ru: Table = {
   programExited: 'Программа завершилась.', terminalClosed: 'Терминал закрыт.',
   terminalLost: 'Компьютер перезапустился, этого терминала больше нет.', terminalFinished: 'Этот терминал завершён.',
   terminalEnded: 'Терминал завершён ({reason}).',
-  terminalPageFailed: 'Терминал не загрузился.', tryAgain: 'Повторить',
+  terminalLoading: 'Терминал ещё загружается…', tryAgain: 'Повторить',
   nameNeedsYou: '{name} ждёт вас', nameFinished: '{name}: готово',
   titleNeedsYou: '«{name}» ждёт вас', titleFinished: '«{name}»: готово',
   layoutChanged: 'Раскладка изменена в другом месте', layoutChangedBody: 'Показана раскладка другого экрана.',

@@ -933,7 +933,7 @@ test('pins are the computer\'s: a terminal labeled herdr.pinned shows pinned, an
   expect(pinned()).toBe(true)
 })
 
-test('pinning on the phone writes the label the desktop reads, and unpinning removes it, keeping the other labels', async () => {
+test('pinning on the phone writes the pin the desktop reads and the agent\'s place in Pinned, in one call; unpinning removes both, keeping the other labels', async () => {
   const { core, store } = setup()
   await store.connect()
   const r = await store.newSpace({ argv: ['claude'] })
@@ -942,13 +942,147 @@ test('pinning on the phone writes the label the desktop reads, and unpinning rem
   await settle()
   await store.pin(r.terminal, true)
   await settle()
-  expect(core.calls.filter((c) => c.method === 'terminal.label').map((c) => c.params)).toEqual([{ terminal: r.terminal, labels: { 'herdr.pinned': '1' } }])
-  expect(core.terms.get(r.terminal)!.labels).toEqual({ 'herdr.space': r.space, 'herdr.tab': r.tab, 'herdr.pinned': '1' })
+  expect(core.calls.filter((c) => c.method === 'terminal.label').map((c) => c.params)).toEqual([{ terminal: r.terminal, labels: { 'herdr.pinned': '1', 'herdr-anywhere.pin-order': 'i' } }])
+  expect(core.terms.get(r.terminal)!.labels).toEqual({ 'herdr.space': r.space, 'herdr.tab': r.tab, 'herdr.pinned': '1', 'herdr-anywhere.pin-order': 'i' })
   expect(store.agents()[0].pinned).toBe(true)
   await store.pin(r.terminal, false)
   await settle()
+  expect(core.calls.filter((c) => c.method === 'terminal.label').at(-1)!.params).toEqual({ terminal: r.terminal, labels: { 'herdr.pinned': '', 'herdr-anywhere.pin-order': '' } })
   expect(core.terms.get(r.terminal)!.labels).toEqual({ 'herdr.space': r.space, 'herdr.tab': r.tab })
   expect(store.agents()[0].pinned).toBe(false)
+})
+
+// Agents in one space, one tab each, as `hc run` makes them; `labels` per agent on top of their space and tab.
+function agentsCore(labels: Record<string, string>[], core = new FakeCore()) {
+  const terms = labels.map((l, i) => {
+    const t = core.run({ argv: ['claude'], labels: { 'herdr.space': 's0', 'herdr.tab': `c${i}`, ...l } })
+    core.setStatus(t.address, 'idle')
+    return t.address
+  })
+  core.docs.set('', { version: 1, value: { spaces: [{ id: 's0', name: '', folder: '/x', tabs: terms.map((t, i) => (
+    { id: `c${i}`, name: '', root: { id: `c${i}`, type: 'row', children: [{ id: `x${i}`, type: 'block', content: { terminal: t } }] } })) }] } })
+  return { core, terms }
+}
+const pinnedRows = (store: Store) => store.shown().view.groups.find((g) => g.id === 'pinned')?.members.map((m) => m.address) ?? []
+const placeOf = (core: FakeCore, t: string) => core.terms.get(t)!.labels['herdr-anywhere.pin-order']
+const labelCalls = (core: FakeCore) => core.calls.filter((c) => c.method === 'terminal.label').map((c) => c.params)
+
+test('Pinned keeps the order agents were pinned in: a new pin goes last, and a status change moves nothing', async () => {
+  const { core, terms: [a, b, c] } = agentsCore([{}, {}, {}])
+  const { store } = setup(core)
+  await store.connect()
+  for (const t of [c, a, b]) { await store.pin(t, true); await settle() }
+  expect(pinnedRows(store)).toEqual([c, a, b])
+  core.setStatus(b, 'blocked', 'claude-code', { kind: 'permission', msg: 'Bash: npm test' })
+  core.setStatus(a, 'working')
+  await settle()
+  expect(pinnedRows(store)).toEqual([c, a, b])
+})
+
+test('an agent pinned in Herdr Desktop App (herdr.pinned only) goes last, and the phone writes its place without touching herdr.pinned', async () => {
+  const { core, terms: [a, b, c] } = agentsCore([{ 'herdr.pinned': '1', 'herdr-anywhere.pin-order': 'r' }, { 'herdr.pinned': '1' }, { 'herdr.pinned': '1', 'herdr-anywhere.pin-order': 'i' }])
+  const { store } = setup(core)
+  await store.connect()
+  await settle()
+  expect(pinnedRows(store)).toEqual([c, a, b])
+  expect(labelCalls(core)).toEqual([{ terminal: b, labels: { 'herdr-anywhere.pin-order': placeOf(core, b) } }])
+  expect(placeOf(core, b) > 'r').toBe(true)
+  // Pinned there later, while the phone looks: last again, after b.
+  core.label(a, { 'herdr.pinned': '' })
+  await settle()
+  core.label(a, { 'herdr.pinned': '1' })
+  await settle()
+  expect(pinnedRows(store)).toEqual([c, b, a])
+  expect(core.terms.get(a)!.labels['herdr.pinned']).toBe('1')
+  // Each place is written once: no write goes out again when the label comes back.
+  expect(labelCalls(core).filter((p) => p.terminal === b).length).toBe(1)
+})
+
+test('on a slow line the place of an agent pinned in Herdr Desktop App goes out once, however many syncs pass before the answer', async () => {
+  const { core, terms: [a] } = agentsCore([{ 'herdr.pinned': '1' }])
+  core.holding.add('terminal.label')
+  const { store } = setup(core)
+  await store.connect()
+  for (let i = 0; i < 3; i++) { store.sync(); await settle() }
+  expect(labelCalls(core).length).toBe(1)
+  core.release()
+  await settle()
+  store.sync()
+  await settle()
+  expect([labelCalls(core).length, placeOf(core, a)]).toEqual([1, 'i'])
+})
+
+test('unpinned in Herdr Desktop App, an agent loses its place on the phone too, so pinning it again puts it last', async () => {
+  const { core, terms: [a, b] } = agentsCore([{ 'herdr.pinned': '1', 'herdr-anywhere.pin-order': 'i' }, { 'herdr.pinned': '1', 'herdr-anywhere.pin-order': 'r' }])
+  const { store } = setup(core)
+  await store.connect()
+  core.label(a, { 'herdr.pinned': '' })
+  await settle()
+  expect(placeOf(core, a)).toBe(undefined)
+  expect(labelCalls(core)).toEqual([{ terminal: a, labels: { 'herdr-anywhere.pin-order': '' } }])
+  await store.pin(a, true)
+  await settle()
+  expect(pinnedRows(store)).toEqual([b, a])
+})
+
+test('moving a pinned agent writes only its own place; another phone, and the app started again, show the same order', async () => {
+  const { core, terms: [a, b, c, d] } = agentsCore([
+    { 'herdr.pinned': '1', 'herdr-anywhere.pin-order': 'i' }, { 'herdr.pinned': '1', 'herdr-anywhere.pin-order': 'r' },
+    { 'herdr.pinned': '1', 'herdr-anywhere.pin-order': 'v' }, { 'herdr.pinned': '1', 'herdr-anywhere.pin-order': 'x' }])
+  const { store } = setup(core)
+  await store.connect()
+  await store.movePin(d, 1)
+  await settle()
+  expect(pinnedRows(store)).toEqual([a, d, b, c])
+  expect(labelCalls(core)).toEqual([{ terminal: d, labels: { 'herdr-anywhere.pin-order': placeOf(core, d) } }])
+  // Another phone moves another agent: this phone follows the label.
+  core.label(a, { 'herdr-anywhere.pin-order': 'w' })
+  await settle()
+  expect(pinnedRows(store)).toEqual([d, b, c, a])
+  // Started again (a new connection to the same herdr-core): the order is the labels', nothing kept on the phone.
+  const again = new FakeCore()
+  again.terms = core.terms
+  again.docs = core.docs
+  const restarted = setup(again).store
+  await restarted.connect()
+  await settle()
+  expect(pinnedRows(restarted)).toEqual([d, b, c, a])
+  expect(labelCalls(again)).toEqual([])
+})
+
+test('a moved row shows in its new place at once, before herdr-core answers; if the write fails it goes back', async () => {
+  const { core, terms: [a, b, c] } = agentsCore([
+    { 'herdr.pinned': '1', 'herdr-anywhere.pin-order': 'i' }, { 'herdr.pinned': '1', 'herdr-anywhere.pin-order': 'r' }, { 'herdr.pinned': '1', 'herdr-anywhere.pin-order': 'v' }])
+  const { store } = setup(core)
+  await store.connect()
+  core.holding.add('terminal.label')
+  const moving = store.movePin(c, 0)
+  await settle()
+  expect(pinnedRows(store)).toEqual([c, a, b])
+  core.release()
+  await moving
+  await settle()
+  expect(pinnedRows(store)).toEqual([c, a, b])
+  core.holding.clear()
+  // herdr-core refuses (it no longer knows the terminal): the row goes back and the error tells why.
+  const gone = core.terms.get(a)!
+  core.terms.delete(a)
+  await expect(() => store.movePin(a, 2)).rejects.toThrow('no terminal')
+  await settle()
+  core.terms.set(a, gone)
+  expect(pinnedRows(store)).toEqual([c, a, b])
+})
+
+test('with the line down a pinned agent cannot move: the order stays as it was', async () => {
+  const { core, terms: [a, b] } = agentsCore([{ 'herdr.pinned': '1', 'herdr-anywhere.pin-order': 'i' }, { 'herdr.pinned': '1', 'herdr-anywhere.pin-order': 'r' }])
+  const { store } = setup(core)
+  await store.connect()
+  core.drop('network')
+  await settle()
+  let failed = false
+  try { await store.movePin(b, 0) } catch { failed = true }
+  await settle()
+  expect([failed, pinnedRows(store)]).toEqual([true, [a, b]])
 })
 
 test('pins the phone kept by itself before are not shown: only the computer\'s count', async () => {

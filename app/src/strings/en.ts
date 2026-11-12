@@ -2,7 +2,7 @@
 // Herdr desktop has no translations, so its English words (Needs you, Working, space, tab, pane) are what these say.
 export const en = {
   // Status
-  needsYou: 'Needs you', done: 'Done', working: 'Working', idle: 'Idle', unknown: 'Unknown', pinned: 'Pinned', pinToTop: 'Pin to the top', unpin: 'Unpin',
+  needsYou: 'Needs you', done: 'Done', working: 'Working', idle: 'Idle', unknown: 'Unknown', pinned: 'Pinned', pinToTop: 'Pin to the top', unpin: 'Unpin', dragHint: 'Drag to where you want it, then let go', moveUp: 'Move up', moveDown: 'Move down',
   // Connection
   notConnected: 'Not connected', notConnectedLower: 'not connected', connecting: 'Connecting…', reconnecting: 'Reconnecting…',
   lastUpdatedNow: 'Last updated just now', lastUpdated: 'Last updated {age} ago',
@@ -116,7 +116,7 @@ export const en = {
   programExited: 'The program exited.', terminalClosed: 'The terminal was closed.',
   terminalLost: 'The computer restarted and this terminal is gone.', terminalFinished: 'This terminal has ended.',
   terminalEnded: 'The terminal ended ({reason}).',
-  terminalPageFailed: "The terminal didn't load.", tryAgain: 'Try again',
+  terminalLoading: "The terminal is still loading…", tryAgain: 'Try again',
   // Alerts and layout
   nameNeedsYou: '{name} needs you', nameFinished: '{name} finished',
   // A row's title in an alert, quoted as this language quotes a name.
