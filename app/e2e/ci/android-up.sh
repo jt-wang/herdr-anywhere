@@ -28,6 +28,13 @@ until booted; do
   [ "$(date +%s)" -lt "$end" ] || { echo "FAIL: the emulator did not boot in 900 s"; "$adb" devices; tail -40 "$RUNNER_TEMP/emulator.log"; exit 1; }
   sleep 5
 done
+# From here on (not while it boots, when adb sees it come and go), a note each time adb loses the phone, uploaded
+# with the job's files (android-watch.sh).
+here=$(cd "$(dirname "$0")" && pwd)
+"$here/android-watch.sh" --self-test
+sh "$here/../adb-note.sh" --self-test
+nohup "$here/android-watch.sh" "$adb" "${OUT:-$RUNNER_TEMP/out}/emulator-lost" "$RUNNER_TEMP/emulator.log" "$RUNNER_TEMP/logcat.txt" \
+  >/dev/null 2>&1 &
 # A minute for the phone to settle, as the Mac's release runs wait: without it the first suite after boot failed to
 # pair or to show its terminal in three jobs, and the suites after it in the same job passed.
 sleep 60

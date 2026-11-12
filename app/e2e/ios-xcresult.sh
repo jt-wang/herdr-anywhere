@@ -3,7 +3,22 @@
 # which xcodebuild -quiet leaves out of its log (on CI it said only "Failing tests: TypeIn.test()"), and, given a folder,
 # the screenshots XCTest took at the failures, for the job to upload; with all, every screenshot the test kept.
 # Usage: e2e/ios-xcresult.sh RESULT.xcresult [FOLDER [all]]
+#        e2e/ios-xcresult.sh --tidy FOLDER     only the last step: what an export left there that is not to be uploaded
 set -u
+tidy() {
+  # At a failure Xcode 26.6 also exported "UI Snapshot <time>", a binary property list, and "App UI hierarchy for
+  # <app>", text, neither with an extension (both have dots in their names), and a video (a keyboard failure). Text
+  # keeps its words and gets .txt. Anything else goes, the video too: a macOS runner has no ffmpeg, so the upload
+  # check fails on any video and nothing at all is uploaded; the list's strings may be UTF-16, which a byte search
+  # misses. Each file by what its bytes are, not its name: a video renamed .txt would be uploaded unread.
+  find "$1" -type f ! -name '*.png' ! -name '*.jpg' ! -name '*.jpeg' ! -name '*.txt' | while IFS= read -r f; do
+    case $(file -b --mime-type "$f") in
+      text/*) mv "$f" "$f.txt" ;;
+      *) echo "  left out: $(basename "$f") ($(file -b --mime-type "$f"))"; rm -f "$f" ;;
+    esac
+  done
+}
+if [ "${1:-}" = --tidy ]; then tidy "$2"; exit 0; fi
 result=$1; folder=${2:-}; which=--only-failures; [ "${3:-}" = all ] && which=
 [ -d "$result" ] || { echo "  (no result bundle at $result)"; exit 0; }
 xcrun xcresulttool get test-results summary --path "$result" 2>/dev/null | python3 -c '
@@ -32,12 +47,7 @@ for test in json.load(open(os.path.join(d, "manifest.json"))):
         if new and os.path.isfile(old) and not os.path.exists(os.path.join(d, new)):
             os.rename(old, os.path.join(d, new))' "$folder"
   rm -f "$folder/manifest.json"
-  # At a failure Xcode 26.6 also exported "UI Snapshot <time>", a binary property list, and "App UI hierarchy for
-  # <app>", text, neither with an extension (both have dots in their names). The list goes: the upload check reads no
-  # picture in it, and its strings may be UTF-16, which a byte search misses. Text keeps its words and gets .txt.
-  find "$folder" -type f ! -name '*.png' ! -name '*.jpg' ! -name '*.jpeg' ! -name '*.txt' | while IFS= read -r f; do
-    if [ "$(head -c 6 "$f")" = bplist ]; then rm -f "$f"; else mv "$f" "$f.txt"; fi
-  done
+  tidy "$folder"
   n=$(find "$folder" -type f | wc -l | tr -d ' ')
   [ "$n" = 0 ] && rmdir "$folder" 2>/dev/null
   echo "  $n files${which:+ at the failures} (screenshots and what XCTest wrote)"
