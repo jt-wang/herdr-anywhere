@@ -31,7 +31,10 @@ report() {
     # The first touch event to the last (a window's line for each, "to windows:"): how long UIKit held the touch down.
     held=$(printf '%s\n' "$lines" | awk '/UIEvent type: 0;.*to windows:/ { split($2, t, /[:.]/)
       m = ((t[1] * 60 + t[2]) * 60 + t[3]) * 1000 + t[4]; if (f == "") f = m; l = m } END { if (f != "") print l - f }')
-    echo "  UIKit sent the app $count touch events from $from to $to ($what); the page's own record says whether it got them${held:+; UIKit held it $held ms}"
+    # backboardd cancels a touch whose device (the simulator's) went away while it was still down.
+    gone=$(awk -v a="$a" -v b="$b" '{ split($2, t, /[:.]/); m = ((t[1] * 60 + t[2]) * 60 + t[3]) * 1000 + t[4]
+      if (m >= a && m <= b && /backboardd/ && /digitizer did disappear/ && /touching/) { print "yes"; exit } }' "$log")
+    echo "  UIKit sent the app $count touch events from $from to $to ($what); the page's own record says whether it got them${held:+; UIKit held it $held ms}${gone:+; the simulator touch device went away while the touch was down, and backboardd cancelled it}"
     [ -z "$landed" ] || printf '%s\n' "$landed" | sed 's/.* hm-touch /    app window: /'
     # Kept: every line in the tap's time, in time order (UIKit's other news, the system's touch handling, the window's).
     [ -n "$keep" ] && { echo "== $from to $to: $what"; awk -v a="$a" -v b="$b" '{ split($2, t, /[:.]/)
@@ -62,6 +65,7 @@ EOF
 2000-01-01 10:00:10.000 Df Herdr[100:200] [com.apple.UIKit:Scene] scene line outside any tap
 2000-01-01 10:00:27.470 Df Herdr[100:200] [com.apple.UIKit:Scene] scene line inside the tap
 2000-01-01 10:00:27.475 Df backboardd[50:60] [com.apple.backboard:touch] cancel line inside the tap
+2000-01-01 10:00:27.476 Df backboardd[50:60] [com.apple.BackBoard:TouchEvents] cancel -- digitizer did disappear:<BKDirectTouchState: 0x1; touchScreen; builtin; senderID: 0x2; contacts: contacts: []; destinations: []>
 EOF
   mkdir "$t/keep"
   sh "$0" "$t/notes" "$t/log" "$t/keep" > "$t/said"
@@ -78,6 +82,15 @@ EOF
   # How long UIKit held the touch down: its first touch event to its last, 10:00:27.410 to 10:00:27.480.
   grep -q "touch events from 10:00:27.200 .*; UIKit held it 70 ms" "$t/said" ||
     { echo "FAIL: ios-touch-log self-test: the tap's hold by UIKit's clock is not said: $(cat "$t/said")"; fail=1; }
+  # The simulator's touch device went away while a finger was still down on it: backboardd cancels that touch, and
+  # says so ("digitizer did disappear" with a contact "touching"). One with no contact left is the device going away
+  # after the lift, as after every tap, and says nothing.
+  grep -q "touch events from 10:00:27.200 .*backboardd cancelled" "$t/said" &&
+    { echo "FAIL: ios-touch-log self-test: a device gone after the lift is called a cancel: $(cat "$t/said")"; fail=1; }
+  sed 's/contacts: contacts: \[\]/contacts: contacts: [pathIndex: 2; touchIdentifier: 1; touching; locked]/' "$t/log" > "$t/log2"
+  sh "$0" "$t/notes" "$t/log2" > "$t/said2"
+  grep -q "touch events from 10:00:27.200 .*; the simulator touch device went away while the touch was down, and backboardd cancelled it" "$t/said2" ||
+    { echo "FAIL: ios-touch-log self-test: a device gone under the finger is not said: $(cat "$t/said2")"; fail=1; }
   grep -A1 "touch events from 10:00:05.100" "$t/said" | grep -q "app window:" &&
     { echo "FAIL: ios-touch-log self-test: a landing for a tap with no event"; fail=1; }
   [ "$(grep -c 'UIEvent type: 0;' "$t/keep/uikit-taps.txt")" = 2 ] ||
