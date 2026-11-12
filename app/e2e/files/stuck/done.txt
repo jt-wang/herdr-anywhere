@@ -1,0 +1,23 @@
+❯ QTHREE please
+
+⏺ User answered Claude's questions:
+  ⎿  · Which shelf should the fake lamp go on?
+     → Top shelf
+     · Which color should the fake lamp be? →
+     White
+     · How many fake lamps should we stock? →
+     Ten
+
+⏺ User answered Claude's questions:
+  ⎿  · Which box should the fake lamp ship in?
+     → Tin box
+     · When should the fake lamps go out? →
+     Friday
+
+⏺ Noted all five answers.
+
+                          ◐ medium · /effort
+──────────────────────────────────────────────
+❯
+──────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle)
