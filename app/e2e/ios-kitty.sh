@@ -48,15 +48,16 @@ providers:
         name: Test Model
         input: [text, image]
 EOF
-# herdr-core, the Companion and omp in the made-up home; xcodebuild and simctl keep the runner's own.
-L() { HC_SESSION="hmioskitty-$$" HC_SOCKET="" HOME="$work/u" SHELL=/bin/zsh PATH="$work/bin:$PATH" XDG_STATE_HOME="$work/state" \
+# herdr-core, the Companion and omp in the made-up home; xcodebuild and simctl keep the runner's own. The Companion's
+# autostart entry, if pair or serve ever makes one, is the test's own: launchd labels are per user, not per HOME.
+L() { HERDR_ANYWHERE_AUTOSTART_NAME="hm-test-ioskitty-$$" HC_SESSION="hmioskitty-$$" HC_SOCKET="" HOME="$work/u" SHELL=/bin/zsh PATH="$work/bin:$PATH" XDG_STATE_HOME="$work/state" \
   XDG_CONFIG_HOME="$work/config" XDG_DATA_HOME="$work/data" XDG_RUNTIME_DIR="$run" "$@"; }
 serve_pid="" model_pid="" test_pid=""
 cleanup() {
   status=$?
   trap - EXIT INT TERM HUP
   set +e
-  [ -z "$test_pid" ] || { kill "$test_pid"; wait "$test_pid"; } 2>/dev/null
+  [ -z "$test_pid" ] || { kill "$test_pid"; wait "$test_pid"; } 2>/dev/null || true
   xcrun simctl ui "$SIM_UDID" appearance light >/dev/null 2>&1
   [ -z "$serve_pid" ] || { pkill -P "$serve_pid" 2>/dev/null; kill "$serve_pid" 2>/dev/null; }
   [ -z "$model_pid" ] || kill "$model_pid" 2>/dev/null
@@ -97,10 +98,21 @@ xcrun simctl ui "$SIM_UDID" appearance light
 xcrun simctl uninstall "$SIM_UDID" "$id" 2>/dev/null || true
 xcrun simctl install "$SIM_UDID" "$built"
 connected() { grep -c "device .* connected (binary," "$work/serve.log" || true; }
-launch() { # waits for one more connection than before
+# Waits for one more connection than before and says how long it took. Up to 120 s: the app as of rc-0.2.0 did not
+# connect within 60 s once on a CI runner (load near 100), and that run kept no screenshot to say why; this one does.
+launch() {
   n=$(connected)
   xcrun simctl launch "$SIM_UDID" "$id" >/dev/null
-  i=0; until [ "$(connected)" -gt "$n" ]; do i=$((i + 1)); [ $i -gt 60 ] && { echo "FAIL: the app never connected"; exit 1; }; sleep 1; done
+  i=0; until [ "$(connected)" -gt "$n" ]; do
+    i=$((i + 1))
+    if [ $i -gt 120 ]; then
+      echo "FAIL: the app never connected (120 s); the Companion's last lines:"; tail -15 "$work/serve.log" | sed 's/#pair=[^ ]*/#pair=…/; s/^/  /'
+      [ -z "$shots" ] || { mkdir -p "$shots/failure"; perl -e 'alarm 40; exec @ARGV' xcrun simctl io "$SIM_UDID" screenshot "$shots/failure/not-connected.png" >/dev/null 2>&1 || true; }
+      exit 1
+    fi
+    sleep 1
+  done
+  echo "the app connected $i s after it was started"
 }
 launch
 cp -R "$app/e2e/ios-uitest" "$work/uitest"
