@@ -32,7 +32,10 @@ final class Zoom: XCTestCase {
     sleep(1)
     // The zooming scroll view stays put; a build from before zoom has only the picture.
     let zoom = el("picture-zoom").exists ? el("picture-zoom") : el("picture-image")
-    let f = zoom.frame
+    // Until the sheet has come up and the picture has its size: the same frame twice, half a second apart (on a CI
+    // runner's first launch the pinch came while it was still moving, and did nothing).
+    var f = zoom.frame
+    for _ in 0..<20 { usleep(500_000); let g = zoom.frame; if g == f { break }; f = g }
     let scale = XCUIScreen.main.screenshot().image.size.width > 0 ? XCUIScreen.main.screenshot().image.scale : 1
     note(String(format: "box %d %d %d %d", Int(f.minX * scale), Int(f.minY * scale), Int(f.maxX * scale), Int(f.maxY * scale)))
     let at = { (x: CGFloat, y: CGFloat) in zoom.coordinate(withNormalizedOffset: CGVector(dx: x, dy: y)) }

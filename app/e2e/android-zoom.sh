@@ -63,8 +63,13 @@ move() { emu EV_ABS:ABS_MT_SLOT:$1 EV_ABS:ABS_MT_POSITION_X:$(ex $2) EV_ABS:ABS_
 up() { emu EV_ABS:ABS_MT_SLOT:$1 EV_ABS:ABS_MT_TRACKING_ID:-1 EV_SYN:0:0; }
 lift() { emu EV_KEY:BTN_TOUCH:0 EV_SYN:0:0; }
 tap_id() { wait_for "$1"; set -- $B; "$adb" shell input tap $((($1 + $3) / 2)) $((($2 + $4) / 2)); }
-tap2() { # x y: two taps 120 ms apart, each 60 ms down
-  for _ in 1 2; do down 0 $1 $2; sleep 0.06; up 0; lift; sleep 0.12; done
+tap2() { # x y: two taps about 100 ms apart, each one console command (finger down, up), so a slow console (a CI
+  # runner's) doesn't push the second past the app's 300 ms for a double tap
+  for _ in 1 2; do
+    emu EV_ABS:ABS_MT_SLOT:0 EV_ABS:ABS_MT_TRACKING_ID:1 EV_ABS:ABS_MT_POSITION_X:$(ex $1) EV_ABS:ABS_MT_POSITION_Y:$(ey $2) EV_ABS:ABS_MT_PRESSURE:50 EV_KEY:BTN_TOUCH:1 EV_SYN:0:0 \
+      EV_ABS:ABS_MT_TRACKING_ID:-1 EV_KEY:BTN_TOUCH:0 EV_SYN:0:0
+    sleep 0.1
+  done
 }
 pinch() { # x y from to: two fingers on a level line through (x, y), from `from` px apart to `to`, in 12 steps
   px=$1 py=$2 p0=$(($3 / 2)) p1=$(($4 / 2)) # names of its own: sh has no locals, and the box is l t r b
@@ -128,9 +133,9 @@ for scheme in light dark; do
     xml > "$work/back.xml"
     ! grep -qF 'resource-id="picture-sheet"' "$work/back.xml" && grep -qF 'resource-id="image-u1.1"' "$work/back.xml" \
       && say "ok: back closes the picture, back in the chat" || say "FAIL: back did not go back to the chat"
-    tap_id image-u1.1; wait_for picture-image; sleep 1
+    tap_id image-u1.1; wait_for picture-image; sleep 1; shot $scheme-before-swipe
     "$adb" shell input swipe $cx $cy $cx $((sh * 9 / 10)) 250; sleep 1.5
-    has 'resource-id="picture-sheet"' && say "FAIL: a swipe down left the picture open" || say "ok: a swipe down closes the picture"
+    has 'resource-id="picture-sheet"' && { shot $scheme-after-swipe; say "FAIL: a swipe down left the picture open"; } || say "ok: a swipe down closes the picture"
     tap_id image-u1.1; wait_for picture-image; sleep 1
     pinch $cx $cy $((w / 5)) $((w * 4 / 5)); sleep 1
     "$adb" shell input swipe $cx $((t + (b - t) / 5)) $cx $((b - (b - t) / 5)) 400; sleep 1.5
