@@ -1,0 +1,16 @@
+[
+  {
+    "id": "",
+    "from": "you",
+    "said": "QMULTI please",
+    "steps": [
+      {
+        "id": "",
+        "kind": "other",
+        "title": "Which plan should the fake shop use?"
+      }
+    ],
+    "reply": "Noted your answers.",
+    "end": "done"
+  }
+]

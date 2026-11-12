@@ -1,0 +1,58 @@
+[
+  {
+    "id": "",
+    "from": "you",
+    "said": "QMULTI please",
+    "steps": [],
+    "reply": "",
+    "ask": {
+      "text": "Which plan should the fake shop use?",
+      "options": [
+        "Ship the small fix now (Recommended)",
+        "Wait for the full rewrite",
+        "Only tell the team"
+      ],
+      "questions": [
+        {
+          "header": "Plan",
+          "text": "Which plan should the fake shop use?",
+          "options": [
+            {
+              "label": "Ship the small fix now",
+              "detail": "One file changes; nothing else moves",
+              "recommended": true
+            },
+            {
+              "label": "Wait for the full rewrite",
+              "detail": "Two weeks more, every page changes"
+            },
+            {
+              "label": "Only tell the team",
+              "detail": "No change to the code"
+            }
+          ]
+        },
+        {
+          "header": "Pages",
+          "text": "Which pages should get the new banner?",
+          "multi": true,
+          "options": [
+            {
+              "label": "Home",
+              "detail": "The first page people see"
+            },
+            {
+              "label": "Cart",
+              "detail": "Where people pay"
+            },
+            {
+              "label": "Help",
+              "detail": "Questions and answers"
+            }
+          ]
+        }
+      ]
+    },
+    "end": "open"
+  }
+]

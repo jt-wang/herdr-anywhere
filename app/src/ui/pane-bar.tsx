@@ -1,5 +1,5 @@
 // The row under a pane's terminal on a phone: the composer; for a blocked agent, its own choices as its screen shows
-// them (model/menu.ts), or the keys when they can't be read; and, while the keyboard is up, the key row under them.
+// them (model/menu.ts) when the chat view's card doesn't, or the keys when they can't be read; and, while the keyboard is up, the key row under them.
 import { cleanup, effect, Keyboard, keyboardFrame, Picker, platform, signal, Text, View } from 'nsh'
 import { AlertDialog, Input } from 'nsh/base'
 import type { Sending, Store } from '../store.ts'
@@ -9,7 +9,7 @@ import { machineOfAddress } from '../model/model.ts'
 import { asWord, withPath } from './attach.ts'
 import { composerHeight } from './composer-size.ts'
 import { asks } from '../model/answers.ts'
-import { shownOrder, type Option } from '../model/menu.ts'
+import type { Option } from '../model/menu.ts'
 import type { BarKey } from './terminal-page.ts'
 import type { TerminalSession } from './terminal-session.ts'
 import type { TypeIn } from '../prefs.ts'
@@ -35,7 +35,8 @@ const FALLBACK_KEYS: { key: string; label: string }[] = [
 /** How long Codex has to start and send its first report before its silence is worth a line. */
 const CODEX_QUIET_MS = 5000
 
-export function PaneBar(props: { store: Store; session: TerminalSession; program: string; agent: boolean; typeIn: () => TypeIn; keep: (m: TypeIn) => void }) {
+/** `chat`: the chat view is over the terminal, and a decision card there (ui/ask-card.tsx) has the choices: no row of them here. */
+export function PaneBar(props: { store: Store; session: TerminalSession; program: string; agent: boolean; typeIn: () => TypeIn; keep: (m: TypeIn) => void; chat?: () => boolean }) {
   const s = props.store
   const rev = useRev(s)
   const addr = props.session.address
@@ -55,7 +56,7 @@ export function PaneBar(props: { store: Store; session: TerminalSession; program
   effect(() => { if (!blocked()) typing.set(false) })
   const mode = () => {
     if (!blocked() || typing()) return 'compose'
-    if (menu()) return 'choices'
+    if (menu()) return props.chat?.() ? 'compose' : 'choices'
     if (read() && status()?.kind !== 'question') return 'keys'
     return 'compose'
   }
@@ -83,13 +84,14 @@ export function PaneBar(props: { store: Store; session: TerminalSession; program
       <If when={mode() === 'choices' ? menu() : undefined}>{(m) => (
         <View testID="answers" class="flex-row items-center gap-1.5 pl-2 pr-1 py-1">
           <ChoiceRow testID="choices">
-            {shownOrder(m()).map((o) => (
-              <View role="button" testID={`choice-${o.n}`} accessibilityLabel={`${o.n}. ${o.full}`} onPress={() => void pick(o)}
-                onLongPress={() => s.toast({ title: `${o.n}. ${o.full}`, level: 'info' })}
-                class={`h-9 max-w-[230px] px-3.5 justify-center rounded-[8px] ${o.selected ? 'bg-primary active:opacity-80' : 'bg-secondary border border-border active:bg-accent'}`}>
-                <Text class={`text-[14px] font-medium ${o.selected ? 'text-primary-foreground' : 'text-foreground'}`} numberOfLines={1}>{`${o.n}. ${o.label}`}</Text>
+            {/* in the terminal's order, as its numbers go */}
+            <Each of={m().options} key={(o) => `${o.n}. ${o.full}`}>{(o) => (
+              <View role="button" testID={`choice-${o().n}`} accessibilityLabel={`${o().n}. ${o().full}`} onPress={() => void pick(o())}
+                onLongPress={() => s.toast({ title: `${o().n}. ${o().full}`, level: 'info' })}
+                class={`h-9 max-w-[230px] px-3.5 justify-center rounded-[8px] ${o().selected ? 'bg-primary active:opacity-80' : 'bg-secondary border border-border active:bg-accent'}`}>
+                <Text class={`text-[14px] font-medium ${o().selected ? 'text-primary-foreground' : 'text-foreground'}`} numberOfLines={1}>{`${o().n}. ${o().label}`}</Text>
               </View>
-            ))}
+            )}</Each>
           </ChoiceRow>
           <BarButton glyph="keyboard" label={t('typeInstead')} testID="show-composer" onPress={() => { typing.set(true); if (here() === 'terminal') props.session.focus() }} />
         </View>

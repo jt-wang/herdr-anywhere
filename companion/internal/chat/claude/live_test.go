@@ -198,6 +198,14 @@ func scrub(t *testing.T, b []byte, root string) []byte {
 			}
 			if a, ok := d["attachment"].(map[string]any); ok {
 				keep["attachment"] = map[string]any{"type": a["type"]}
+				// A message taken while the agent worked: what the reader reads of it.
+				if a["type"] == "queued_command" {
+					for _, k := range []string{"prompt", "humanTurn", "origin", "commandMode", "isMeta"} {
+						if v, ok := a[k]; ok {
+							keep["attachment"].(map[string]any)[k] = v
+						}
+					}
+				}
 			}
 			if hasMsg {
 				m, _ := d["message"].(map[string]any)

@@ -1,0 +1,71 @@
+[
+  {
+    "id": "msg_b796dd651001OTzLs47gLF4tu9",
+    "from": "you",
+    "said": "ASK one question please",
+    "at": "2026-01-01T12:00:00.095Z",
+    "steps": [
+      {
+        "id": "call_fake_ask",
+        "kind": "other",
+        "title": "Which color should the demo button be?"
+      }
+    ],
+    "reply": "Got the answer, thanks.",
+    "end": "done",
+    "secs": 9
+  },
+  {
+    "id": "msg_b796e19e70016h1daNVaBXDCuy",
+    "from": "you",
+    "said": "ASK2M two questions please",
+    "at": "2026-01-01T12:00:17.397Z",
+    "steps": [],
+    "reply": "",
+    "ask": {
+      "text": "Which color should the demo button be?",
+      "options": [
+        "Teal (Recommended)",
+        "Orange",
+        "Gray"
+      ],
+      "questions": [
+        {
+          "header": "Color",
+          "text": "Which color should the demo button be?",
+          "options": [
+            {
+              "label": "Teal",
+              "detail": "Matches the demo logo",
+              "recommended": true
+            },
+            {
+              "label": "Orange",
+              "detail": "Stands out on white"
+            },
+            {
+              "label": "Gray",
+              "detail": "Quiet, fits any page"
+            }
+          ]
+        },
+        {
+          "header": "Size",
+          "text": "How big should it be?",
+          "multi": true,
+          "options": [
+            {
+              "label": "Small",
+              "detail": "32 px tall"
+            },
+            {
+              "label": "Large",
+              "detail": "48 px tall"
+            }
+          ]
+        }
+      ]
+    },
+    "end": "open"
+  }
+]
