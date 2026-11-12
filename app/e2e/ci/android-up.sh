@@ -12,7 +12,8 @@ sudo udevadm control --reload-rules
 sudo udevadm trigger --name-match=kvm
 image="system-images;android-35;google_apis;x86_64"
 bin="$ANDROID_HOME/cmdline-tools/latest/bin"
-yes | "$bin/sdkmanager" --licenses >/dev/null
+# yes is cut off once the licenses are taken; with pipefail its SIGPIPE would fail the step.
+{ yes || true; } | "$bin/sdkmanager" --licenses >/dev/null
 "$bin/sdkmanager" --install platform-tools emulator "$image" >/dev/null
 export ANDROID_AVD_HOME="$HOME/.android/avd"
 echo "ANDROID_AVD_HOME=$ANDROID_AVD_HOME" >> "${GITHUB_ENV:-/dev/null}"

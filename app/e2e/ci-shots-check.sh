@@ -50,7 +50,7 @@ self_test() {
   trap 'rm -rf "$t"' RETURN
   mkdir -p "$t/home" "$t/s"
   (umask 077; HOME="$t/home" XDG_CONFIG_HOME="$t/home/.config" "$companion" pair --state "$t/state" --url http://127.0.0.1:9 2>/dev/null |
-    grep -o 'http://[^ ]*#pair=[A-Za-z0-9_-]*' | head -1 > "$t/s/link")
+    grep -o 'http://[^ ]*#pair=[A-Za-z0-9_-]*' | sed -n 1p > "$t/s/link")
   [ -s "$t/s/link" ] || { echo "FAIL: self-test: the companion printed no pairing link"; return 1; }
   local link; link=$(cat "$t/s/link")
   [ -n "${GITHUB_ACTIONS:-}" ] && echo "::add-mask::$link"

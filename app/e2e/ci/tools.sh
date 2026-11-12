@@ -57,8 +57,13 @@ shots() {
   python3 -m venv "$tmp/shots-py"
   "$tmp/shots-py/bin/pip" install --disable-pip-version-check -q zxing-cpp==3.1.1 pillow==13.0.0
   echo "HM_SHOTS_PYTHON=$tmp/shots-py/bin/python" >> "$env_"
-  # A Mac reads a picture's words with its own Vision (desktop-tool.swift), as mac-e2e.yml does.
-  if [ $os = linux ]; then sudo apt-get install -y -qq tesseract-ocr ffmpeg >/dev/null; tesseract --version | head -1; fi
+  # tesseract on both: a Mac runner's Vision read no word of the self-test's picture, which Vision on a Mac at a desk
+  # reads. Homebrew has no versioned tesseract formula, so the runner image's formula is taken (no update) and a
+  # major version other than 5 stops here.
+  if [ $os = linux ]; then sudo apt-get install -y -qq tesseract-ocr ffmpeg >/dev/null
+  else HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 brew install -q tesseract >/dev/null; fi
+  v=$(tesseract --version 2>&1 | sed -n 1p); echo "$v"
+  case $v in "tesseract 5."*) ;; *) echo "FAIL: tesseract is not 5.x: $v"; exit 1 ;; esac
   command -v ffmpeg >/dev/null || echo "no ffmpeg: a video in an upload fails the check"
 }
 
@@ -73,6 +78,8 @@ ios() {
     3b72cc6a9a5b1a22a188205a84090d3a294347a846180efd755cf1a3c848e3e7
   tar -xzf "$tmp/idb-companion.tar.gz" -C "$tmp"
   echo "$tmp/idb-companion.universal/bin" >> "$path_"
+  # fb-idb 1.1.7 needs Python 3.13 or older: on 3.14 asyncio.get_event_loop() raises before it does anything.
+  python3 -c 'import sys; sys.exit(sys.version_info >= (3, 14))' || { echo "FAIL: idb needs Python 3.13 or older, not $(python3 --version)"; exit 1; }
   python3 -m venv "$tmp/idb-py"
   "$tmp/idb-py/bin/pip" install --disable-pip-version-check -q fb-idb==1.1.7 grpclib==0.4.8 protobuf==6.33.6 \
     aiofiles==25.1.0 treelib==1.8.0 h2==4.3.0 hpack==4.1.0 hyperframe==6.1.0 multidict==6.7.1
