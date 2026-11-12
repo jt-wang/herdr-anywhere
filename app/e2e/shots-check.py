@@ -12,7 +12,9 @@
 Never prints what a code holds, except with qr. Needs zxing-cpp and Pillow; videos need ffmpeg.
 """
 import os
+import random
 import shutil
+import string
 import subprocess
 import sys
 import tempfile
@@ -70,6 +72,8 @@ def mask(folder):
         pictures += 1
         painted += paint(path)
     for path in files(folder, VIDEOS):
+        if not shutil.which("ffmpeg"):
+            sys.exit(f"FAIL: {path} is a video, and there is no ffmpeg here to look inside it")
         n = video_codes(path)
         if n:
             sys.exit(f"FAIL: {path} shows a QR code in {n} frames; a video can't be painted over, so it can't be uploaded")
@@ -80,7 +84,7 @@ def words(folder):
     tesseract = shutil.which("tesseract")
     if not tesseract and sys.platform != "darwin":
         sys.exit("FAIL: no tesseract to read the pictures' words")
-    print(f"words read by {'tesseract' if tesseract else 'Vision'}", file=sys.stderr)
+    print(f"words read by {'tesseract' if tesseract else 'Vision'}; {machine()}", file=sys.stderr)
     tmp = tempfile.mkdtemp()
 
     def read(path, picture):
@@ -116,11 +120,29 @@ def words(folder):
     shutil.rmtree(tmp)
 
 
+def machine():
+    """What the words were read on, for a check that misses words once to be lined up with the runs that don't: the
+    tesseract, the CPU, its load and the threads tesseract may take."""
+    version = "?"
+    if shutil.which("tesseract"):
+        out = subprocess.run(["tesseract", "--version"], capture_output=True, text=True)
+        version = ((out.stdout or out.stderr).splitlines() or ["?"])[0]
+    cpu = ""
+    try:
+        cpu = next((l.split(":", 1)[1].strip() for l in open("/proc/cpuinfo") if l.startswith("model name")), "")
+    except OSError:
+        cpu = subprocess.run(["sysctl", "-n", "machdep.cpu.brand_string"], capture_output=True, text=True).stdout.strip()
+    load = " ".join(f"{v:.1f}" for v in os.getloadavg())
+    return f"{version}, {cpu}, {os.cpu_count()} cpus, load {load}, OMP_THREAD_LIMIT={os.environ.get('OMP_THREAD_LIMIT', 'unset')}"
+
+
 def reads(path, tmp):
-    """The picture read three ways. As it is, tesseract missed text in a light grey (a field's placeholder, 150 on 255)
+    """The picture read four ways. As it is, tesseract missed text in a light grey (a field's placeholder, 150 on 255)
     on a whole phone screen, and the white labels of dark buttons. So also: the parts darker than their surroundings,
     black on white, read as a page (--psm 11 missed the link there even on a crop of the field alone); and the parts
-    lighter than a dark surrounding. Measured on a pairing screen and on the samples sample() makes."""
+    lighter than a dark surrounding. Measured on a pairing screen and on the samples sample() makes. And the picture at
+    twice its size, as it is: a CI runner's check once missed the grey link the other reads find (and found it on the
+    next try), and small text the other three miss is read there (sample()'s words-grey-small.png)."""
     g = ImageOps.grayscale(Image.open(path))
     ground = g.filter(ImageFilter.BoxBlur(25))
     darker = os.path.join(tmp, "darker.png")
@@ -128,7 +150,9 @@ def reads(path, tmp):
     lighter = os.path.join(tmp, "lighter.png")
     on_dark = ground.point(lambda v: 255 if v < 110 else 0)
     Image.composite(ImageChops.subtract(g, ground), Image.new("L", g.size, 0), on_dark).point(lambda v: 0 if v > 40 else 255).save(lighter)
-    return [(path, "11"), (darker, "3"), (lighter, "11")]
+    twice = os.path.join(tmp, "twice.png")
+    g.resize((g.width * 2, g.height * 2), Image.LANCZOS).save(twice)
+    return [(path, "11"), (darker, "3"), (lighter, "11"), (twice, "11")]
 
 
 def sample(out, text):
@@ -154,6 +178,16 @@ def sample(out, text):
     draw.rounded_rectangle((24, 1260, 1182, 1380), 20, fill=(30, 30, 30))
     draw.text((520, 1300), "Pair", fill="white", font=ImageFont.load_default(size=40))
     page.save(os.path.join(out, "words-grey.png"))
+    # The same screen with a made-up link (the same every run) in a smaller grey, 8.5: the three reads before the one
+    # at twice the size missed it and that one found it, with tesseract 5.5.0 on Ubuntu 26.04 (arm64 and x86_64) and
+    # 5.5.3 on macOS, at 8 to 9.5 alike. The check finds a link by its shape, so a made-up one does.
+    rng = random.Random(6)
+    made_up = "http://127.0.0.1:9/#" + "pair=" + "".join(rng.choice(string.ascii_uppercase + string.ascii_lowercase + string.digits) for _ in range(22))
+    small_page = Image.new("RGB", (1206, 2622), (242, 242, 240))
+    small_draw = ImageDraw.Draw(small_page)
+    small_draw.rounded_rectangle((24, 1100, 1182, 1220), 20, fill="white", outline=(210, 210, 210), width=3)
+    small_draw.text((50, 1140), made_up, fill=(150, 150, 150), font=ImageFont.load_default(size=8.5))
+    small_page.save(os.path.join(out, "words-grey-small.png"))
     # A screen recording that shows that screen for 2 s between 2 s of the same screen without the link. Without ffmpeg
     # there is none: a video then fails the check anyway, as mask() can't look inside it.
     if not shutil.which("ffmpeg"):

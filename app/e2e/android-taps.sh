@@ -5,6 +5,7 @@
 # Every place is tried, then the script fails if any first tap was lost.
 # Usage: ANDROID_SERIAL=emulator-5554 e2e/android-taps.sh APK COMPANION [folder for screenshots]
 set -eu
+. "$(dirname "$0")/autostart-guard.sh"; autostart_guard android-taps # a login entry of its own, never the person's
 : "${ANDROID_SERIAL:?}"
 apk=$1; bin=$2; shot=${3:-}; [ -z "$shot" ] || mkdir -p "$shot"
 app=$(cd "$(dirname "$0")/.." && pwd)
@@ -24,6 +25,7 @@ cleanup() {
   [ -n "$serve_pid" ] && kill "$serve_pid" 2>/dev/null
   "$hc" server stop >/dev/null 2>&1
   chmod -R u+w "$work" 2>/dev/null; rm -rf "${work:?}" "${run:?}" "${state:?}"
+  autostart_guard_end || exit 1
 }
 trap cleanup EXIT; trap 'cleanup; exit 130' INT; trap 'cleanup; exit 143' TERM HUP
 ids() { "$hc" ls --json | python3 -c 'import json,sys; print(" ".join(t["address"] for t in json.load(sys.stdin)["terminals"]))'; }
