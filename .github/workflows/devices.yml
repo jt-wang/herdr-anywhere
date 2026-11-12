@@ -558,6 +558,10 @@ jobs:
         with:
           python-version: "3.13"
       - run: app/e2e/ci/tools.sh core nsh zsh ios shots ${{ startsWith(matrix.key, 'edge') && 'video' || '' }}
+      - uses: ./.github/actions/nsh-ios
+        with:
+          xcode: ${{ (matrix.key == 'onerror27' || matrix.key == 'chat27' || matrix.key == 'menus27' || matrix.key == 'edge27') && '/Applications/Xcode_27.0.app' || '/Applications/Xcode_26.6.app' }}
+          artifact_name: ${{ matrix.key == 'chat27' && matrix.copy == 0 && 'nsh-ios-xcode27' || '' }}
       - if: matrix.key == 'kitty'
         run: app/e2e/ci/tools.sh omp
       - run: app/e2e/ci/ios-up.sh

@@ -202,6 +202,13 @@ TEST_RUNNER_OUT="${shots:-$work}/$tag.txt" TEST_RUNNER_SHOTS="${shots:-$work}/$t
 sed 's/^/  /' "${shots:-$work}/$tag.txt" 2>/dev/null || true
 # One process all through: another pid, or none, is a crash (or iOS ending the app), with its report when there is one.
 now=$(pid); [ "$now" = "$before" ] || { sleep 2; now=$(pid); }
+if [ "$rc" != 0 ] || [ "$now" != "$before" ]; then
+  echo "xcodebuild test exit $rc"
+  # Keep XCTest's failure even when it also ended the app: the PID check below exits on that path.
+  "$app/e2e/ios-xcresult.sh" "$work/uitest/result.xcresult" ${shots:+"$shots/failure"}
+  [ -n "$shots" ] && { cp "$work/serve.log" "$shots/serve.log"; cp "$work/uitest/test.log" "$shots/test.log"; }
+  [ -n "$shots" ] && [ -s "$work/proxy.log" ] && sed -E 's/(#pair=|[Bb]earer +|token=)[^ "&]*/\1<hidden>/g' "$work/proxy.log" > "$shots/proxy.log"
+fi
 if [ "$now" != "$before" ]; then
   echo "FAIL: the app is not the process launched (pid $before at launch, '${now}' now)"
   crash_reports 24
@@ -209,15 +216,7 @@ if [ "$now" != "$before" ]; then
   [ -n "$shots" ] && [ -s "$work/proxy.log" ] && sed -E 's/(#pair=|[Bb]earer +|token=)[^ "&]*/\1<hidden>/g' "$work/proxy.log" > "$shots/proxy.log"
   exit 1
 fi
-if [ "$rc" != 0 ]; then
-  echo "FAIL: xcodebuild test exit $rc"
-  # Its failures, else its end: what XCUITest said went wrong.
-  # -quiet leaves the failures' messages out of the log: they are read from the result bundle.
-  "$app/e2e/ios-xcresult.sh" "$work/uitest/result.xcresult" ${shots:+"$shots/failure"}
-  [ -n "$shots" ] && { cp "$work/serve.log" "$shots/serve.log"; cp "$work/uitest/test.log" "$shots/test.log"; }
-  [ -n "$shots" ] && [ -s "$work/proxy.log" ] && sed -E 's/(#pair=|[Bb]earer +|token=)[^ "&]*/\1<hidden>/g' "$work/proxy.log" > "$shots/proxy.log"
-  exit 1
-fi
+[ "$rc" = 0 ] || exit 1
 [ "$cycles" = 0 ] || python3 "$app/e2e/chat-away-check.py" "$cycles" "${shots:-$work}/$tag.txt"
 xcrun simctl uninstall "$SIM_UDID" "$id" 2>/dev/null || true
 echo PASS

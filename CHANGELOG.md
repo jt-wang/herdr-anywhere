@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.2.0
+
+- Pinned agents stay in the order you choose. Touch and hold a pinned row, drag it up or down, and let go; at the top of the list it scrolls for you. An agent that starts waiting on you keeps its place.
+- In the chat view, Claude Code's questions and permission requests show as a card with their choices, and the choice buttons follow the agent to its next question.
+- The chat view keeps what you opened and shows every newer answer, and it stays open when Companion is slow to answer. Messages you send while an agent is working show as queued until it takes them.
+- A sub-agent you open stays as its own tab.
+- Pictures zoom with a pinch or a double tap from the chat view too, not only from the terminal.
+- Oh My Pi's pictures are drawn in the terminal.
+- When a new version of Herdr Anywhere is out, the app tells you once, for Companion on your computer and for the Android app; an iPhone app from TestFlight keeps updating through TestFlight. On Android this is a notification. On iPhone the app now asks to send notifications, but iOS can pause it soon after you leave, so they may not arrive yet; the notice shows when you open the app.
+- On iPhone, swipe from the left edge to go back. About 1 in 300 quick swipes on the first try at the top bar of Settings or a space does not go back; 0.1.25 did the same.
+- A drag from the left edge scrolls OpenCode.
+- Menus match the panel they open from, and a new tab's title fits on small phones.
+- In Try it, a new agent shows as itself with its task.
+- An uncaught script error on iPhone no longer closes the app.
+- The progress page (experimental): the filing agent gets its next batch only when its input box is empty, so a suggested command in Claude Code no longer takes the batch's Enter.
+
+Known issue: on iOS 27, coming back to the chat view after about a minute in the background can close the app. 0.1.25 has the same problem; the next version fixes it.
+
+Android: `Herdr-Anywhere.apk`; an installed 0.1.6 or later can update to it from home. Intel Mac: `herdr-anywhere-macos-amd64`.
+
 ## v0.1.25
 
 - A chat view for Claude Code, Codex, Pi and OpenCode. A chat button on the pane shows the conversation over the terminal as a chat: what you said, each step, the reply, and the question the agent is waiting on. Another tap goes back to the terminal. It needs Companion 0.1.25 on your computer.

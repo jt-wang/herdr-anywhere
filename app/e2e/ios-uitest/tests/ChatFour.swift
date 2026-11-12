@@ -22,7 +22,7 @@ final class ChatFour: XCTestCase {
     let cycles = Int(env["CHAT_AWAY_CYCLES"] ?? "0") ?? -1
     let stopOnResume = env["CHAT_AWAY_SELFTEST"] == "stop-companion"
     guard (0...30).contains(cycles) else { XCTFail("CHAT_AWAY_CYCLES must be 0...30"); return }
-    continueAfterFailure = false
+    if cycles > 0 { continueAfterFailure = false }
     var lines: [String] = []
     func note(_ s: String) { lines.append(s); try? (lines.joined(separator: "\n") + "\n").write(toFile: out, atomically: true, encoding: .utf8) }
     func shot(_ name: String) { try? XCUIScreen.main.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: "\(shots)-\(name).png")) }
@@ -33,6 +33,18 @@ final class ChatFour: XCTestCase {
     let saying = { (text: String) in all().matching(NSPredicate(format: "label == %@", text)).firstMatch }
     let starting = { (text: String) in all().matching(NSPredicate(format: "label BEGINSWITH %@", text)) }
     let ids = { (prefix: String) in all().matching(NSPredicate(format: "identifier BEGINSWITH %@", prefix)) }
+    // Read replies and completion markers from one snapshot. Enumerating live elements while the chat updates
+    // can fail between reading the list and reading an element's identifier (as in ChatFold's failure capture).
+    func chatSnapshot() -> (ids: Set<String>, labels: Set<String>)? {
+      guard let root = try? app.snapshot() else { return nil }
+      var found: Set<String> = [], labels: Set<String> = [], pending = [root]
+      while let element = pending.popLast() {
+        found.insert(element.identifier)
+        labels.insert(element.label)
+        pending.append(contentsOf: element.children)
+      }
+      return (found, labels)
+    }
     // The app is still up and in front; a crash or a hang shows here first.
     func alive(_ step: String) {
       XCTAssertEqual(app.state, .runningForeground, "\(step): the app is not running in front (\(app.state.rawValue))")
@@ -163,13 +175,19 @@ final class ChatFour: XCTestCase {
         note("\(agent) away \(secs) s: chat there: \(back), says it can't reach the computer 15 s later: \(el("chat-offline").exists)")
         XCTAssertTrue(back, "\(agent) away \(secs) s: the chat is gone")
         if stress {
-          let oldReplies = Set(ids("reply-").allElementsBoundByIndex.map { $0.identifier })
+          var oldReplies: Set<String> = []
+          guard until(10, {
+            guard let beforeReply = chatSnapshot() else { return false }
+            oldReplies = Set(beforeReply.ids.filter { $0.hasPrefix("reply-") })
+            return !oldReplies.isEmpty
+          }) else { XCTFail("away cycle \(cycle): cannot read existing replies before sending"); return }
           let prompt = "EDIT after 60 s away cycle \(cycle)"
           say(prompt)
           let completed = until(60) {
-            let fresh = Set(ids("reply-").allElementsBoundByIndex.map { $0.identifier }).subtracting(oldReplies)
-            return saying(prompt).exists && !el("chat-offline").exists && !saying("Working…").exists &&
-              fresh.contains { el("fold-" + String($0.dropFirst("reply-".count))).exists }
+            guard let current = chatSnapshot() else { return false }
+            let fresh = Set(current.ids.filter { $0.hasPrefix("reply-") }).subtracting(oldReplies)
+            return current.labels.contains(prompt) && !current.ids.contains("chat-offline") && !current.labels.contains("Working…") &&
+              fresh.contains { current.ids.contains("fold-" + String($0.dropFirst("reply-".count))) }
           }
           guard completed else {
             shot("\(agent)-away60-cycle\(cycle)-failed")

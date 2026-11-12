@@ -1,6 +1,6 @@
 // A menu as the app's own sheets draw it (sheets.tsx): a long press's or a "…" button's choices, from the bottom,
 // in place of the system's action sheet, which iOS 27 draws as a box of large pills in the middle of the screen.
-import { signal, Text, View } from 'nsh'
+import { Keyboard, platform, signal, Text, View } from 'nsh'
 import { AlertDialog, Sheet } from 'nsh/base'
 import { Button, Glyph, PANEL, PANEL_BACKDROP } from './kit.tsx'
 import { t } from '../strings/index.ts'
@@ -13,6 +13,9 @@ const asked = signal<(MenuAsk & { answer: (id: string) => void }) | null>(null)
 /** Shows the menu and resolves with the picked item's id, or 'cancel' when it was closed without one. */
 export function pickFrom(ask: MenuAsk): Promise<string> {
   asked()?.answer('cancel')
+  // On Android the menu is a dialog window over the screen: an item that put the keyboard away while that window was up
+  // left it up over the screen the item opened. Put it away as the menu opens.
+  if (platform.os === 'android') Keyboard.dismiss()
   return new Promise((resolve) => asked.set({ ...ask, answer: resolve }))
 }
 

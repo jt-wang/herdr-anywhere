@@ -39,6 +39,31 @@ defaults:
     shell: bash
 
 jobs:
+  nsh-regressions:
+    name: NativeShell lifecycle regressions (red and green)
+    if: ${{ !inputs.only_ios27 }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends clang libclang-dev cmake
+          rustup toolchain install 1.99.1 --profile minimal
+      - name: Lifecycle fixes and failing controls
+        run: |
+          git clone --depth 1 --branch v0.3.0 https://github.com/longbridge/nsh "$RUNNER_TEMP/nsh-source"
+          app/ios/nsh-patches/test-nsh.sh "$RUNNER_TEMP/nsh-source" "$RUNNER_TEMP/nsh-regressions"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: nsh-regressions
+          path: ${{ runner.temp }}/nsh-regressions
+          retention-days: 7
+
   companion:
     name: Companion (go test)
     if: ${{ !inputs.only_ios27 }}
@@ -88,7 +113,7 @@ jobs:
     # xcode-27 is the runner image with Xcode 27 and the iOS 27 simulators.
     runs-on: xcode-27
     # About twice its longest recent run.
-    timeout-minutes: 30
+    timeout-minutes: 60
     env:
       XCODEGEN_VERSION: "2.45.4"
       # SHA-256 of xcodegen.zip; matches the digest GitHub lists for the release asset. Update both together.
@@ -115,6 +140,9 @@ jobs:
           dirname "$xcodegen" >> "$GITHUB_PATH"
       # The Xcode the TestFlight builds use.
       - run: sudo xcode-select -s /Applications/Xcode_27.0.app && xcodebuild -version
+      - uses: ./.github/actions/nsh-ios
+        with:
+          xcode: /Applications/Xcode_27.0.app
       - name: Build the app for the simulator (Release)
         id: build
         run: ios/build.sh App.tsx simulator
