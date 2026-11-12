@@ -1,0 +1,9 @@
+{
+  "fixtures": ["ask-answered.jsonl"],
+  "start": "touch",
+  "states": {
+    "touch": {"screen": "touch.txt", "state": "blocked", "kind": "permission", "keys": {"1": "touched", "4": "touched"}},
+    "touched": {"screen": "touch-done.txt", "state": "done"}
+  },
+  "msg": "approve Bash: touch made-by-fake.txt"
+}
