@@ -28,7 +28,10 @@ type loginStart interface {
 	Remove() (bool, error)
 }
 
-var atLogin = func() loginStart { return autostart.Default() }
+var atLogin = realLogin
+
+// realLogin is this user's entry; tests that run it put the service manager's stand-ins first on PATH.
+func realLogin() loginStart { return autostart.Default() }
 
 // isTerminal says whether w is a terminal someone is watching (serve's hint is for them, not for a log file).
 var isTerminal = func(w any) bool {

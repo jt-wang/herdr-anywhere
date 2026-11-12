@@ -14,6 +14,7 @@ import (
 
 	"herdr-anywhere/companion/internal/autostart"
 	"herdr-anywhere/companion/internal/tailcat"
+	"herdr-anywhere/companion/internal/testfake"
 )
 
 // No test reaches this user's real LaunchAgents, systemd units or Run key: each one that wants an entry sets a fake.
@@ -277,5 +278,42 @@ func TestPairWithURLDoesNotStartCompanion(t *testing.T) {
 	}
 	if f.started != 0 || len(f.installed) != 0 {
 		t.Fatalf("started %d, installed %d", f.started, len(f.installed))
+	}
+}
+
+// Under a HOME that is not this account's and with no HERDR_ANYWHERE_AUTOSTART_NAME, the real entry is refused (it
+// would unload the person's Companion and take its name), so start says why and runs serve for this session only.
+// What it says is the CLI's, in English like the rest of it; the Add phone dialog shows start's words only when start
+// fails, and this start does not.
+func TestStartUnderAnotherHomeRunsServeForThisSession(t *testing.T) {
+	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
+		t.Skip("the Run key is the same whatever HOME is")
+	}
+	testfake.FakeServiceManager(t) // were it not refused, launchctl and systemctl here are stand-ins
+	setHome(t, t.TempDir())
+	t.Setenv(autostart.NameEnv, "")
+	useLogin(t, nil)
+	atLogin = realLogin
+	dir := shortStateDir(t)
+	restore, wait := spawnServe, startWait
+	t.Cleanup(func() { spawnServe, startWait = restore, wait })
+	startWait = 2 * time.Second
+	spawned := false
+	spawnServe = func([]string, *os.File) (<-chan error, func(), error) {
+		spawned = true
+		fakeTailcatServe(t, dir, nil)
+		return make(chan error), func() {}, nil
+	}
+	out, errs, code := runCLI(t, "start", "--state", dir)
+	if code != 0 || !spawned {
+		t.Fatalf("exit %d, spawned %v: out %q, err %q", code, spawned, out, errs)
+	}
+	for _, w := range []string{"could not set it to start when you log in", "not this account's home", autostart.NameEnv} {
+		if !strings.Contains(errs, w) {
+			t.Fatalf("start said %q, not %q", errs, w)
+		}
+	}
+	if !strings.Contains(out, "started. ") || strings.Contains(out, startsAtLogin) {
+		t.Fatalf("start said %q", out)
 	}
 }
