@@ -25,6 +25,11 @@ readonly id
 port=7691
 while nc -z 127.0.0.1 "$port" 2>/dev/null; do port=$((port + 1)); done
 work=$(mktemp -d)
+# Each adb call that fails is written down, so a stop on one says which (CI: exit 137 with nothing to tell which).
+. "$app/e2e/adb-note.sh"
+. "$app/e2e/android-ime-down.sh"
+sh "$app/e2e/android-ime-down.sh" --self-test || exit 1
+adb_note "$adb" "$work/adb-failed"
 (cd "$app/../companion" && go build -o "$work/herdr-anywhere" ./cmd/herdr-anywhere)
 run=$(mktemp -d /tmp/hmXXXX)
 mkdir -p "$work/home/src/acme-api" "$work/home/src/beta-web" "$work/state" "$work/config" "$work/data"
@@ -47,12 +52,16 @@ show_terms() {
 }
 cleanup() {
   status=$?
-  [ "$status" -ne 0 ] && { echo "--- exit status $status"; show_terms; }
+  if [ "$status" -ne 0 ]; then
+    echo "--- the script stopped with exit $status; adb sees the phone as: $("$adb_real" get-state 2>&1 | tr -d "\r")"
+    show_terms
+    adb_failures
+  fi
   [ -n "${serve_pid:-}" ] && kill "$serve_pid" 2>/dev/null
   "$hc" server stop >/dev/null 2>&1 || true
   chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run"
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT; trap 'exit 130' INT; trap 'exit 143' TERM
 "$work/herdr-anywhere" serve --listen "127.0.0.1:$port" --hc "$hc" > "$work/serve.log" 2>&1 &
 serve_pid=$!
 sleep 1
@@ -136,6 +145,9 @@ if [ -z "$ok" ]; then
 fi
 # The keyboard's window on screen (input_method's mInputShown stayed true with the keyboard gone; checked both ways).
 keyboard_up() { sleep 1; "$adb" shell dumpsys window InputMethod | grep -q "isOnScreen=true"; }
+# The keyboard's state now, and the system's record of each show and hide, for e2e/android-ime-down.sh.
+ime_now() { o=$("$adb" shell dumpsys window InputMethod) || return 1; printf '%s\n' "$o" | grep -q "isOnScreen=true" && echo up || echo down; }
+ime_log() { "$adb" logcat -d -v time -t 600 | grep -E "ImeTracker|InputMethodManagerService" | tail -30 | sed 's/^/  logcat: /'; }
 keyboard_up && { echo "FAIL: the keyboard is still up after pairing"; exit 1; }
 echo "ok: paired with one tap, connected over binary, home lists acme-api, keyboard closed"
 
@@ -150,7 +162,9 @@ keyboard_up && { echo "FAIL: a drag across the terminal brought the keyboard up"
 echo "ok: a tap and a drag on the terminal leave the keyboard down"
 # The composer does, and ⋯ types in the terminal itself.
 tap compose-input
-keyboard_up || { echo "FAIL: a tap on the composer brought no keyboard"; exit 1; }
+# Watched until it stays up (e2e/android-ime-down.sh): one look a second after the tap failed on a busy runner with the
+# keyboard on its way, the app already showing its own hide-keyboard key.
+ime_comes_up "a tap on the composer" || exit 1
 # Return in the composer starts a new line, the box grows, and send sends both lines as one.
 height() { dump; "$adb" shell cat /sdcard/hm.xml | tr '>' '\n' | grep 'resource-id="compose-input"' | sed -E 's/.*bounds="\[[0-9]+,([0-9]+)\]\[[0-9]+,([0-9]+)\]".*/\1 \2/' | awk '{print $2-$1}'; }
 one=$(height)
@@ -184,7 +198,9 @@ typein() {
   up=""; for _ in 1 2 3 4 5; do keyboard_up && { up=1; break; }; done
   [ -n "$up" ] || { echo "FAIL: Type in the terminal $1 did not bring the keyboard up"; exit 1; }
 }
-keyboard_up && { echo "FAIL: the back key left the keyboard up"; exit 1; }
+# The back key above put the keyboard away and it stays away (e2e/android-ime-down.sh): one look about 2 s after the
+# key could not tell a hide that was only slow on a busy runner from one that never came or was undone.
+ime_stays_down "the back key" || exit 1
 typein "after the back key"
 run_typed 'touch hm-typed'
 for _ in $(seq 1 15); do [ -e "$work/home/src/acme-api/hm-typed" ] && break; sleep 1; done
@@ -501,12 +517,24 @@ for _ in $(seq 1 10); do [ -e "$work/home/src/gamma-new/hm-left" ] && break; sle
 [ -e "$work/home/src/gamma-new/hm-left" ] || { echo "FAIL: a tap on the first pane did not give it the composer"; exit 1; }
 echo "ok: a tap on a pane gives it the composer"
 # Settings, for a look: its top and its end.
+# ime_line: whether the keyboard is up, the window with focus and the view the keyboard serves, one line, so a keyboard
+# left over Settings says whether it never went down or came back.
+ime_line() {
+  printf '%s %s | %s | %s\n' "$1" "$("$adb" shell dumpsys input_method | grep -o 'mInputShown=[a-z]*' | head -1)" \
+    "$("$adb" shell dumpsys window | grep -m1 -o 'mCurrentFocus=.*' | cut -c1-120)" \
+    "$("$adb" shell dumpsys input_method | grep -m1 -oE 'mServedView=[^ ]+' | cut -c1-120)" >> "$work/ime.log"
+}
+ime_line before-menu
 tap space-more
 sleep 1
+ime_line menu-open
 tap_text "Settings"
-sleep 2
+for i in 1 2 3 4; do sleep 0.5; ime_line "settings+${i}x0.5s"; done
 screen_has 'text="Settings"' || { echo "FAIL: Settings did not open"; exit 1; }
-"$adb" shell dumpsys input_method | grep -q 'mInputShown=true' && { echo "FAIL: the keyboard stayed up over Settings"; exit 1; }
+"$adb" shell dumpsys input_method | grep -q 'mInputShown=true' && {
+  for i in 1 2 3 4 5 6; do sleep 1; ime_line "after-check+${i}s"; done
+  cat "$work/ime.log"; echo "FAIL: the keyboard stayed up over Settings"; exit 1; }
+sed 's/^/keyboard: /' "$work/ime.log"
 [ -n "$shot" ] && "$adb" exec-out screencap -p > "${shot%.png}-settings.png"
 "$adb" shell input swipe 500 1800 500 300 200
 sleep 2
