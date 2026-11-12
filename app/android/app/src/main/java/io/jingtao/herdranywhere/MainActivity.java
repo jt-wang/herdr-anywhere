@@ -90,6 +90,7 @@ public class MainActivity extends Activity {
     tailPocket = TailPocketNsh.INSTANCE.attach(view, scope);
     channels();
     opening = openedBy(getIntent());
+    tookUpdate(opening);
     view.handle("page.front", (data, reply) -> {
       reply.resolve(front);
       runOnUiThread(this::flushOpening);
@@ -484,7 +485,14 @@ public class MainActivity extends Activity {
   protected void onNewIntent(Intent intent) {
     super.onNewIntent(intent);
     Map<String, Object> o = openedBy(intent);
+    tookUpdate(o);
     if (o != null) view.send("page.open", o);
+  }
+
+  // Opened by the new-version notification's tap: it is done. Android did not take it away by its own auto-cancel on
+  // an emulator (e2e/android-update-notify.sh, the same record still listed), so the app removes it.
+  private void tookUpdate(Map<String, Object> o) {
+    if (o != null && o.containsKey(HOME)) getSystemService(NotificationManager.class).cancel(Updated.AVAILABLE, 1);
   }
 
   @Override

@@ -78,7 +78,7 @@ fresh() {
 }
 uitest() { # NAME: runs testNAME, its words to $out/NAME.txt
   rc=0
-  TEST_RUNNER_OUT="$out/$1.txt" TEST_RUNNER_SHOTS="$out/$1" TEST_RUNNER_UPDATE_JSON="$state/update.json" TEST_RUNNER_ASK="$work/ask" TEST_RUNNER_BEFORE="$before" \
+  TEST_RUNNER_OUT="$out/$1.txt" TEST_RUNNER_SHOTS="$out/$1" TEST_RUNNER_UPDATE_JSON="$state/update.json" TEST_RUNNER_ASK="$work/ask" TEST_RUNNER_BEFORE="$before" TEST_RUNNER_AFTER="${AFTER:-}" \
     TEST_RUNNER_WAITS="${WAITS:-0 5 10 20 30 60}" TEST_RUNNER_ROUNDS="${ROUNDS:-3}" \
     perl -e 'alarm 3000; exec @ARGV' xcodebuild test -quiet -project "$work/uitest/KeyboardCheck.xcodeproj" -scheme UITests \
     -only-testing:"UITests/Notifications/test$2" -destination "id=$SIM_UDID" -derivedDataPath "$work/uitest/derived" > "$work/uitest-$1.log" 2>&1 || rc=$?
@@ -87,11 +87,21 @@ uitest() { # NAME: runs testNAME, its words to $out/NAME.txt
   [ "$rc" = 0 ] || { echo "FAIL: $1: xcodebuild test exit $rc; the test log ends:"; tail -25 "$work/uitest-$1.log" | cut -c1-240; exit 1; }
 }
 
+# Settings at its alerts, light then dark: the iPhone line under System notifications (after) or not (before).
+settings() {
+  for look in light dark; do
+    xcrun simctl ui "$SIM_UDID" appearance "$look"
+    uitest "settings-$look" Settings
+  done
+  xcrun simctl ui "$SIM_UDID" appearance light
+}
+
 fresh
 L "$hc" send "$term" "sh hm-ask.sh" >/dev/null
 if [ -n "$before" ]; then
   echo "--- before: no question, and nothing posted while away"
   WAITS=0 ROUNDS=1 uitest before Before
+  settings
   echo PASS
   exit 0
 fi
@@ -121,6 +131,9 @@ cat "$out/measured.txt"
 grep -q '^agent alert: ' "$out/allow.txt" && ! grep -q '^agent alert: none' "$out/allow.txt" || { echo "FAIL: no agent alert in Notification Center"; exit 1; }
 [ -f "$out/allow/update-home.png" ] || { echo "FAIL: no new-version notification was posted at any wait"; exit 1; }
 echo "ok: Allow; an agent's question and a new version were posted while the app ran; a tap opened home with the notice"
+
+AFTER=1; settings
+echo "ok: Settings on iPhone says how long it can post"
 
 echo "--- Don't Allow"
 fresh
