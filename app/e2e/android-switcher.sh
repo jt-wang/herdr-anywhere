@@ -7,7 +7,7 @@ set -eu
 apk=$1; bin=$2; shot=${3:-}
 app=$(cd "$(dirname "$0")/.." && pwd)
 adb="${ANDROID_HOME:-$HOME/Library/Android/sdk}/platform-tools/adb"
-hc=$(command -v hc || echo "$HOME/.local/bin/hc")
+hc=${HM_TEST_HC:-$(command -v hc || echo "$HOME/.local/bin/hc")}
 id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$app/nsh.json")
 port=7761; while nc -z 127.0.0.1 "$port" 2>/dev/null; do port=$((port + 1)); done
 work=$(mktemp -d); run=$(mktemp -d /tmp/hmXXXX); state=$(mktemp -d /tmp/hmtcXXXX)
@@ -65,9 +65,7 @@ gone() { # the sheet closed
   return 1
 }
 "$adb" shell am start -W -n "$id/.MainActivity" >/dev/null
-tap pair-link
-rest=$invite
-while [ -n "$rest" ]; do piece=$(printf %s "$rest" | cut -c1-80); rest=$(printf %s "$rest" | cut -c81-); "$adb" shell input text "'$piece'" < /dev/null; sleep 0.5; done
+"$(dirname "$0")/android-type-link.sh" "$invite"
 tap pair
 tap space-spsw
 sleep 3
