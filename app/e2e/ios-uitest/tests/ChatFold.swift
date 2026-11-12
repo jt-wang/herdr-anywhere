@@ -54,7 +54,11 @@ final class ChatFold: XCTestCase {
     // fold
     say("LIST the files here")
     let list = all().matching(NSPredicate(format: "identifier BEGINSWITH 'step-' AND identifier CONTAINS 'fake_list'"))
-    guard until(30, { list.count > 0 && working() }) else { failed("fold: no command step while working"); return }
+    // The fake writes a line every 3 s (e2e/ios-chat-four.sh): the LIST turn's command step is line 17 of 30, its
+    // output line 20, so the step shows about 51 s after the prompt and its output about 9 s later; the turn ends at
+    // about 90 s. A step's details are fetched when it opens, so it is opened once its output is in, while it works.
+    guard until(120, { list.count > 0 && working() }) else { failed("fold: no command step while working"); return }
+    sleep(10)
     let step = list.element(boundBy: list.count - 1).identifier
     el(step).tap()
     let more = saying("Show all 500 lines")
