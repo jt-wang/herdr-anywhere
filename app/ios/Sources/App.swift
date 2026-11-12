@@ -1,24 +1,40 @@
 // The app: one window showing the NSH app full screen, as `nsh package` builds it; the app keeps clear of the
 // notch and home bar itself (safeAreaInsets). TailPocket answers the app's tailPocket.* host calls (src/tunnel.ts);
 // this class answers page.pickFiles and page.uploadFile (src/link.ts): NSH 0.3.0 has a picker for photos and none for
-// other files; page.copyImage, page.videoFrame and page.openFile (src/page.ts).
-import AVFoundation
+// other files; and page.copyImage (src/page.ts).
 import NativeShell
-import QuickLook
 import TailPocketNSH
 import UIKit
 import UniformTypeIdentifiers
 
+// iOS 27 ends the launch of an app built with the iOS 27 SDK that makes its window here, without a scene (crash in
+// _UIApplicationEvaluateRuntimeIssueForNoSceneLifecycleAdoption, TestFlight 0.1.24 on iOS 27.2.1): the window comes
+// from SceneDelegate, named in Info.plist's UIApplicationSceneManifest (project.yml). e2e/ios-scene.sh checks a build.
 @main
 final class AppDelegate: UIResponder, UIApplicationDelegate {
+  // The scene's window too, for code that still asks the app delegate for its window.
   var window: UIWindow?
 
   func application(_ application: UIApplication, didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
     hideWebKeyboardBar()
-    window = UIWindow(frame: UIScreen.main.bounds)
-    window?.rootViewController = AppController()
-    window?.makeKeyAndVisible()
     return true
+  }
+
+  func application(_ application: UIApplication, configurationForConnecting session: UISceneSession, options: UIScene.ConnectionOptions) -> UISceneConfiguration {
+    UISceneConfiguration(name: "Default Configuration", sessionRole: session.role)
+  }
+}
+
+final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
+  var window: UIWindow?
+
+  func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options: UIScene.ConnectionOptions) {
+    guard let scene = scene as? UIWindowScene else { return }
+    let window = UIWindow(windowScene: scene)
+    window.rootViewController = AppController()
+    self.window = window
+    (UIApplication.shared.delegate as? AppDelegate)?.window = window
+    window.makeKeyAndVisible()
   }
 }
 
@@ -48,12 +64,11 @@ private func hideWebKeyboardBar() {
   }
 }
 
-final class AppController: UIViewController, UIDocumentPickerDelegate, QLPreviewControllerDataSource {
+final class AppController: UIViewController, UIDocumentPickerDelegate {
   private let app = NshAppView()
   private var tailPocket: AnyObject?
   private var picking: ((Any?) -> Void)?
   private var pickLimit = 9
-  private var previewing: URL?
 
   override func viewDidLoad() {
     super.viewDidLoad()
@@ -77,15 +92,6 @@ final class AppController: UIViewController, UIDocumentPickerDelegate, QLPreview
     app.handle("page.copyImage") { data, reply in
       reply.resolve(Self.copyImage((data as? [String: Any])?["url"] as? String))
     }
-    // A frame of a video at a link and its length (src/page.ts videoFrame); null when it can't be read.
-    app.handle("page.videoFrame") { data, reply in
-      Task { reply.resolve(await Self.videoFrame((data as? [String: Any])?["url"] as? String) as Any?) }
-    }
-    // A file from the computer, fetched and shown in Quick Look, which has the share sheet to open it elsewhere.
-    app.handle("page.openFile") { [weak self] data, reply in
-      let a = data as? [String: Any]
-      Task { @MainActor in reply.resolve(await self?.openFile(a?["url"] as? String, name: a?["name"] as? String) ?? "failed") }
-    }
     guard let url = Bundle.main.url(forResource: "bundle", withExtension: "nshc", subdirectory: "nsh") else {
       NSLog("nsh: no bundle in the app")
       return
@@ -102,58 +108,6 @@ final class AppController: UIViewController, UIDocumentPickerDelegate, QLPreview
     UIPasteboard.general.setData(bytes, forPasteboardType: type.identifier)
     return true
   }
-
-  /** A second in, or a third of a shorter video: past a black start. The player reads only the parts it needs. */
-  static func videoFrame(_ link: String?) async -> [String: Any]? {
-    guard let link, let url = URL(string: link), url.scheme == "http" || url.scheme == "https" else { return nil }
-    let asset = AVURLAsset(url: url)
-    do {
-      let length = try await asset.load(.duration).seconds
-      let make = AVAssetImageGenerator(asset: asset)
-      make.appliesPreferredTrackTransform = true
-      make.maximumSize = CGSize(width: 960, height: 540)
-      let at = CMTime(seconds: min(1, length / 3), preferredTimescale: 600)
-      let (frame, _) = try await make.image(at: at)
-      guard let jpeg = UIImage(cgImage: frame).jpegData(compressionQuality: 0.8) else { return nil }
-      return ["image": "data:image/jpeg;base64," + jpeg.base64EncodedString(), "duration": Int((length.isFinite ? length : 0) * 1000)]
-    } catch {
-      NSLog("a video's frame: %@", "\(error)")
-      return nil
-    }
-  }
-
-  /** The largest file the phone fetches to show. */
-  private static let openMax: Int64 = 512 << 20
-
-  /** Fetches it into the temp folder, under its own name in a folder of its own, and shows it: "opened" or "failed". */
-  private func openFile(_ link: String?, name: String?) async -> String {
-    guard let link, let url = URL(string: link), url.scheme == "http" || url.scheme == "https" else { return "failed" }
-    let file = (name ?? "file").split(separator: "/").last.map(String.init) ?? "file"
-    do {
-      let (got, response) = try await URLSession.shared.download(from: url)
-      guard (response as? HTTPURLResponse)?.statusCode == 200, response.expectedContentLength <= Self.openMax else {
-        try? FileManager.default.removeItem(at: got)
-        return "failed"
-      }
-      let root = FileManager.default.temporaryDirectory.appendingPathComponent("opened")
-      try? FileManager.default.removeItem(at: root) // the last one goes as a new one comes
-      let folder = root.appendingPathComponent(UUID().uuidString)
-      try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-      let to = folder.appendingPathComponent(file.isEmpty || file == "." || file == ".." ? "file" : file)
-      try FileManager.default.moveItem(at: got, to: to)
-      previewing = to
-      let look = QLPreviewController()
-      look.dataSource = self
-      present(look, animated: true)
-      return "opened"
-    } catch {
-      NSLog("opening a file: %@", "\(error)")
-      return "failed"
-    }
-  }
-
-  func numberOfPreviewItems(in controller: QLPreviewController) -> Int { previewing == nil ? 0 : 1 }
-  func previewController(_ controller: QLPreviewController, previewItemAt index: Int) -> QLPreviewItem { (previewing ?? URL(fileURLWithPath: "/")) as NSURL }
 
   private func pickFiles(limit: Int?, answer: @escaping (Any?) -> Void) {
     picking?([])

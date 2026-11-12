@@ -573,48 +573,6 @@ test("a blocked pane says Needs you, and its composer row is the agent's own cho
   expect(app.count('id:answers')).toBe(0)
 })
 
-// herdr-core (0.1.20) holds a send while the terminal has a half-typed line, up to 60 s after its last key.
-const holding = () => open('./fixtures/fake.tsx', { host: { params: { scene: 'busy', slowSendMs: '300' } } })
-
-test('a send herdr-core holds stays in the box, can not go twice, says why after a few seconds, and leaves once it is there', async () => {
-  const app = await holding()
-  await app.waitFor('text:Needs you')
-  await app.host.send('fake.hold', { method: 'terminal.send' })
-  await app.press('id:space-sp2')
-  await app.waitFor('id:compose-input')
-  await app.type('id:compose-input', 'npm test')
-  // Three taps at once, as a thumb tapping again on a send that seems stuck.
-  await Promise.allSettled([app.press('id:compose-send'), app.press('id:compose-send'), app.press('id:compose-send')])
-  await app.waitFor('id:compose-sending')
-  expect(app.count('id:compose-send')).toBe(0)
-  await expect(() => app.press('id:compose-sending')).rejects.toThrow('no pressable view')
-  expect(app.value('id:compose-input')).toBe('npm test')
-  await app.waitFor('id:send-held')
-  expect(app.texts()).toContain('The terminal has a half-typed line, so this waits until that line is sent or cleared. Tap >_ to type in the terminal and send or delete it; left alone, this goes on the end of it in a while.')
-  expect(app.storage()['fake-sent']).toBe(JSON.stringify([['t3', 'npm test', true]]))
-  await app.host.send('fake.release', {})
-  await app.waitFor('id:compose-input')
-  await app.waitUntil(() => app.value('id:compose-input') === '')
-  expect(app.count('id:send-held')).toBe(0)
-  expect(app.count('id:compose-sending')).toBe(0)
-  expect(app.storage()['fake-sent']).toBe(JSON.stringify([['t3', 'npm test', true]]))
-})
-
-test('a held send the line drops says it did not go, and its text is still in the box', async () => {
-  const app = await holding()
-  await app.waitFor('text:Needs you')
-  await app.host.send('fake.hold', { method: 'terminal.send' })
-  await app.press('id:space-sp2')
-  await app.waitFor('id:compose-input')
-  await app.type('id:compose-input', 'npm test')
-  await app.press('id:compose-send')
-  await app.waitFor('id:send-held')
-  await app.host.send('fake.drop', {})
-  await app.waitFor("text:The connection dropped while the computer was waiting, so this wasn't sent. It's still in the input box: send it again.")
-  expect(app.value('id:compose-input')).toBe('npm test')
-  expect(app.count('id:compose-sending')).toBe(0)
-})
-
 test('a choice that wants text picks it, then the composer takes the text to the agent', async () => {
   const app = await busy()
   await app.waitFor('text:Needs you')

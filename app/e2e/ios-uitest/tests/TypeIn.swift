@@ -11,22 +11,12 @@ final class TypeIn: XCTestCase {
     app.activate()
     let el = { (id: String) in app.descendants(matching: .any)[id].firstMatch }
     let kbd = { app.keyboards.firstMatch.waitForExistence(timeout: 5) }
-    // The screen before and after each tap of the menu, kept for e2e/ios-keyboard.sh to show when the test fails
-    // (typein-1-… is the first time, typein-2-… after the hide button).
-    var typeIns = 0
-    func shot(_ name: String) {
-      let a = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); a.name = "typein-\(typeIns)-\(name)"; a.lifetime = .keepAlways; add(a)
-    }
     func typeIn() {
-      typeIns += 1
-      shot("before-more")
       XCTAssertTrue(el("space-more").waitForExistence(timeout: 10), "no space-more")
       el("space-more").tap()
-      shot("after-more")
       let item = app.descendants(matching: .any)["Type in the terminal"].firstMatch
       XCTAssertTrue(item.waitForExistence(timeout: 5), "no Type in the terminal")
       item.tap()
-      shot("after-type-in")
     }
     XCTAssertTrue(el("space-spios").waitForExistence(timeout: 40), "home does not list the space")
     el("space-spios").tap()
@@ -55,20 +45,11 @@ final class TypeIn: XCTestCase {
     // The input box row's switch, then the keyboard's own keys straight into the terminal. The program there logs each
     // read as a Python bytes literal, one per line ($RAW).
     let raw = ProcessInfo.processInfo.environment["RAW"] ?? ""
-    // What the program read since the last call. It waits until that is as long as what the test wants (a CI runner's
-    // simulator delivered "hi " more than 2 s after the keys), then a second more for anything extra.
-    func read() -> String {
+    func got() -> String {
+      sleep(2)
       let s = (try? String(contentsOfFile: raw, encoding: .utf8)) ?? ""
-      return s.split(separator: "\n").map { String($0.dropFirst(2).dropLast()) }.joined()
-    }
-    func got(_ want: String = "") -> String {
-      let end = Date().addingTimeInterval(15)
-      sleep(1)
-      while read().count < want.count && Date() < end { usleep(250_000) }
-      sleep(1)
-      let s = read()
       try? "".write(toFile: raw, atomically: false, encoding: .utf8)
-      return s
+      return s.split(separator: "\n").map { String($0.dropFirst(2).dropLast()) }.joined()
     }
     let kb = app.keyboards.firstMatch
     func key(_ name: String) {
@@ -83,13 +64,13 @@ final class TypeIn: XCTestCase {
     XCTAssertFalse(el("compose-input").exists, "the input box is still there after the switch")
     sleep(1); _ = got()
     for k in ["h", "i", "space"] { key(k) }
-    let hi = got("hi "); note("h i space: \(hi)")
+    let hi = got(); note("h i space: \(hi)")
     XCTAssertEqual(hi, "hi ")
     key("return")
-    let ret = got("\\r"); note("return: \(ret)")
+    let ret = got(); note("return: \(ret)")
     XCTAssertEqual(ret, "\\r", "Return sends a carriage return alone")
     for k in ["t", "e", "h", "space", "a"] { key(k) }
-    let teh = got("teh a"); note("t e h space a: \(teh)")
+    let teh = got(); note("t e h space a: \(teh)")
     XCTAssertEqual(teh, "teh a", "after \"teh \" the keyboard is still lowercase")
     // WebKit's form bar (˄ ˅ Done) sits between the key row and the keyboard, about 44 pt tall; without it the key row
     // rests on the keyboard. The screen at this moment is saved next to $OUT.
