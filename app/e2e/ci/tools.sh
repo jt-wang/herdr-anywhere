@@ -7,6 +7,8 @@
 #   zsh    zsh (the e2e terminals run zsh, as on a Mac)
 #   shots  what ci-shots-check.sh needs: python with zxing-cpp and Pillow as HM_SHOTS_PYTHON, tesseract and ffmpeg
 #   ios    xcodegen and idb (idb-companion and the fb-idb client)
+#   opencode  OpenCode 1.19.0 (a release at least 14 days old when pinned, by the registry's time) for Linux x64, as
+#          OPENCODE_LIVE: the npm registry's platform package, checked by its sha512, its install script not run
 # herdr-core and nsh are the versions computers.yml pins; update both files together.
 set -euo pipefail
 tmp=${RUNNER_TEMP:?run on a GitHub runner}
@@ -88,9 +90,21 @@ ios() {
   echo "$tmp/idb-py/bin" >> "$path_"
 }
 
+opencode() {
+  [ $os = linux ] || { echo "opencode is pinned for Linux x64 only"; exit 2; }
+  local v=1.19.0 sri=+UFxn2AbOqKEISBDqrWk5nHsZrPWBMVZ4H9R7tbnrt1+nYvEGejpg9tyt+QMrpBPYZP7F+D3Ym0vZbZcF7gSSw==
+  curl -fsSL --retry 5 --retry-delay 10 "https://registry.npmjs.org/opencode-linux-x64/-/opencode-linux-x64-$v.tgz" -o "$tmp/opencode.tgz"
+  [ "$(openssl dgst -sha512 -binary "$tmp/opencode.tgz" | base64 -w0)" = "$sri" ] || { echo "FAIL: opencode-linux-x64 $v: sha512 differs"; exit 1; }
+  rm -rf "$tmp/opencode" && mkdir -p "$tmp/opencode" && tar -xzf "$tmp/opencode.tgz" -C "$tmp/opencode"
+  local bin; bin=$(find "$tmp/opencode" -type f -name opencode | head -1)
+  [ -n "$bin" ] || { echo "FAIL: no opencode in the package"; exit 1; }
+  chmod +x "$bin"; "$bin" --version
+  echo "OPENCODE_LIVE=$bin" >> "$env_"
+}
+
 for what in "$@"; do
   case $what in
-    core) core ;; nsh) nsh ;; zsh) zsh_ ;; shots) shots ;; ios) ios ;;
+    core) core ;; nsh) nsh ;; zsh) zsh_ ;; shots) shots ;; ios) ios ;; opencode) opencode ;;
     *) echo "unknown: $what"; exit 2 ;;
   esac
 done
