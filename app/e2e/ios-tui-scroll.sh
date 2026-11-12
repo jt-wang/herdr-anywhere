@@ -21,12 +21,10 @@ work=$(mktemp -d)
 run=$(mktemp -d /tmp/hmXXXX)
 mkdir -p "$work/sam/src/acme-api" "$work/state" "$work/config" "$work/data"
 : > "$work/sam/.zshrc"
-placeholder=$(cat "$app/e2e/pair.ts")
 cleanup() {
   [ -n "${serve_pid:-}" ] && kill "$serve_pid" 2>/dev/null
   # The same session the core was started in below, or `server stop` finds no core and leaves its holder running.
   HC_SESSION="hmios-$$" HC_SOCKET="" HOME="$work/sam" XDG_RUNTIME_DIR="$run" "$hc" server stop >/dev/null 2>&1 || true
-  printf "%s\n" "$placeholder" > "$app/e2e/pair.ts"
   chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run"
   xcrun simctl shutdown "$SIM_UDID" 2>/dev/null || true
 }
@@ -46,14 +44,28 @@ until curl -fsS "http://127.0.0.1:$port/api/info" >/dev/null 2>&1; do
 done
 link=$(HERDR_ANYWHERE_STATE="$work/companion" "$work/herdr-anywhere" pair --url "http://127.0.0.1:$port" 2>/dev/null | grep -o 'http://[^ ]*#pair=[A-Za-z0-9_-]*' | head -1)
 [ -n "$link" ] || { echo "pair printed no link" >&2; exit 1; }
-printf "export const PAIR: string = '%s'\n" "$link" > "$app/e2e/pair.ts"
-"$app/ios/build.sh" ios-e2e.tsx simulator >/dev/null 2>&1 || { echo "FAIL: ios/build.sh"; exit 1; }
-printf "%s\n" "$placeholder" > "$app/e2e/pair.ts"
+# The app is built from a copy of app/ whose terminal page also runs e2e/touch-times.ts, which tells the program when
+# the page got each touch (a "touch" line in the program's file); app/ itself is not changed.
+tree="$work/tree"
+mkdir -p "$tree"
+rsync -a --exclude /ios/build --exclude /ios/nsh --exclude /android "$app/" "$tree/app/"
+ln -s "$app/../third_party" "$tree/third_party"
+printf "export const PAIR: string = '%s'\n" "$link" > "$tree/app/e2e/pair.ts"
+page="$tree/app/src/ui/terminal-page.ts"
+[ "$(grep -c '<script>window.__terminal=' "$page")" = 1 ] || { echo "FAIL: the terminal page has changed: no single place for e2e/touch-times.ts"; exit 1; }
+sed 's/^export function terminalPage(/function terminalPageAsShipped(/' "$page" > "$page.new" && mv "$page.new" "$page"
+cat >> "$page" <<'TS'
+import { TOUCH_TIMES } from '../../e2e/touch-times.ts'
+export function terminalPage(opts: Parameters<typeof terminalPageAsShipped>[0]): string {
+  return terminalPageAsShipped(opts).replace('<script>window.__terminal=', () => '<script>' + TOUCH_TIMES + '</script><script>window.__terminal=')
+}
+TS
+"$tree/app/ios/build.sh" ios-e2e.tsx simulator >/dev/null 2>&1 || { echo "FAIL: ios/build.sh"; exit 1; }
 
 xcrun simctl boot "$SIM_UDID" 2>/dev/null || true
 xcrun simctl bootstatus "$SIM_UDID" -b >/dev/null
 xcrun simctl uninstall "$SIM_UDID" "$id" 2>/dev/null || true
-xcrun simctl install "$SIM_UDID" "$app/ios/build/Herdr.app"
+xcrun simctl install "$SIM_UDID" "$tree/app/ios/build/Herdr.app"
 # Herdr's alert sounds ship with the app, where the app's asset: URIs look (next to its bundle, as nsh build lays out).
 container=$(xcrun simctl get_app_container "$SIM_UDID" "$id")
 for s in request done; do
@@ -88,10 +100,14 @@ if [ "$rc" != 0 ]; then
 fi
 read cols rows half < "$work/wheels.layout"
 # The reports between two marks; a mark carries the terminal's height in points (12 of padding above and below).
-part() { awk -v m="$1" '/^mark /{on = ($2 == m); next} on' "$work/wheels"; }
+part() { awk -v m="$1" '/^mark /{on = ($2 == m); next} on && !/^touch /' "$work/wheels"; }
 height=$(awk '/^mark drag/{print $3; exit}' "$work/wheels")
 failed=0
 say() { echo "$1"; case $1 in FAIL*) failed=1;; esac; }
+echo "when the page got each gesture's touches (ms from the touch's own time: event time/time the page got to it; hold: the"
+echo "page's 450 ms hold timer ran, which turns a drag into selecting words):"
+awk '/^mark /{m = $2; next} /^touch /{sub(/^touch /, ""); print "  " m ": " $0}' "$work/wheels"
+grep -q '^touch ' "$work/wheels" || say "FAIL: the page sent no touch times (e2e/touch-times.ts)"
 finger=$(python3 -c "import sys; h=float(sys.argv[1]); print(round(0.35*h/((h-24)/int(sys.argv[2])), 1))" "$height" "$rows")
 n=$(part drag | grep -c . || true); want=$(python3 -c "import sys; print(int(float(sys.argv[1])//3))" "$finger")
 if [ "$n" -ge $((want - 1)) ] && [ "$n" -le $((want + 1)) ]; then say "ok: a drag of $finger rows sends $n reports, one per 3 rows"; else say "FAIL: a drag of $finger rows sent $n reports (one per 3 rows is $want): $(part drag | tr '\n' ';')"; fi

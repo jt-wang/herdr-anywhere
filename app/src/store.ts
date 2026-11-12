@@ -367,6 +367,9 @@ export class Store {
     if (!r.changed) return
     // New words in a title show only through a redraw, which the pass makes when something changed.
     if (r.type === 'title') this.dirty = true
+    // A status is read now, not after the read it came in: herdr-core clears a status as soon as the program that
+    // reported it exits, and words reported just before that came in the same read as the clearing.
+    if (r.type === 'status') { this.sync(); return }
     this.schedule()
   }
 

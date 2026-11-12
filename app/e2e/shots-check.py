@@ -1,11 +1,13 @@
-"""What ci-shots-check.sh needs Python for: QR codes in pictures and videos, and the words on pictures.
+"""What ci-shots-check.sh needs Python for: QR codes in pictures and videos, and the words on them.
 
     python shots-check.py mask <folder>         every QR code on a picture painted over, in place; a video with one fails
-    python shots-check.py words <folder>        each picture's words, as "<file>\t<line>", read by tesseract or, on a
-                                                Mac without it, by Apple's Vision (desktop-tool.swift scan)
+    python shots-check.py words <folder>        each picture's words and each video's (a frame a second), as
+                                                "<file>\t<line>", read by tesseract or, on a Mac without it, by Apple's
+                                                Vision (desktop-tool.swift scan)
     python shots-check.py qr <picture>          what each QR code on it holds, one per line (for the self-test)
     python shots-check.py sample <out> <text>   <out>/qr.png holding <text> as a QR code, <out>/words.png showing it,
-                                                <out>/words-grey.png showing it in a field's grey on a phone screen
+                                                <out>/words-grey.png showing it in a field's grey on a phone screen,
+                                                <out>/words.mp4 showing that screen for 2 s
 
 Never prints what a code holds, except with qr. Needs zxing-cpp and Pillow; videos need ffmpeg.
 """
@@ -80,19 +82,37 @@ def words(folder):
         sys.exit("FAIL: no tesseract to read the pictures' words")
     print(f"words read by {'tesseract' if tesseract else 'Vision'}", file=sys.stderr)
     tmp = tempfile.mkdtemp()
-    for path in files(folder, PICTURES):
+
+    def read(path, picture):
         if tesseract:
             lines = []
-            for picture, psm in reads(path, tmp):
-                out = subprocess.run([tesseract, picture, "-", "--psm", psm], capture_output=True, text=True, check=True).stdout
+            for p, psm in reads(picture, tmp):
+                out = subprocess.run([tesseract, p, "-", "--psm", psm], capture_output=True, text=True, check=True).stdout
                 lines += out.splitlines()
         else:
-            out = subprocess.run(["swift", os.path.join(HERE, "desktop-tool.swift"), "scan", path],
+            out = subprocess.run(["swift", os.path.join(HERE, "desktop-tool.swift"), "scan", picture],
                                  capture_output=True, text=True, check=True).stdout
             lines = [l[5:] for l in out.splitlines() if l.startswith("text ")]
         for line in lines:
             if line.strip():
                 print(f"{path}\t{line}")
+
+    for path in files(folder, PICTURES):
+        read(path, path)
+    # A video's words: a frame each second, each read as a picture is, under the video's name. A frame that looks like
+    # the last one read (no pixel more than 8 apart, which video compression stays under) is not read again: a 148 s
+    # recording of the app had 21 frames to read, about 1 s each.
+    for path in files(folder, VIDEOS):
+        frames = os.path.join(tmp, "frames")
+        os.makedirs(frames)
+        subprocess.run(["ffmpeg", "-loglevel", "error", "-i", path, "-vf", "fps=1", os.path.join(frames, "%05d.png")], check=True)
+        last = None
+        for frame in files(frames, PICTURES):
+            g = ImageOps.grayscale(Image.open(frame))
+            if last is None or ImageChops.difference(g, last).point(lambda v: 255 if v > 8 else 0).getbbox():
+                read(path, frame)
+                last = g
+        shutil.rmtree(frames)
     shutil.rmtree(tmp)
 
 
@@ -134,6 +154,20 @@ def sample(out, text):
     draw.rounded_rectangle((24, 1260, 1182, 1380), 20, fill=(30, 30, 30))
     draw.text((520, 1300), "Pair", fill="white", font=ImageFont.load_default(size=40))
     page.save(os.path.join(out, "words-grey.png"))
+    # A screen recording that shows that screen for 2 s between 2 s of the same screen without the link. Without ffmpeg
+    # there is none: a video then fails the check anyway, as mask() can't look inside it.
+    if not shutil.which("ffmpeg"):
+        return
+    blank = page.copy()
+    ImageDraw.Draw(blank).rounded_rectangle((24, 1100, 1182, 1220), 20, fill="white", outline=(210, 210, 210), width=3)
+    tmp = tempfile.mkdtemp()
+    try:
+        for i in range(30):
+            (page if 10 <= i < 20 else blank).save(os.path.join(tmp, f"{i:03d}.png"))
+        subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-framerate", "5", "-i", os.path.join(tmp, "%03d.png"),
+                        "-c:v", "libx264", "-pix_fmt", "yuv420p", os.path.join(out, "words.mp4")], check=True)
+    finally:
+        shutil.rmtree(tmp)
 
 
 def main():

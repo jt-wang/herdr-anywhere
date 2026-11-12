@@ -455,6 +455,41 @@ test('a finished alert is told again, quietly, when the agent says what it did a
   expect(rung).toEqual(['done: demo-app › 1', "again done: replied 'the sky is blue.'\ndemo-app › 1"])
 })
 
+// herdr-core 0.1.20, measured with hc events: a script that reports done with words and then exits is followed by
+// status null 0 to 440 ms later, as its shell takes the terminal back. When both lines come in one read (a slow phone,
+// a busy line), the words were never looked at: the alert kept only where it is.
+test('words reported just before the status clears still reach the alert', async () => {
+  const { core, store } = setup()
+  const rung: string[] = []
+  store.onAlert = (k, t, again) => rung.push(`${again ? 'again ' : ''}${k}: ${t.body}`)
+  await store.connect()
+  const r = await store.newSpace({ argv: ['sh', 'done.sh'], folder: '/Users/sam/src/demo-app' })
+  await settle()
+  core.setStatus(r.terminal, 'working', null)
+  await settle()
+  core.setStatus(r.terminal, 'done', null)
+  await settle()
+  core.setStatus(r.terminal, 'done', null, { msg: 'Ran the tests' })
+  core.emit('status', r.terminal, { status: null, records: {}, reported: true })
+  await settle()
+  expect(rung).toEqual(['done: demo-app › 1', 'again done: Ran the tests\ndemo-app › 1'])
+})
+
+test('a finish reported with its words just before the status clears still rings, with the words', async () => {
+  const { core, store } = setup()
+  const rung: string[] = []
+  store.onAlert = (k, t, again) => rung.push(`${again ? 'again ' : ''}${k}: ${t.body}`)
+  await store.connect()
+  const r = await store.newSpace({ argv: ['sh', 'done.sh'], folder: '/Users/sam/src/demo-app' })
+  await settle()
+  core.setStatus(r.terminal, 'working', null)
+  await settle()
+  core.setStatus(r.terminal, 'done', null, { msg: 'Ran the tests' })
+  core.emit('status', r.terminal, { status: null, records: {}, reported: true })
+  await settle()
+  expect(rung).toEqual(['done: Ran the tests\ndemo-app › 1'])
+})
+
 test('words that come after the agent moved on are not put on the old alert', async () => {
   const { core, store } = setup()
   const rung: string[] = []
