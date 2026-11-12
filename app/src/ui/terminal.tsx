@@ -2,10 +2,10 @@
 // choices, keys) is ui/pane-bar.tsx.
 import { cleanup, Clipboard, colorScheme, effect, keyboardFrame, openUrl, platform, signal, Text, untracked, View, WebView, windowSize } from 'nsh'
 import type { Store } from '../store.ts'
-import { terminalPage, webViewScrollable } from './terminal-page.ts'
+import { edgeBack, terminalPage, webViewScrollable } from './terminal-page.ts'
 import { showTerminalKeyboard } from '../page.ts'
 import { pictureTaps } from './picture-taps.ts'
-import { TerminalSession } from './terminal-session.ts'
+import { TerminalSession, terminalNote } from './terminal-session.ts'
 import { useSignal } from './kit.tsx'
 import { t } from '../strings/index.ts'
 
@@ -30,8 +30,11 @@ export function TerminalView(props: { store: Store; address: string; fontSize?: 
   cleanup(() => session.dispose())
   const state = useSignal(session.state)
   const why = useSignal(session.why)
+  const slow = useSignal(session.slow)
+  const conn = useSignal(props.store.conn)
+  const note = () => terminalNote(state(), slow(), conn(), why())
   const away = useSignal(session.away)
-  const html = untracked(() => terminalPage({ dark: colorScheme() === 'dark', fontSize: props.fontSize ?? 13, scrollback: 5000, phone: windowSize().width < WIDE, raised: keyboardFrame().height }))
+  const html = untracked(() => terminalPage({ dark: colorScheme() === 'dark', fontSize: props.fontSize ?? 13, scrollback: 5000, phone: windowSize().width < WIDE, raised: keyboardFrame().height, edge: edgeBack(platform.os, windowSize().width < WIDE) }))
   effect(() => session.setTheme(colorScheme() === 'dark'))
   effect(() => { if (props.fontSize) session.setFontSize(props.fontSize) })
   return (
@@ -50,9 +53,9 @@ export function TerminalView(props: { store: Store; address: string; fontSize?: 
         <If when={state() !== 'live'}>
           <View class="absolute left-0 right-0 bottom-0 px-3 py-2 bg-popover border-t border-border flex-row items-center">
             <Text testID="terminal-state" class="flex-1 text-[13px] text-muted-foreground">
-              {state() === 'waiting' ? t('connecting') : state() === 'lost' ? t('reconnecting') : why()}
+              {note().text}
             </Text>
-            <If when={state() === 'failed'}>
+            <If when={note().retry}>
               <View role="button" testID="terminal-retry" accessibilityLabel={t('tryAgain')} onPress={() => session.retry()}
                 class="h-8 px-3 flex-row items-center rounded-full bg-secondary border border-border active:bg-accent">
                 <Text class="text-[12.5px] font-medium text-foreground">{t('tryAgain')}</Text>

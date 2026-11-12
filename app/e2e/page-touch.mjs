@@ -21,7 +21,7 @@ async function open(opts, width = 390, height = 700) {
   await page.goto('http://terminal.test/')
   await page.waitForFunction(() => window.posts.some((m) => m.t === 'ready'))
   const cdp = await context.newCDPSession(page)
-  const touch = (type, x, y) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y }] })
+  const touch = (type, x, y) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' || type === 'touchCancel' ? [] : [{ x, y }] })
   return {
     page,
     cdp,
@@ -186,7 +186,8 @@ async function open(opts, width = 390, height = 700) {
 // 3 (both measured through herdr-core). At 3 rows of finger per report, Pi moved 4 rows for a 16.9-row drag on the
 // Android emulator (0.1.18); at 1, OpenCode moved 36 for 12.4 (0.1.14). So the page sees how far a report goes and
 // sends one per that many rows. The stand-in below moves ROWS rows per report, redraws 30 ms later as a program over
-// the network would, and ignores a wheel over its prompt box (its bottom 9 rows), as OpenCode does. Every report of a
+// the network would, and ignores a wheel over its prompt box (its bottom 9 rows) and on its first two columns, as
+// OpenCode 1.19.0 does (companion/internal/server's TestLiveOpenCodeWheelColumns measures it). Every report of a
 // gesture goes to the cell where the finger went down: that cell picks the panel, and a drag that ended over the box
 // used to stop. Touch times are set (CDP timestamps become the events' timeStamp), so a flick's speed is the same on
 // every run.
@@ -224,7 +225,7 @@ async function open(opts, width = 390, height = 700) {
         const o = JSON.parse(m)
         if (o.t !== 'input') return
         let moved = false
-        for (const w of o.data.matchAll(/\x1b\[<(6[45]);\d+;(\d+)M/g)) if (+w[2] <= term.rows - BOX) { top += w[1] === '64' ? -per : per; moved = true }
+        for (const w of o.data.matchAll(/\x1b\[<(6[45]);(\d+);(\d+)M/g)) if (+w[3] <= term.rows - BOX && +w[2] >= 3) { top += w[1] === '64' ? -per : per; moved = true }
         if (moved) setTimeout(draw, 30)
       }
       window.postMessage(JSON.stringify({ t: 'write', data: '\x1b[?1049h\x1b[?1000h\x1b[?1003h\x1b[?1006h\x1b[2J' }), '*')
@@ -262,6 +263,11 @@ async function open(opts, width = 390, height = 700) {
   const third = await slow(oc), thirdReports = reports(await oc.input())
   check('once it has looked 3 times: one report per 3 rows, the content as far as the finger', Math.abs(third - 12.5) <= 3 && thirdReports.length >= 3 && thirdReports.length <= 5, { rows: third, reports: thirdReports.length })
   check('a drag from low on the screen still scrolls, above the prompt box', Math.abs((await slow(oc, 120, 60)) - 12.5) <= 3)
+  // A finger at the screen's left edge (iOS's swipe back strip, 24 pt) lands on the first column or two.
+  const firstCol = await oc.t.page.evaluate(() => { const r = document.querySelector('.xterm-screen').getBoundingClientRect(); return r.left + r.width / window.term.cols / 2 })
+  await oc.input()
+  const edgeRows = await slow(oc, firstCol)
+  check('a drag from the first column moves a program that takes no wheel there', Math.abs(edgeRows - 12.5) <= 3, { rows: edgeRows, cols: [...new Set(reports(await oc.input()).map((r) => r.col))] })
   await oc.t.page.waitForTimeout(300)
   await oc.input()
 
@@ -1018,6 +1024,45 @@ for (const [width, scale] of [[360, 3], [384, 2.8125], [393, 3], [411, 2.625], [
     console.log(`${name}: ${places} places, asked about ${asked.length}`)
     await t.page.context().close()
   }
+}
+
+// iOS's swipe back starts at the screen's left edge, where the terminal reaches on a phone. A finger that comes down
+// within `edge` of it keeps its moves' default, so the system's swipe can begin; with every move prevented a slow swipe
+// from 2 pt over the terminal went back 0 of 24 times (iOS 26.5 simulator, e2e/ios-edge-back.sh). Further in, moves stay
+// prevented; a drag up or down from the edge still scrolls; and when the system takes the finger (touchcancel), the
+// hold that selects a word is called off.
+{
+  const t = await open({ phone: true, edge: 24 })
+  await t.send({ t: 'write', data: Array.from({ length: 300 }, (_, i) => `line ${i}`).join('\r\n') })
+  await t.page.waitForTimeout(300)
+  await t.page.evaluate(() => { window.kept = []; document.addEventListener('touchmove', (e) => window.kept.push(e.defaultPrevented), { passive: true }) })
+  const sideways = async (x) => {
+    await t.page.evaluate(() => { window.kept = [] })
+    await t.touch('touchStart', x, 300)
+    for (let i = 1; i <= 6; i++) await t.touch('touchMove', x + i * 30, 300)
+    await t.touch('touchCancel')
+    return t.page.evaluate(() => window.kept)
+  }
+  const edge = await sideways(10)
+  check('a move from the left edge keeps its default', edge.length > 0 && edge.every((p) => !p), edge)
+  const inner = await sideways(100)
+  check('a move from further in is prevented', inner.length > 0 && inner.every((p) => p), inner)
+  await t.drag(10, 150, 300)
+  check('a drag down from the edge still scrolls the page back', await t.away())
+  await t.send({ t: 'bottom' })
+  await t.touch('touchStart', 10, 300)
+  await t.touch('touchCancel')
+  await t.page.waitForTimeout(700)
+  check('a finger the system took selects nothing', !(await t.page.evaluate(() => window.term.hasSelection())))
+  await t.page.context().close()
+  const off = await open({ phone: true })
+  await off.page.evaluate(() => { window.kept = []; document.addEventListener('touchmove', (e) => window.kept.push(e.defaultPrevented), { passive: true }) })
+  await off.touch('touchStart', 10, 300)
+  for (let i = 1; i <= 6; i++) await off.touch('touchMove', 10 + i * 30, 300)
+  await off.touch('touchEnd')
+  const offKept = await off.page.evaluate(() => window.kept)
+  check('without an edge (Android, a wide screen) every move is prevented', offKept.length > 0 && offKept.every((p) => p), offKept)
+  await off.page.context().close()
 }
 
 await browser.close()

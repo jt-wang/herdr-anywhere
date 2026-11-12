@@ -2,12 +2,11 @@
 // then the desktop sidebar's spaces with their git and their agents, and the status bar (herdr-app defaults/mods/spaces,
 // mods/agents, mods/workspace-status).
 import { colorScheme, computed, Image, Scroll, signal, Text, View } from 'nsh'
-import { AlertDialog } from 'nsh/base'
+import { confirmClose, pickFrom } from './menu-sheet.tsx'
 import { ViewSwitch, type ViewSwitchProps } from './view-switch.tsx'
 import type { Store } from '../store.ts'
 import type { AgentInfo, SubRow } from '../model/agents.ts'
 import { duration } from '../model/agents.ts'
-import { asks } from '../model/answers.ts'
 import { shownOrder, type Option } from '../model/menu.ts'
 import type { Space } from '../model/model.ts'
 import { addresses } from '../model/layout.ts'
@@ -23,7 +22,8 @@ import icon from '../../assets/brand/herdr-anywhere.png'
 export type HomeActions = {
   openSpace: (spaceId: string) => void
   openAgent: (a: AgentInfo) => void
-  peek: (address: string) => void
+  /** A sub-agent's row: its tab if it was kept as one, else a peek at it. */
+  openSub: (address: string) => void
   newMenu: () => void
   /** A new tab in this space, in its folder (sheets.tsx); starting it opens the space. */
   addAgent: (spaceId: string) => void
@@ -84,8 +84,8 @@ function WaitingRow(props: { store: Store; a: AgentInfo; now: number; actions: H
   const rev = useRev(s)
   const addr = props.a.address
   const words = agentWords(s)
-  const status = () => { rev(); return s.term(addr)?.status }
   const menu = () => { rev(); return s.menuFor(addr) }
+  const asked = () => { rev(); return s.asksOf(addr) }
   const since = () => s.agentList.since(props.a)
   const wait = () => (since() ? duration(Math.max(0, props.now - since())) : '')
   const sending = signal(false)
@@ -107,17 +107,19 @@ function WaitingRow(props: { store: Store; a: AgentInfo; now: number; actions: H
             <If when={wait()}><Text class="text-[11px] text-sidebar-foreground">{wait()}</Text></If>
           </View>
           <Text class="text-[12px] text-sidebar-foreground" numberOfLines={1}>{(rev(), words.where(props.a))}</Text>
-          <If when={asks(status())}><Text testID={`asks-${addr}`} class="text-[12.5px] text-muted-foreground" numberOfLines={2}>{asks(status())}</Text></If>
+          <If when={asked()}><Text testID={`asks-${addr}`} class="text-[12.5px] text-muted-foreground" numberOfLines={2}>{asked()}</Text></If>
         </View>
         <View class="flex-row items-center gap-1.5 mt-1.5">
           <ChoiceRow testID={`needs-${addr}-choices`}>
-            <If when={menu()}>{(m) => shownOrder(m()).map((o) => (
-              <View role="button" testID={`needs-${addr}-choice-${o.n}`} accessibilityLabel={`${o.n}. ${o.full}`} disabled={sending()} onPress={() => void pick(o)}
-                onLongPress={() => s.toast({ title: `${o.n}. ${o.full}`, level: 'info' })}
-                class={`h-8 max-w-[200px] px-3 justify-center rounded-[7px] ${o.selected ? 'bg-primary active:opacity-80' : 'bg-secondary border border-border active:bg-accent'} ${sending() ? 'opacity-50' : ''}`}>
-                <Text class={`text-[13px] font-medium ${o.selected ? 'text-primary-foreground' : 'text-foreground'}`} numberOfLines={1}>{`${o.n}. ${o.label}`}</Text>
-              </View>
-            ))}</If>
+            <If when={menu()}>{(m) => (
+              <Each of={shownOrder(m())} key={(o) => `${o.n}. ${o.full}`}>{(o) => (
+                <View role="button" testID={`needs-${addr}-choice-${o().n}`} accessibilityLabel={`${o().n}. ${o().full}`} disabled={sending()} onPress={() => void pick(o())}
+                  onLongPress={() => s.toast({ title: `${o().n}. ${o().full}`, level: 'info' })}
+                  class={`h-8 max-w-[200px] px-3 justify-center rounded-[7px] ${o().selected ? 'bg-primary active:opacity-80' : 'bg-secondary border border-border active:bg-accent'} ${sending() ? 'opacity-50' : ''}`}>
+                  <Text class={`text-[13px] font-medium ${o().selected ? 'text-primary-foreground' : 'text-foreground'}`} numberOfLines={1}>{`${o().n}. ${o().label}`}</Text>
+                </View>
+              )}</Each>
+            )}</If>
           </ChoiceRow>
           <View role="button" testID={`needs-${addr}-open`} accessibilityLabel={t('open')} onPress={open}
             class="h-8 px-3 justify-center rounded-[7px] bg-secondary border border-border active:bg-accent">
@@ -155,10 +157,11 @@ function AgentRows(props: { store: Store; agents: () => AgentInfo[]; full?: bool
   const s = props.store
   const words = agentWords(s)
   const menu = async (a: AgentInfo) => {
-    const r = await AlertDialog.show({ ...words.menu(a), presentation: 'actionSheet', actions: [
-      { id: 'pin', label: a.pinned ? t('unpin') : t('pinToTop') },
-      { id: 'close', label: t('close'), role: 'destructive' }, { id: 'cancel', label: t('cancel'), role: 'cancel' }] })
-    if (r === 'close') s.closePane(a.pane)
+    const w = words.menu(a)
+    const r = await pickFrom({ title: w.title, message: w.description || undefined, items: [
+      { id: 'pin', label: a.pinned ? t('unpin') : t('pinToTop'), icon: a.pinned ? 'pin-off' : 'pin' },
+      { id: 'close', label: t('close'), icon: 'x', role: 'destructive' }] })
+    if (r === 'close' && await confirmClose(w.title, 'closePaneDetail')) s.closePane(a.pane)
     if (r === 'pin') s.pin(a.address, !a.pinned).catch((e) => s.toast({ title: String(e?.message ?? e), level: 'error' }))
   }
   return (
@@ -167,7 +170,7 @@ function AgentRows(props: { store: Store; agents: () => AgentInfo[]; full?: bool
         <AgentRow store={s} a={a()} full={props.full} testID={`${props.idPrefix}-${a().address}`}
           class={`mx-2 ${props.full ? 'pl-2' : 'pl-9'} pr-2 min-h-9 py-1.5 justify-center rounded-[8px] active:bg-sidebar-accent`}
           subPrefix="sub" subClass={`mx-2 ${props.full ? 'pl-7' : 'pl-14'} pr-2`}
-          onPress={() => props.actions.openAgent(a())} onLongPress={() => void menu(a())} onSub={props.actions.peek} />
+          onPress={() => props.actions.openAgent(a())} onLongPress={() => void menu(a())} onSub={props.actions.openSub} />
         <If when={props.actions.doing?.(a().address)}>{(d) => (
           <View testID={`doing-${a().address}`} class={`mx-2 ${props.full ? 'pl-[30px]' : 'pl-[58px]'} pr-2 pb-1.5 -mt-1`}>
             <Text class="text-[12px] text-chart-1" numberOfLines={1}>{t('doingLine', { task: d().outcome })}</Text>
@@ -211,13 +214,11 @@ function SpaceRow(props: { store: Store; space: Space; color: string; actions: H
   }
   const active = () => { rev(); return s.model.activeSpace()?.id === props.space.id }
   const menu = async () => {
-    const r = await AlertDialog.show({ title: name(), presentation: 'actionSheet', actions: [
-      { id: 'rename', label: t('rename') }, { id: 'close', label: t('closeSpace'), role: 'destructive' }, { id: 'cancel', label: t('cancel'), role: 'cancel' }] })
+    const r = await pickFrom({ title: name(), items: [
+      { id: 'rename', label: t('rename'), icon: 'square-pen' }, { id: 'close', label: t('closeSpace'), icon: 'x', role: 'destructive' }] })
     if (r === 'rename') props.actions.rename('space', props.space.id, props.space.name)
     else if (r === 'close') {
-      const ok = await AlertDialog.show({ title: t('closeTitle', { name: name() }), description: t('closeDetail'), actions: [
-        { id: 'cancel', label: t('cancel'), role: 'cancel' }, { id: 'close', label: t('close'), role: 'destructive' }] })
-      if (ok === 'close') s.closeSpace(props.space.id)
+      if (await confirmClose(name(), 'closeDetail')) s.closeSpace(props.space.id)
     }
   }
   return (
