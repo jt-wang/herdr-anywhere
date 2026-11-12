@@ -90,8 +90,10 @@ export function ChatView(props: { store: Store; address: string; status: () => s
         <Scroll ref={(r: any) => { scroller = r }} class="flex-1" contentClass="px-3 py-3 gap-4"
           /* After a prompt sent from the composer its box keeps focus with the keyboard down, and a Scroll that doesn't
              persist taps spent every tap on that focus: a fold or a step didn't open (seen on Android). */
-          keyboardShouldPersistTaps="handled" onLayout={(b) => viewport.set(b.size.height)}
-          scrollEventThrottle={64} onScroll={(e) => { pinned = (e?.offset?.y ?? 0) + viewport() >= content - 40 }}>
+          keyboardShouldPersistTaps="handled" onLayout={(b) => { viewport.set(b.size.height); toEnd(content) }}
+          /* At the end or not, from the sizes the event comes with, which go with its offset: the size kept from
+             onLayout can be older (the keyboard going down), and the view stopped following new turns on Android. */
+          scrollEventThrottle={64} onScroll={(e) => { pinned = (e?.offset?.y ?? 0) + (e?.size?.height ?? viewport()) >= (e?.contentSize?.height ?? content) - 40 }}>
           <View class="gap-4" onLayout={(b) => toEnd(b.size.height)}>
             <If when={turns()?.length} else={<If when={answer()}><Text class="text-[13px] text-muted-foreground text-center py-6">{t('chatEmpty')}</Text></If>}>
               <Each of={turns() ?? []} key={(x) => x.id}>{(x) => <TurnView store={s} address={props.address} turn={x()} opened={opened} />}</Each>
