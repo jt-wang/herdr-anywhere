@@ -90,7 +90,10 @@ export function ChatView(props: { store: Store; address: string; status: () => s
         <Scroll ref={(r: any) => { scroller = r }} class="flex-1" contentClass="px-3 py-3 gap-4"
           /* After a prompt sent from the composer its box keeps focus with the keyboard down, and a Scroll that doesn't
              persist taps spent every tap on that focus: a fold or a step didn't open (seen on Android). */
-          keyboardShouldPersistTaps="handled" onLayout={(b) => viewport.set(b.size.height)}
+          /* A view at the end that gets smaller goes to the end again: on Android a pane that opens in its chat is laid
+             out 49 points taller first, and the scroll to the end made then left it 49 short of the end onScroll counts,
+             past its 40: no new turn was followed (measured on CI's emulator, Codex's pane). */
+          keyboardShouldPersistTaps="handled" onLayout={(b) => { viewport.set(b.size.height); toEnd(content) }}
           scrollEventThrottle={64} onScroll={(e) => { pinned = (e?.offset?.y ?? 0) + viewport() >= content - 40 }}>
           <View class="gap-4" onLayout={(b) => toEnd(b.size.height)}>
             <If when={turns()?.length} else={<If when={answer()}><Text class="text-[13px] text-muted-foreground text-center py-6">{t('chatEmpty')}</Text></If>}>
