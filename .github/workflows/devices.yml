@@ -83,8 +83,9 @@ permissions:
 concurrency:
   # A run of copies has a group of its own, so it doesn't cancel the branch's usual run, nor that run it; copies of
   # the main group and of the b group apart, as a run has only one of them (ios_main_repeat wins over ios_b_repeat).
-  # So does each scroll self-test, the pictures self-test, the open-the-space one, the OCR probe and a run of some groups.
-  group: devices-${{ github.ref }}${{ (inputs.ios_main_repeat || '0') != '0' && '-repeat-a' || (inputs.ios_b_repeat || '0') != '0' && '-repeat-b' || '' }}${{ (inputs.ios_scroll_selftest || 'none') != 'none' && format('-{0}', inputs.ios_scroll_selftest) || '' }}${{ (inputs.ios_picture_selftest || 'none') != 'none' && '-picture-selftest' || '' }}${{ (inputs.ios_open_space_selftest || 'none') != 'none' && '-open-space-selftest' || '' }}${{ inputs.ocr_probe && '-ocr-probe' || '' }}${{ inputs.groups && '-groups' || '' }}
+  # So does each scroll self-test, each pictures self-test, each open-the-space one, the OCR probe and a run of some
+  # groups: two runs with different choices there don't cancel each other.
+  group: devices-${{ github.ref }}${{ (inputs.ios_main_repeat || '0') != '0' && '-repeat-a' || (inputs.ios_b_repeat || '0') != '0' && '-repeat-b' || '' }}${{ (inputs.ios_scroll_selftest || 'none') != 'none' && format('-{0}', inputs.ios_scroll_selftest) || '' }}${{ (inputs.ios_picture_selftest || 'none') != 'none' && format('-picture-{0}', inputs.ios_picture_selftest) || '' }}${{ (inputs.ios_open_space_selftest || 'none') != 'none' && format('-open-space-{0}', inputs.ios_open_space_selftest) || '' }}${{ inputs.ocr_probe && '-ocr-probe' || '' }}${{ inputs.groups && '-groups' || '' }}
   cancel-in-progress: true
 
 env:
