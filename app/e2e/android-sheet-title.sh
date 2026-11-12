@@ -54,6 +54,9 @@ invite=$("$bin" pair --url "http://10.0.2.2:$port" --state "$state" 2>/dev/null 
 "$adb" shell pm grant "$id" android.permission.POST_NOTIFICATIONS >/dev/null 2>&1 || true
 "$adb" shell cmd uimode night no >/dev/null
 
+# What a failure prints hides the invite's code: a mistyped invite can leave one the #pair= pattern misses (#pai=…, or
+# pair=… with no #), so everything after a # and after a pair= goes.
+mask() { sed -E 's/#.*/#…/; s/pair=[^ |"]*/pair=…/g'; }
 xml() { "$adb" shell rm -f /sdcard/hm.xml; "$adb" shell uiautomator dump /sdcard/hm.xml >/dev/null 2>&1; "$adb" shell cat /sdcard/hm.xml 2>/dev/null || true; }
 bounds() { tr '>' '\n' | grep -F "resource-id=\"$1" | head -1 | sed -E 's/.*bounds="\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\]".*/\1 \2 \3 \4/'; }
 tap() {
@@ -63,17 +66,9 @@ tap() {
 }
 
 "$adb" shell am start -W -n "$id/.MainActivity" >/dev/null
-# A slow emulator can drop typed characters (the companion then refuses the code): check the field holds the whole
-# invite, else clear it and type again (as e2e/android-picture.sh).
-for try in 1 2 3; do
-  tap pair-link; sleep 1
-  "$adb" shell input keyevent 123 $(seq 1 ${#invite} | sed 's/.*/67/') < /dev/null
-  rest=$invite
-  while [ -n "$rest" ]; do "$adb" shell input text "'$(printf %s "$rest" | cut -c1-40)'" < /dev/null; rest=$(printf %s "$rest" | cut -c41-); sleep 0.5; done
-  xml | grep -qF "$invite" && break
-  [ $try = 3 ] && { echo "FAIL: the invite didn't go in whole, 3 tries"; exit 1; }
-  echo "the invite didn't go in whole (try $try): typing it again"
-done
+# A slow emulator drops typed characters (the companion then refuses the code): android-type-link.sh types the invite
+# in 10-character pieces and reads the field back until it holds all of it.
+"$(dirname "$0")/android-type-link.sh" "$invite"
 # At 360 dp the keyboard covers Pair, and the tap lands on the keyboard: put it away first, with Back only while it is
 # up (on this screen Back would leave the app).
 ime() { "$adb" shell dumpsys input_method | grep -oE 'mInputShown=(true|false)' | head -1 | cut -d= -f2; }
@@ -86,13 +81,13 @@ tap pair
 b=""; for _ in $(seq 1 30); do x=$(xml); b=$(printf '%s' "$x" | bounds 'add-agent-box/spweb"'); [ -n "$b" ] && [ -n "$(printf '%s' "$x" | bounds 'add-agent-dock/spdocs"')" ] && break; b=""; sleep 1; done
 if [ -z "$b" ]; then
   # The pairing screen shows the invite: no picture of it.
-  if xml | grep -qF 'resource-id="pair-link"'; then echo "FAIL: still on the pairing screen: $(xml | tr '>' '\n' | grep -F 'resource-id="pair-error"' | grep -oE ' text="[^"]*"' | head -1)"
+  if xml | grep -qF 'resource-id="pair-link"'; then echo "FAIL: still on the pairing screen: $(xml | tr '>' '\n' | grep -F 'resource-id="pair-error"' | grep -oE ' text="[^"]*"' | head -1 | mask)"
   else echo "FAIL: home has no space on box or on dock"; "$adb" exec-out screencap -p > "$shots/fail-home.png"; fi
   echo "on screen (ids): $(xml | tr '>' '\n' | grep -oE 'resource-id="[^"]+"' | sed -E 's/resource-id="(.*)"/\1/' | head -40 | tr '\n' ' ')"
-  echo "on screen (texts): $(xml | tr '>' '\n' | grep -oE ' text="[^"]+"' | sed -E 's/ text="(.*)"/\1/; s/#pair=[A-Za-z0-9_-]+/#pair=…/' | head -30 | tr '\n' '|')"
+  echo "on screen (texts): $(xml | tr '>' '\n' | grep -oE ' text="[^"]+"' | sed -E 's/ text="(.*)"/\1/' | mask | head -30 | tr '\n' '|')"
   echo "hc ls: $("$hc" ls --json 2>&1 | python3 -c 'import json,sys; print([(t["address"], (t.get("labels") or {}).get("herdr.space")) for t in json.load(sys.stdin)["terminals"]])' 2>&1)"
   echo "hc machine ls: $("$hc" machine ls 2>&1 | head -5 | tr '\n' ' ')"
-  echo "serve log: $(tail -5 "$work/serve.log" | sed -E 's/#pair=[A-Za-z0-9_-]+/#pair=…/g' | tr '\n' ' ')"
+  echo "serve log: $(tail -5 "$work/serve.log" | mask | tr '\n' ' ')"
   exit 1
 fi
 
