@@ -4,6 +4,9 @@
 # animations off, error dialogs hidden (computers.yml says why), and the screen read back as 1080x2400 at 420 dpi,
 # light, font scale 1, before any suite runs: every suite once failed on a phone whose screen another run had changed.
 # Usage: app/e2e/ci/android-up.sh    then ANDROID_SERIAL=emulator-5554
+# HM_EMULATOR_FEATURE (devices.yml's quiet trial): an emulator feature to turn off, as -NAME (-WiFiPacketStream: no
+# netsim WiFi stream; -Wifi: no WiFi). NAME must be one this emulator lists (emulator/lib/advancedFeatures.ini), and
+# the emulator's log must then lack its netsim WiFi line, so a feature that changed nothing fails here, not later.
 set -euo pipefail
 : "${ANDROID_HOME:?}" "${RUNNER_TEMP:?}"
 # android-emulator-runner's setup for hardware acceleration on Linux runners.
@@ -19,7 +22,14 @@ export ANDROID_AVD_HOME="$HOME/.android/avd"
 echo "ANDROID_AVD_HOME=$ANDROID_AVD_HOME" >> "${GITHUB_ENV:-/dev/null}"
 mkdir -p "$ANDROID_AVD_HOME"
 echo no | "$bin/avdmanager" create avd --force -n hm -k "$image" -d pixel_6 -p "$ANDROID_AVD_HOME/hm.avd" >/dev/null
-nohup "$ANDROID_HOME/emulator/emulator" -avd hm -no-window -gpu swangle -noaudio -no-boot-anim -no-snapshot \
+feature=()
+if [ -n "${HM_EMULATOR_FEATURE:-}" ]; then
+  name=${HM_EMULATOR_FEATURE#-}
+  grep -qE "^${name} = " "$ANDROID_HOME/emulator/lib/advancedFeatures.ini" ||
+    { echo "FAIL: this emulator ($("$ANDROID_HOME/emulator/emulator" -version 2>/dev/null | head -1)) has no feature $name"; exit 1; }
+  feature=(-feature "$HM_EMULATOR_FEATURE")
+fi
+nohup "$ANDROID_HOME/emulator/emulator" -avd hm -no-window -gpu swangle -noaudio -no-boot-anim -no-snapshot "${feature[@]}" \
   >"$RUNNER_TEMP/emulator.log" 2>&1 &
 adb="$ANDROID_HOME/platform-tools/adb"
 booted() { [ "$("$adb" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = 1 ]; }
@@ -28,6 +38,18 @@ until booted; do
   [ "$(date +%s)" -lt "$end" ] || { echo "FAIL: the emulator did not boot in 900 s"; "$adb" devices; tail -40 "$RUNNER_TEMP/emulator.log"; exit 1; }
   sleep 5
 done
+netsim=$(grep -c "Successfully initialized netsim WiFi" "$RUNNER_TEMP/emulator.log" || true)
+echo "emulator: $("$ANDROID_HOME/emulator/emulator" -version 2>/dev/null | head -1); feature off: ${HM_EMULATOR_FEATURE:-none}; netsim WiFi in its log: ${netsim} line(s)"
+if [ -n "${HM_EMULATOR_FEATURE:-}" ] && [ "$netsim" != 0 ]; then
+  echo "FAIL: with $HM_EMULATOR_FEATURE the emulator still started netsim WiFi: the feature changed nothing measured here"; exit 1
+fi
+# From here on (not while it boots, when adb sees it come and go), a note each time adb loses the phone, uploaded
+# with the job's files (android-watch.sh).
+here=$(cd "$(dirname "$0")" && pwd)
+"$here/android-watch.sh" --self-test
+sh "$here/../adb-note.sh" --self-test
+nohup "$here/android-watch.sh" "$adb" "${OUT:-$RUNNER_TEMP/out}/emulator-lost" "$RUNNER_TEMP/emulator.log" "$RUNNER_TEMP/logcat.txt" \
+  >/dev/null 2>&1 &
 # A minute for the phone to settle, as the Mac's release runs wait: without it the first suite after boot failed to
 # pair or to show its terminal in three jobs, and the suites after it in the same job passed.
 sleep 60
