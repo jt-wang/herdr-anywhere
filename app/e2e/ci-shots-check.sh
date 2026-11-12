@@ -5,6 +5,7 @@
 # SECRET file given (the invite or link a test made; lines shorter than 8 characters are skipped).
 # Usage: app/e2e/ci-shots-check.sh FOLDER [SECRET…]    exits 1 and names the file when it finds one
 #        app/e2e/ci-shots-check.sh --self-test COMPANION
+#        app/e2e/ci-shots-check.sh --self-test-words      only what OCR makes of a secret (part of --self-test)
 # --self-test makes a real pairing link with COMPANION (a state of its own in a temporary folder) and checks that the
 # check finds it in a log, reads it from a QR code and leaves no code there, and finds it in a picture's words, and
 # that a folder with none of it passes. A job runs it before the real check, so a check that finds nothing fails.
@@ -15,8 +16,15 @@ py=${HM_SHOTS_PYTHON:-python3}
 shapes='herdr[0-9]:[A-Za-z0-9_-]{16,}|#pair=[A-Za-z0-9_-]{8,}|token=[A-Za-z0-9_-]{8,}'
 # What OCR makes of the same, matched with the spaces it reads taken out: it splits a long token with spaces at random
 # (1 run in 10 here read "pair=…" as two words), reads : as ; and = as - (a Mac runner's tesseract read "#pair-…"),
-# and _ - as other marks.
-seen_shapes='[Hh]erdr[0-9][:;][^ ]{8,}|pair[=:-][^ ]{8,}|token[=:-][^ ]{8,}'
+# _ - as other marks, and letters as others or one more: a Linux runner read "#pairs=…" (and "hitp"), the app's help
+# text came out as "herdri:". So: an invite's 1 may be i l | !, pair and token may be misread and have up to 2 marks
+# more before the =, and anything with up to 6 marks between a # and an = counts too. Over the words read on every
+# picture and video the public CI uploaded in one audit (285,000 lines), none of these matched: the nearest, the help
+# text "herdr1:…http://…#pair=…", has only "…" after its =. misread_test keeps both kinds.
+seen_shapes='[Hh]erdr[0-9il|!][:;][A-Za-z0-9_-]{16,}|[Pp][a@4][il1|!]r[^ =:;-]{0,2}[=:;-][^ ]{8,}|#[^ ]{0,6}[=:;-][^ ]{10,}|[Tt][o0]k[e3]n[^ =:;-]{0,2}[=:;-][^ ]{8,}'
+
+# The numbers of the lines on standard input (words read on pictures, spaces taken out) that look like a secret.
+loose() { grep -nE "$seen_shapes" | cut -d: -f1; }
 
 check() {
   local folder=$1; shift
@@ -36,7 +44,7 @@ check() {
   words=$("$py" "$here/shots-check.py" words "$folder" | awk -F'\t' '{ gsub(/[ \t]/, "", $2); print $1 "\t" $2 }') || return 1
   # The words only: a file's own name (pair-en-US.png) is not on the picture.
   local hits
-  hits=$(printf '%s\n' "$words" | cut -f2 | grep -nE "$seen_shapes" | cut -d: -f1 | tr '\n' ' ')
+  hits=$(printf '%s\n' "$words" | cut -f2 | loose | tr '\n' ' ')
   bad=$(printf '%s\n' "$words" | awk -F'\t' -v hits="$hits" 'BEGIN { n = split(hits, h, " "); for (i = 1; i <= n; i++) at[h[i]] = 1 } NR in at { print $1 }' | sort -u)
   [ -z "$bad" ] || { echo "FAIL: a picture or video shows something shaped like a pairing secret: $(echo $bad)"; return 1; }
   if [ -n "$*" ]; then
@@ -46,6 +54,27 @@ check() {
     done
   fi
   echo "ok: $folder has no pairing secret and no QR code ($(find "$folder" -type f | wc -l | tr -d ' ') files)"
+}
+
+misread_test() {
+  # What OCR has made of a pairing link, invite or token (spaces taken out): each has to be found. And words the app
+  # shows that are close to one but hold no secret: none may be.
+  local misread=(
+    'hitp://127.0.0.1:9/#pairs=hQbbX2k9Lr0aZ7Qm'
+    'http://127.0.0.1:9/#pair-hQbbX2k9Lr0aZ7Qm'
+    'herdri:Ab3dE5gH7jK9mN1pQ3sT5vW7'
+    'token;Ab3dE5gH7jK9mN1p'
+  ) benign=(
+    'herdri:../http://../#paire=..'
+    'herdr-anywherepair'
+    '2.ShowapairingQRcode,thenscanit:'
+    'Pairagain'
+  ) w
+  local bad=0
+  for w in "${misread[@]}"; do [ -n "$(printf '%s\n' "$w" | loose)" ] || { echo "FAIL: self-test: a misread secret is not found: ${w:0:24}…"; bad=1; }; done
+  for w in "${benign[@]}"; do [ -z "$(printf '%s\n' "$w" | loose)" ] || { echo "FAIL: self-test: words with no secret are taken for one: $w"; bad=1; }; done
+  [ "$bad" = 0 ] && echo "ok: self-test of what OCR makes of a secret: ${#misread[@]} misread found, ${#benign[@]} near ones not"
+  [ "$bad" = 0 ]
 }
 
 self_test() {
@@ -70,6 +99,7 @@ self_test() {
       printf '%s\n' "${said//"$link"/<the link>}" | sed 's/^/  /'
       fail=1; fi
   }
+  n=$((n + 1)); misread_test || fail=1
   mkdir -p "$t/log" "$t/qr" "$t/words" "$t/words-bare" "$t/clean"
   printf 'serve: phone opened %s\n' "$link" > "$t/log/serve.log"
   case_ "a log with the link" fail "$t/log" "$t/s/link"
@@ -95,7 +125,9 @@ self_test() {
   [ "$fail" = 0 ] && echo "PASS: self-test, $n cases" || { echo "FAIL: self-test"; return 1; }
 }
 
-if [ "${1:-}" = --self-test ]; then
+if [ "${1:-}" = --self-test-words ]; then
+  misread_test
+elif [ "${1:-}" = --self-test ]; then
   [ -x "${2:-}" ] || { echo "usage: $0 --self-test COMPANION"; exit 2; }
   self_test "$2"
 else
