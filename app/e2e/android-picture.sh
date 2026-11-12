@@ -5,10 +5,12 @@
 # The terminal is here, or with HM_PICTURE_IMAGE in a container, for screenshots to publish (picture-terminal.sh).
 # Usage: ANDROID_SERIAL=emulator-5554 [HM_PICTURE_IMAGE=alpine:latest] e2e/android-picture.sh APK COMPANION [folder for screenshots]
 set -eu
+. "$(dirname "$0")/autostart-guard.sh"; autostart_guard android-picture # a login entry of its own, never the person's
 : "${ANDROID_SERIAL:?set ANDROID_SERIAL to the device to use}"
 apk=$1; bin=$2; shots=${3:-}
 app=$(cd "$(dirname "$0")/.." && pwd)
 adb="${ANDROID_HOME:-$HOME/Library/Android/sdk}/platform-tools/adb"
+. "$(dirname "$0")/adb-note.sh"; adb_note "$adb"  # a failed adb call is written down and shown if the suite fails
 hc=${HM_TEST_HC:-$(command -v hc || echo "$HOME/.local/bin/hc")}
 id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$app/nsh.json")
 port=7791; while nc -z 127.0.0.1 "$port" 2>/dev/null; do port=$((port + 1)); done
@@ -35,9 +37,10 @@ cleanup() {
   [ -z "$serve_pid" ] || kill "$serve_pid" 2>/dev/null; "$hc" server stop >/dev/null 2>&1 || true
   picture_cleanup
   chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run" "$state"
+  autostart_guard_end || exit 1
   exit "$status"
 }
-trap cleanup EXIT; trap 'cleanup; exit 130' INT; trap 'cleanup; exit 143' TERM HUP
+trap 'adb_exit $? cleanup' EXIT; trap 'cleanup; exit 130' INT; trap 'cleanup; exit 143' TERM HUP
 picture_terminal
 if [ "${HM_PICTURE_VIA:-}" = tailcat ]; then
   # HM_PICTURE_ROUTE=relay: the companion sends only through Tailcat's relay (as android-tailcat.sh does); else

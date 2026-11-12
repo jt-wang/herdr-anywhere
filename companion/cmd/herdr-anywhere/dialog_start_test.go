@@ -8,10 +8,15 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"herdr-anywhere/companion/internal/autostart"
+	"herdr-anywhere/companion/internal/testfake"
 )
 
 // TestMain keeps every test away from the Herdr desktop app of whoever runs them: start, serve and update put the Add
-// phone dialog in $HERDR_APP_HOME, which points at an empty folder here unless a test sets its own.
+// phone dialog in $HERDR_APP_HOME, which points at an empty folder here unless a test sets its own. And from their
+// Companion's entry at login: the tests' start, pair and stop use a fake (atLogin, in login_test.go), a real one
+// would get a name of the run's own, and the run fails when the person's entry changed or one was loaded or unloaded.
 func TestMain(m *testing.M) {
 	home, err := os.MkdirTemp("", "hm-app-home")
 	if err != nil {
@@ -19,8 +24,15 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	os.Setenv("HERDR_APP_HOME", home)
+	own := fmt.Sprintf("io.example.herdranywhere.test.go-main.%d", os.Getpid())
+	os.Setenv(autostart.NameEnv, own)
+	guard := testfake.GuardAutostart(own)
 	code := m.Run()
 	os.RemoveAll(home)
+	for _, bad := range guard.Check() {
+		fmt.Fprintln(os.Stderr, "FAIL: the person's Companion entry at login:", bad)
+		code = 1
+	}
 	os.Exit(code)
 }
 

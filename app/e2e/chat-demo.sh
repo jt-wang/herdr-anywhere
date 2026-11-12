@@ -8,6 +8,7 @@
 # Prints the page and a pairing link; Ctrl-C (or kill) removes it all. Fake data only.
 # Usage: e2e/chat-demo.sh [port]   (needs dist/web: nsh package --target web -o dist/web)
 set -eu
+. "$(dirname "$0")/autostart-guard.sh"; autostart_guard chat-demo # a login entry of its own, never the person's
 app=$(cd "$(dirname "$0")/.." && pwd)
 companion="$app/../companion"
 hc=$(command -v hc || echo "$HOME/.local/bin/hc")
@@ -24,8 +25,9 @@ printf 'a\n' > "$work/home/src/acme-api/notes.txt"; printf 'b\n' > "$work/home/s
 # herdr-core passes the environment of whatever first started it to every terminal: started from inside a Claude Code
 # session, every Claude in it inherits CLAUDE_CODE_CHILD_SESSION=1 and saves no transcript (seen with Claude Code 2.1.319).
 # So the core, and the companion that asks it, start with only these variables.
+. "$app/e2e/companion.sh"  # companion_start, companion_stop
 clean() {
-  env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin HOME="$work/home" SHELL=/bin/zsh TERM=xterm-256color LANG=en_US.UTF-8 \
+  env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin HOME="$work/home" HERDR_ANYWHERE_AUTOSTART_NAME="$HERDR_ANYWHERE_AUTOSTART_NAME" SHELL=/bin/zsh TERM=xterm-256color LANG=en_US.UTF-8 \
     HC_SESSION="hmchat-$$" HC_SOCKET="" XDG_STATE_HOME="$work/state" XDG_CONFIG_HOME="$work/config" XDG_DATA_HOME="$work/data" XDG_RUNTIME_DIR="$run" \
     HERDR_ANYWHERE_STATE="$work/companion" CLAUDE_CONFIG_DIR="$work/claude" "$@"
 }
@@ -38,16 +40,15 @@ lhc run --bg --keep --cwd "$work/home/notes" --label herdr.space=spchat3 --label
 
 cleanup() {
   [ -n "${feed_pid:-}" ] && kill "$feed_pid" 2>/dev/null
-  # $! is the subshell that runs clean; the companion is its child, and killing only the subshell leaves it running.
-  [ -n "${serve_pid:-}" ] && { pkill -P "$serve_pid" 2>/dev/null; kill "$serve_pid" 2>/dev/null; }
+  companion_stop
   lhc server stop >/dev/null 2>&1 || true
   chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run"
+  autostart_guard_end || exit 1
 }
 trap 'trap - EXIT; cleanup' EXIT
 trap 'trap - EXIT; cleanup; exit 130' INT
 trap 'trap - EXIT; cleanup; exit 143' TERM HUP
-clean "$work/herdr-anywhere" serve --listen "127.0.0.1:$port" --web "$app/dist/web/Herdr Anywhere" --hc "$hc" > "$work/serve.log" 2>&1 &
-serve_pid=$!
+companion_start "$work/serve.log" clean "$work/herdr-anywhere" serve --listen "127.0.0.1:$port" --web "$app/dist/web/Herdr Anywhere" --hc "$hc" --state "$work/companion" || exit 1
 # The prompts in the order of the turns fake-claude.py replays; the first round goes in quickly, then one every 20 s.
 ( sleep 2
   lhc send claude2 "HELLO there" >/dev/null 2>&1 || true
@@ -64,4 +65,4 @@ sleep 1
 echo "page: http://127.0.0.1:$port/"
 clean "$work/herdr-anywhere" pair --url "http://127.0.0.1:$port" 2>/dev/null | grep -o 'http://[^ ]*#pair=[A-Za-z0-9_-]*' | head -1
 echo "log: $work/serve.log"
-wait "$serve_pid"
+wait "$companion_job"

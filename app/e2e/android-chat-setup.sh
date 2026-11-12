@@ -6,6 +6,7 @@
 # Chinese, light. Fake data only.
 # Usage: ANDROID_SERIAL=emulator-5554 e2e/android-chat-setup.sh APK COMPANION [folder for screenshots]
 set -eu
+. "$(dirname "$0")/autostart-guard.sh"; autostart_guard android-chat-setup # a login entry of its own, never the person's
 : "${ANDROID_SERIAL:?set ANDROID_SERIAL to the device to use}"
 apk=$1; bin=$2; shot=${3:-}
 [ -z "$shot" ] || mkdir -p "$shot"
@@ -26,24 +27,27 @@ cat > "$agent/models.json" <<CFG
   "models": [{"id": "gpt-5.5", "name": "Fake GPT"}]}}}
 CFG
 (cd "$app/../companion" && go build -o "$work/fake-responses" ./internal/chat/fakeresponses/serve)
+. "$app/e2e/companion.sh"  # companion_start, companion_stop
 clean() {
-  env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin HOME="$work/home" SHELL=/bin/zsh TERM=xterm-256color LANG=en_US.UTF-8 \
+  env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin HOME="$work/home" HERDR_ANYWHERE_AUTOSTART_NAME="$HERDR_ANYWHERE_AUTOSTART_NAME" SHELL=/bin/zsh TERM=xterm-256color LANG=en_US.UTF-8 \
     HC_SESSION="hmps-$$" HC_SOCKET="" XDG_STATE_HOME="$work/state" XDG_CONFIG_HOME="$work/config" XDG_DATA_HOME="$work/data" XDG_RUNTIME_DIR="$run" \
     PI_CODING_AGENT_DIR="$agent" PI_SKIP_VERSION_CHECK=1 PI_OFFLINE=1 "$@"
 }
 lhc() { clean "$hc" "$@"; }
-serve_pid=; fake_pid=
+fake_pid=
 cleanup() {
   # A second INT or TERM (a runner that stops the children and then the script) must not cut this short: the
   # herdr-core, the agents' own background servers and the Companion would stay running.
   trap - EXIT; trap '' INT TERM HUP
   set +e  # under set -e, the first thing not found (pkill with nothing to stop) would end the script here
-  [ -n "$serve_pid" ] && { pkill -P "$serve_pid" 2>/dev/null; kill "$serve_pid" 2>/dev/null; }
-  pkill -f -- "--state $state" 2>/dev/null || true
+  companion_stop || stop_failed=1
   [ -n "$fake_pid" ] && kill "$fake_pid" 2>/dev/null
   "$adb" shell cmd locale set-app-locales "$id" --locales "" </dev/null >/dev/null 2>&1 || true
   [ -n "${ime_found:-}" ] && { put enabled_input_methods "$ime_found"; put selected_input_method_subtype "$sub_found"; "$adb" shell ime set "$ime" </dev/null >/dev/null; "$adb" shell sync </dev/null; } 2>/dev/null || true
   lhc server stop >/dev/null 2>&1 || true; chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run" "$state"
+  autostart_guard_end || exit 1
+  # A Companion that did not end fails the run (companion_stop said which).
+  [ -z "${stop_failed:-}" ] || exit 1
 }
 trap cleanup EXIT
 trap 'cleanup; exit 130' INT
@@ -55,9 +59,7 @@ sleep 7
 screen=$(lhc read pi 2>/dev/null)
 printf %s "$screen" | grep -qiE "update|log ?in|press enter|trust" && { echo "STOP: a prompt on Pi's screen"; exit 1; }
 printf %s "$screen" | grep -q "gpt-5.5" || { echo "STOP: Pi is not on the fake model"; exit 1; }
-clean "$bin" serve --listen "127.0.0.1:$port" --hc "$hc" --state "$state" > "$work/serve.log" 2>&1 &
-serve_pid=$!
-sleep 1
+companion_start "$work/serve.log" clean "$bin" serve --listen "127.0.0.1:$port" --hc "$hc" --state "$state" || exit 1
 invite=$(clean "$bin" pair --url "http://10.0.2.2:$port" --state "$state" 2>/dev/null | grep -o 'http://[^ ]*#pair=[A-Za-z0-9_-]*' | head -1)
 [ -n "$invite" ] || { echo "FAIL: no invite"; exit 1; }
 "$adb" uninstall "$id" >/dev/null 2>&1 || true
@@ -104,6 +106,19 @@ latin() {
   only=$(printf %s "$ime_found" | tr ':' '\n' | awk -v ime="$ime" -v en="$en_sub" 'index($0, ime ";") == 1 || $0 == ime { $0 = ime ";" en } 1' | paste -sd: -)
   put enabled_input_methods "$only"; put selected_input_method_subtype "$en_sub"; "$adb" shell ime set "$ime" </dev/null >/dev/null
 }
+# latin with a box in focus, then type only once Gboard is up again on the English layout. latin restarts Gboard
+# under the focused box (it must come after the tap: on focus Gboard goes back to pinyin), and letters typed while it
+# restarts are lost: typed at once, the first typing in Pi's chat lost its first one or two letters in 5 of 6 tries
+# ("ELLO there"); typed after this wait, none in 6.
+latin_focused() {
+  latin
+  for _ in $(seq 1 40); do
+    "$adb" shell dumpsys input_method </dev/null | grep -q 'mInputShown=true' &&
+      [ "$("$adb" shell settings get secure selected_input_method_subtype </dev/null | tr -d '\r')" = "$en_sub" ] && break
+    sleep 0.25
+  done
+  sleep 1
+}
 file="$agent/extensions/herdr-anywhere.ts"
 
 "$adb" shell am start -W -n "$id/.MainActivity" >/dev/null
@@ -148,7 +163,7 @@ for _ in $(seq 1 20); do has 'resource-id="chat-setup-reload"' || break; sleep 1
 has 'resource-id="chat-setup-reload"' && { echo "FAIL: /reload typed, the chat still waits for it"; exit 1; }
 echo "ok: the phone typed /reload and Pi's conversation is found"
 tap compose-input
-latin
+latin_focused
 type_text "HELLO there"
 has 'text="HELLO there"' || { echo "FAIL: the keyboard changed what was typed"; snap fail; exit 1; }
 tap compose-send

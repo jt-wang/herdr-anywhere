@@ -3,6 +3,7 @@
 # its own HC_SESSION, HOME, XDG dirs and companion state, a free port on 127.0.0.1, all removed after.
 # Needs: go, nsh, and herdr-core's hc (HM_TEST_HC, or on PATH, or ~/.local/bin).
 set -eu
+. "$(dirname "$0")/autostart-guard.sh"; autostart_guard run # a login entry of its own, never the person's
 app=$(cd "$(dirname "$0")/.." && pwd)
 companion="$app/../companion"
 hc=${HM_TEST_HC:-$(command -v hc || echo "$HOME/.local/bin/hc")}
@@ -25,8 +26,9 @@ cleanup() {
   "$hc" server stop >/dev/null 2>&1 || true
   rm -rf "$work" "$run"
   printf "%s\n" "$placeholder" > "$app/e2e/pair.ts"
+  autostart_guard_end || exit 1
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT; trap 'exit 130' INT; trap 'exit 143' TERM
 
 port=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')
 "$work/herdr-anywhere" serve --listen "127.0.0.1:$port" --hc "$hc" > "$work/serve.log" 2>&1 &

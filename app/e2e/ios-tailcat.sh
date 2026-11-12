@@ -10,6 +10,7 @@
 # Usage: SIM_UDID=<udid> e2e/ios-tailcat.sh [screenshot.png]
 # Needs the internet, go, nsh, hc, idb, xcodegen and Xcode.
 set -eu
+. "$(dirname "$0")/autostart-guard.sh"; autostart_guard ios-tailcat # a login entry of its own, never the person's
 : "${SIM_UDID:?set SIM_UDID to the simulator to use}"
 app=$(cd "$(dirname "$0")/.." && pwd)
 shot=${1:-}
@@ -39,8 +40,9 @@ cleanup() {
   [ -n "${serve_pid:-}" ] && kill "$serve_pid" 2>/dev/null
   HC_SESSION="hmtc-$$" HC_SOCKET="" HOME="$work/home" XDG_RUNTIME_DIR="$run" "$hc" server stop >/dev/null 2>&1 || true
   chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run" "$state"
+  autostart_guard_end || exit 1
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT; trap 'exit 130' INT; trap 'exit 143' TERM
 
 # Tailcat's pairing window lasts 2 minutes, so the app is built and installed before it opens, and the invite goes
 # into the app's storage (ios-e2e.tsx reads it there). A second build with the invite in it took over 2 minutes on CI.

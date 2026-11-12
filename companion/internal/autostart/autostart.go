@@ -16,6 +16,9 @@ import (
 	"maps"
 	"os"
 	"os/exec"
+	"os/user"
+	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 )
@@ -42,19 +45,50 @@ type Service struct {
 	Name string
 	Home string
 	run  func(name string, args ...string) ([]byte, error)
+	// refuse, when set, is why this entry is not made, started or removed.
+	refuse error
 }
 
 // NameEnv names another entry, so a test's serve never takes the place of the person's.
 const NameEnv = "HERDR_ANYWHERE_AUTOSTART_NAME"
 
-// Default is this user's entry.
+// DefaultName is the entry's name when NameEnv is not set: the person's own.
+const DefaultName = defaultName
+
+// Default is this user's entry. Under a HOME that is not the account's own (a test's, mostly) and with no NameEnv it is
+// refused: the file would go in that HOME, where the service manager never looks at login, while the name is the
+// person's in their own domain (launchd's gui/<uid>, systemd's user instance), so loading it would first unload the
+// person's Companion and then put this one in its place.
 func Default() *Service {
 	home, _ := os.UserHomeDir()
 	name := os.Getenv(NameEnv)
+	s := &Service{Name: name, Home: home}
 	if name == "" {
-		name = defaultName
+		s.Name = defaultName
+		if account := accountHome(); runtime.GOOS != "windows" && account != "" && home != "" && !sameDir(home, account) {
+			s.refuse = fmt.Errorf("HOME is %s, not this account's home (%s), so it is not set to start at login under this account's own name; %s gives it a name of its own", home, account, NameEnv)
+		}
 	}
-	return &Service{Name: name, Home: home}
+	return s
+}
+
+// accountHome is the home the user database gives this account, whatever HOME says.
+func accountHome() string {
+	u, err := user.Current()
+	if err != nil {
+		return ""
+	}
+	return u.HomeDir
+}
+
+func sameDir(a, b string) bool {
+	if ra, err := filepath.EvalSymlinks(a); err == nil {
+		a = ra
+	}
+	if rb, err := filepath.EvalSymlinks(b); err == nil {
+		b = rb
+	}
+	return filepath.Clean(a) == filepath.Clean(b)
 }
 
 func (s *Service) command(name string, args ...string) ([]byte, error) {
