@@ -6,12 +6,20 @@
 # conversation, the app in the background and back, the Companion stopped and started again. The app must stay one
 # process from launch to the end: a crash fails with its crash report. The app is built from ios-e2e.tsx at this run's
 # pairing link (as e2e/ios-chat.sh). Fake data only.
-# Usage: SIM_UDID=<udid> [AGENTS="claude-code codex pi opencode"] [AWAY="10 60"] e2e/ios-chat-four.sh [folder for screenshots]
+# UITEST=ChatFold runs e2e/ios-uitest ChatFold instead (devices.yml group ios-chatfold, a change's before and after):
+# Claude Code alone, its turns slowed (2 s a line), the app paired through companion/internal/testfake/chatproxy, which
+# the test steers by the same folder of files.
+# Usage: SIM_UDID=<udid> [AGENTS="claude-code codex pi opencode"] [AWAY="10 60"] [UITEST=ChatFour|ChatFold] e2e/ios-chat-four.sh [folder for screenshots]
 # AWAY: the seconds in the background, each for the first agent, the first for the others (60 is past the Companion's
 # ping timeout, so the link is gone by then). Needs go, nsh, hc, python3, xcodegen and Xcode.
 set -eu
 : "${SIM_UDID:?set SIM_UDID to the simulator to use}"
-agents=${AGENTS:-claude-code codex pi opencode}
+uitest=${UITEST:-ChatFour}
+case $uitest in
+  ChatFour) agents=${AGENTS:-claude-code codex pi opencode}; delay=400ms; tag=chat-four ;;
+  ChatFold) agents=${AGENTS:-claude-code}; delay=2s; tag=chat-fold ;;
+  *) echo "no test $uitest (ChatFour or ChatFold)" >&2; exit 2 ;;
+esac
 away=${AWAY:-10 60}
 app=$(cd "$(dirname "$0")/.." && pwd)
 companion="$app/../companion"
@@ -34,7 +42,8 @@ work=$(mktemp -d); run=$(mktemp -d /tmp/hmXXXX); state=$(mktemp -d /tmp/hmtcXXXX
 mkdir -p "$work/h" "$work/state" "$work/config" "$work/data" "$work/claude" "$work/codex" "$work/pi" "$ctl"
 : > "$work/h/.zshrc"; date > "$work/started"
 (cd "$companion" && CGO_ENABLED=0 go build -buildvcs=false -o "$work/herdr-anywhere" ./cmd/herdr-anywhere &&
-  CGO_ENABLED=0 go build -buildvcs=false -o "$work/fakeagent" ./internal/testfake/fakeagent)
+  CGO_ENABLED=0 go build -buildvcs=false -o "$work/fakeagent" ./internal/testfake/fakeagent &&
+  CGO_ENABLED=0 go build -buildvcs=false -o "$work/chatproxy" ./internal/testfake/chatproxy)
 placeholder=$(cat "$app/e2e/pair.ts")
 # herdr-core gives every terminal the environment of what started it: the agents' folders are set here, for the
 # fakes and for the Companion's readers alike.
@@ -42,13 +51,16 @@ L() { env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin
   LANG=en_US.UTF-8 HC_SESSION="hmchat4-$$" HC_SOCKET="" XDG_STATE_HOME="$work/state" XDG_CONFIG_HOME="$work/config" \
   XDG_DATA_HOME="$work/data" XDG_RUNTIME_DIR="$run" CLAUDE_CONFIG_DIR="$work/claude" CODEX_HOME="$work/codex" \
   PI_CODING_AGENT_DIR="$work/pi" "$@"; }
-serve_pid=; ctl_pid=; log_pid=; booted=
+serve_pid=; ctl_pid=; log_pid=; proxy_pid=; booted=
 cleanup() {
   status=$?
   trap - EXIT INT TERM HUP
   set +e
   [ -n "$ctl_pid" ] && kill "$ctl_pid" 2>/dev/null
   [ -n "$log_pid" ] && kill "$log_pid" 2>/dev/null
+  [ -n "$proxy_pid" ] && kill "$proxy_pid" 2>/dev/null
+  # The app's diagnostics (src/diag.ts, sent by ios-e2e.tsx) the Companion logged: printed when the run failed.
+  [ "$status" != 0 ] && grep -h ' /hm-e2e/' "$work/serve.log" 2>/dev/null | tail -10 | sed 's/^/  diagnostic: /'
   # What the app logged as errors (nsh writes the errors it reports there): printed when the run failed, kept always.
   [ "$status" != 0 ] && [ -s "$work/app.log" ] && { echo "  the app's errors (last 20):"; grep -vE '^(Filtering the log data|Timestamp )' "$work/app.log" | tail -20 | cut -c1-300 | sed 's/^/    /'; }
   [ -n "$shots" ] && [ -s "$work/app.log" ] && cp "$work/app.log" "$shots/app.log"
@@ -67,7 +79,7 @@ for a in $agents; do
   mkdir -p "$work/h/src/demo-$s"
   # shellcheck disable=SC2046 # the recordings' paths, one word each
   L "$hc" run --bg --keep --cwd "$work/h/src/demo-$s" --name "$s" --label herdr.space="spc$s" --label herdr.tab="tbc$s" -- \
-    "$work/fakeagent" -agent "$a" -preload 40 -long 500 -hc "$hc" $(recordings "$a") >/dev/null
+    "$work/fakeagent" -agent "$a" -preload 40 -long 500 -delay "$delay" -hc "$hc" $(recordings "$a") >/dev/null
 done
 serve() {
   L "$work/herdr-anywhere" serve --listen "127.0.0.1:$port" --hc "$hc" --state "$state" >> "$work/serve.log" 2>&1 &
@@ -75,6 +87,14 @@ serve() {
   i=0; until curl -fsS "http://127.0.0.1:$port/api/info" >/dev/null 2>&1; do i=$((i + 1)); [ $i -gt 100 ] && { cat "$work/serve.log" >&2; return 1; }; sleep 0.1; done
 }
 serve
+url="http://127.0.0.1:$port"
+# ChatFold: the app's link ends at the proxy, which passes all on to the Companion (stopped and started on $port).
+if [ "$uitest" = ChatFold ]; then
+  pport=$((port + 1)); while nc -z 127.0.0.1 "$pport" 2>/dev/null; do pport=$((pport + 1)); done
+  "$work/chatproxy" -listen "127.0.0.1:$pport" -to "$url" -ctl "$ctl" >> "$work/proxy.log" 2>&1 &
+  proxy_pid=$!; url="http://127.0.0.1:$pport"
+  i=0; until curl -fsS "$url/api/info" >/dev/null 2>&1; do i=$((i + 1)); [ $i -gt 100 ] && { cat "$work/proxy.log" >&2; exit 1; }; sleep 0.1; done
+fi
 # HM_CHAT4_DRY=1: no simulator. Only the core, the fakes and the Companion: each terminal must be known as its agent.
 if [ "${HM_CHAT4_DRY:-}" = 1 ]; then
   sleep 2
@@ -87,7 +107,7 @@ if [ "${HM_CHAT4_DRY:-}" = 1 ]; then
 fi
 # The link goes into the app's build, which comes after it: an hour (pair's default is 10 minutes), as a build with
 # Xcode 27.0 on CI took 15 and the app was shown an expired code (POST /api/pair 410), as e2e/ios-onerror.sh found.
-link=$(L "$work/herdr-anywhere" pair --ttl 60m --url "http://127.0.0.1:$port" --state "$state" 2>/dev/null | grep -o 'http://[^ ]*#pair=[A-Za-z0-9_-]*' | head -1)
+link=$(L "$work/herdr-anywhere" pair --ttl 60m --url "$url" --state "$state" 2>/dev/null | grep -o 'http://[^ ]*#pair=[A-Za-z0-9_-]*' | head -1)
 [ -n "$link" ] || { echo "FAIL: no pairing link"; exit 1; }
 printf "export const COMPANION: number = 0\nexport const PAIR: string = '%s'\n" "$link" > "$app/e2e/pair.ts"
 "$app/ios/build.sh" ios-e2e.tsx simulator > "$work/build.log" 2>&1 || { tail -20 "$work/build.log"; echo "FAIL: ios/build.sh"; exit 1; }
@@ -99,6 +119,11 @@ printf "%s\n" "$placeholder" > "$app/e2e/pair.ts"
     if [ -e "$ctl/stop" ]; then
       rm -f "$ctl/stop"; pkill -f -- "--state $state" 2>/dev/null; sleep 1
       echo "--- stopped by the test $(date +%T)" >> "$work/serve.log"; : > "$ctl/stopped"
+    fi
+    # A failed step asks what herdr-core says of its agent's terminal (its name in the file): the run's output keeps it.
+    if [ -e "$ctl/get" ]; then
+      g=$(cat "$ctl/get"); rm -f "$ctl/get"
+      { echo "--- hc get $g at $(date +%T)"; L "$hc" get "$g" 2>&1; } >> "${shots:-$work}/hc-get.txt"; : > "$ctl/got"
     fi
     if [ -e "$ctl/start" ]; then
       rm -f "$ctl/start"; echo "--- started by the test $(date +%T)" >> "$work/serve.log"
@@ -151,12 +176,12 @@ done
 cp -R "$app/e2e/ios-uitest" "$work/uitest"
 (cd "$work/uitest" && xcodegen generate --quiet)
 rc=0
-TEST_RUNNER_OUT="${shots:-$work}/chat-four.txt" TEST_RUNNER_SHOTS="${shots:-$work}/chat-four" TEST_RUNNER_CTL="$ctl" \
+TEST_RUNNER_OUT="${shots:-$work}/$tag.txt" TEST_RUNNER_SHOTS="${shots:-$work}/$tag" TEST_RUNNER_CTL="$ctl" \
   TEST_RUNNER_AGENTS="$agents" TEST_RUNNER_AWAY="$away" \
   perl -e 'alarm 1800; exec @ARGV' xcodebuild test -quiet -project "$work/uitest/KeyboardCheck.xcodeproj" -scheme UITests \
-  -only-testing:UITests/ChatFour -destination "id=$SIM_UDID" -derivedDataPath "$work/uitest/derived" \
+  -only-testing:"UITests/$uitest" -destination "id=$SIM_UDID" -derivedDataPath "$work/uitest/derived" \
   -resultBundlePath "$work/uitest/result.xcresult" > "$work/uitest/test.log" 2>&1 || rc=$?
-sed 's/^/  /' "${shots:-$work}/chat-four.txt" 2>/dev/null || true
+sed 's/^/  /' "${shots:-$work}/$tag.txt" 2>/dev/null || true
 # One process all through: another pid, or none, is a crash (or iOS ending the app), with its report when there is one.
 now=$(pid); [ "$now" = "$before" ] || { sleep 2; now=$(pid); }
 if [ "$now" != "$before" ]; then

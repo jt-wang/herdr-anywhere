@@ -4,10 +4,13 @@
 import { cleanup, effect, Image, Keyboard, Scroll, signal, Text, untracked, Video, View } from 'nsh'
 import { Sheet, TextView } from 'nsh/base'
 import type { Store } from '../store.ts'
-import { changeRows, clockText, pathsIn, sizeText, foldLine, refreshEvery, shows, unknownText, type ChatAnswer, type ChatSetup, type ChatChange, type ChatDetail, type ChatFile, type ChatPicture, type ChatRun, type ChatStep, type ChatTurn } from '../model/chat.ts'
+import { changeRows, clockText, pathsIn, sizeText, foldLine, outsideFold, refreshEvery, shows, unknownText, type ChatAnswer, type ChatSetup, type ChatChange, type ChatDetail, type ChatFile, type ChatPicture, type ChatRun, type ChatStep, type ChatTurn } from '../model/chat.ts'
 import { Glyph, IconButton } from './kit.tsx'
 import { t } from '../strings/index.ts'
 import { openFile, videoFrame, type VideoFrame } from '../page.ts'
+
+const closed = () => signal(false)
+type Opened = (id: string) => ReturnType<typeof closed>
 
 const STEP_GLYPH: Record<string, string> = { read: 'file-text', edit: 'square-pen', run: 'terminal', search: 'search', web: 'monitor', agent: 'layers', think: 'brain' }
 
@@ -17,16 +20,25 @@ export function ChatView(props: { store: Store; address: string; status: () => s
   const offline = signal(false)
   let alive = true
   let timer: ReturnType<typeof setTimeout> | undefined
+  // Asks overlap when the computer is slow (each 2 to 7.6 s in CI, six at once): an answer to an ask older than the
+  // one shown is dropped, so the view never goes back to before.
+  let asked = 0, shown = 0
   const ask = async () => {
+    const n = ++asked
     try {
       const a = await s.chat!.get(props.address)
-      if (!alive) return
+      if (!alive || n < shown) return
+      shown = n
       answer.set(a)
       offline.set(false)
     } catch {
-      if (alive) offline.set(true)
+      if (alive && n >= shown) { shown = n; offline.set(true) }
     }
   }
+  // What was opened, a turn's steps or a step's details, by id while the view is up: a moment of doubt takes the
+  // turns down, and they come back as they were.
+  const openedBy = new Map<string, ReturnType<Opened>>()
+  const opened: Opened = (id) => { let o = openedBy.get(id); if (!o) { o = closed(); openedBy.set(id, o) } return o }
   const schedule = () => {
     clearTimeout(timer)
     const every = refreshEvery(props.status())
@@ -82,7 +94,7 @@ export function ChatView(props: { store: Store; address: string; status: () => s
           scrollEventThrottle={64} onScroll={(e) => { pinned = (e?.offset?.y ?? 0) + viewport() >= content - 40 }}>
           <View class="gap-4" onLayout={(b) => toEnd(b.size.height)}>
             <If when={turns()?.length} else={<If when={answer()}><Text class="text-[13px] text-muted-foreground text-center py-6">{t('chatEmpty')}</Text></If>}>
-              <Each of={turns() ?? []} key={(x) => x.id}>{(x) => <TurnView store={s} address={props.address} turn={x()} />}</Each>
+              <Each of={turns() ?? []} key={(x) => x.id}>{(x) => <TurnView store={s} address={props.address} turn={x()} opened={opened} />}</Each>
               <If when={behind()}><Text testID="chat-updating" class="text-[12.5px] text-muted-foreground">{t('chatUpdating')}</Text></If>
             </If>
           </View>
@@ -193,8 +205,8 @@ function SetupPage(props: { store: Store; address: string; agent: string; needed
   )
 }
 
-function TurnView(props: { store: Store; address: string; turn: ChatTurn }) {
-  const expanded = signal(false)
+function TurnView(props: { store: Store; address: string; turn: ChatTurn; opened: Opened }) {
+  const expanded = props.opened(`turn ${props.turn.id}`)
   const turn = () => props.turn
   const show = () => shows(turn(), expanded())
   return (
@@ -214,6 +226,7 @@ function TurnView(props: { store: Store; address: string; turn: ChatTurn }) {
           </If>
         </View>
       </If>
+      <Each of={outsideFold(turn(), expanded())} key={(x) => x.id}>{(x) => <StepView store={props.store} address={props.address} step={x()} opened={props.opened} />}</Each>
       <If when={show().fold}>
         <View role="button" testID={`fold-${turn().id}`} onPress={() => expanded.set(!expanded())} class="flex-row items-center gap-1.5 py-1 active:opacity-70">
           <Glyph name={expanded() ? 'chevron-down' : 'chevron-right'} size={13} />
@@ -222,7 +235,7 @@ function TurnView(props: { store: Store; address: string; turn: ChatTurn }) {
       </If>
       <If when={show().steps}>
         <View class="gap-0.5 pl-1">
-          <Each of={turn().steps} key={(x) => x.id}>{(x) => <StepView store={props.store} address={props.address} step={x()} />}</Each>
+          <Each of={turn().steps} key={(x) => x.id}>{(x) => <StepView store={props.store} address={props.address} step={x()} opened={props.opened} />}</Each>
         </View>
       </If>
       <If when={turn().reply}>
@@ -242,14 +255,24 @@ function TurnView(props: { store: Store; address: string; turn: ChatTurn }) {
   )
 }
 
-function StepView(props: { store: Store; address: string; step: ChatStep }) {
+function StepView(props: { store: Store; address: string; step: ChatStep; opened: Opened }) {
+  // A message of yours the agent took while it worked: where it took it, as yours; nothing more to fetch.
+  if (props.step.kind === 'you') return (
+    <View testID={`you-${props.step.id}`} class="self-end max-w-[85%] items-end gap-1 py-1.5">
+      <View class="px-3 py-2 rounded-[12px] bg-secondary"><Text selectable class="text-[14px] text-foreground">{props.step.title}</Text></View>
+      <Text class="text-[11.5px] text-muted-foreground">{t('chatTakenMidTurn')}</Text>
+    </View>
+  )
   const detail = signal<ChatDetail | null | undefined>(undefined)
-  const open = signal(false)
+  const open = props.opened(`step ${props.step.id}`)
+  const load = async () => { if (detail() === undefined) detail.set(await props.store.chat!.step(props.address, props.step.id).catch(() => null)) }
   const toggle = async () => {
     if (open()) { open.set(false); return }
     open.set(true)
-    if (detail() === undefined) detail.set(await props.store.chat!.step(props.address, props.step.id).catch(() => null))
+    await load()
   }
+  // Open when it comes back after a moment of doubt: its details are fetched again.
+  if (untracked(open)) void load()
   return (
     <View>
       <View role="button" testID={`step-${props.step.id}`} onPress={() => void toggle()} class="flex-row items-center gap-2 min-h-[30px] active:opacity-70">

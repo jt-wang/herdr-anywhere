@@ -1,7 +1,6 @@
 // The app: pairing on first launch, then home ⇄ space ⇄ settings over one live store, with alerts and sheets
 // over every screen.
-import { cleanup, colorScheme, effect, Keyboard, platform, safeAreaInsets, setColorScheme, signal, Storage, Text, Video, View } from 'nsh'
-import { kept } from './kept.ts'
+import { cleanup, colorScheme, computed, effect, Keyboard, platform, safeAreaInsets, setColorScheme, signal, Storage, Text, Video, View } from 'nsh'
 import { createNavStack, NavPage, NavStack } from 'nsh/base'
 import type { ViewSwitchProps } from './view-switch.tsx'
 import type { Store } from '../store.ts'
@@ -237,7 +236,7 @@ export function Root(props: { deps: RootDeps }) {
   Promise.all([deps.linker.load(), deps.prefs.load().then(() => deps.prefs.set({ opened: deps.prefs.prefs.get().opened + 1 }))]).finally(() => loaded.set(true))
   // A store per link: pairing again with another computer starts over.
   let made: { key: string; store: Store } | undefined
-  const store = kept(() => {
+  const store = computed(() => {
     const l = link()
     if (!l) return (made = undefined)
     const key = `${l.url} ${l.token}`

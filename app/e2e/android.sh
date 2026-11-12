@@ -29,6 +29,7 @@ work=$(mktemp -d)
 . "$app/e2e/adb-note.sh"
 . "$app/e2e/android-ime-down.sh"
 sh "$app/e2e/android-ime-down.sh" --self-test || exit 1
+sh "$app/e2e/android-net.sh" --self-test || exit 1
 adb_note "$adb" "$work/adb-failed"
 (cd "$app/../companion" && go build -o "$work/herdr-anywhere" ./cmd/herdr-anywhere)
 run=$(mktemp -d /tmp/hmXXXX)
@@ -128,6 +129,25 @@ for _ in 1 2 3 4 5 6 7 8; do
 done
 got=$(typed)
 [ "$got" = "$link" ] || { echo "FAIL: the link field never held the whole link"; exit 1; }
+# Whether the phone reaches the Companion at the invite's address, asked from the phone's own shell (toybox nc) for
+# /api/info: answered, refused, no answer, or no nc on the phone. Twice on CI the phone said "Can't reach 10.0.2.2"
+# after Pair while the Companion, which logs every request, got none; this tells the emulator's network from the app.
+reach() {
+  r=$("$adb" shell "printf 'GET /api/info HTTP/1.0\\r\\n\\r\\n' | toybox nc -w 5 10.0.2.2 $port 2>&1; echo nc-exit=\$?" 2>&1 | tr -d '\r')
+  case $r in
+    HTTP/*" 200"*) echo answered ;;
+    *"not found"*|*"unknown"*|*"inaccessible"*|*"No such"*) echo "no nc" ;;
+    *[Rr]efused*) echo refused ;;
+    *) echo "no answer ($(printf '%s' "$r" | tr '\n' ' ' | cut -c1-80))" ;;
+  esac
+}
+# The phone's networks: nets.
+. "$app/e2e/android-net.sh"
+# CI logs are public: no invite secret or token in what is printed.
+mask() { sed -E 's/#pair=[A-Za-z0-9_-]+/#pair=…/g; s/token=[^ &"]+/token=…/g; s/"code":"[^"]*"/"code":"…"/g'; }
+echo "before Pair: the phone to the Companion: $(reach); the emulator up $("$adb" shell cat /proc/uptime | tr -d '\r' | cut -d' ' -f1) s; its networks:"
+nets
+"$adb" logcat -c || true
 tap pair # once, with the keyboard up: the tap has to reach the button
 
 ok=""
@@ -140,7 +160,23 @@ if [ -z "$ok" ]; then
   echo "FAIL: not connected over binary within 30 s"
   dump
   "$adb" shell cat /sdcard/hm.xml | tr '>' '\n' | grep 'resource-id="pair-error"' | sed -E 's/.*text="([^"]*)".*/  phone says: \1/' || true
-  grep -vE " GET /assets/" "$work/serve.log" | tail -5 | sed -E 's/token=[^ &]+/token=…/'
+  grep -vE " GET /assets/" "$work/serve.log" | tail -5 | mask
+  echo "  the Companion got $(grep -c ' /api/pair ' "$work/serve.log" || true) POST /api/pair"
+  echo "  the phone to the Companion now: $(reach); its networks:"
+  nets
+  echo "  the phone's log since Pair, on its network and the app's errors:"
+  "$adb" logcat -d -v time 2>/dev/null | grep -iE "ConnectivityService|NetworkMonitor|WifiClientModeImpl|$id|SocketTimeout|ConnectException|UnknownHost|ENETUNREACH|EHOSTUNREACH|ECONNREFUSED|cleartext" | tail -25 | mask | sed 's/^/    logcat: /'
+  # Whether a second Pair goes through, as a person would tap it again: tells a moment's loss from a lasting one. The
+  # run fails either way.
+  tap pair
+  again="no answer in 20 s"
+  for _ in $(seq 1 20); do
+    if grep -q "device .* connected (binary," "$work/serve.log"; then again=connected; break; fi
+    said=$(xml | tr '>' '\n' | grep 'resource-id="pair-error"' | sed -E 's/.*text="([^"]*)".*/\1/' | mask)
+    [ -n "$said" ] && [ "$(grep -c ' /api/pair ' "$work/serve.log" || true)" -gt 0 ] && { again="the Companion got it; phone says: $said"; break; }
+    sleep 1
+  done
+  echo "  a second Pair: $again (the Companion got $(grep -c ' /api/pair ' "$work/serve.log" || true) POST /api/pair in all)"
   exit 1
 fi
 # The keyboard's window on screen (input_method's mInputShown stayed true with the keyboard gone; checked both ways).
@@ -372,7 +408,23 @@ posted() { "$adb" shell dumpsys notification --noredact | grep -A40 "pkg=$id" | 
 record() { "$adb" shell dumpsys notification --noredact | grep -E "NotificationRecord.*pkg=$id .*tag=$term .*$1" >/dev/null; }
 asked=""
 for _ in $(seq 1 15); do posted "android.text=String \(Which port\?" && posted "^acme-api › " && { asked=1; break; }; sleep 1; done
-[ -n "$asked" ] || { echo "FAIL: no notification with what it asks, then where it is"; "$adb" shell dumpsys notification --noredact | grep -A40 "pkg=$id" | grep -E "android\.(title|text)|channel" | head -6; exit 1; }
+# On a miss (once in 20 copies on CI, with sh hm-ask.sh run and only the connection's own notification up): whether it
+# comes later and when, whether the phone was still connected, what herdr-core says of the terminal, and the app's log.
+# The run fails either way.
+no_ask() {
+  echo "FAIL: no notification with what it asks, then where it is"
+  "$adb" shell dumpsys notification --noredact | grep -A40 "pkg=$id" | grep -E "android\.(title|text)|channel" | head -6
+  later="not in 45 s more"
+  for i in $(seq 1 45); do posted "android.text=String \(Which port\?" && { later="it came $((15 + i)) s after the question"; break; }; sleep 1; done
+  echo "  later: $later"
+  echo "  the Companion's log on the phone's connection:"
+  grep -E "device .* (connected|disconnected|no answer)| /api/ws " "$work/serve.log" | tail -8 | mask | sed 's/^/    /'
+  echo "  herdr-core on $term: $("$hc" ls --json 2>/dev/null | python3 -c 'import json,sys; t=[x for x in json.load(sys.stdin)["terminals"] if x["address"]==sys.argv[1]]; print(json.dumps(t[0])[:400] if t else "not listed")' "$term" 2>&1)"
+  echo "  the app's process: $("$adb" shell pidof "$id" | tr -d '\r')"
+  "$adb" logcat -d -v time -t 400 2>/dev/null | grep -iE "$id|nsh|ActivityManager.*(Killing|freez|cached)" | tail -20 | mask | sed 's/^/    logcat: /'
+  exit 1
+}
+[ -n "$asked" ] || no_ask
 posted "android.title=String \(.* needs you\)" || { echo "FAIL: the notification does not say who needs you"; exit 1; }
 record "importance=4 .*channel=agent-needs-you" || { echo "FAIL: a question is not on the agent-needs-you channel (heads-up)"; exit 1; }
 [ -n "$shot" ] && "$adb" exec-out screencap -p > "${shot%.png}-notification.png"
