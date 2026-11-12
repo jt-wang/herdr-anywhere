@@ -3,10 +3,14 @@ package chat
 import (
 	"bytes"
 	"errors"
+	"io"
 	"log"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
+
+	"herdr-anywhere/companion/internal/testfake"
 )
 
 type fakeReader struct {
@@ -67,9 +71,10 @@ func TestChat(t *testing.T) {
 		{"done and the last turn done", done, &fakeReader{path: "/s", turns: doneTurn}, Answer{Chat: true, Turns: doneTurn}},
 		{"blocked on a question", strings.Replace(working, `"working"`, `"blocked"`, 1), &fakeReader{path: "/s", turns: openTurn}, Answer{Chat: true, Turns: openTurn}},
 		{"idle with no turns yet", strings.Replace(done, `"done"`, `"idle"`, 1), &fakeReader{path: "/s", turns: []Turn{}}, Answer{Chat: true, Turns: []Turn{}}},
-		{"done but the record has not caught up", done, &fakeReader{path: "/s", turns: openTurn}, Answer{Chat: true, Unknown: Behind}},
-		{"working on a prompt the record doesn't have yet", working, &fakeReader{path: "/s", turns: doneTurn}, Answer{Chat: true, Unknown: Behind}},
-		{"working and no turns in the record", working, &fakeReader{path: "/s", turns: []Turn{}}, Answer{Chat: true, Unknown: Behind}},
+		// Behind: the screen and the record disagree; the phone still shows what the record has, marked.
+		{"done but the record has not caught up", done, &fakeReader{path: "/s", turns: openTurn}, Answer{Chat: true, Unknown: Behind, Turns: openTurn}},
+		{"working on a prompt the record doesn't have yet", working, &fakeReader{path: "/s", turns: doneTurn}, Answer{Chat: true, Unknown: Behind, Turns: doneTurn}},
+		{"working and no turns in the record", working, &fakeReader{path: "/s", turns: []Turn{}}, Answer{Chat: true, Unknown: Behind, Turns: []Turn{}}},
 		{"no sure match", working, &fakeReader{findErr: &Miss{Reason: NoMatch}}, Answer{Chat: true, Unknown: NoMatch}},
 		{"a format the reader doesn't know", working, &fakeReader{path: "/s", version: "9.9.9", turnsErr: Formatf("content block %q", "hologram")}, Answer{Chat: true, Unknown: Format}},
 		{"another agent", `{"status":{"app":"pi","state":"done"},"foreground":{"pid":1}}`, &fakeReader{}, Answer{}},
@@ -202,5 +207,33 @@ func TestChatWithoutStatus(t *testing.T) {
 	s.Readers["opencode"] = &fakeReader{path: "/s", turns: doneTurn}
 	if got := s.Chat("t1"); !reflect.DeepEqual(got, Answer{}) {
 		t.Fatalf("unnamed reader: %+v", got)
+	}
+}
+
+// An hc get that takes longer than the Service waits: hc can't say now what runs there, which is not "no chat here".
+// The phone closes an open chat view on chat:false; on CI's iOS 27 simulator a busy computer did that (hc get over
+// 5 s), so a slow hc is said as unsure, and the view stays.
+func TestChatWhenHCIsSlow(t *testing.T) {
+	dir := t.TempDir()
+	hc := testfake.HC(t, dir, "hc", testfake.Spec{On: map[string][]testfake.Reply{"get": {{Sleep: "3s", Print: working}}}})
+	s := &Service{HC: hc, hcTimeout: 300 * time.Millisecond, Readers: map[string]Reader{"claude-code": &fakeReader{path: "/s", turns: openTurn}}, Log: log.New(io.Discard, "", 0)}
+	start := time.Now()
+	got := s.Chat("t1")
+	if took := time.Since(start); took > 2*time.Second {
+		t.Fatalf("Chat waited %v for a slow hc get, not its 300 ms", took)
+	}
+	if want := (Answer{Chat: true, Unknown: NoTerminal}); !reflect.DeepEqual(got, want) {
+		t.Fatalf("a slow hc get: got %+v, want %+v", got, want)
+	}
+	// Control: the same hc in time is a chat.
+	s.hcTimeout = 10 * time.Second
+	if got := s.Chat("t1"); !got.Chat || got.Unknown != "" || len(got.Turns) != 1 {
+		t.Fatalf("hc get in time: got %+v", got)
+	}
+	// A terminal hc doesn't know stays "no chat here".
+	gone := testfake.HC(t, dir, "hc2", testfake.Spec{On: map[string][]testfake.Reply{"get": {{Fail: "/nonexistent"}}}})
+	s = &Service{HC: gone, Readers: map[string]Reader{"claude-code": &fakeReader{path: "/s", turns: openTurn}}, Log: log.New(io.Discard, "", 0)}
+	if got := s.Chat("t1"); got.Chat {
+		t.Fatalf("a terminal hc doesn't know: got %+v, want no chat", got)
 	}
 }

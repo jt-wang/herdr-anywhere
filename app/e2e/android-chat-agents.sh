@@ -10,6 +10,7 @@
 #          e2e/android-chat-agents.sh APK COMPANION [folder for screenshots]
 # E2E_CACHE: where OpenCode may keep its cache (default: the run's temp folder); emptied on the way out.
 set -eu
+. "$(dirname "$0")/autostart-guard.sh"; autostart_guard android-chat-agents # a login entry of its own, never the person's
 : "${ANDROID_SERIAL:?set ANDROID_SERIAL to the device to use}"
 : "${OPENCODE:?set OPENCODE to an OpenCode 1 or 2 binary}"
 apk=$1; bin=$2; shot=${3:-}
@@ -63,22 +64,22 @@ cat > "$work/config/opencode/opencode.json" <<CFG
  "model": "fake/gpt-5.5"}
 CFG
 (cd "$app/../companion" && go build -o "$work/fake-responses" ./internal/chat/fakeresponses/serve)
+. "$app/e2e/companion.sh"  # companion_start, companion_stop
 clean() {
-  env -i PATH="$(dirname "$codex"):/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin" HOME="$work/home" SHELL=/bin/zsh TERM=xterm-256color LANG=en_US.UTF-8 \
+  env -i PATH="$(dirname "$codex"):/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin" HOME="$work/home" HERDR_ANYWHERE_AUTOSTART_NAME="$HERDR_ANYWHERE_AUTOSTART_NAME" SHELL=/bin/zsh TERM=xterm-256color LANG=en_US.UTF-8 \
     HC_SESSION="hmca-$$" HC_SOCKET="" XDG_STATE_HOME="$work/state" XDG_CONFIG_HOME="$work/config" XDG_DATA_HOME="$work/data" XDG_RUNTIME_DIR="$run" \
     XDG_CACHE_HOME="$cache" CODEX_HOME="$work/codex" FAKE_API_KEY=fake \
     OPENCODE_DISABLE_AUTOUPDATE=1 OPENCODE_DISABLE_MODELS_FETCH=1 OPENCODE_DISABLE_SHARE=1 OPENCODE_DISABLE_LSP_DOWNLOAD=1 OPENCODE_DISABLE_CLAUDE_CODE=1 \
     "$@"
 }
 lhc() { clean "$hc" "$@"; }
-serve_pid=; fake_pid=
+fake_pid=
 cleanup() {
   # A second INT or TERM (a runner that stops the children and then the script) must not cut this short: the
   # herdr-core, the agents' own background servers and the Companion would stay running.
   trap - EXIT; trap '' INT TERM HUP
   set +e  # under set -e, the first thing not found (pkill with nothing to stop) would end the script here
-  [ -n "$serve_pid" ] && { pkill -P "$serve_pid" 2>/dev/null; kill "$serve_pid" 2>/dev/null; }
-  pkill -f -- "--state $state" 2>/dev/null || true
+  companion_stop || stop_failed=1
   [ -n "$fake_pid" ] && kill "$fake_pid" 2>/dev/null
   [ -n "${ime_found:-}" ] && { put enabled_input_methods "$ime_found"; put selected_input_method_subtype "$sub_found"; "$adb" shell ime set "$ime" </dev/null >/dev/null; "$adb" shell sync </dev/null; } 2>/dev/null || true
   lhc server stop >/dev/null 2>&1 || true
@@ -88,6 +89,9 @@ cleanup() {
   # Codex's TUI leaves an app-server under CODEX_HOME running after its terminal ends.
   pkill -f -- "/$(basename "$work")/codex/" 2>/dev/null || true
   chmod -R u+w "$work" "$cache" 2>/dev/null; rm -rf "$work" "$run" "$state" "$cache"
+  autostart_guard_end || exit 1
+  # A Companion that did not end fails the run (companion_stop said which).
+  [ -z "${stop_failed:-}" ] || exit 1
 }
 trap cleanup EXIT
 trap 'cleanup; exit 130' INT
@@ -106,9 +110,7 @@ printf %s "$screen" | grep -qi "gpt-5.5" || { echo "STOP: Codex is not on the fa
 screen=$(lhc read oc 2>/dev/null)
 printf %s "$screen" | grep -qiE "update|upgrade|sign in|log ?in|press enter|select|choose" && { echo "STOP: a prompt on OpenCode's screen"; printf '%s\n' "$screen" | tail -8; exit 1; }
 printf %s "$screen" | grep -q "GPT-5.5" || { echo "STOP: OpenCode is not on the fake model"; printf '%s\n' "$screen" | tail -8; exit 1; }
-clean "$bin" serve --listen "127.0.0.1:$port" --hc "$hc" --state "$state" > "$work/serve.log" 2>&1 &
-serve_pid=$!
-sleep 1
+companion_start "$work/serve.log" clean "$bin" serve --listen "127.0.0.1:$port" --hc "$hc" --state "$state" || exit 1
 invite=$(clean "$bin" pair --url "http://10.0.2.2:$port" --state "$state" 2>/dev/null | grep -o 'http://[^ ]*#pair=[A-Za-z0-9_-]*' | head -1)
 [ -n "$invite" ] || { echo "FAIL: no invite"; exit 1; }
 "$adb" uninstall "$id" >/dev/null 2>&1 || true
