@@ -16,6 +16,7 @@ import type { Restart } from './restart.ts'
 import { t as tr, type Key } from './strings/index.ts'
 import { readMenu, type Menu } from './model/menu.ts'
 import { spaceMarks } from './model/marks.ts'
+import { KittyImages } from './model/kitty.ts'
 import type { ChatApi } from './model/chat.ts'
 
 /** The herdr-core label that pins a terminal's agent to the top of the agent lists (Herdr 0.1.12 and later). */
@@ -730,6 +731,17 @@ export class Store {
     const sp = this.model.space(a.space)
     const tab = sp?.tabs.find((c) => c.id === a.tab)
     return sp && tab ? `${this.spaceName(sp)} › ${this.tabLabel(sp, tab)}` : a.space_name
+  }
+
+  private pictures = new Map<string, KittyImages>()
+  /** A terminal's Kitty pictures (model/kitty.ts), kept while the app runs: herdr-core sends a pane opened again as one
+   *  screen of placeholders, without them. The 4 terminals opened last keep theirs, each up to its limit there. */
+  picturesOf(addr: string) {
+    const k = this.pictures.get(addr) ?? new KittyImages()
+    this.pictures.delete(addr)
+    this.pictures.set(addr, k)
+    while (this.pictures.size > 4) this.pictures.delete(this.pictures.keys().next().value!)
+    return k
   }
 
   private seen = new Map<string, { at: number; tail: string[] }>()
