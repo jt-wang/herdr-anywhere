@@ -5,6 +5,7 @@
 # The terminal is here, or with HM_PICTURE_IMAGE in a container, for screenshots to publish (picture-terminal.sh).
 # Usage: ANDROID_SERIAL=emulator-5554 [HM_PICTURE_IMAGE=alpine:latest] e2e/android-picture.sh APK COMPANION [folder for screenshots]
 set -eu
+. "$(dirname "$0")/autostart-guard.sh"; autostart_guard android-picture # a login entry of its own, never the person's
 : "${ANDROID_SERIAL:?set ANDROID_SERIAL to the device to use}"
 apk=$1; bin=$2; shots=${3:-}
 app=$(cd "$(dirname "$0")/.." && pwd)
@@ -36,6 +37,7 @@ cleanup() {
   [ -z "$serve_pid" ] || kill "$serve_pid" 2>/dev/null; "$hc" server stop >/dev/null 2>&1 || true
   picture_cleanup
   chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run" "$state"
+  autostart_guard_end || exit 1
   exit "$status"
 }
 trap 'adb_exit $? cleanup' EXIT; trap 'cleanup; exit 130' INT; trap 'cleanup; exit 143' TERM HUP

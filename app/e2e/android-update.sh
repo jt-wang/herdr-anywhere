@@ -8,6 +8,7 @@
 # Needs python3, hc and the Android SDK.
 #        e2e/android-update.sh --self-test    what it prints of a screen or a log keeps no pairing secret
 set -eu
+. "$(dirname "$0")/autostart-guard.sh"; autostart_guard android-update # a login entry of its own, never the person's
 # What this suite prints on a failure (the screen's words, the Companion's log) goes into the job's log and its
 # uploaded files: an invite's secret, after #pair=, is cut off first (ci-shots-check.sh refuses a log with one).
 mask() { sed -E 's/#pair=[A-Za-z0-9_-]+/#pair=…/g; s/token=[A-Za-z0-9_-]+/token=…/g'; }
@@ -97,6 +98,7 @@ cleanup() {
   "$adb" reverse --remove "tcp:$gh" >/dev/null 2>&1 || true
   "$hc" server stop >/dev/null 2>&1 || true
   chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run" "$state"
+  autostart_guard_end || exit 1
 }
 trap 'adb_exit $? cleanup' EXIT
 # INT and TERM end the suite; the EXIT trap cleans up (a handler that only cleans up lets the script go on).

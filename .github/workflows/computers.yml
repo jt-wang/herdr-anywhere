@@ -31,6 +31,11 @@ on:
         type: choice
         options: [none, miss-first]
         default: none
+      # Only the opencode-wheel job (named only: it is never in a push's run).
+      opencode_wheel:
+        description: "Run only OpenCode's wheel by column (Linux, OpenCode 1.19.0)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -49,10 +54,17 @@ env:
   # for it) is in the app job's matrix.
   NSH_VERSION: "v0.3.0"
 
+# Every run step is `bash --noprofile --norc -eo pipefail {0}` (pwsh where a step says so). A step with no shell given
+# runs `bash -e {0}`, with no pipefail, and `go test … | tee log` took tee's exit 0 over a failed test.
+# app/scripts/check-pipefail.sh fails on a pipe in a step without pipefail.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   companion:
     name: Companion on ${{ matrix.os }}
-    if: github.repository == 'jt-wang/herdr-anywhere' && (inputs.android_linux_repeat || '0') == '0'
+    if: github.repository == 'jt-wang/herdr-anywhere' && (inputs.android_linux_repeat || '0') == '0' && !inputs.opencode_wheel
     strategy:
       fail-fast: false
       matrix:
@@ -203,7 +215,7 @@ jobs:
   # drives a POSIX shell, so Windows isn't here yet.
   app:
     name: App against a real core on ${{ matrix.os }}
-    if: github.repository == 'jt-wang/herdr-anywhere' && (inputs.android_linux_repeat || '0') == '0'
+    if: github.repository == 'jt-wang/herdr-anywhere' && (inputs.android_linux_repeat || '0') == '0' && !inputs.opencode_wheel
     strategy:
       fail-fast: false
       matrix:
@@ -253,13 +265,18 @@ jobs:
           echo "$RUNNER_TEMP/nsh/bin" >> "$GITHUB_PATH"
       - run: e2e/run.sh
         working-directory: app
+      # A sub-agent kept as a tab: its row opens that tab, the shared layout holds one tab for it, and copies an earlier
+      # version left there go (app/e2e/live-subkeep.test.ts).
+      - run: HM_LIVE_TEST=e2e/live-subkeep.test.ts e2e/run.sh
+        if: success() || failure()
+        working-directory: app
 
   # The Android app on an emulator against a Linux computer: the release APK built here (debug-signed), herdr-core and
   # the companion on the runner, the emulator reaching them at 10.0.2.2. e2e/android.sh pairs by typing the link,
   # opens a terminal, types, and checks notifications and the folder picker (its header says all it does).
   android-linux:
     name: Android app × Linux computer${{ matrix.copy != 0 && format(' (copy {0})', matrix.copy) || '' }}
-    if: github.repository == 'jt-wang/herdr-anywhere'
+    if: github.repository == 'jt-wang/herdr-anywhere' && !inputs.opencode_wheel
     strategy:
       fail-fast: false
       matrix:
@@ -333,3 +350,28 @@ jobs:
             adb -s emulator-5554 shell settings put global hide_error_dialogs 1
             ANDROID_SERIAL=emulator-5554 sh e2e/android-net.sh --mobile-only
             ANDROID_SERIAL=emulator-5554 e2e/android.sh
+
+  # OpenCode's wheel by column, through the companion and a real core (internal/server TestLiveOpenCodeWheelColumns):
+  # what the terminal page's clamp of a wheel to column 3 rests on. Only when asked for (opencode_wheel).
+  opencode-wheel:
+    name: OpenCode's wheel by column (Linux)
+    if: github.repository == 'jt-wang/herdr-anywhere' && inputs.opencode_wheel
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: companion/go.mod
+          cache-dependency-path: companion/go.sum
+      - run: app/e2e/ci/tools.sh core opencode
+      - name: OpenCode's wheel by column
+        working-directory: companion
+        # shell: bash adds pipefail, so a failed test fails the step through tee; without it the step took tee's exit 0.
+        # A skip (no OPENCODE_LIVE) would pass with nothing measured, so it fails here.
+        shell: bash
+        run: |
+          go test ./internal/server -run TestLiveOpenCodeWheelColumns -count=1 -v | tee "$RUNNER_TEMP/wheel.log"
+          if grep -q -- '--- SKIP' "$RUNNER_TEMP/wheel.log"; then echo "FAIL: the test was skipped"; exit 1; fi

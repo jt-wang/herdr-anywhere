@@ -18,10 +18,15 @@ export type ChatTurn = {
   images?: ChatPicture[]
   steps: ChatStep[]
   reply: string
-  ask?: { text: string; options: string[] }
+  ask?: ChatAsk
   end: 'open' | 'done' | 'stopped'
   secs?: number
 }
+/** A question the agent asked and nobody has answered yet. `text` and `options` are its first question's words (all a
+ *  computer before 0.2.0 sends); `questions`, every question of the call as the record has them, the agent's
+ *  "(Recommended)" taken off the label it marks. None for a prompt only the screen shows (a permission). */
+export type ChatAsk = { text: string; options: string[]; questions?: ChatQuestion[] }
+export type ChatQuestion = { header?: string; text: string; multi?: boolean; options: { label: string; detail?: string; recommended?: boolean }[] }
 /** `chat` false: no chat button. `unknown`: nothing sure to show, and why (the companion's chat.go lists them). */
 /** `setup`: with unknown "setup-needed" or "setup-not-loaded", the agent whose chat setup (ChatSetup) is missing or
  *  not yet used. */

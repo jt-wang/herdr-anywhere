@@ -11,6 +11,7 @@
 # log (e2e/ios-touch-log.sh) must show no touch then and touches for the second tap.
 # SIM_UDID is required, so the run never lands on another simulator. Needs go, nsh, hc, xcodegen and Xcode.
 set -eu
+. "$(dirname "$0")/autostart-guard.sh"; autostart_guard ios-picture # a login entry of its own, never the person's
 : "${SIM_UDID:?set SIM_UDID to the simulator to use}"
 app=$(cd "$(dirname "$0")/.." && pwd)
 shots=${1:-}
@@ -40,12 +41,14 @@ cleanup() {
   L "$hc" server stop >/dev/null 2>&1 || true
   picture_cleanup
   chmod -R u+w "$work" 2>/dev/null; rm -rf "${work:?}" "${run:?}" || echo "NOTE: left after the cleanup: $(ls -A "$work" 2>/dev/null | head -5 | tr '\n' ' ')"
+  autostart_guard_end || exit 1
   exit "$status"
 }
 trap cleanup EXIT; trap 'exit 130' INT; trap 'exit 143' TERM HUP
 picture_terminal
 companion_start "$work/serve.log" L env HERDR_ANYWHERE_STATE="$work/companion" "$work/herdr-anywhere" serve --listen "127.0.0.1:$port" --hc "$hc" --state "$work/companion" || exit 1
-link=$(L env HERDR_ANYWHERE_STATE="$work/companion" "$work/herdr-anywhere" pair --url "http://127.0.0.1:$port" 2>/dev/null | grep -o 'http://[^ ]*#pair=[A-Za-z0-9_-]*' | head -1)
+# The link is built into the app, and the build can take longer than the default 10 minutes (the Companion then says 410).
+link=$(L env HERDR_ANYWHERE_STATE="$work/companion" "$work/herdr-anywhere" pair --ttl 60m --url "http://127.0.0.1:$port" 2>/dev/null | grep -o 'http://[^ ]*#pair=[A-Za-z0-9_-]*' | head -1)
 [ -n "$link" ] || { echo "FAIL: no pairing link"; exit 1; }
 # The app is built from a copy of app/ whose terminal page also tells the test when the page got each touch and what it
 # made of it (e2e/touch-times.ts), in a label the test reads, as the terminal runs a shell; app/ itself is not changed.

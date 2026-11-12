@@ -24,6 +24,9 @@ func (s *Service) Path() string {
 // Install writes the unit and enables it, so it starts at each login. Without a systemd user instance (a
 // container, an ssh session with no login) the file is written and the error says why it isn't enabled.
 func (s *Service) Install(e Entry) (bool, error) {
+	if s.refuse != nil {
+		return false, s.refuse
+	}
 	changed, err := writeIfChanged(s.Path(), []byte(systemdUnit(e)))
 	if err != nil {
 		return changed, err
@@ -37,12 +40,18 @@ func (s *Service) Install(e Entry) (bool, error) {
 
 // Start runs it now under systemd.
 func (s *Service) Start() error {
+	if s.refuse != nil {
+		return s.refuse
+	}
 	_, err := s.command("systemctl", "--user", "start", s.unit())
 	return err
 }
 
 // Remove stops and disables it and deletes the unit, and says whether there was one.
 func (s *Service) Remove() (bool, error) {
+	if s.refuse != nil {
+		return false, nil // nothing of this HOME is under the person\'s name
+	}
 	if _, err := os.Stat(s.Path()); errors.Is(err, os.ErrNotExist) {
 		return false, nil
 	}

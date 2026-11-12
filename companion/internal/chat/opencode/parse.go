@@ -166,6 +166,7 @@ func parse(msgs []message) []chat.Turn {
 		}
 		cur.Reply, pending = pending, ""
 		cur.End = end
+		cur.Ask = nil
 		if ms > started && started > 0 {
 			cur.Secs = int((ms - started) / 1000)
 		}
@@ -205,6 +206,17 @@ func parse(msgs []message) []chat.Turn {
 					}
 				case "tool":
 					flush()
+					if p.Name == "question" {
+						// Not answered yet: the question, for the phone's card. Answered: a step titled with it.
+						in, _ := json.Marshal(p.State.Input)
+						a := chat.AskOf(in)
+						if p.State.Status == "running" || p.State.Status == "pending" {
+							cur.Ask = a
+						} else {
+							cur.Steps = append(cur.Steps, chat.Step{ID: p.ID, Kind: "other", Title: chat.Cut(a.Text, 80), Failed: p.State.Status == "error"})
+						}
+						continue
+					}
 					cur.Steps = append(cur.Steps, toolSteps(p)...)
 				}
 			}

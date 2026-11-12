@@ -10,6 +10,7 @@
 #          e2e/android-chat-agents.sh APK COMPANION [folder for screenshots]
 # E2E_CACHE: where OpenCode may keep its cache (default: the run's temp folder); emptied on the way out.
 set -eu
+. "$(dirname "$0")/autostart-guard.sh"; autostart_guard android-chat-agents # a login entry of its own, never the person's
 : "${ANDROID_SERIAL:?set ANDROID_SERIAL to the device to use}"
 : "${OPENCODE:?set OPENCODE to an OpenCode 1 or 2 binary}"
 apk=$1; bin=$2; shot=${3:-}
@@ -65,7 +66,7 @@ CFG
 (cd "$app/../companion" && go build -o "$work/fake-responses" ./internal/chat/fakeresponses/serve)
 . "$app/e2e/companion.sh"  # companion_start, companion_stop
 clean() {
-  env -i PATH="$(dirname "$codex"):/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin" HOME="$work/home" SHELL=/bin/zsh TERM=xterm-256color LANG=en_US.UTF-8 \
+  env -i PATH="$(dirname "$codex"):/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin" HOME="$work/home" HERDR_ANYWHERE_AUTOSTART_NAME="$HERDR_ANYWHERE_AUTOSTART_NAME" SHELL=/bin/zsh TERM=xterm-256color LANG=en_US.UTF-8 \
     HC_SESSION="hmca-$$" HC_SOCKET="" XDG_STATE_HOME="$work/state" XDG_CONFIG_HOME="$work/config" XDG_DATA_HOME="$work/data" XDG_RUNTIME_DIR="$run" \
     XDG_CACHE_HOME="$cache" CODEX_HOME="$work/codex" FAKE_API_KEY=fake \
     OPENCODE_DISABLE_AUTOUPDATE=1 OPENCODE_DISABLE_MODELS_FETCH=1 OPENCODE_DISABLE_SHARE=1 OPENCODE_DISABLE_LSP_DOWNLOAD=1 OPENCODE_DISABLE_CLAUDE_CODE=1 \
@@ -88,6 +89,7 @@ cleanup() {
   # Codex's TUI leaves an app-server under CODEX_HOME running after its terminal ends.
   pkill -f -- "/$(basename "$work")/codex/" 2>/dev/null || true
   chmod -R u+w "$work" "$cache" 2>/dev/null; rm -rf "$work" "$run" "$state" "$cache"
+  autostart_guard_end || exit 1
   # A Companion that did not end fails the run (companion_stop said which).
   [ -z "${stop_failed:-}" ] || exit 1
 }

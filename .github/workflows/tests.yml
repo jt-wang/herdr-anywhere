@@ -31,6 +31,13 @@ env:
   # Update both together.
   NSH_SHA256: "34fdd2ec43d5e22986723e7633acf9223e365bd5bace1a502b5ae24fb75c266c"
 
+# Every run step is `bash --noprofile --norc -eo pipefail {0}` (pwsh where a step says so). A step with no shell given
+# runs `bash -e {0}`, with no pipefail, and `go test … | tee log` took tee's exit 0 over a failed test.
+# app/scripts/check-pipefail.sh fails on a pipe in a step without pipefail.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   companion:
     name: Companion (go test)
@@ -101,7 +108,9 @@ jobs:
           curl -sfL -o xcodegen.zip "https://github.com/yonaskolb/XcodeGen/releases/download/$XCODEGEN_VERSION/xcodegen.zip"
           echo "$XCODEGEN_SHA256  xcodegen.zip" | shasum -a 256 -c -
           unzip -q xcodegen.zip -d "$RUNNER_TEMP/xcodegen"
-          echo "$(dirname "$(find "$RUNNER_TEMP/xcodegen" -type f -name xcodegen -perm -u+x | head -1)")" >> "$GITHUB_PATH"
+          xcodegen=$(find "$RUNNER_TEMP/xcodegen" -type f -name xcodegen -perm -u+x -print -quit)
+          [ -n "$xcodegen" ] || { echo "FAIL: no xcodegen in xcodegen.zip"; exit 1; }
+          dirname "$xcodegen" >> "$GITHUB_PATH"
       # The Xcode the TestFlight builds use.
       - run: sudo xcode-select -s /Applications/Xcode_27.0.app && xcodebuild -version
       - name: Build the app for the simulator (Release)

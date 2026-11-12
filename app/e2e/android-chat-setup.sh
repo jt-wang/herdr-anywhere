@@ -6,6 +6,7 @@
 # Chinese, light. Fake data only.
 # Usage: ANDROID_SERIAL=emulator-5554 e2e/android-chat-setup.sh APK COMPANION [folder for screenshots]
 set -eu
+. "$(dirname "$0")/autostart-guard.sh"; autostart_guard android-chat-setup # a login entry of its own, never the person's
 : "${ANDROID_SERIAL:?set ANDROID_SERIAL to the device to use}"
 apk=$1; bin=$2; shot=${3:-}
 [ -z "$shot" ] || mkdir -p "$shot"
@@ -28,7 +29,7 @@ CFG
 (cd "$app/../companion" && go build -o "$work/fake-responses" ./internal/chat/fakeresponses/serve)
 . "$app/e2e/companion.sh"  # companion_start, companion_stop
 clean() {
-  env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin HOME="$work/home" SHELL=/bin/zsh TERM=xterm-256color LANG=en_US.UTF-8 \
+  env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin HOME="$work/home" HERDR_ANYWHERE_AUTOSTART_NAME="$HERDR_ANYWHERE_AUTOSTART_NAME" SHELL=/bin/zsh TERM=xterm-256color LANG=en_US.UTF-8 \
     HC_SESSION="hmps-$$" HC_SOCKET="" XDG_STATE_HOME="$work/state" XDG_CONFIG_HOME="$work/config" XDG_DATA_HOME="$work/data" XDG_RUNTIME_DIR="$run" \
     PI_CODING_AGENT_DIR="$agent" PI_SKIP_VERSION_CHECK=1 PI_OFFLINE=1 "$@"
 }
@@ -44,6 +45,7 @@ cleanup() {
   "$adb" shell cmd locale set-app-locales "$id" --locales "" </dev/null >/dev/null 2>&1 || true
   [ -n "${ime_found:-}" ] && { put enabled_input_methods "$ime_found"; put selected_input_method_subtype "$sub_found"; "$adb" shell ime set "$ime" </dev/null >/dev/null; "$adb" shell sync </dev/null; } 2>/dev/null || true
   lhc server stop >/dev/null 2>&1 || true; chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run" "$state"
+  autostart_guard_end || exit 1
   # A Companion that did not end fails the run (companion_stop said which).
   [ -z "${stop_failed:-}" ] || exit 1
 }

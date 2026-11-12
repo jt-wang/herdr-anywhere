@@ -61,6 +61,20 @@ final class Picture: XCTestCase {
       let f = term.frame
       return app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: f.minX + (c + 0.5) * f.width / cols, dy: f.minY + 12 + (r + 0.5) * (f.height - 24) / rows))
     }
+    // The path is on the terminal's first row; the page may still be connecting, or not drawn yet, with nothing there to
+    // tap (a CI run that started the app again each time showed "Connecting…" and an empty terminal at its tap). So the
+    // first tap waits for the connection and for text on that row (Drawn.swift), up to 30 s, and says how long it took.
+    let waitFrom = Date()
+    var drawn = 0
+    while Date().timeIntervalSince(waitFrom) < 30 {
+      let f = term.frame
+      let connecting = saying("Connecting").exists
+      drawn = drawnPixels(in: CGRect(x: f.minX, y: f.minY + 12, width: f.width, height: (f.height - 24) / rows), of: app)
+      if !connecting && drawn >= 30 { break }
+      usleep(250_000)
+    }
+    note(String(format: "the path's row drawn: %d pixels, %.1f s after the wait began", drawn, Date().timeIntervalSince(waitFrom)))
+    XCTAssertGreaterThanOrEqual(drawn, 30, "the terminal's first row was never drawn")
     shot("terminal")
     let switched = Double(env["SWITCHED"] ?? "").map { String(format: "%.1f s after the appearance switch", Date().timeIntervalSince1970 - $0) } ?? "no appearance switch time given"
     let frame = term.frame

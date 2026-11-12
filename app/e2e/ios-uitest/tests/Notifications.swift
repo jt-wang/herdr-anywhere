@@ -5,8 +5,9 @@ import XCTest
 // each wait in WAITS (seconds) and ROUNDS times, the app sent away, the computer told of a new version after that wait
 // (written into the Companion's update.json, UPDATE_JSON, as its daily check would), and Notification Center read for it.
 // The agent asks once the file ASK exists (the suite's terminal waits for it). A simulator's test runs on the Mac, so
-// it writes those files where the suite reads them. The first one found is tapped: the app opens home
-// with the notice. Writes "round wait version posted" lines to $OUT, and screenshots to $SHOTS.
+// it writes those files where the suite reads them. The first one found is tapped, and whether the app came forward
+// to home with the notice is recorded (iOS decides it for a stopped app). Writes "round wait version posted" lines
+// to $OUT, and screenshots to $SHOTS.
 // MODE=deny: the question answered Don't Allow; the app goes on, and asks nothing when it opens again.
 // testSettings: Settings scrolled to its alerts, shot as settings.png (the suite runs it light, then dark). With AFTER=1
 // the iPhone line under System notifications must show.
@@ -44,12 +45,25 @@ final class Notifications: XCTestCase {
       sleep(2)
       let found = springboard.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", words)).firstMatch
       if found.waitForExistence(timeout: 3) { return found }
-      if i == 2, let missShot { shot(missShot) } // Notification Center as it was, not the home screen after it
+      // Notification Center as it was, not the home screen after it; and only when it is seen open.
+      if i == 2, let missShot, springboard.descendants(matching: .any)["lockscreen-date-view"].exists { shot(missShot) }
       closeCenter()
     }
     return nil
   }
   func closeCenter() { XCUIDevice.shared.press(.home); sleep(1) }
+  /** Notification Center pulled down and seen open (its date, which only the cover sheet has), up to 3 pulls; then a
+   *  screenshot of it. A shot of the home screen once stood in for "nothing listed": a failed pull now ends the test
+   *  with no picture. */
+  func shotOfCenter(_ name: String) {
+    for _ in 0..<3 {
+      let top = springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.005))
+      top.press(forDuration: 0.1, thenDragTo: springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.7)))
+      if springboard.descendants(matching: .any)["lockscreen-date-view"].waitForExistence(timeout: 4) { sleep(1); shot(name); return }
+      closeCenter()
+    }
+    XCTFail("Notification Center did not open in 3 pulls; no \(name) screenshot")
+  }
 
   func testAllow() {
     app.activate()
@@ -93,17 +107,22 @@ final class Notifications: XCTestCase {
         if let n, !tapped {
           shot("update-notification")
           n.tap()
+          sleep(1); shot("after-tap") // what the tap did: the app, an expanded notification, or its Open button
           // On CI a tap on the notification's middle once slid it aside to show its Open button instead (a shot of
           // Notification Center). Then Open, as a person would; said in the results.
           if !app.wait(for: .runningForeground, timeout: 10) {
+            shot("after-tap-10s")
             let open = springboard.buttons["Open"]
             say("tap: the app did not come forward; \(open.exists ? "tapped Open" : "tapped again")")
             if open.exists { open.tap() } else if n.exists { n.tap() }
           }
-          // The app in front first: running in the background its home, notice and all, can be read too.
-          XCTAssertTrue(app.wait(for: .runningForeground, timeout: 30), "the tap did not bring the app forward (state \(app.state.rawValue))")
-          XCTAssertTrue(el("update-banner").waitForExistence(timeout: 30) && el("update-banner").isHittable, "the tap did not open home with the notice")
-          shot("update-home")
+          // Recorded, not judged: whether iOS brings a stopped app forward on the tap is iOS's, and on CI it went both
+          // ways. The app in front first: running in the background its home, notice and all, can be read too, and a
+          // suspended app's view can't be read at all.
+          let forward = app.wait(for: .runningForeground, timeout: 30)
+          let notice = forward && el("update-banner").waitForExistence(timeout: 30) && el("update-banner").isHittable
+          say("tap: app forward \(forward ? "yes" : "no (state \(app.state.rawValue))"), home with the notice \(notice ? "yes" : "no")")
+          shot(notice ? "update-home" : "update-tap-missed")
           tapped = true
         } else {
           closeCenter()
@@ -127,15 +146,17 @@ final class Notifications: XCTestCase {
     sleep(5)
     var agent: XCUIElement?
     for _ in 0..<3 where agent == nil { agent = listed("Which port") }
-    shot("agent-alert")
     say("agent alert: \(agent == nil ? "none" : "posted")")
+    closeCenter()
+    shotOfCenter("agent-alert")
     closeCenter()
     XCUIDevice.shared.press(.home)
     latest("50.1.0")
     sleep(15)
     let update = listed("50.1.0")
-    shot("update-notification")
     say("update: \(update == nil ? "none" : "posted")")
+    closeCenter()
+    shotOfCenter("update-notification")
     closeCenter()
     XCTAssertNil(agent, "an app from before posted an agent's question")
     XCTAssertNil(update, "an app from before posted a new version")

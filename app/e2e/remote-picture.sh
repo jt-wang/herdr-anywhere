@@ -9,6 +9,7 @@
 # here: the marker file they would touch must not appear. Fake data only.
 # Usage: e2e/remote-picture.sh COMPANION [IMAGE…]   (default image alpine:latest; each image is one machine's sh)
 set -eu
+. "$(dirname "$0")/autostart-guard.sh"; autostart_guard remote-picture # a login entry of its own, never the person's
 bin=$1; shift
 [ $# -gt 0 ] || set -- alpine:latest
 app=$(cd "$(dirname "$0")/.." && pwd)
@@ -28,7 +29,7 @@ python3 -c 'import base64,re,sys; d=re.search(r"base64,([A-Za-z0-9+/=]+)", open(
 dockerhost=${DOCKER_HOST:-$("$docker" context inspect --format '{{.Endpoints.docker.Host}}' 2>/dev/null || true)}
 . "$app/e2e/companion.sh"  # companion_start, companion_stop
 L() {
-  env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin:"$(dirname "$docker")" HOME="$work/home" SHELL=/bin/sh DOCKER_HOST="$dockerhost" \
+  env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin:"$(dirname "$docker")" HOME="$work/home" HERDR_ANYWHERE_AUTOSTART_NAME="$HERDR_ANYWHERE_AUTOSTART_NAME" SHELL=/bin/sh DOCKER_HOST="$dockerhost" \
     HC_SESSION="hmpicture-$$" HC_SOCKET="" XDG_STATE_HOME="$work/state" XDG_CONFIG_HOME="$work/config" \
     XDG_DATA_HOME="$work/data" XDG_RUNTIME_DIR="$run" "$@"
 }
@@ -41,6 +42,7 @@ cleanup() {
   L "$hc" server stop >/dev/null 2>&1
   "$docker" rm -f "$box" >/dev/null 2>&1
   rm -rf "$work" "$run" "$state"
+  autostart_guard_end || exit 1
   exit "$status"
 }
 trap cleanup EXIT; trap 'cleanup; exit 130' INT; trap 'cleanup; exit 143' TERM HUP

@@ -8,6 +8,7 @@
 # Prints the page and a pairing link; Ctrl-C (or kill) removes it all. Fake data only.
 # Usage: e2e/chat-demo.sh [port]   (needs dist/web: nsh package --target web -o dist/web)
 set -eu
+. "$(dirname "$0")/autostart-guard.sh"; autostart_guard chat-demo # a login entry of its own, never the person's
 app=$(cd "$(dirname "$0")/.." && pwd)
 companion="$app/../companion"
 hc=$(command -v hc || echo "$HOME/.local/bin/hc")
@@ -26,7 +27,7 @@ printf 'a\n' > "$work/home/src/acme-api/notes.txt"; printf 'b\n' > "$work/home/s
 # So the core, and the companion that asks it, start with only these variables.
 . "$app/e2e/companion.sh"  # companion_start, companion_stop
 clean() {
-  env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin HOME="$work/home" SHELL=/bin/zsh TERM=xterm-256color LANG=en_US.UTF-8 \
+  env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin HOME="$work/home" HERDR_ANYWHERE_AUTOSTART_NAME="$HERDR_ANYWHERE_AUTOSTART_NAME" SHELL=/bin/zsh TERM=xterm-256color LANG=en_US.UTF-8 \
     HC_SESSION="hmchat-$$" HC_SOCKET="" XDG_STATE_HOME="$work/state" XDG_CONFIG_HOME="$work/config" XDG_DATA_HOME="$work/data" XDG_RUNTIME_DIR="$run" \
     HERDR_ANYWHERE_STATE="$work/companion" CLAUDE_CONFIG_DIR="$work/claude" "$@"
 }
@@ -42,6 +43,7 @@ cleanup() {
   companion_stop
   lhc server stop >/dev/null 2>&1 || true
   chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run"
+  autostart_guard_end || exit 1
 }
 trap 'trap - EXIT; cleanup' EXIT
 trap 'trap - EXIT; cleanup; exit 130' INT

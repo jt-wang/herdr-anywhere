@@ -139,6 +139,33 @@ func TestOpenQuestion(t *testing.T) {
 	}
 }
 
+// Claude Code 2.1.325 asked two questions in one call (testdata ask.jsonl, two lines of a fake-model session in a lab
+// core): the phone gets both, each option with the line under it and the agent's "(Recommended)" as a mark.
+func TestOpenQuestionsAllOfThem(t *testing.T) {
+	ts, err := (&Reader{}).Turns("testdata/claude-code/2.1.325/ask.jsonl")
+	if err != nil || len(ts) != 1 || ts[0].Ask == nil {
+		t.Fatalf("%+v %v", ts, err)
+	}
+	a := ts[0].Ask
+	// What phones before 0.2.0 show stays as it was.
+	if a.Text != "Which plan should the fake shop use?" || !reflect.DeepEqual(a.Options, []string{"Ship the small fix now (Recommended)", "Wait for the full rewrite", "Only tell the team"}) {
+		t.Fatalf("%+v", a)
+	}
+	want := []chat.Question{
+		{Header: "Plan", Text: "Which plan should the fake shop use?", Options: []chat.Choice{
+			{Label: "Ship the small fix now", Detail: "One file changes; nothing else moves", Recommended: true},
+			{Label: "Wait for the full rewrite", Detail: "Two weeks more, every page changes"},
+			{Label: "Only tell the team", Detail: "No change to the code"}}},
+		{Header: "Pages", Text: "Which pages should get the new banner?", Multi: true, Options: []chat.Choice{
+			{Label: "Home", Detail: "The first page people see"},
+			{Label: "Cart", Detail: "Where people pay"},
+			{Label: "Help", Detail: "Questions and answers"}}},
+	}
+	if !reflect.DeepEqual(a.Questions, want) {
+		t.Fatalf("got %+v", a.Questions)
+	}
+}
+
 func TestAnsweredQuestionIsAStep(t *testing.T) {
 	ts := turns(t, prompt("u1", "pick a color"), use("a1", "m1", "toolu_1", "AskUserQuestion", ask),
 		result("u2", "toolu_1", "User has answered: Red"), say("a2", "m2", "Red it is.", "end_turn"))

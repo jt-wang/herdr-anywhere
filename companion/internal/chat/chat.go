@@ -6,6 +6,7 @@ package chat
 import (
 	"bufio"
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -49,10 +50,30 @@ type Step struct {
 // Title is the whole message.
 const StepYou = "you"
 
-// Ask is a question the agent asked and nobody has answered yet.
+// Ask is a question the agent asked and nobody has answered yet. Text and Options are its first question's words, as
+// phones before 0.2.0 show them.
 type Ask struct {
 	Text    string   `json:"text"`
 	Options []string `json:"options"`
+	// Questions are all the questions of the call, as the record has them; the agent shows them one at a time. Empty
+	// for a prompt only its screen shows (a permission): the phone reads that one off the screen.
+	Questions []Question `json:"questions,omitempty"`
+}
+
+// Question is one question of an Ask.
+type Question struct {
+	Header string `json:"header,omitempty"`
+	Text   string `json:"text"`
+	// Multi: any number of options can be picked.
+	Multi   bool     `json:"multi,omitempty"`
+	Options []Choice `json:"options"`
+}
+
+// Choice is one option of a Question: its label, without the agent's "(Recommended)" mark, and the line under it.
+type Choice struct {
+	Label       string `json:"label"`
+	Detail      string `json:"detail,omitempty"`
+	Recommended bool   `json:"recommended,omitempty"`
 }
 
 // Detail is one step's input and output, cut to MaxDetail bytes each.
@@ -228,6 +249,57 @@ func DiffHunks(diff string) (hunks []Hunk, cut bool) {
 		h.Lines = append(h.Lines, l)
 	}
 	return hunks, false
+}
+
+// recommendedMark is the agent's mark after the label it suggests, in the app's languages and either brackets: words
+// the agent wrote, recognised, never shown (allow: user words).
+var recommendedMark = regexp.MustCompile(`(?i)\s*[(（]\s*(recommended|推荐|推薦|おすすめ|推奨|추천|recomendad[oa]|рекомендуется)\s*[)）]\s*$`)
+
+// Recommended splits the agent's "(Recommended)" off an option's label. A label that is only the mark stays as it is.
+func Recommended(label string) (string, bool) {
+	loc := recommendedMark.FindStringIndex(label)
+	if loc == nil || strings.TrimSpace(label[:loc[0]]) == "" {
+		return label, false
+	}
+	return strings.TrimSpace(label[:loc[0]]), true
+}
+
+// AskOf reads a question call's input as Claude Code's AskUserQuestion, Codex's request_user_input and OpenCode's
+// question write it: questions, each with its header, words, options (label, description) and whether any number
+// can be picked (Claude Code's multiSelect, OpenCode's multiple; Codex has none). Text and
+// Options are the first question's, as phones before 0.2.0 show them.
+func AskOf(in json.RawMessage) *Ask {
+	var q struct {
+		Questions []struct {
+			Question    string `json:"question"`
+			Header      string `json:"header"`
+			MultiSelect bool   `json:"multiSelect"`
+			Multiple    bool   `json:"multiple"` // OpenCode's
+			Options     []struct {
+				Label       string `json:"label"`
+				Description string `json:"description"`
+			} `json:"options"`
+		} `json:"questions"`
+	}
+	a := &Ask{Options: []string{}}
+	if json.Unmarshal(in, &q) != nil {
+		return a
+	}
+	for i, x := range q.Questions {
+		one := Question{Header: x.Header, Text: x.Question, Multi: x.MultiSelect || x.Multiple, Options: []Choice{}}
+		for _, o := range x.Options {
+			if i == 0 {
+				a.Options = append(a.Options, o.Label)
+			}
+			label, rec := Recommended(o.Label)
+			one.Options = append(one.Options, Choice{Label: label, Detail: o.Description, Recommended: rec})
+		}
+		if i == 0 {
+			a.Text = x.Question
+		}
+		a.Questions = append(a.Questions, one)
+	}
+	return a
 }
 
 // Start is where a reader reads a record from: its last MaxTail bytes, or further back to the start of the last line

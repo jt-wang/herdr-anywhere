@@ -8,6 +8,7 @@
 # Usage: SIM_UDID=<udid> e2e/ios-onerror.sh [screenshot.png]
 # SIM_UDID is required, so the run never lands on another simulator. Needs go, nsh, hc, idb, xcodegen and Xcode.
 set -eu
+. "$(dirname "$0")/autostart-guard.sh"; autostart_guard ios-onerror # a login entry of its own, never the person's
 : "${SIM_UDID:?set SIM_UDID to the simulator to use}"
 app=$(cd "$(dirname "$0")/.." && pwd)
 shot=${1:-}
@@ -32,6 +33,7 @@ cleanup() {
   # As ios-keyboard.sh and ios-tui-scroll.sh do after their XCUITest: left booted, the next suite's idb read the
   # accessibility tree empty while its screenshot showed the screen.
   xcrun simctl shutdown "$SIM_UDID" 2>/dev/null || true
+  autostart_guard_end || exit 1
 }
 # INT and TERM end the suite (a handler that only cleans up returns, and the script goes on); EXIT cleans up.
 trap cleanup EXIT; trap 'exit 130' INT; trap 'exit 143' TERM

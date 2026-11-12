@@ -492,7 +492,7 @@ func (r *Reader) parse(path string) ([]chat.Turn, error) {
 				}
 				cur.flushNotes()
 				if b.Name == "AskUserQuestion" {
-					cur.asked[b.ID] = question(b.Input)
+					cur.asked[b.ID] = chat.AskOf(b.Input)
 					continue
 				}
 				kind, name := describe(b.Name, b.Input, cur.cwd)
@@ -516,25 +516,6 @@ func (r *Reader) parse(path string) ([]chat.Turn, error) {
 		out = out[len(out)-chat.MaxTurns:]
 	}
 	return out, nil
-}
-
-func question(in json.RawMessage) *chat.Ask {
-	var q struct {
-		Questions []struct {
-			Question string `json:"question"`
-			Options  []struct {
-				Label string `json:"label"`
-			} `json:"options"`
-		} `json:"questions"`
-	}
-	a := &chat.Ask{Options: []string{}}
-	if json.Unmarshal(in, &q) == nil && len(q.Questions) > 0 {
-		a.Text = q.Questions[0].Question
-		for _, o := range q.Questions[0].Options {
-			a.Options = append(a.Options, o.Label)
-		}
-	}
-	return a
 }
 
 // title is a step's line: the first line, at most 80 bytes. Details come only through Detail.

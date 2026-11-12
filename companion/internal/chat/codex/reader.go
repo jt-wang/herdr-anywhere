@@ -358,6 +358,9 @@ type building struct {
 	turn    chat.Turn
 	cwd     string
 	pending []struct{ id, text string } // what the agent said since its last step
+	// A request_user_input call (Plan mode) not answered yet, and its call id.
+	ask     *chat.Ask
+	askCall string
 	// head: the turn the window starts in, its task_started further back than MaxBack. Shown only when no turn starts
 	// in the window, so a long turn is never no turn at all.
 	head bool
@@ -395,6 +398,9 @@ func (b *building) finish(end string) chat.Turn {
 	b.turn.Reply = strings.Join(said, "\n\n")
 	b.pending = nil
 	b.turn.End = end
+	if end == "open" && b.ask != nil {
+		b.turn.Ask = b.ask
+	}
 	if b.turn.Steps == nil {
 		b.turn.Steps = []chat.Step{}
 	}
@@ -446,6 +452,24 @@ func (r *Reader) parse(path string) ([]chat.Turn, error) {
 			}
 			continue
 		case "event_msg":
+		case "response_item":
+			// Codex asks in Plan mode with a request_user_input call; its output is the answer. Only the rollout's
+			// response items carry them (0.167.1: no event_msg for either).
+			var c struct {
+				Type      string `json:"type"`
+				Name      string `json:"name"`
+				Arguments string `json:"arguments"`
+				CallID    string `json:"call_id"`
+			}
+			if b == nil || json.Unmarshal(l.Payload, &c) != nil {
+				continue
+			}
+			if c.Type == "function_call" && c.Name == "request_user_input" {
+				b.ask, b.askCall = chat.AskOf(json.RawMessage(c.Arguments)), c.CallID
+			} else if c.Type == "function_call_output" && c.CallID != "" && c.CallID == b.askCall {
+				b.ask, b.askCall = nil, ""
+			}
+			continue
 		default:
 			continue
 		}
