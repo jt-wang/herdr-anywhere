@@ -1,0 +1,270 @@
+{
+ "sessions": [
+  {
+   "id": "ses_48692ef2dffevG6dP8aJEqpeZt",
+   "directory": "/work/demo-shop",
+   "title": "Questions",
+   "version": "2.2.0",
+   "time_created": 1767268800095,
+   "time_updated": 1767268817408
+  }
+ ],
+ "messages": [
+  {
+   "id": "msg_b796dd651001OTzLs47gLF4tu9",
+   "session_id": "ses_48692ef2dffevG6dP8aJEqpeZt",
+   "type": "user",
+   "seq": 51,
+   "time_created": 1767268800095,
+   "time_updated": 1767268800095,
+   "data": {
+    "time": {
+     "created": 1767268800095
+    },
+    "text": "ASK one question please",
+    "files": [],
+    "agents": []
+   }
+  },
+  {
+   "id": "msg_b796dd661001W6bRK0IWWVfXgU",
+   "session_id": "ses_48692ef2dffevG6dP8aJEqpeZt",
+   "type": "assistant",
+   "seq": 52,
+   "time_created": 1767268800098,
+   "time_updated": 1767268809172,
+   "data": {
+    "time": {
+     "created": 1767268800098,
+     "streamed": 1767268800102,
+     "completed": 1767268809170
+    },
+    "agent": "build",
+    "model": {
+     "id": "fake-model",
+     "providerID": "fake",
+     "variant": "default"
+    },
+    "content": [
+     {
+      "type": "tool",
+      "id": "call_fake_ask",
+      "name": "question",
+      "executed": false,
+      "native": {
+       "itemId": "item_fake_4_0"
+      },
+      "state": {
+       "status": "completed",
+       "input": {
+        "questions": [
+         {
+          "header": "Color",
+          "question": "Which color should the demo button be?",
+          "options": [
+           {
+            "label": "Teal (Recommended)",
+            "description": "Matches the demo logo"
+           },
+           {
+            "label": "Orange",
+            "description": "Stands out on white"
+           },
+           {
+            "label": "Gray",
+            "description": "Quiet, fits any page"
+           }
+          ]
+         }
+        ]
+       },
+       "content": [
+        {
+         "type": "text",
+         "text": "User has answered your questions: \"Which color should the demo button be?\"=\"Orange\". You can now continue with the user's answers in mind."
+        }
+       ],
+       "metadata": {
+        "answers": [
+         [
+          "Orange"
+         ]
+        ],
+        "truncated": false
+       }
+      },
+      "time": {
+       "created": 1767268800101,
+       "ran": 1767268800102,
+       "completed": 1767268809165
+      }
+     }
+    ],
+    "finish": "tool-calls",
+    "native": {
+     "responseId": "resp_fake_4"
+    },
+    "cost": 0,
+    "tokens": {
+     "input": 10,
+     "output": 5,
+     "reasoning": 0,
+     "cache": {
+      "read": 0,
+      "write": 0
+     }
+    }
+   }
+  },
+  {
+   "id": "msg_b796df9e30016muUW8pMnaUjZt",
+   "session_id": "ses_48692ef2dffevG6dP8aJEqpeZt",
+   "type": "assistant",
+   "seq": 59,
+   "time_created": 1767268809196,
+   "time_updated": 1767268809211,
+   "data": {
+    "time": {
+     "created": 1767268809196,
+     "streamed": 1767268809210,
+     "completed": 1767268809210
+    },
+    "agent": "build",
+    "model": {
+     "id": "fake-model",
+     "providerID": "fake",
+     "variant": "default"
+    },
+    "content": [
+     {
+      "type": "text",
+      "text": "Got the answer, thanks.",
+      "native": {
+       "itemId": "item_fake_5_0"
+      }
+     }
+    ],
+    "finish": "stop",
+    "native": {
+     "responseId": "resp_fake_5"
+    },
+    "cost": 0,
+    "tokens": {
+     "input": 10,
+     "output": 5,
+     "reasoning": 0,
+     "cache": {
+      "read": 0,
+      "write": 0
+     }
+    }
+   }
+  },
+  {
+   "id": "msg_b796df9fe002ZorK1EuiSCw0rw",
+   "session_id": "ses_48692ef2dffevG6dP8aJEqpeZt",
+   "type": "idle",
+   "seq": 64,
+   "time_created": 1767268809214,
+   "time_updated": 1767268809214,
+   "data": {
+    "time": {
+     "created": 1767268809214
+    },
+    "outcome": "succeeded"
+   }
+  },
+  {
+   "id": "msg_b796e19e70016h1daNVaBXDCuy",
+   "session_id": "ses_48692ef2dffevG6dP8aJEqpeZt",
+   "type": "user",
+   "seq": 68,
+   "time_created": 1767268817397,
+   "time_updated": 1767268817397,
+   "data": {
+    "time": {
+     "created": 1767268817397
+    },
+    "text": "ASK2M two questions please",
+    "files": [],
+    "agents": []
+   }
+  },
+  {
+   "id": "msg_b796e19f7001QV7uZCf0Opm0p3",
+   "session_id": "ses_48692ef2dffevG6dP8aJEqpeZt",
+   "type": "assistant",
+   "seq": 69,
+   "time_created": 1767268817401,
+   "time_updated": 1767268817408,
+   "data": {
+    "time": {
+     "created": 1767268817401,
+     "streamed": 1767268817407
+    },
+    "agent": "build",
+    "model": {
+     "id": "fake-model",
+     "providerID": "fake",
+     "variant": "default"
+    },
+    "content": [
+     {
+      "type": "tool",
+      "id": "call_fake_ask",
+      "name": "question",
+      "executed": false,
+      "native": {
+       "itemId": "item_fake_6_0"
+      },
+      "state": {
+       "status": "running",
+       "input": {
+        "questions": [
+         {
+          "header": "Color",
+          "question": "Which color should the demo button be?",
+          "options": [
+           {
+            "label": "Teal (Recommended)",
+            "description": "Matches the demo logo"
+           },
+           {
+            "label": "Orange",
+            "description": "Stands out on white"
+           },
+           {
+            "label": "Gray",
+            "description": "Quiet, fits any page"
+           }
+          ]
+         },
+         {
+          "header": "Size",
+          "question": "How big should it be?",
+          "options": [
+           {
+            "label": "Small",
+            "description": "32 px tall"
+           },
+           {
+            "label": "Large",
+            "description": "48 px tall"
+           }
+          ],
+          "multiple": true
+         }
+        ]
+       },
+       "metadata": {}
+      },
+      "time": {
+       "created": 1767268817405,
+       "ran": 1767268817406
+      }
+     }
+    ]
+   }
+  }
+ ]
+}

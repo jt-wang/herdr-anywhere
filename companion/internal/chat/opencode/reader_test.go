@@ -302,9 +302,9 @@ func TestFindPaneNoDatabase(t *testing.T) {
 
 // Turns reads the session's rows as the fixtures say, and again after OpenCode adds one.
 func TestTurnsFromDatabase(t *testing.T) {
-	p := db(t, "turns", "steps", "files")
+	p := db(t, "turns", "steps", "files", "ask")
 	r := &Reader{DB: p}
-	for _, n := range []string{"turns", "steps", "files"} {
+	for _, n := range []string{"turns", "steps", "files", "ask"} {
 		id, _ := session(t, n)
 		got, err := r.Turns(p + "#" + id)
 		if err != nil {

@@ -11,6 +11,8 @@
 # backspace, a lowercase letter after "teh " (the keyboard switched Shift on there by itself), and no
 # form bar (˄ ˅ Done) over the keyboard. Its build and result stay in the run's temporary folder.
 # Usage: SIM_UDID=<udid> e2e/ios-keyboard.sh [screenshot.png]
+# HM_MISS_SPACE=1 is a self-test: the first tap on the space misses, so the test must fail with its record of that
+# tap (e2e/ios-uitest/tests/OpenSpace.swift) and a second one.
 # SIM_UDID is required, so the run never lands on another simulator. Needs go, nsh, hc, idb, xcodegen and Xcode.
 set -eu
 : "${SIM_UDID:?set SIM_UDID to the simulator to use}"
@@ -22,20 +24,30 @@ id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$a
 port=7691
 while nc -z 127.0.0.1 "$port" 2>/dev/null; do port=$((port + 1)); done
 work=$(mktemp -d)
+: > "$work/started" # what e2e/ios-failure-logs.sh keeps is from after this
+"$app/e2e/ios-failure-logs.sh" --sample-load "$work/load.txt" >/dev/null 2>&1 & sampler=$! # the machine's load, kept with a failure
 (cd "$app/../companion" && go build -o "$work/herdr-anywhere" ./cmd/herdr-anywhere)
 run=$(mktemp -d /tmp/hmXXXX)
 mkdir -p "$work/sam/src/acme-api" "$work/state" "$work/config" "$work/data"
 : > "$work/sam/.zshrc"
-placeholder=$(cat "$app/e2e/pair.ts")
+# Runs to the end and keeps the suite's status: under set -e a failed step in an EXIT trap ends the shell there (a
+# folder rm could not delete skipped the shutdown, and the next suites found a simulator they could not read).
 cleanup() {
+  st=$?; set +e
+  # The sampler first: a sample written while rm -rf runs makes load.txt again, and the folder is not deleted.
+  { kill "$sampler"; wait "$sampler"; } 2>/dev/null || true
+  [ -z "${touchlog:-}" ] || { kill "$touchlog"; wait "$touchlog"; } 2>/dev/null || true
   [ -n "${serve_pid:-}" ] && kill "$serve_pid" 2>/dev/null
   # The same session the core was started in below, or `server stop` finds no core and leaves its holder running.
   HC_SESSION="hmios-$$" HC_SOCKET="" HOME="$work/sam" XDG_RUNTIME_DIR="$run" "$hc" server stop >/dev/null 2>&1 || true
-  printf "%s\n" "$placeholder" > "$app/e2e/pair.ts"
-  chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run"
+  chmod -R u+w "$work" 2>/dev/null; rm -rf "${work:?}" "${run:?}" || echo "NOTE: left after the cleanup: $(ls -A "$work" 2>/dev/null | head -5 | tr '\n' ' ')"
   xcrun simctl shutdown "$SIM_UDID" 2>/dev/null || true
+  exit "$st"
 }
-trap cleanup EXIT INT TERM
+# INT and TERM end the suite; EXIT cleans up.
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 (
   export HC_SESSION="hmios-$$" HC_SOCKET="" HOME="$work/sam" SHELL=/bin/zsh
   export XDG_STATE_HOME="$work/state" XDG_CONFIG_HOME="$work/config" XDG_DATA_HOME="$work/data" XDG_RUNTIME_DIR="$run"
@@ -52,14 +64,15 @@ until curl -fsS "http://127.0.0.1:$port/api/info" >/dev/null 2>&1; do
 done
 link=$(HERDR_ANYWHERE_STATE="$work/companion" "$work/herdr-anywhere" pair --url "http://127.0.0.1:$port" 2>/dev/null | grep -o 'http://[^ ]*#pair=[A-Za-z0-9_-]*' | head -1)
 [ -n "$link" ] || { echo "pair printed no link" >&2; exit 1; }
-printf "export const PAIR: string = '%s'\n" "$link" > "$app/e2e/pair.ts"
-"$app/ios/build.sh" ios-e2e.tsx simulator >/dev/null 2>&1 || { echo "FAIL: ios/build.sh"; exit 1; }
-printf "%s\n" "$placeholder" > "$app/e2e/pair.ts"
+# Built from a copy of app/ that also asks the Companion for /hm-e2e/openSpace/… each time it opens a space
+# (e2e/ios-touch-app.sh), for a failure to tell a tap on the space the app never got from one it got late.
+printf "export const PAIR: string = '%s'\n" "$link" > "$work/pair.ts"
+built=$("$app/e2e/ios-touch-app.sh" "$work" "$work/pair.ts" none) || exit 1
 
 xcrun simctl boot "$SIM_UDID" 2>/dev/null || true
 xcrun simctl bootstatus "$SIM_UDID" -b >/dev/null
 xcrun simctl uninstall "$SIM_UDID" "$id" 2>/dev/null || true
-xcrun simctl install "$SIM_UDID" "$app/ios/build/Herdr.app"
+xcrun simctl install "$SIM_UDID" "$built"
 # Herdr's alert sounds ship with the app, where the app's asset: URIs look (next to its bundle, as nsh build lays out).
 container=$(xcrun simctl get_app_container "$SIM_UDID" "$id")
 for s in request done; do
@@ -83,15 +96,25 @@ fi
 screen | grep -q '"AXIdentifier":"pair"\|"AXUniqueId":"pair"' && { echo "FAIL: the pairing screen is still up"; exit 1; }
 cp -R "$app/e2e/ios-uitest" "$work/uitest"
 (cd "$work/uitest" && xcodegen generate --quiet)
+sh "$app/e2e/ios-touch-log.sh" --self-test || exit 1
+# The app's UIKit event dispatch while the test runs: whether a tap on the space reached the app at all.
+"$app/e2e/ios-touch-log.sh" --start "$SIM_UDID" "$work/uikit.log" & touchlog=$!
 rc=0
-TEST_RUNNER_OUT="$work/typein.txt" TEST_RUNNER_RAW="$work/sam/src/acme-api/hm-raw" perl -e 'alarm 600; exec @ARGV' xcodebuild test -quiet -project "$work/uitest/KeyboardCheck.xcodeproj" -scheme UITests -only-testing:UITests/TypeIn -destination "id=$SIM_UDID" -derivedDataPath "$work/uitest/derived" -resultBundlePath "$work/uitest/result.xcresult" > "$work/uitest/test.log" 2>&1 || rc=$?
+TEST_RUNNER_OUT="$work/typein.txt" TEST_RUNNER_MISS_SPACE="${HM_MISS_SPACE:-}" TEST_RUNNER_RAW="$work/sam/src/acme-api/hm-raw" perl -e 'alarm 600; exec @ARGV' xcodebuild test -quiet -project "$work/uitest/KeyboardCheck.xcodeproj" -scheme UITests -only-testing:UITests/TypeIn -destination "id=$SIM_UDID" -derivedDataPath "$work/uitest/derived" -resultBundlePath "$work/uitest/result.xcresult" > "$work/uitest/test.log" 2>&1 || rc=$?
+{ kill "$touchlog"; wait "$touchlog"; } 2>/dev/null || true; touchlog=
 [ -n "$shot" ] && perl -e 'alarm 40; exec @ARGV' xcrun simctl io "$SIM_UDID" screenshot "${shot%.png}-keyboard.png" >/dev/null 2>&1
 sed 's/^/  /' "$work/typein.txt" 2>/dev/null || true
 [ -n "$shot" ] && { cp "$work/typein-terminal.png" "${shot%.png}-terminal.png" 2>/dev/null; cp "$work/uitest/test.log" "${shot%.png}-xctest.log" 2>/dev/null; } || true
 if [ "$rc" != 0 ]; then
   echo "FAIL: the keyboard test (xcodebuild test exit $rc)"
+  echo "the app's lines (each space it opened, in the Companion's log; e2e/ios-touch-app.sh):"
+  "$app/e2e/app-lines.sh" "/hm-e2e/openSpace/" "$work/serve.log"
   # Every screenshot the test kept: the menu before and after each tap, and XCTest's own at the failure.
+  # The screen's elements around the tap on the space, as the test noted them (OpenSpace.swift).
+  [ -n "$shot" ] && { mkdir -p "${shot%.png}-failure"; for f in "$work"/typein.txt-*.txt; do [ -f "$f" ] && cp "$f" "${shot%.png}-failure/${f##*/typein.txt-}"; done; } || true
   "$app/e2e/ios-xcresult.sh" "$work/uitest/result.xcresult" ${shot:+"${shot%.png}-failure"} all
+  [ -n "$shot" ] && "$app/e2e/ios-failure-logs.sh" "$work/started" "$work/serve.log" "${shot%.png}-failure" || true
+  "$app/e2e/ios-touch-log.sh" "$work/typein.txt" "$work/uikit.log" ${shot:+"${shot%.png}-failure"}
   exit 1
 fi
 echo "PASS: Type in the terminal brings the keyboard up, also after the key bar's hide button; typing straight into the terminal sends what was typed"

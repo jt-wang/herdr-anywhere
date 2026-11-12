@@ -1,0 +1,18 @@
+❯ QMULTI please
+──────────────────────────────────────────────
+←  ☐ Plan  ☐ Pages  ✔ Submit  →
+
+Which plan should the fake shop use?
+
+❯ 1. Ship the small fix now (Recommended)
+     One file changes; nothing else moves
+  2. Wait for the full rewrite
+     Two weeks more, every page changes
+  3. Only tell the team
+     No change to the code
+  4. Type something.
+──────────────────────────────────────────────
+  5. Chat about this
+
+Enter to select · Tab/Arrow keys to navigate ·
+Esc to cancel

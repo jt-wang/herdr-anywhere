@@ -73,14 +73,18 @@ test('a step whose details are gone says so', async () => {
   await app.waitFor("text:This step's details are gone.")
 })
 
-test('an open question shows the question and its options, to answer in the terminal', async () => {
+// With its screen's menu read, the question is a card to answer here (App.ask.test.tsx). Without it, the words only.
+test("an open question whose screen can't be read: its options numbered, to answer in the terminal, one tap away", async () => {
   const app = await pane({ status: 'blocked', chat: JSON.stringify({ chat: true, turns: ask }) })
   await app.press('id:show-chat')
   await app.waitFor('text:Which color should the button be?')
-  expect(app.texts()).toContain('Red')
-  expect(app.texts()).toContain('Blue')
+  expect(app.texts()).toContain('1. Red')
+  expect(app.texts()).toContain('2. Blue')
   expect(app.texts()).toContain('Answer it in the terminal.')
+  expect(app.count('id:ask-card')).toBe(0)
   expect(app.count('id:step-toolu_3')).toBe(1) // an open turn's steps show
+  await app.press('id:ask-terminal-u3')
+  await app.waitFor('id:show-chat')
 })
 
 test('when the computer is not sure it shows no turn at all, only why and the way back', async () => {
@@ -98,7 +102,7 @@ test('an OpenCode that reports no status still has its chat, and the view keeps 
   expect(asks(app)).toContain('/api/chat/t1')
   await app.press('id:show-chat')
   await app.waitFor("text:Can't tell which conversation this is yet. It shows once OpenCode does some work.")
-  app.host.send('fake.chat', { chat: true, turns })
+  await app.host.send('fake.chat', { chat: true, turns })
   await pollUntil(app, 'Fixed: total_items counts each item once.')
 })
 
@@ -106,8 +110,8 @@ test('an OpenCode that has not said which conversation it shows: the view says s
   const app = await pane({ argv: 'opencode', status: 'idle', chat: JSON.stringify({ chat: true, unknown: 'not-reported' }) })
   await app.press('id:show-chat')
   await app.waitFor("text:Can't tell which conversation this is yet. It shows once OpenCode does some work.")
-  app.host.send('fake.chat', { chat: true, turns: ask })
-  app.host.send('fake.status', { address: 't1', state: 'working' })
+  await app.host.send('fake.chat', { chat: true, turns: ask })
+  await app.host.send('fake.status', { address: 't1', state: 'working' })
   await pollUntil(app, 'pick a color')
 })
 
@@ -116,7 +120,7 @@ test('while the agent works the view asks again every 3 s, and shows what is new
   await app.press('id:show-chat')
   await app.waitFor('text:pick a color')
   const before = asks(app).length
-  app.host.send('fake.chat', { chat: true, turns: [{ ...ask[0], ask: undefined, end: 'done', reply: 'Blue it is.' }] })
+  await app.host.send('fake.chat', { chat: true, turns: [{ ...ask[0], ask: undefined, end: 'done', reply: 'Blue it is.' }] })
   await pollUntil(app, 'Blue it is.')
   expect(asks(app).length).toBeGreaterThan(before)
 })
@@ -125,7 +129,7 @@ test('the record falling behind shows why, then the turns once it catches up', a
   const app = await pane({ status: 'working', chat: JSON.stringify({ chat: true, unknown: 'behind' }) })
   await app.press('id:show-chat')
   await app.waitFor("text:The record hasn't caught up with the screen yet.")
-  app.host.send('fake.chat', { chat: true, turns: ask })
+  await app.host.send('fake.chat', { chat: true, turns: ask })
   await pollUntil(app, 'pick a color')
 })
 
@@ -133,7 +137,7 @@ test('a computer that stops answering leaves the last turns up, marked', async (
   const app = await pane({ status: 'working', chat: JSON.stringify({ chat: true, turns: ask }) })
   await app.press('id:show-chat')
   await app.waitFor('text:pick a color')
-  app.host.send('fake.chat', { offline: true })
+  await app.host.send('fake.chat', { offline: true })
   await pollUntil(app, "Can't reach the computer. This is what it said last.")
   expect(app.texts()).toContain('pick a color')
 })
@@ -216,7 +220,7 @@ test('what was opened stays open when the view asks again and a turn is added', 
   await app.press('id:fold-u1')
   await app.press('id:step-toolu_2')
   await app.waitFor('text:input of toolu_2')
-  app.host.send('fake.chat', { chat: true, turns: [...turns, { ...ask[0], ask: undefined, end: 'done', reply: 'Blue it is.' }] })
+  await app.host.send('fake.chat', { chat: true, turns: [...turns, { ...ask[0], ask: undefined, end: 'done', reply: 'Blue it is.' }] })
   await pollUntil(app, 'Blue it is.')
   expect(app.count('id:step-toolu_1')).toBe(1)
   expect(app.texts()).toContain('input of toolu_2')
@@ -227,12 +231,12 @@ test('a record falling behind for a moment keeps the turns up with "Updating…"
   await app.press('id:show-chat')
   await app.press('id:fold-u1')
   await app.waitFor('id:step-toolu_1')
-  app.host.send('fake.chat', { chat: true, unknown: 'behind' })
+  await app.host.send('fake.chat', { chat: true, unknown: 'behind' })
   await pollUntil(app, 'Updating…')
   expect(app.count('id:step-toolu_1')).toBe(1)
   expect(app.texts()).toContain('fix the total')
   expect(app.texts()).not.toContain("The record hasn't caught up with the screen yet.")
-  app.host.send('fake.chat', { chat: true, turns: [...turns, { ...ask[0], ask: undefined, end: 'done', reply: 'Blue it is.' }] })
+  await app.host.send('fake.chat', { chat: true, turns: [...turns, { ...ask[0], ask: undefined, end: 'done', reply: 'Blue it is.' }] })
   await pollUntil(app, 'Blue it is.')
   expect(app.count('id:step-toolu_1')).toBe(1)
   expect(app.texts()).not.toContain('Updating…')
@@ -242,7 +246,7 @@ test('a record behind for over 10 s says so above the turns', async () => {
   const app = await pane({ status: 'working', chat: JSON.stringify({ chat: true, turns: [...turns, ask[0]] }) })
   await app.press('id:show-chat')
   await app.waitFor('text:fix the total')
-  app.host.send('fake.chat', { chat: true, unknown: 'behind' })
+  await app.host.send('fake.chat', { chat: true, unknown: 'behind' })
   await pollUntil(app, 'Updating…')
   expect(app.texts()).not.toContain("The record hasn't caught up with the screen yet.")
   await pollUntil(app, "The record hasn't caught up with the screen yet.")
@@ -393,4 +397,33 @@ test('a file no app on the phone opens, or one that could not be fetched, says s
   await failed.press('id:show-chat')
   await failed.press('id:file-docs/guide.pdf')
   await failed.waitFor("text:Couldn't get the file from the computer.")
+})
+
+test('a message the agent took while it worked shows where it was taken, as yours, marked so; it is not a step to open', async () => {
+  const working = [{ id: 'u5', from: 'you', said: 'tidy the menu', end: 'open', reply: '', steps: [
+    { id: 'toolu_5', kind: 'run', title: 'npm test' },
+    { id: 'y1', kind: 'you', title: 'Also keep the old colors' },
+    { id: 'toolu_6', kind: 'edit', title: 'menu.tsx', added: 2, deleted: 1 }] }]
+  const app = await pane({ status: 'working', chat: JSON.stringify({ chat: true, turns: working }) })
+  await app.press('id:show-chat')
+  await app.waitFor('id:you-y1')
+  expect(app.texts()).toContain('Also keep the old colors')
+  expect(app.texts()).toContain('Added while it was working')
+  expect(app.count('id:step-y1')).toBe(0)
+  expect(app.count('id:step-toolu_5')).toBe(1)
+})
+
+test('once the turn is done and folded, what you said while it worked still shows above the fold line, not twice when opened', async () => {
+  const finished = [{ id: 'u6', from: 'you', said: 'tidy the menu', end: 'done', secs: 40, reply: 'The menu is tidy.', steps: [
+    { id: 'toolu_7', kind: 'run', title: 'npm test' },
+    { id: 'y2', kind: 'you', title: 'Also keep the old colors' },
+    { id: 'toolu_8', kind: 'edit', title: 'menu.tsx', added: 2, deleted: 1 }] }]
+  const app = await pane({ chat: JSON.stringify({ chat: true, turns: finished }) })
+  await app.press('id:show-chat')
+  await app.waitFor('text:Worked for <1m · 2 steps')
+  expect(app.count('id:you-y2')).toBe(1)
+  expect(app.count('id:step-toolu_7')).toBe(0)
+  await app.press('id:fold-u6')
+  await app.waitFor('id:step-toolu_7')
+  expect(app.count('id:you-y2')).toBe(1)
 })

@@ -139,6 +139,33 @@ func TestOpenQuestion(t *testing.T) {
 	}
 }
 
+// Claude Code 2.1.325 asked two questions in one call (testdata ask.jsonl, two lines of a fake-model session in a lab
+// core): the phone gets both, each option with the line under it and the agent's "(Recommended)" as a mark.
+func TestOpenQuestionsAllOfThem(t *testing.T) {
+	ts, err := (&Reader{}).Turns("testdata/claude-code/2.1.325/ask.jsonl")
+	if err != nil || len(ts) != 1 || ts[0].Ask == nil {
+		t.Fatalf("%+v %v", ts, err)
+	}
+	a := ts[0].Ask
+	// What phones before 0.2.0 show stays as it was.
+	if a.Text != "Which plan should the fake shop use?" || !reflect.DeepEqual(a.Options, []string{"Ship the small fix now (Recommended)", "Wait for the full rewrite", "Only tell the team"}) {
+		t.Fatalf("%+v", a)
+	}
+	want := []chat.Question{
+		{Header: "Plan", Text: "Which plan should the fake shop use?", Options: []chat.Choice{
+			{Label: "Ship the small fix now", Detail: "One file changes; nothing else moves", Recommended: true},
+			{Label: "Wait for the full rewrite", Detail: "Two weeks more, every page changes"},
+			{Label: "Only tell the team", Detail: "No change to the code"}}},
+		{Header: "Pages", Text: "Which pages should get the new banner?", Multi: true, Options: []chat.Choice{
+			{Label: "Home", Detail: "The first page people see"},
+			{Label: "Cart", Detail: "Where people pay"},
+			{Label: "Help", Detail: "Questions and answers"}}},
+	}
+	if !reflect.DeepEqual(a.Questions, want) {
+		t.Fatalf("got %+v", a.Questions)
+	}
+}
+
 func TestAnsweredQuestionIsAStep(t *testing.T) {
 	ts := turns(t, prompt("u1", "pick a color"), use("a1", "m1", "toolu_1", "AskUserQuestion", ask),
 		result("u2", "toolu_1", "User has answered: Red"), say("a2", "m2", "Red it is.", "end_turn"))
@@ -465,7 +492,7 @@ func transcript(t *testing.T, dir, project, id string) string {
 	return p
 }
 
-const sid = "0ff888dd-6fdf-48a6-a0c3-f255c5328133"
+const sid = "00000000-0000-4000-8000-0000000000aa"
 
 func miss(t *testing.T, err error) string {
 	t.Helper()
@@ -735,5 +762,34 @@ func TestChangeStopsAtMaxLines(t *testing.T) {
 	// A failed edit changed nothing: no change shown.
 	if _, c, _ := shaped("Edit", nil, res, true, "String not found"); c != nil {
 		t.Fatalf("a failed edit shows a change: %+v", c)
+	}
+}
+
+// A message taken while the agent worked is a step of the turn, where it was taken; the agent's own reminders and
+// other senders' notices of the same kind (queued_command) are not.
+func TestQueuedMessagesAreSteps(t *testing.T) {
+	queued := func(id, prompt, extra string) string {
+		return fmt.Sprintf(`{"type":"attachment","uuid":%q,"timestamp":"2026-01-01T12:00:21.000Z","attachment":{"type":"queued_command","prompt":%q,"commandMode":"prompt"%s}}`, id, prompt, extra)
+	}
+	ts := turns(t,
+		prompt("p1", "WORK please"),
+		use("a1", "m1", "toolu_1", "Bash", `{"command":"make"}`),
+		result("r1", "toolu_1", "ok"),
+		queued("q1", "ALSO the fonts", `,"humanTurn":true,"origin":{"kind":"human"}`),
+		queued("q2", "a reminder only the model sees", `,"isMeta":true,"origin":{"kind":"human"}`),
+		queued("q3", "<task-notification>done</task-notification>", `,"origin":{"kind":"task-notification"}`),
+		say("a2", "m2", "Done.", "end_turn"),
+	)
+	if len(ts) != 1 {
+		t.Fatalf("want one turn, got %d", len(ts))
+	}
+	var yours []string
+	for _, s := range ts[0].Steps {
+		if s.Kind == chat.StepYou {
+			yours = append(yours, s.Title)
+		}
+	}
+	if !reflect.DeepEqual(yours, []string{"ALSO the fonts"}) || ts[0].Steps[len(ts[0].Steps)-1].Kind != chat.StepYou || ts[0].Reply != "Done." {
+		t.Fatalf("steps %+v, reply %q", ts[0].Steps, ts[0].Reply)
 	}
 }
