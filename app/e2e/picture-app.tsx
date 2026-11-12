@@ -5,3 +5,9 @@
 import '../assets/fonts/Geist.ttf'
 import '../assets/fonts/JetBrainsMono-Variable.ttf'
 import '../fixtures/fake.tsx'
+import * as zoom from '../src/ui/picture-zoom.ts'
+
+// What the picture's zoom did, as "hm-zoom …" lines in the device's log (android-zoom.sh reads them from logcat); a
+// build from before the trace has none.
+const trace = (zoom as { zoomTrace?: { log: ((line: string) => void) | null } }).zoomTrace
+if (trace) trace.log = (line) => console.log(`hm-zoom ${line}`)
