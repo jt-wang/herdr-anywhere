@@ -831,8 +831,10 @@ export class Store {
   chatSetupAsked = { has: (_agent: string) => false, add: (_agent: string) => {} }
   /** Reads a picture a terminal shows (link.ts imageApi); set as `files` is. */
   images?: ImageApi
-  /** The picture whose path was tapped in a terminal, shown in its sheet (ui/picture-sheet.tsx) until closed. */
-  readonly picture = new Signal<{ path: string; terminal: string } | null>(null)
+  /** The picture shown in its sheet (ui/picture-sheet.tsx) until closed: a path tapped in a terminal, read from the
+   *  computer (`full`: on the whole screen, as a chat's file card opens it); or an image of a chat, already fetched
+   *  (`url`, a data: URL), with the path it came from when the record says, on the whole screen. */
+  readonly picture = new Signal<{ path: string; terminal: string; full?: boolean } | { url: string; path?: string } | null>(null)
 
   private flushing = false
   private async flushPending() {
