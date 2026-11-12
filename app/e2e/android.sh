@@ -25,6 +25,11 @@ readonly id
 port=7691
 while nc -z 127.0.0.1 "$port" 2>/dev/null; do port=$((port + 1)); done
 work=$(mktemp -d)
+# Each adb call that fails is written down, so a stop on one says which (CI: exit 137 with nothing to tell which).
+. "$app/e2e/adb-note.sh"
+. "$app/e2e/android-ime-down.sh"
+sh "$app/e2e/android-ime-down.sh" --self-test || exit 1
+adb_note "$adb" "$work/adb-failed"
 (cd "$app/../companion" && go build -o "$work/herdr-anywhere" ./cmd/herdr-anywhere)
 run=$(mktemp -d /tmp/hmXXXX)
 mkdir -p "$work/home/src/acme-api" "$work/home/src/beta-web" "$work/state" "$work/config" "$work/data"
@@ -47,12 +52,16 @@ show_terms() {
 }
 cleanup() {
   status=$?
-  [ "$status" -ne 0 ] && { echo "--- exit status $status"; show_terms; }
+  if [ "$status" -ne 0 ]; then
+    echo "--- the script stopped with exit $status; adb sees the phone as: $("$adb_real" get-state 2>&1 | tr -d "\r")"
+    show_terms
+    adb_failures
+  fi
   [ -n "${serve_pid:-}" ] && kill "$serve_pid" 2>/dev/null
   "$hc" server stop >/dev/null 2>&1 || true
   chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run"
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT; trap 'exit 130' INT; trap 'exit 143' TERM
 "$work/herdr-anywhere" serve --listen "127.0.0.1:$port" --hc "$hc" > "$work/serve.log" 2>&1 &
 serve_pid=$!
 sleep 1
@@ -184,7 +193,11 @@ typein() {
   up=""; for _ in 1 2 3 4 5; do keyboard_up && { up=1; break; }; done
   [ -n "$up" ] || { echo "FAIL: Type in the terminal $1 did not bring the keyboard up"; exit 1; }
 }
-keyboard_up && { echo "FAIL: the back key left the keyboard up"; exit 1; }
+# The back key above put the keyboard away and it stays away (e2e/android-ime-down.sh): one look about 2 s after the
+# key could not tell a hide that was only slow on a busy runner from one that never came or was undone.
+ime_now() { o=$("$adb" shell dumpsys window InputMethod) || return 1; printf '%s\n' "$o" | grep -q "isOnScreen=true" && echo up || echo down; }
+ime_log() { "$adb" logcat -d -v time -t 600 | grep -E "ImeTracker|InputMethodManagerService" | tail -30 | sed 's/^/  logcat: /'; }
+ime_stays_down "the back key" || exit 1
 typein "after the back key"
 run_typed 'touch hm-typed'
 for _ in $(seq 1 15); do [ -e "$work/home/src/acme-api/hm-typed" ] && break; sleep 1; done
