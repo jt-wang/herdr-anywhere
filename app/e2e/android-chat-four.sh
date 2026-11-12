@@ -110,6 +110,7 @@ alive() {
   exit 1
 }
 wait_for() { for _ in $(seq 1 "${3:-30}"); do has "$1" && return 0; sleep 1; done; fail "$2"; }
+# A whole id ends with a quote: tap_last 'pair"' is Pair, where tap_last pair is also pair-privacy, a link to the web.
 tap_last() { # resource-id prefix, and a part of it
   xy=""; for _ in $(seq 1 20); do xy=$(xml | last_bounds "$1" "${2:-}" | centre); [ -n "$xy" ] && break; sleep 1; done
   [ -n "$xy" ] || fail "no $1${2:+…$2} on screen"
@@ -120,7 +121,7 @@ type_text() { rest=$1; while [ -n "$rest" ]; do "$adb" shell input text "'$(prin
 keys_down() { for _ in 1 2; do if "$adb" shell dumpsys input_method | grep -q 'mInputShown=true'; then "$adb" shell input keyevent KEYCODE_BACK; sleep 1; fi; done; }
 # A prompt sent from the composer; the chat shows it as the newest turn, finished.
 sent() {
-  tap_last compose-input; type_text "$1"; tap_last compose-send; keys_down
+  tap_last compose-input; type_text "$1"; tap_last 'compose-send"'; keys_down
   wait_for "text=\"$1\"" "$2: the chat did not show '$1'" "${3:-40}"
   for _ in $(seq 1 20); do has 'text="Working…"' || break; sleep 1; done
   echo "ok: $2: '$1' shown"
@@ -136,7 +137,7 @@ pid=$("$adb" shell pidof "$id" | tr -d '\r')
 tap_last pair-link
 type_text "$invite"
 keys_down
-tap_last pair
+tap_last 'pair"'
 wait_for 'resource-id="space-' "the phone did not pair"
 
 first=1
