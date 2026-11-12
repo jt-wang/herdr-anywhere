@@ -5,9 +5,11 @@
 // instead of scrolling or opening); whether the touch stopped a glide (stopped=1: the page then opens nothing); what the
 // page told the app in the second after the lift (image:PATH: it asked the app about a picture, which opens it; tap: a
 // plain tap; selected: a hold; wheel input is left out); and the app's answer about that picture as the page got it
-// (answer=true|false, ms after the touch; false is also what an error gives). It only listens: the page's own
-// listeners, timer and messages run as they do in the app.
-// It tells the test one line per gesture, "start=… move=… hold=… end=… moves=N stopped=0|1 posts=a,b answer=…", by
+// (answer=true|false, ms after the touch; false is also what an error gives); and in a drag on a program that follows
+// the mouse, what the page's look at how far one wheel report moves it found (look=K@MS: K rows, 0 for no answer, MS
+// ms after the report; window.hmLook, which e2e/ios-touch-app.sh's copy of the page calls). It only listens: the page's
+// own listeners, timer and messages run as they do in the app.
+// It tells the test one line per gesture, "start=… move=… hold=… end=… moves=N stopped=0|1 posts=a,b answer=… look=…", by
 //   input: typed input to the terminal's program, as \x1b_hm-touch LINE\x1b\\ (e2e/tui-panels.py writes it down), or
 //   label: the label of an invisible element in the page (the last 5 gestures, "hm-touch LINE | LINE"), which an
 //          XCUITest reads; for a terminal running a shell, where typed input would land on its command line.
@@ -58,8 +60,11 @@ export function touchTimes(via: 'input' | 'label'): string {
   function line(d) {
     var hold = d.hold == null ? '-' : String(Math.round(d.hold - d.t0));
     return 'start=' + d.start + ' move=' + (d.move || '-') + ' hold=' + hold + ' end=' + d.end + ' moves=' + d.moves +
-      ' stopped=' + (d.stopped ? 1 : 0) + ' posts=' + (d.posts.join(',') || '-') + (d.answer ? ' answer=' + d.answer : '');
+      ' stopped=' + (d.stopped ? 1 : 0) + ' posts=' + (d.posts.join(',') || '-') + (d.answer ? ' answer=' + d.answer : '') +
+      (d.look ? ' look=' + d.look : '');
   }
+  // The look's answer goes with the gesture it was made in: the one under the finger, or the one just lifted.
+  window.hmLook = function (k, ms) { var d = g || last; if (d && !d.done && !d.look) d.look = (k || 0) + '@' + Math.round(ms); };
   // The app's answer about a picture the page asked about: the gesture's line again, with it (label only).
   window.addEventListener('message', function (e) {
     var m; try { m = JSON.parse(e.data); } catch (_) { return; }
