@@ -1,0 +1,38 @@
+[
+  {
+    "id": "019b796e-2ac3-7061-83e7-c5655c14b721",
+    "from": "you",
+    "said": "RUN it please",
+    "at": "2026-01-01T12:00:21.712Z",
+    "steps": [
+      {
+        "id": "call_fake_run",
+        "kind": "run",
+        "title": "touch made-1.txt"
+      }
+    ],
+    "reply": "Got the answer, thanks.",
+    "end": "done",
+    "secs": 9
+  },
+  {
+    "id": "019b796e-5df2-72a2-92c9-5abbfdc38f08",
+    "from": "you",
+    "said": "PATCH it please",
+    "at": "2026-01-01T12:00:34.809Z",
+    "steps": [],
+    "reply": "",
+    "end": "stopped",
+    "secs": 5
+  },
+  {
+    "id": "019b796e-9419-7e32-be8a-53cb7a319da6",
+    "from": "you",
+    "said": "ASK2 please",
+    "at": "2026-01-01T12:00:48.672Z",
+    "steps": [],
+    "reply": "Got the answer, thanks.",
+    "end": "done",
+    "secs": 10
+  }
+]

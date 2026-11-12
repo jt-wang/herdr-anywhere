@@ -40,6 +40,8 @@ type Reply struct {
 	Cat    string `json:"cat,omitempty"`    // a file printed as it is
 	// Fail: a file printed to stderr, and exit 5, as hc says an error (hc 0.1.19: {"error":{"kind":…}} on stderr).
 	Fail string `json:"fail,omitempty"`
+	// Sleep: a Go duration waited first, as an hc that is slow to answer.
+	Sleep string `json:"sleep,omitempty"`
 	// Exec, for `exec --on M --json …`: the program runs here with root/M as its home (and TMPDIR empty), printed
 	// as hc's result; a machine without a folder under root is unknown (exit 4, as hc).
 	Exec string `json:"exec,omitempty"`

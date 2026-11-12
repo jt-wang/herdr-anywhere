@@ -3,10 +3,12 @@
 # show. Each tap has to do what it says, again and again, with the new terminals on screen behind the sheet.
 # Usage: ANDROID_SERIAL=emulator-5554 e2e/android-switcher.sh APK COMPANION [folder for screenshots]
 set -eu
+. "$(dirname "$0")/autostart-guard.sh"; autostart_guard android-switcher # a login entry of its own, never the person's
 : "${ANDROID_SERIAL:?set ANDROID_SERIAL to the device to use}"
 apk=$1; bin=$2; shot=${3:-}
 app=$(cd "$(dirname "$0")/.." && pwd)
 adb="${ANDROID_HOME:-$HOME/Library/Android/sdk}/platform-tools/adb"
+. "$(dirname "$0")/adb-note.sh"; adb_note "$adb"  # a failed adb call is written down and shown if the suite fails
 hc=${HM_TEST_HC:-$(command -v hc || echo "$HOME/.local/bin/hc")}
 id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$app/nsh.json")
 port=7761; while nc -z 127.0.0.1 "$port" 2>/dev/null; do port=$((port + 1)); done
@@ -37,8 +39,10 @@ export XDG_STATE_HOME="$work/state" XDG_CONFIG_HOME="$work/config" XDG_DATA_HOME
 "$hc" run --bg --keep --cwd "$work/home/src/acme-api" --label herdr.space=spsw --label herdr.tab=tbsw >/dev/null
 "$bin" serve --listen "127.0.0.1:$port" --hc "$hc" --state "$state" > "$work/serve.log" 2>&1 &
 serve_pid=$!
-cleanup() { kill "$serve_pid" 2>/dev/null; "$hc" server stop >/dev/null 2>&1 || true; chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run" "$state"; }
-trap cleanup EXIT INT TERM
+cleanup() { kill "$serve_pid" 2>/dev/null; "$hc" server stop >/dev/null 2>&1 || true; chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run" "$state"; autostart_guard_end || exit 1; }
+trap 'adb_exit $? cleanup' EXIT
+# INT and TERM end the suite; the EXIT trap cleans up (a handler that only cleans up lets the script go on).
+trap 'exit 130' INT; trap 'exit 143' TERM
 sleep 1
 invite=$("$bin" pair --url "http://10.0.2.2:$port" --state "$state" 2>/dev/null | grep -o 'http://[^ ]*#pair=[A-Za-z0-9_-]*' | head -1)
 [ -n "$invite" ] || { echo "FAIL: no invite"; exit 1; }
