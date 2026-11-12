@@ -7,6 +7,8 @@
 // Each view and recognizer is named with its address, so a line at the lift tells the same object from a new one. From
 // the touch's start to its end, every 50 ms (the run loop's common modes, so also while a list tracks the finger), a
 // "phase=watch" line whenever what the touch's recognizers are or say has changed: when, and by whom, it was let go.
+// Each line also says the phase and view the touch came in with (sent=…), so a cancel from outside the app shows apart
+// from one made inside it.
 final class HMTouchWindow: UIWindow {
   /** A touch being watched. The view is held weakly: the watch must not keep a view the app let go of alive. */
   private final class Watch {
@@ -18,6 +20,12 @@ final class HMTouchWindow: UIWindow {
   private var watched: [ObjectIdentifier: Watch] = [:]
 
   override func sendEvent(_ event: UIEvent) {
+    // Each touch's phase and view as the event came in, before UIKit hands it on: a touch that comes in "cancelled" was
+    // cancelled outside the app; one that comes in "ended" and leaves "cancelled" was cancelled inside it.
+    var sent: [ObjectIdentifier: String] = [:]
+    if event.type == .touches {
+      for t in event.allTouches ?? [] { sent[ObjectIdentifier(t)] = "sent=\(HMTouchWindow.phase(t)) sent-view=\(HMTouchWindow.name(t.view))" }
+    }
     super.sendEvent(event)
     guard event.type == .touches, let touches = event.allTouches else { return }
     for touch in touches where touch.phase == .began || touch.phase == .ended || touch.phase == .cancelled {
@@ -32,7 +40,7 @@ final class HMTouchWindow: UIWindow {
         w.timer.invalidate()
         extra = " +\(Int(Date().timeIntervalSince(w.began) * 1000))ms began-view=\(HMTouchWindow.name(w.view)) began-view-in-window=\(HMTouchWindow.inWindow(w.view))"
       }
-      NSLog("%@", HMTouchWindow.line(touch, in: self) + extra)
+      NSLog("%@", HMTouchWindow.line(touch, in: self) + " " + (sent[id] ?? "sent=none") + extra)
     }
   }
 
@@ -95,8 +103,19 @@ final class HMTouchWindow: UIWindow {
     return found
   }
 
+  static func phase(_ touch: UITouch) -> String {
+    switch touch.phase {
+    case .began: return "began"
+    case .moved: return "moved"
+    case .stationary: return "stationary"
+    case .ended: return "ended"
+    case .cancelled: return "cancelled"
+    default: return "other"
+    }
+  }
+
   static func line(_ touch: UITouch, in window: UIWindow) -> String {
-    let phase = touch.phase == .began ? "began" : touch.phase == .ended ? "ended" : "cancelled"
+    let phase = phase(touch)
     let at = touch.location(in: window)
     var chain: [UIView] = []
     var up = touch.view
