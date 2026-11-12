@@ -6,11 +6,22 @@
 # Usage: ANDROID_SERIAL=emulator-5554 e2e/android-update.sh OLD.apk NEW.apk OTHER-KEY.apk OLD-COMPANION NEW-COMPANION NEW-VERSION [folder for screenshots]
 # NEW.apk is NEW-VERSION with a higher build number, signed like OLD.apk; OTHER-KEY.apk is the same file under another key.
 # Needs python3, hc and the Android SDK.
+#        e2e/android-update.sh --self-test    what it prints of a screen or a log keeps no pairing secret
 set -eu
+# What this suite prints on a failure (the screen's words, the Companion's log) goes into the job's log and its
+# uploaded files: an invite's secret, after #pair=, is cut off first (ci-shots-check.sh refuses a log with one).
+mask() { sed -E 's/#pair=[A-Za-z0-9_-]+/#pair=…/g; s/token=[A-Za-z0-9_-]+/token=…/g'; }
+if [ "${1:-}" = --self-test ]; then
+  said=$(printf '%s\n' ' text="http://10.0.2.2:7721/#pair=Zx81-qq_Lm0pR4"' '127.0.0.1 GET /api/ws?token=Ab12_cd 101 2s' | mask)
+  case $said in *Zx81*|*Ab12*) echo "FAIL: android-update self-test: a secret is left: $said"; exit 1 ;; esac
+  case $said in *'#pair=…'*'token=…'*) echo "PASS: android-update self-test" ;; *) echo "FAIL: android-update self-test: $said"; exit 1 ;; esac
+  exit 0
+fi
 : "${ANDROID_SERIAL:?set ANDROID_SERIAL to the device to use}"
 old_apk=$1; new_apk=$2; other_apk=$3; old_bin=$4; new_bin=$5; new_version=$6; shot=${7:-}
 app=$(cd "$(dirname "$0")/.." && pwd)
 adb="${ANDROID_HOME:-$HOME/Library/Android/sdk}/platform-tools/adb"
+. "$(dirname "$0")/adb-note.sh"; adb_note "$adb"  # a failed adb call is written down and shown if the suite fails
 hc=${HM_TEST_HC:-$(command -v hc || echo "$HOME/.local/bin/hc")}
 id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$app/nsh.json")
 
@@ -87,7 +98,9 @@ cleanup() {
   "$hc" server stop >/dev/null 2>&1 || true
   chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run" "$state"
 }
-trap cleanup EXIT INT TERM
+trap 'adb_exit $? cleanup' EXIT
+# INT and TERM end the suite; the EXIT trap cleans up (a handler that only cleans up lets the script go on).
+trap 'exit 130' INT; trap 'exit 143' TERM
 
 "$adb" uninstall "$id" >/dev/null 2>&1 || true
 "$adb" install "$old_apk" >/dev/null
@@ -102,18 +115,49 @@ xml() { "$adb" shell uiautomator dump /sdcard/hm.xml >/dev/null 2>&1; "$adb" she
 centre() { tr '>' '\n' | grep -F "$1" | head -1 | sed -E 's/.*bounds="\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\]".*/\1 \2 \3 \4/' | awk '{print int(($1+$3)/2), int(($2+$4)/2)}'; }
 tap_where() {
   xy=""; for _ in $(seq 1 30); do xy=$(xml | centre "$1"); [ -n "$xy" ] && break; sleep 1; done
-  [ -n "$xy" ] || { echo "FAIL: nothing on screen with $1"; xml | tr '>' '\n' | grep -oE ' text="[^"]+"' | head -20; exit 1; }
+  [ -n "$xy" ] || { echo "FAIL: nothing on screen with $1"; xml | tr '>' '\n' | grep -oE ' text="[^"]+"' | head -20 | mask; exit 1; }
   "$adb" shell input tap $xy
 }
 tap() { tap_where "resource-id=\"$1\""; }
 tap_text() { tap_where "text=\"$1\""; }
-wait_for() { # what, seconds
+wait_for() { # what, seconds, [what to run on a failure]
   for _ in $(seq 1 "$2"); do xml | grep -qF "$1" && return 0; sleep 1; done
-  echo "FAIL: \"$1\" did not show within $2 s"; xml | tr '>' '\n' | grep -oE ' text="[^"]+"' | head -20; exit 1
+  echo "FAIL: \"$1\" did not show within $2 s"; xml | tr '>' '\n' | grep -oE ' text="[^"]+"' | head -20 | mask
+  [ -z "${3:-}" ] || "$3"
+  exit 1
+}
+# Whether the phone gets an answer from http://10.0.2.2:PORT/api/info, the address the invite gives it (the emulator's
+# way to this machine's 127.0.0.1): answered, refused, no answer, or no nc on the phone.
+reach() {
+  r=$("$adb" shell "printf 'GET /api/info HTTP/1.0\\r\\n\\r\\n' | toybox nc -w 5 10.0.2.2 $1 2>&1; echo nc-exit=\$?" 2>&1 | tr -d '\r')
+  case $r in
+    HTTP/*" 200"*) echo answered ;;
+    *"not found"*|*"unknown"*|*"inaccessible"*|*"No such"*) echo "no nc" ;;
+    *[Rr]efused*) echo refused ;;
+    *) echo "no answer ($(printf '%s' "$r" | tr '\n' ' ' | cut -c1-80))" ;;
+  esac
+}
+# A pairing that didn't open home: whether the phone still reaches the Companion, whether the Companion got the pair
+# request, and what the emulator's log says of its network (android-up.sh writes it on CI).
+why_not_paired() {
+  echo "--- the phone to the Companion now: $(reach "$port")"
+  echo "--- the Companion's log (the pair request is POST /api/pair; $(grep -c ' /api/pair ' "$work/serve.log" || true) of them):"
+  tail -15 "$work/serve.log" | mask | sed 's/^/  /'
+  [ -f "${RUNNER_TEMP:-/nonexistent}/emulator.log" ] && { echo "--- the emulator's log on its network:"; grep -iE 'netsim|wifi|goaway|slirp' "$RUNNER_TEMP/emulator.log" | tail -10 | sed 's/^/  /'; }
+  return 0
 }
 snap() { [ -n "$shot" ] && "$adb" exec-out screencap -p > "$shot/update-$1.png" || true; }
 version() { "$adb" shell dumpsys package "$id" | grep -m1 versionName | sed 's/.*versionName=//' | tr -d '\r'; }
 info() { curl -s "http://127.0.0.1:$port/api/info" | python3 -c "import json,sys; print(json.load(sys.stdin).get('$1'))"; }
+# The phone reaches this machine before anything is paired, and the probe can tell (a port no one listens on is not
+# answered): a phone that can't is the emulator's network, not the app.
+open_reach=$(reach "$port"); closed_reach=$(reach "$(free_port 7790)")
+echo "the phone to the Companion before pairing: $open_reach; to a port no one listens on: $closed_reach"
+case $open_reach in
+  answered) [ "$closed_reach" != answered ] || { echo "FAIL: a port no one listens on answered too: the probe can't tell"; exit 1; } ;;
+  "no nc") echo "note: the phone has no nc: whether it reaches the Companion is not known" ;;
+  *) echo "FAIL: before pairing the phone gets no answer from the Companion at 10.0.2.2:$port: the emulator's network"; why_not_paired; exit 1 ;;
+esac
 installed_before=$(version)
 pid_before=$serve_pid
 
@@ -122,7 +166,7 @@ pid_before=$serve_pid
 tap pair
 
 echo "--- nothing goes to GitHub until the person says yes"
-wait_for 'resource-id="space-spupd"' 60
+wait_for 'resource-id="space-spupd"' 60 why_not_paired
 sleep 5
 [ ! -s "$work/asked" ] || { echo "FAIL: the computer asked GitHub before anyone said yes"; exit 1; }
 xml | grep -qF 'resource-id="checks-question"' && { echo "FAIL: asked the first time the app opened"; exit 1; }

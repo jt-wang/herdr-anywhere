@@ -1,6 +1,6 @@
 // The chat view's words and its refresh rule, apart from any agent: the phone renders the turns the computer sends.
 import { expect, test } from 'nsh/test'
-import { foldLine, refreshEvery, shows, unknownText, type ChatTurn, pathsIn, sizeText, changeRows, clockText } from './chat.ts'
+import { foldLine, refreshEvery, shows, outsideFold, unknownText, type ChatTurn, pathsIn, sizeText, changeRows, clockText } from './chat.ts'
 
 const turn = (over: Partial<ChatTurn> = {}): ChatTurn => ({ id: 'u1', from: 'you', said: 'go', steps: [], reply: '', end: 'done', ...over })
 const steps = (n: number) => Array.from({ length: n }, (_, i) => ({ id: `s${i}`, kind: 'run', title: `step ${i}` }))
@@ -17,6 +17,15 @@ test('an open turn shows its steps; a finished one hides them until tapped; a tu
   expect(shows(turn({ steps: steps(2) }), true)).toEqual({ fold: true, steps: true })
   expect(shows(turn({ end: 'stopped', steps: steps(2) }), false)).toEqual({ fold: true, steps: false })
   expect(shows(turn(), false)).toEqual({ fold: false, steps: false })
+})
+
+test('what you said while it worked stays out of the fold; the fold line counts only the agent\'s steps', () => {
+  const mixed = [...steps(2), { id: 'y1', kind: 'you', title: 'also this' }, ...steps(1).map((x) => ({ ...x, id: 's9' }))]
+  expect(outsideFold(turn({ steps: mixed }), false).map((x) => x.id)).toEqual(['y1'])
+  expect(outsideFold(turn({ steps: mixed }), true)).toEqual([])
+  expect(outsideFold(turn({ end: 'open', steps: mixed }), false)).toEqual([])
+  expect(outsideFold(turn({ steps: steps(2) }), false)).toEqual([])
+  expect(foldLine(turn({ steps: mixed, secs: 20 }))).toBe('Worked for <1m · 3 steps')
 })
 
 test('an agent that says its conversation only while it works: the view says so by its name, and that its next turn shows it', () => {

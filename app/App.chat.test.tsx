@@ -394,3 +394,32 @@ test('a file no app on the phone opens, or one that could not be fetched, says s
   await failed.press('id:file-docs/guide.pdf')
   await failed.waitFor("text:Couldn't get the file from the computer.")
 })
+
+test('a message the agent took while it worked shows where it was taken, as yours, marked so; it is not a step to open', async () => {
+  const working = [{ id: 'u5', from: 'you', said: 'tidy the menu', end: 'open', reply: '', steps: [
+    { id: 'toolu_5', kind: 'run', title: 'npm test' },
+    { id: 'y1', kind: 'you', title: 'Also keep the old colors' },
+    { id: 'toolu_6', kind: 'edit', title: 'menu.tsx', added: 2, deleted: 1 }] }]
+  const app = await pane({ status: 'working', chat: JSON.stringify({ chat: true, turns: working }) })
+  await app.press('id:show-chat')
+  await app.waitFor('id:you-y1')
+  expect(app.texts()).toContain('Also keep the old colors')
+  expect(app.texts()).toContain('Added while it was working')
+  expect(app.count('id:step-y1')).toBe(0)
+  expect(app.count('id:step-toolu_5')).toBe(1)
+})
+
+test('once the turn is done and folded, what you said while it worked still shows above the fold line, not twice when opened', async () => {
+  const finished = [{ id: 'u6', from: 'you', said: 'tidy the menu', end: 'done', secs: 40, reply: 'The menu is tidy.', steps: [
+    { id: 'toolu_7', kind: 'run', title: 'npm test' },
+    { id: 'y2', kind: 'you', title: 'Also keep the old colors' },
+    { id: 'toolu_8', kind: 'edit', title: 'menu.tsx', added: 2, deleted: 1 }] }]
+  const app = await pane({ chat: JSON.stringify({ chat: true, turns: finished }) })
+  await app.press('id:show-chat')
+  await app.waitFor('text:Worked for <1m · 2 steps')
+  expect(app.count('id:you-y2')).toBe(1)
+  expect(app.count('id:step-toolu_7')).toBe(0)
+  await app.press('id:fold-u6')
+  await app.waitFor('id:step-toolu_7')
+  expect(app.count('id:you-y2')).toBe(1)
+})
