@@ -8,7 +8,9 @@
 #        e2e/ios-touch-log.sh --self-test
 # The app's process is Herdr (ios/build.sh builds Herdr.app).
 # Also the lines the test copy's window writes, "hm-touch …" (e2e/ios-touch-window.swift): where each touch landed.
-predicate='process == "Herdr" AND (subsystem == "com.apple.UIKit" OR eventMessage BEGINSWITH "hm-touch ")'
+# And the system's own lines that say a touch was cancelled (backboardd and SpringBoard hand touches to the app).
+predicate='(process == "Herdr" AND (subsystem == "com.apple.UIKit" OR eventMessage BEGINSWITH "hm-touch "))'\
+' OR ((process == "backboardd" OR process == "SpringBoard") AND eventMessage CONTAINS[c] "cancel")'
 # HH:MM:SS.mmm to milliseconds since midnight.
 ms() { echo "$1" | awk -F'[:.]' '{ printf "%d\n", (($1 * 60 + $2) * 60 + $3) * 1000 + $4 }'; }
 report() {
@@ -28,7 +30,9 @@ report() {
       if (m >= a && m <= b && / hm-touch /) print }' "$log")
     echo "  UIKit sent the app $count touch events from $from to $to ($what); the page's own record says whether it got them"
     [ -z "$landed" ] || printf '%s\n' "$landed" | sed 's/.* hm-touch /    app window: /'
-    [ -n "$keep" ] && { echo "== $from to $to: $what"; printf '%s\n' "$lines"; [ -z "$landed" ] || printf '%s\n' "$landed"; } >> "$keep/uikit-taps.txt"
+    # Kept: every line in the tap's time, in time order (UIKit's other news, the system's touch handling, the window's).
+    [ -n "$keep" ] && { echo "== $from to $to: $what"; awk -v a="$a" -v b="$b" '{ split($2, t, /[:.]/)
+      m = ((t[1] * 60 + t[2]) * 60 + t[3]) * 1000 + t[4]; if (m >= a && m <= b) print }' "$log" | sort -s -k2,2; } >> "$keep/uikit-taps.txt"
   done
 }
 if [ "${1:-}" = --start ]; then
@@ -52,6 +56,9 @@ EOF
 2000-01-01 10:00:27.462 Df Herdr[100:200] (Foundation) hm-touch phase=watch +51ms view-in-window=yes touch-gestures=[WKSyntheticTapGestureRecognizer@0x1 possible]
 2000-01-01 10:00:27.480 Db Herdr[100:200] [com.apple.UIKit:EventDispatch] Sending UIEvent type: 0; subtype: 0; to windows: 1
 2000-01-01 10:00:27.481 Df Herdr[100:200] hm-touch phase=ended view=WKContentView in-picture=no gestures=[WKSyntheticTapGestureRecognizer ended]
+2000-01-01 10:00:10.000 Df Herdr[100:200] [com.apple.UIKit:Scene] scene line outside any tap
+2000-01-01 10:00:27.470 Df Herdr[100:200] [com.apple.UIKit:Scene] scene line inside the tap
+2000-01-01 10:00:27.475 Df backboardd[50:60] [com.apple.backboard:touch] cancel line inside the tap
 EOF
   mkdir "$t/keep"
   sh "$0" "$t/notes" "$t/log" "$t/keep" > "$t/said"
@@ -67,8 +74,13 @@ EOF
     { echo "FAIL: ios-touch-log self-test: the window's look in between is not said in order: $(cat "$t/said")"; fail=1; }
   grep -A1 "touch events from 10:00:05.100" "$t/said" | grep -q "app window:" &&
     { echo "FAIL: ios-touch-log self-test: a landing for a tap with no event"; fail=1; }
-  [ "$(grep -c 'type: 0;' "$t/keep/uikit-taps.txt")" = 2 ] ||
+  [ "$(grep -c 'UIEvent type: 0;' "$t/keep/uikit-taps.txt")" = 2 ] ||
     { echo "FAIL: ios-touch-log self-test: the kept lines are not the tap's: $(cat "$t/keep/uikit-taps.txt")"; fail=1; }
+  # Everything else the log has in a tap's time goes with it too (a scene, a window, the keyboard, the system's touch
+  # handling), so a touch that ended cancelled can be set beside what happened then; nothing from outside a tap.
+  grep -q "scene line inside the tap" "$t/keep/uikit-taps.txt" && grep -q "cancel line inside the tap" "$t/keep/uikit-taps.txt" &&
+    ! grep -q "outside any tap" "$t/keep/uikit-taps.txt" ||
+    { echo "FAIL: ios-touch-log self-test: the kept lines are not all of the tap's time: $(cat "$t/keep/uikit-taps.txt")"; fail=1; }
   : > "$t/empty"; sh "$0" "$t/notes" "$t/empty" > "$t/said"
   grep -q "nothing captured" "$t/said" || { echo "FAIL: ios-touch-log self-test: an empty log is not called out: $(cat "$t/said")"; fail=1; }
   rm -rf "${t:?}"
