@@ -55,12 +55,13 @@ on:
         options: ["none", "miss-first", "no-tap-first", "loop"]
         default: "none"
       # The tap that opens a space from home, in the keyboard and pictures suites (OpenSpace.swift): miss-first makes
-      # the first one land beside the space, so both must fail with their record of it and a second tap. A push never
-      # sets it.
+      # the first one land beside the space, so both must fail with their record of it and a second tap. hold-sweep
+      # runs Hold.swift in place of the keyboard test: presses on the space held for several lengths, each with how
+      # long UIKit held it and whether it opened (e2e/ios-hold-say.sh). A push never sets it.
       ios_open_space_selftest:
-        description: "iOS open-the-space self-test (keyboard, pictures): none or miss-first (both must fail, with their record)"
+        description: "iOS open-the-space self-test (keyboard, pictures): none, miss-first (both must fail, with their record), or hold-sweep (keyboard: presses held for several lengths)"
         type: choice
-        options: ["none", "miss-first"]
+        options: ["none", "miss-first", "hold-sweep"]
         default: "none"
       # How often the upload check's OCR misses the self-test's grey link on a Linux runner (ci-shots-check.sh
       # --probe-grey); only that job runs.
@@ -465,6 +466,7 @@ jobs:
           HM_PICTURE_NO_TAP_FIRST: ${{ inputs.ios_picture_selftest == 'no-tap-first' && '1' || '' }}
           HM_PICTURE_LOOP: ${{ inputs.ios_picture_selftest == 'loop' && '10' || '' }}
           HM_MISS_SPACE: ${{ inputs.ios_open_space_selftest == 'miss-first' && '1' || '' }}
+          HM_HOLD_SWEEP: ${{ inputs.ios_open_space_selftest == 'hold-sweep' && '1' || '' }}
         run: |
           s=e2e/ci/suite.sh
           case "${{ matrix.key }}" in
