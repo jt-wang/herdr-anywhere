@@ -33,9 +33,11 @@ adb_noted() {
 # about 2 s. Call it from the suite's own shell (not in $(…)), where it keeps the time it first missed the phone.
 adb_gone() {
   if [ "$("$adb_real" get-state 2>/dev/null | tr -d '\r')" = device ]; then adb_since=; return 1; fi
-  [ -n "${adb_since:-}" ] || adb_since=$(date +%s)
-  [ $(($(date +%s) - adb_since)) -ge "${HM_ADB_GONE:-20}" ] || return 1
-  echo "FAIL: adb has not found the phone for $(($(date +%s) - adb_since)) s: the emulator went (the job's emulator-lost notes say more)"
+  # One reading of the clock: two, a second apart when the second turned between them, made a first miss gone.
+  adb_now=$(date +%s)
+  [ -n "${adb_since:-}" ] || adb_since=$adb_now
+  [ $((adb_now - adb_since)) -ge "${HM_ADB_GONE:-20}" ] || return 1
+  echo "FAIL: adb has not found the phone for $((adb_now - adb_since)) s: the emulator went (the job's emulator-lost notes say more)"
 }
 adb_failures() {
   [ -n "${adb_file:-}" ] || return 0
@@ -68,9 +70,10 @@ if [ "${1:-}" = --self-test ]; then
   grep -q "lowmemorykiller: Kill 'uiautomator'" "$t/failed" || { echo "FAIL: adb-note self-test: no kill lines from the phone's log"; fail=1; }
   grep -q "other: line" "$t/failed" && { echo "FAIL: adb-note self-test: unrelated log lines written down"; fail=1; }
   grep -q "uiautomator dump -> " "$t/failed" && { echo "FAIL: adb-note self-test: a call that worked is written down"; fail=1; }
-  adb_failures | grep -q "input tap 10 20" || { echo "FAIL: adb-note self-test: adb_failures does not show it"; fail=1; }
+  adb_failures > "$t/listed"
+  grep -q "input tap 10 20" "$t/listed" || { echo "FAIL: adb-note self-test: adb_failures does not show it"; fail=1; }
   grep -q "dumpsys" "$t/failed" && { echo "FAIL: adb-note self-test: a SIGPIPE call is listed"; fail=1; }
-  adb_failures | grep -q "and 2 adb calls ended by SIGPIPE" || { echo "FAIL: adb-note self-test: the SIGPIPE calls are not counted"; fail=1; }
+  grep -q "and 2 adb calls ended by SIGPIPE" "$t/listed" || { echo "FAIL: adb-note self-test: the SIGPIPE calls are not counted"; fail=1; }
   # A set -eu suite with this trap: on a failure its cleanup runs and reads the failure's status, and the suite ends
   # with it; on success the same with 0.
   here=$(cd "$(dirname "$0")" && pwd)
@@ -93,6 +96,13 @@ if [ "${1:-}" = --self-test ]; then
   fake_state() { [ "$1" = get-state ] && cat "$t/state"; }
   adb_note fake_state "$t/g"
   HM_ADB_GONE=1
+  # A first miss is never gone, also when the clock's second turns while adb_gone runs (a busy runner): here each
+  # reading of the clock is a second after the one before.
+  echo 0 > "$t/clock"
+  date() { c=$(($(cat "$t/clock") + 1)); echo "$c" > "$t/clock"; echo $((1000 + c)); }
+  echo "error: device offline" > "$t/state"
+  adb_gone > "$t/said" && { echo "FAIL: adb-note self-test: gone at the first miss, as the clock's second turned"; fail=1; }
+  unset -f date; adb_since=; echo device > "$t/state"
   adb_gone > "$t/said" && { echo "FAIL: adb-note self-test: gone with the phone there"; fail=1; }
   echo "error: device 'emulator-5554' not found" > "$t/state"
   adb_gone > "$t/said" && { echo "FAIL: adb-note self-test: gone at once, a blip would stop the suite"; fail=1; }

@@ -3,7 +3,8 @@ import XCTest
 // switches). Notes when it tapped the space, where, and how long after home listed it, with the screen's elements in
 // OUT-before-space-tap.txt. If 3 s after the tap the app is still on home (the space listed, no space page), the
 // elements then and a second tap; the caller fails all the same (finish). MISS_SPACE=1, the scripts' self-test, makes
-// the first tap land at the top of the screen, beside the space.
+// the first tap land at the top of the screen, beside the space. A note "tapping …" just before each tap and one just
+// after: e2e/ios-touch-log.sh counts UIKit's touches for the app between them.
 struct SpaceOpener {
   let app: XCUIApplication, out: String, note: (String) -> Void
 
@@ -18,12 +19,14 @@ struct SpaceOpener {
     let seen = Date()
     elements("before-space-tap")
     if ProcessInfo.processInfo.environment["MISS_SPACE"] == "1" {
+      note("tapping beside the space (MISS_SPACE)")
       app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.01)).tap()
       note("tapped beside the space (MISS_SPACE)")
     } else {
       // Where and when, read before the tap: once the space opens the tile is gone, and reading it then failed the
       // test ("Failed to get matching snapshot").
       let at = NSCoder.string(for: tile.frame), after = Date().timeIntervalSince(seen)
+      note("tapping the space")
       tile.tap()
       note(String(format: "tapped the space at %@, %.1f s after the test saw it listed", at, after))
     }
@@ -31,8 +34,9 @@ struct SpaceOpener {
     if page.waitForExistence(timeout: 3) { return false }
     if tile.exists {
       elements("3s-after-space-tap")
-      note("3 s after the tap the app is still on home; tapped a second time")
+      note("3 s after the tap the app is still on home; tapping the space again")
       tile.tap()
+      note("tapped the space again")
       return true
     }
     note("3 s after the tap: no space page and no space on home; waiting")

@@ -36,6 +36,7 @@ cleanup() {
   st=$?; set +e
   # The sampler first: a sample written while rm -rf runs makes load.txt again, and the folder is not deleted.
   { kill "$sampler"; wait "$sampler"; } 2>/dev/null || true
+  [ -z "${touchlog:-}" ] || { kill "$touchlog"; wait "$touchlog"; } 2>/dev/null || true
   [ -n "${serve_pid:-}" ] && kill "$serve_pid" 2>/dev/null
   # The same session the core was started in below, or `server stop` finds no core and leaves its holder running.
   HC_SESSION="hmios-$$" HC_SOCKET="" HOME="$work/sam" XDG_RUNTIME_DIR="$run" "$hc" server stop >/dev/null 2>&1 || true
@@ -95,8 +96,12 @@ fi
 screen | grep -q '"AXIdentifier":"pair"\|"AXUniqueId":"pair"' && { echo "FAIL: the pairing screen is still up"; exit 1; }
 cp -R "$app/e2e/ios-uitest" "$work/uitest"
 (cd "$work/uitest" && xcodegen generate --quiet)
+sh "$app/e2e/ios-touch-log.sh" --self-test || exit 1
+# The app's UIKit event dispatch while the test runs: whether a tap on the space reached the app at all.
+"$app/e2e/ios-touch-log.sh" --start "$SIM_UDID" "$work/uikit.log" & touchlog=$!
 rc=0
 TEST_RUNNER_OUT="$work/typein.txt" TEST_RUNNER_MISS_SPACE="${HM_MISS_SPACE:-}" TEST_RUNNER_RAW="$work/sam/src/acme-api/hm-raw" perl -e 'alarm 600; exec @ARGV' xcodebuild test -quiet -project "$work/uitest/KeyboardCheck.xcodeproj" -scheme UITests -only-testing:UITests/TypeIn -destination "id=$SIM_UDID" -derivedDataPath "$work/uitest/derived" -resultBundlePath "$work/uitest/result.xcresult" > "$work/uitest/test.log" 2>&1 || rc=$?
+{ kill "$touchlog"; wait "$touchlog"; } 2>/dev/null || true; touchlog=
 [ -n "$shot" ] && perl -e 'alarm 40; exec @ARGV' xcrun simctl io "$SIM_UDID" screenshot "${shot%.png}-keyboard.png" >/dev/null 2>&1
 sed 's/^/  /' "$work/typein.txt" 2>/dev/null || true
 [ -n "$shot" ] && { cp "$work/typein-terminal.png" "${shot%.png}-terminal.png" 2>/dev/null; cp "$work/uitest/test.log" "${shot%.png}-xctest.log" 2>/dev/null; } || true
@@ -109,6 +114,7 @@ if [ "$rc" != 0 ]; then
   [ -n "$shot" ] && { mkdir -p "${shot%.png}-failure"; for f in "$work"/typein.txt-*.txt; do [ -f "$f" ] && cp "$f" "${shot%.png}-failure/${f##*/typein.txt-}"; done; } || true
   "$app/e2e/ios-xcresult.sh" "$work/uitest/result.xcresult" ${shot:+"${shot%.png}-failure"} all
   [ -n "$shot" ] && "$app/e2e/ios-failure-logs.sh" "$work/started" "$work/serve.log" "${shot%.png}-failure" || true
+  "$app/e2e/ios-touch-log.sh" "$work/typein.txt" "$work/uikit.log" ${shot:+"${shot%.png}-failure"}
   exit 1
 fi
 echo "PASS: Type in the terminal brings the keyboard up, also after the key bar's hide button; typing straight into the terminal sends what was typed"

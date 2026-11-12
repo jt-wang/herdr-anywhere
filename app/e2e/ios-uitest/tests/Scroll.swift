@@ -34,12 +34,14 @@ final class Scroll: XCTestCase {
     func elements(_ name: String) { try? app.debugDescription.write(toFile: out + "-" + name + ".txt", atomically: true, encoding: .utf8) }
     elements("before-tap")
     if env["MISS_FIRST"] == "1" {
+      note("tapping beside the space (MISS_FIRST)")
       app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.01)).tap()
       note("tapped beside the space (MISS_FIRST)")
     } else {
       // Where and when, read before the tap: once the space opens the tile is gone, and reading it then failed the
       // test ("Failed to get matching snapshot").
       let at = NSCoder.string(for: tile.frame), after = Date().timeIntervalSince(seen)
+      note("tapping the space") // e2e/ios-touch-log.sh counts UIKit's touches from this note to the next
       tile.tap()
       note(String(format: "tapped the space at %@, %.1f s after the test saw it listed", at, after))
     }
@@ -54,9 +56,10 @@ final class Scroll: XCTestCase {
       if slow { sleep(3) }
       if tile.exists && !page.exists {
         elements("3s-after-tap")
-        note("3 s after the tap the app is still on home; tapped a second time")
+        note("3 s after the tap the app is still on home; tapping the space again")
         again = true
         tile.tap()
+        note("tapped the space again")
       } else {
         note("3 s after the tap: the space page is open, no terminal yet\(slow ? " (SLOW_TERM)" : ""); waiting")
       }

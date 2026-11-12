@@ -37,7 +37,8 @@ cleanup() {
   chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run"
 }
 trap 'adb_exit $? cleanup' EXIT
-trap cleanup INT TERM
+# INT and TERM end the suite; the EXIT trap cleans up (a handler that only cleans up lets the script go on).
+trap 'exit 130' INT; trap 'exit 143' TERM
 "$work/herdr-anywhere" serve --listen "127.0.0.1:$port" --hc "$hc" > "$work/serve.log" 2>&1 &
 serve_pid=$!
 sleep 1

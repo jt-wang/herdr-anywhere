@@ -44,7 +44,8 @@ serve_pid=$!
 cleanup() { "$adb" shell cmd connectivity airplane-mode disable >/dev/null 2>&1 || true; kill "$mac_pid" "$serve_pid" 2>/dev/null
   "$hc" server stop >/dev/null 2>&1 || true; chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run" "$state"; }
 trap 'adb_exit $? cleanup' EXIT
-trap cleanup INT TERM
+# INT and TERM end the suite; the EXIT trap cleans up (a handler that only cleans up lets the script go on).
+trap 'exit 130' INT; trap 'exit 143' TERM
 sleep 1
 invite=$("$bin" pair --url "http://10.0.2.2:$port" --state "$state" 2>/dev/null | grep -o 'http://[^ ]*#pair=[A-Za-z0-9_-]*' | head -1)
 [ -n "$invite" ] || { echo "FAIL: no invite"; exit 1; }

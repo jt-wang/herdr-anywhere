@@ -29,6 +29,7 @@ cleanup() {
   st=$?; set +e
   # The sampler first: a sample written while rm -rf runs makes load.txt again, and the folder is not deleted.
   { kill "$sampler"; wait "$sampler"; } 2>/dev/null || true
+  [ -z "${touchlog:-}" ] || { kill "$touchlog"; wait "$touchlog"; } 2>/dev/null || true
   [ -n "${serve_pid:-}" ] && kill "$serve_pid" 2>/dev/null
   # The same session the core was started in below, or `server stop` finds no core and leaves its holder running.
   HC_SESSION="hmios-$$" HC_SOCKET="" HOME="$work/sam" XDG_RUNTIME_DIR="$run" "$hc" server stop >/dev/null 2>&1 || true
@@ -89,8 +90,12 @@ screen | grep -q '"AXIdentifier":"pair"\|"AXUniqueId":"pair"' && { echo "FAIL: t
 cp -R "$app/e2e/ios-uitest" "$work/uitest"
 (cd "$work/uitest" && xcodegen generate --quiet)
 : > "$work/wheels"
+sh "$app/e2e/ios-touch-log.sh" --self-test || exit 1
+# The app's UIKit event dispatch while the test runs: whether a tap on the space reached the app at all.
+"$app/e2e/ios-touch-log.sh" --start "$SIM_UDID" "$work/uikit.log" & touchlog=$!
 rc=0
 TEST_RUNNER_EVENTS="$work/wheels" TEST_RUNNER_SPACE=spscroll TEST_RUNNER_OUT="$work/scroll.txt" TEST_RUNNER_MISS_FIRST="${HM_SCROLL_MISS_FIRST:-}" TEST_RUNNER_SLOW_TERM="${HM_SCROLL_SLOW_TERM:-}" perl -e 'alarm 600; exec @ARGV' xcodebuild test -quiet -project "$work/uitest/KeyboardCheck.xcodeproj" -scheme UITests -only-testing:UITests/Scroll -destination "id=$SIM_UDID" -derivedDataPath "$work/uitest/derived" -resultBundlePath "$work/uitest/result.xcresult" > "$work/uitest/test.log" 2>&1 || rc=$?
+{ kill "$touchlog"; wait "$touchlog"; } 2>/dev/null || true; touchlog=
 [ -n "$shot" ] && perl -e 'alarm 40; exec @ARGV' xcrun simctl io "$SIM_UDID" screenshot "${shot%.png}-scroll.png" >/dev/null 2>&1
 echo "the test's notes, and the app's lines (each space it opened, in the Companion's log; e2e/ios-touch-app.sh):"
 sed 's/^/  /' "$work/scroll.txt" 2>/dev/null || true
@@ -99,6 +104,7 @@ if [ "$rc" != 0 ]; then
   echo "FAIL: the scroll test (xcodebuild test exit $rc)"
   "$app/e2e/ios-xcresult.sh" "$work/uitest/result.xcresult" ${shot:+"${shot%.png}-failure"}
   [ -n "$shot" ] && "$app/e2e/ios-failure-logs.sh" "$work/started" "$work/serve.log" "${shot%.png}-failure" || true
+  "$app/e2e/ios-touch-log.sh" "$work/scroll.txt" "$work/uikit.log" ${shot:+"${shot%.png}-failure"}
   # The screen's elements around the tap on the space, as the test noted them.
   [ -n "$shot" ] && { mkdir -p "${shot%.png}-failure"; for f in "$work"/scroll.txt-*.txt; do [ -f "$f" ] && cp "$f" "${shot%.png}-failure/${f##*/scroll.txt-}"; done; } || true
   exit 1

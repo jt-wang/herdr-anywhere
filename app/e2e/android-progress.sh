@@ -46,7 +46,8 @@ cleanup() {
   chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run"
 }
 trap 'adb_exit $? cleanup' EXIT
-trap cleanup INT TERM
+# INT and TERM end the suite; the EXIT trap cleans up (a handler that only cleans up lets the script go on).
+trap 'exit 130' INT; trap 'exit 143' TERM
 
 pane() { # name dir env…
   n=$1 d=$2; shift 2
