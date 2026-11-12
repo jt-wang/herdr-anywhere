@@ -1,0 +1,524 @@
+{
+ "sessions": [
+  {
+   "id": "ses_4869228f3ffe075fKLSsoCxIqv",
+   "directory": "/work/acme",
+   "title": "Step one.",
+   "version": "1.19.0",
+   "time_created": 1767268800268,
+   "time_updated": 1767268819462
+  }
+ ],
+ "messages": [
+  {
+   "id": "msg_b796dd71c001rXljGsbMELeWul",
+   "session_id": "ses_4869228f3ffe075fKLSsoCxIqv",
+   "time_created": 1767268800284,
+   "time_updated": 1767268807268,
+   "data": {
+    "role": "user",
+    "time": {
+     "created": 1767268800284
+    },
+    "agent": "build",
+    "model": {
+     "providerID": "fake",
+     "modelID": "fake-model"
+    },
+    "summary": {
+     "diffs": []
+    }
+   }
+  },
+  {
+   "id": "msg_b796dd724001cBelURbk54ycdE",
+   "session_id": "ses_4869228f3ffe075fKLSsoCxIqv",
+   "time_created": 1767268800292,
+   "time_updated": 1767268807258,
+   "data": {
+    "parentID": "msg_b796dd71c001rXljGsbMELeWul",
+    "role": "assistant",
+    "mode": "build",
+    "agent": "build",
+    "path": {
+     "cwd": "/work/acme",
+     "root": "/"
+    },
+    "cost": 0,
+    "tokens": {
+     "total": 15,
+     "input": 10,
+     "output": 5,
+     "reasoning": 0,
+     "cache": {
+      "write": 0,
+      "read": 0
+     }
+    },
+    "modelID": "fake-model",
+    "providerID": "fake",
+    "time": {
+     "created": 1767268800292,
+     "completed": 1767268807258
+    },
+    "finish": "tool-calls"
+   }
+  },
+  {
+   "id": "msg_b796deb20001vBpQ0eUzJC4G7g",
+   "session_id": "ses_4869228f3ffe075fKLSsoCxIqv",
+   "time_created": 1767268805408,
+   "time_updated": 1767268819463,
+   "data": {
+    "role": "user",
+    "time": {
+     "created": 1767268805408
+    },
+    "agent": "build",
+    "model": {
+     "providerID": "fake",
+     "modelID": "fake-model"
+    },
+    "summary": {
+     "diffs": []
+    }
+   }
+  },
+  {
+   "id": "msg_b796df25d0018a0lYTiuOyeUcE",
+   "session_id": "ses_4869228f3ffe075fKLSsoCxIqv",
+   "time_created": 1767268807261,
+   "time_updated": 1767268813356,
+   "data": {
+    "parentID": "msg_b796deb20001vBpQ0eUzJC4G7g",
+    "role": "assistant",
+    "mode": "build",
+    "agent": "build",
+    "path": {
+     "cwd": "/work/acme",
+     "root": "/"
+    },
+    "cost": 0,
+    "tokens": {
+     "total": 15,
+     "input": 10,
+     "output": 5,
+     "reasoning": 0,
+     "cache": {
+      "write": 0,
+      "read": 0
+     }
+    },
+    "modelID": "fake-model",
+    "providerID": "fake",
+    "time": {
+     "created": 1767268807261,
+     "completed": 1767268813355
+    },
+    "finish": "tool-calls"
+   }
+  },
+  {
+   "id": "msg_b796e0a2d001hmb4W7mSoCwR4p",
+   "session_id": "ses_4869228f3ffe075fKLSsoCxIqv",
+   "time_created": 1767268813358,
+   "time_updated": 1767268819435,
+   "data": {
+    "parentID": "msg_b796deb20001vBpQ0eUzJC4G7g",
+    "role": "assistant",
+    "mode": "build",
+    "agent": "build",
+    "path": {
+     "cwd": "/work/acme",
+     "root": "/"
+    },
+    "cost": 0,
+    "tokens": {
+     "total": 15,
+     "input": 10,
+     "output": 5,
+     "reasoning": 0,
+     "cache": {
+      "write": 0,
+      "read": 0
+     }
+    },
+    "modelID": "fake-model",
+    "providerID": "fake",
+    "time": {
+     "created": 1767268813358,
+     "completed": 1767268819434
+    },
+    "finish": "tool-calls"
+   }
+  },
+  {
+   "id": "msg_b796e21ed001ryByMh2MJVm8di",
+   "session_id": "ses_4869228f3ffe075fKLSsoCxIqv",
+   "time_created": 1767268819437,
+   "time_updated": 1767268819458,
+   "data": {
+    "parentID": "msg_b796deb20001vBpQ0eUzJC4G7g",
+    "role": "assistant",
+    "mode": "build",
+    "agent": "build",
+    "path": {
+     "cwd": "/work/acme",
+     "root": "/"
+    },
+    "cost": 0,
+    "tokens": {
+     "total": 15,
+     "input": 10,
+     "output": 5,
+     "reasoning": 0,
+     "cache": {
+      "write": 0,
+      "read": 0
+     }
+    },
+    "modelID": "fake-model",
+    "providerID": "fake",
+    "time": {
+     "created": 1767268819437,
+     "completed": 1767268819458
+    },
+    "finish": "stop"
+   }
+  }
+ ],
+ "parts": [
+  {
+   "id": "prt_b796dd71d001id6ppEI011BQ1X",
+   "message_id": "msg_b796dd71c001rXljGsbMELeWul",
+   "session_id": "ses_4869228f3ffe075fKLSsoCxIqv",
+   "time_created": 1767268800287,
+   "time_updated": 1767268800287,
+   "data": {
+    "type": "text",
+    "text": "WORK through the three steps"
+   }
+  },
+  {
+   "id": "prt_b796dd8fd001oBgQd3D2ibq9SM",
+   "message_id": "msg_b796dd724001cBelURbk54ycdE",
+   "session_id": "ses_4869228f3ffe075fKLSsoCxIqv",
+   "time_created": 1767268800765,
+   "time_updated": 1767268800766,
+   "data": {
+    "type": "step-start"
+   }
+  },
+  {
+   "id": "prt_b796dd8fe0014MlIDSxpDULOt2",
+   "message_id": "msg_b796dd724001cBelURbk54ycdE",
+   "session_id": "ses_4869228f3ffe075fKLSsoCxIqv",
+   "time_created": 1767268800766,
+   "time_updated": 1767268800767,
+   "data": {
+    "type": "text",
+    "text": "Step one.",
+    "time": {
+     "start": 1767268800766,
+     "end": 1767268800767
+    },
+    "metadata": {
+     "openai": {
+      "itemId": "item_fake_2_0"
+     }
+    }
+   }
+  },
+  {
+   "id": "prt_b796dd900001FQYWR9QmjJj4ff",
+   "message_id": "msg_b796dd724001cBelURbk54ycdE",
+   "session_id": "ses_4869228f3ffe075fKLSsoCxIqv",
+   "time_created": 1767268800768,
+   "time_updated": 1767268807248,
+   "data": {
+    "type": "tool",
+    "tool": "bash",
+    "callID": "call_fake_w1",
+    "state": {
+     "status": "completed",
+     "input": {
+      "command": "python3 -c 'import time; time.sleep(6)'"
+     },
+     "output": "(no output)",
+     "metadata": {
+      "output": "(no output)",
+      "exit": 0,
+      "truncated": false
+     },
+     "title": "python3 -c 'import time; time.sleep(6)'",
+     "time": {
+      "start": 1767268800770,
+      "end": 1767268807246
+     }
+    },
+    "metadata": {
+     "openai": {
+      "itemId": "item_fake_2_1"
+     }
+    }
+   }
+  },
+  {
+   "id": "prt_b796df253001NLrVoomiQIgzCK",
+   "message_id": "msg_b796dd724001cBelURbk54ycdE",
+   "session_id": "ses_4869228f3ffe075fKLSsoCxIqv",
+   "time_created": 1767268807251,
+   "time_updated": 1767268807253,
+   "data": {
+    "reason": "tool-calls",
+    "type": "step-finish",
+    "tokens": {
+     "total": 15,
+     "input": 10,
+     "output": 5,
+     "reasoning": 0,
+     "cache": {
+      "write": 0,
+      "read": 0
+     }
+    },
+    "cost": 0
+   }
+  },
+  {
+   "id": "prt_b796deb20002X4ybDebEtWcg3h",
+   "message_id": "msg_b796deb20001vBpQ0eUzJC4G7g",
+   "session_id": "ses_4869228f3ffe075fKLSsoCxIqv",
+   "time_created": 1767268805410,
+   "time_updated": 1767268805412,
+   "data": {
+    "type": "text",
+    "text": "ALSO keep the old colors"
+   }
+  },
+  {
+   "id": "prt_b796df2750017q8omA7VV1E1rs",
+   "message_id": "msg_b796df25d0018a0lYTiuOyeUcE",
+   "session_id": "ses_4869228f3ffe075fKLSsoCxIqv",
+   "time_created": 1767268807285,
+   "time_updated": 1767268807286,
+   "data": {
+    "type": "step-start"
+   }
+  },
+  {
+   "id": "prt_b796df277001T9VtzJ3rxnVeCY",
+   "message_id": "msg_b796df25d0018a0lYTiuOyeUcE",
+   "session_id": "ses_4869228f3ffe075fKLSsoCxIqv",
+   "time_created": 1767268807287,
+   "time_updated": 1767268807288,
+   "data": {
+    "type": "text",
+    "text": "Step two.",
+    "time": {
+     "start": 1767268807287,
+     "end": 1767268807288
+    },
+    "metadata": {
+     "openai": {
+      "itemId": "item_fake_3_0"
+     }
+    }
+   }
+  },
+  {
+   "id": "prt_b796df279001NA65Nl4xZ1OHly",
+   "message_id": "msg_b796df25d0018a0lYTiuOyeUcE",
+   "session_id": "ses_4869228f3ffe075fKLSsoCxIqv",
+   "time_created": 1767268807289,
+   "time_updated": 1767268813347,
+   "data": {
+    "type": "tool",
+    "tool": "bash",
+    "callID": "call_fake_w2",
+    "state": {
+     "status": "completed",
+     "input": {
+      "command": "python3 -c 'import time; time.sleep(6)'"
+     },
+     "output": "(no output)",
+     "metadata": {
+      "output": "(no output)",
+      "exit": 0,
+      "truncated": false
+     },
+     "title": "python3 -c 'import time; time.sleep(6)'",
+     "time": {
+      "start": 1767268807291,
+      "end": 1767268813344
+     }
+    },
+    "metadata": {
+     "openai": {
+      "itemId": "item_fake_3_1"
+     }
+    }
+   }
+  },
+  {
+   "id": "prt_b796e0a260014HwYCvqGsFcpxK",
+   "message_id": "msg_b796df25d0018a0lYTiuOyeUcE",
+   "session_id": "ses_4869228f3ffe075fKLSsoCxIqv",
+   "time_created": 1767268813351,
+   "time_updated": 1767268813352,
+   "data": {
+    "reason": "tool-calls",
+    "type": "step-finish",
+    "tokens": {
+     "total": 15,
+     "input": 10,
+     "output": 5,
+     "reasoning": 0,
+     "cache": {
+      "write": 0,
+      "read": 0
+     }
+    },
+    "cost": 0
+   }
+  },
+  {
+   "id": "prt_b796e0a3a001BYtDRm1NWg64Nn",
+   "message_id": "msg_b796e0a2d001hmb4W7mSoCwR4p",
+   "session_id": "ses_4869228f3ffe075fKLSsoCxIqv",
+   "time_created": 1767268813370,
+   "time_updated": 1767268813370,
+   "data": {
+    "type": "step-start"
+   }
+  },
+  {
+   "id": "prt_b796e0a3b001xmtnm2CrRD5K2x",
+   "message_id": "msg_b796e0a2d001hmb4W7mSoCwR4p",
+   "session_id": "ses_4869228f3ffe075fKLSsoCxIqv",
+   "time_created": 1767268813371,
+   "time_updated": 1767268813372,
+   "data": {
+    "type": "text",
+    "text": "Step three.",
+    "time": {
+     "start": 1767268813371,
+     "end": 1767268813372
+    },
+    "metadata": {
+     "openai": {
+      "itemId": "item_fake_4_0"
+     }
+    }
+   }
+  },
+  {
+   "id": "prt_b796e0a3d001QHDTUlyCfIJp5V",
+   "message_id": "msg_b796e0a2d001hmb4W7mSoCwR4p",
+   "session_id": "ses_4869228f3ffe075fKLSsoCxIqv",
+   "time_created": 1767268813373,
+   "time_updated": 1767268819424,
+   "data": {
+    "type": "tool",
+    "tool": "bash",
+    "callID": "call_fake_w3",
+    "state": {
+     "status": "completed",
+     "input": {
+      "command": "python3 -c 'import time; time.sleep(6)'"
+     },
+     "output": "(no output)",
+     "metadata": {
+      "output": "(no output)",
+      "exit": 0,
+      "truncated": false
+     },
+     "title": "python3 -c 'import time; time.sleep(6)'",
+     "time": {
+      "start": 1767268813375,
+      "end": 1767268819422
+     }
+    },
+    "metadata": {
+     "openai": {
+      "itemId": "item_fake_4_1"
+     }
+    }
+   }
+  },
+  {
+   "id": "prt_b796e21e3001fmt7Em9KWP8uyN",
+   "message_id": "msg_b796e0a2d001hmb4W7mSoCwR4p",
+   "session_id": "ses_4869228f3ffe075fKLSsoCxIqv",
+   "time_created": 1767268819427,
+   "time_updated": 1767268819428,
+   "data": {
+    "reason": "tool-calls",
+    "type": "step-finish",
+    "tokens": {
+     "total": 15,
+     "input": 10,
+     "output": 5,
+     "reasoning": 0,
+     "cache": {
+      "write": 0,
+      "read": 0
+     }
+    },
+    "cost": 0
+   }
+  },
+  {
+   "id": "prt_b796e21fd001ouq3LZcFphRbt2",
+   "message_id": "msg_b796e21ed001ryByMh2MJVm8di",
+   "session_id": "ses_4869228f3ffe075fKLSsoCxIqv",
+   "time_created": 1767268819453,
+   "time_updated": 1767268819454,
+   "data": {
+    "type": "step-start"
+   }
+  },
+  {
+   "id": "prt_b796e21fe001uO8L1W2UXmB6L1",
+   "message_id": "msg_b796e21ed001ryByMh2MJVm8di",
+   "session_id": "ses_4869228f3ffe075fKLSsoCxIqv",
+   "time_created": 1767268819454,
+   "time_updated": 1767268819456,
+   "data": {
+    "type": "text",
+    "text": "All three steps are done.",
+    "time": {
+     "start": 1767268819454,
+     "end": 1767268819455
+    },
+    "metadata": {
+     "openai": {
+      "itemId": "item_fake_5_0"
+     }
+    }
+   }
+  },
+  {
+   "id": "prt_b796e2200001J7ID0HcC3RJD2u",
+   "message_id": "msg_b796e21ed001ryByMh2MJVm8di",
+   "session_id": "ses_4869228f3ffe075fKLSsoCxIqv",
+   "time_created": 1767268819456,
+   "time_updated": 1767268819457,
+   "data": {
+    "reason": "stop",
+    "type": "step-finish",
+    "tokens": {
+     "total": 15,
+     "input": 10,
+     "output": 5,
+     "reasoning": 0,
+     "cache": {
+      "write": 0,
+      "read": 0
+     }
+    },
+    "cost": 0
+   }
+  }
+ ]
+}

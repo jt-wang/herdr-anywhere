@@ -1,0 +1,329 @@
+{
+ "sessions": [
+  {
+   "id": "ses_4869229a7ffeUSNHLGTSoBQ7y6",
+   "directory": "/work/acme",
+   "title": "Step one.",
+   "version": "2.2.0",
+   "time_created": 1767268800101,
+   "time_updated": 1767268818464
+  }
+ ],
+ "messages": [
+  {
+   "id": "msg_b796dd65d001P57yMSgC69yDSf",
+   "session_id": "ses_4869229a7ffeUSNHLGTSoBQ7y6",
+   "type": "user",
+   "seq": 4,
+   "time_created": 1767268800141,
+   "time_updated": 1767268800141,
+   "data": {
+    "time": {
+     "created": 1767268800141
+    },
+    "text": "WORK through the three steps",
+    "files": [],
+    "agents": []
+   }
+  },
+  {
+   "id": "msg_b796dd693001Pf0antyFLCvisv",
+   "session_id": "ses_4869229a7ffeUSNHLGTSoBQ7y6",
+   "type": "assistant",
+   "seq": 5,
+   "time_created": 1767268800149,
+   "time_updated": 1767268806282,
+   "data": {
+    "time": {
+     "created": 1767268800149,
+     "streamed": 1767268800160,
+     "completed": 1767268806282
+    },
+    "agent": "build",
+    "model": {
+     "id": "fake-model",
+     "providerID": "fake",
+     "variant": "default"
+    },
+    "content": [
+     {
+      "type": "text",
+      "text": "Step one.",
+      "native": {
+       "itemId": "item_fake_1_0"
+      }
+     },
+     {
+      "type": "tool",
+      "id": "call_fake_w1",
+      "name": "shell",
+      "executed": false,
+      "native": {
+       "itemId": "item_fake_1_1"
+      },
+      "state": {
+       "status": "completed",
+       "input": {
+        "command": "python3 -c 'import time; time.sleep(6)'"
+       },
+       "content": [
+        {
+         "type": "text",
+         "text": "(no output)"
+        }
+       ],
+       "metadata": {
+        "status": "completed",
+        "truncated": false,
+        "exit": 0
+       }
+      },
+      "time": {
+       "created": 1767268800157,
+       "ran": 1767268800158,
+       "completed": 1767268806280
+      }
+     }
+    ],
+    "finish": "tool-calls",
+    "native": {
+     "responseId": "resp_fake_1"
+    },
+    "cost": 0,
+    "tokens": {
+     "input": 10,
+     "output": 5,
+     "reasoning": 0,
+     "cache": {
+      "read": 0,
+      "write": 0
+     }
+    }
+   }
+  },
+  {
+   "id": "msg_b796dee6d001C44MGJ3mt0Wn8E",
+   "session_id": "ses_4869229a7ffeUSNHLGTSoBQ7y6",
+   "type": "user",
+   "seq": 17,
+   "time_created": 1767268806285,
+   "time_updated": 1767268806285,
+   "data": {
+    "time": {
+     "created": 1767268806285
+    },
+    "text": "ALSO keep the old colors",
+    "files": [],
+    "agents": []
+   }
+  },
+  {
+   "id": "msg_b796dee91001lXVweKxBo9ie4i",
+   "session_id": "ses_4869229a7ffeUSNHLGTSoBQ7y6",
+   "type": "assistant",
+   "seq": 18,
+   "time_created": 1767268806291,
+   "time_updated": 1767268812353,
+   "data": {
+    "time": {
+     "created": 1767268806291,
+     "streamed": 1767268806299,
+     "completed": 1767268812351
+    },
+    "agent": "build",
+    "model": {
+     "id": "fake-model",
+     "providerID": "fake",
+     "variant": "default"
+    },
+    "content": [
+     {
+      "type": "text",
+      "text": "Step two.",
+      "native": {
+       "itemId": "item_fake_3_0"
+      }
+     },
+     {
+      "type": "tool",
+      "id": "call_fake_w2",
+      "name": "shell",
+      "executed": false,
+      "native": {
+       "itemId": "item_fake_3_1"
+      },
+      "state": {
+       "status": "completed",
+       "input": {
+        "command": "python3 -c 'import time; time.sleep(6)'"
+       },
+       "content": [
+        {
+         "type": "text",
+         "text": "(no output)"
+        }
+       ],
+       "metadata": {
+        "status": "completed",
+        "truncated": false,
+        "exit": 0
+       }
+      },
+      "time": {
+       "created": 1767268806297,
+       "ran": 1767268806298,
+       "completed": 1767268812346
+      }
+     }
+    ],
+    "finish": "tool-calls",
+    "native": {
+     "responseId": "resp_fake_3"
+    },
+    "cost": 0,
+    "tokens": {
+     "input": 10,
+     "output": 5,
+     "reasoning": 0,
+     "cache": {
+      "read": 0,
+      "write": 0
+     }
+    }
+   }
+  },
+  {
+   "id": "msg_b796e064e001Oveybwm62U9ngS",
+   "session_id": "ses_4869229a7ffeUSNHLGTSoBQ7y6",
+   "type": "assistant",
+   "seq": 27,
+   "time_created": 1767268812370,
+   "time_updated": 1767268818442,
+   "data": {
+    "time": {
+     "created": 1767268812370,
+     "streamed": 1767268812381,
+     "completed": 1767268818441
+    },
+    "agent": "build",
+    "model": {
+     "id": "fake-model",
+     "providerID": "fake",
+     "variant": "default"
+    },
+    "content": [
+     {
+      "type": "text",
+      "text": "Step three.",
+      "native": {
+       "itemId": "item_fake_4_0"
+      }
+     },
+     {
+      "type": "tool",
+      "id": "call_fake_w3",
+      "name": "shell",
+      "executed": false,
+      "native": {
+       "itemId": "item_fake_4_1"
+      },
+      "state": {
+       "status": "completed",
+       "input": {
+        "command": "python3 -c 'import time; time.sleep(6)'"
+       },
+       "content": [
+        {
+         "type": "text",
+         "text": "(no output)"
+        }
+       ],
+       "metadata": {
+        "status": "completed",
+        "truncated": false,
+        "exit": 0
+       }
+      },
+      "time": {
+       "created": 1767268812378,
+       "ran": 1767268812380,
+       "completed": 1767268818437
+      }
+     }
+    ],
+    "finish": "tool-calls",
+    "native": {
+     "responseId": "resp_fake_4"
+    },
+    "cost": 0,
+    "tokens": {
+     "input": 10,
+     "output": 5,
+     "reasoning": 0,
+     "cache": {
+      "read": 0,
+      "write": 0
+     }
+    }
+   }
+  },
+  {
+   "id": "msg_b796e1e12001Gdq2TC50kOqYp2",
+   "session_id": "ses_4869229a7ffeUSNHLGTSoBQ7y6",
+   "type": "assistant",
+   "seq": 36,
+   "time_created": 1767268818455,
+   "time_updated": 1767268818464,
+   "data": {
+    "time": {
+     "created": 1767268818455,
+     "streamed": 1767268818463,
+     "completed": 1767268818464
+    },
+    "agent": "build",
+    "model": {
+     "id": "fake-model",
+     "providerID": "fake",
+     "variant": "default"
+    },
+    "content": [
+     {
+      "type": "text",
+      "text": "All three steps are done.",
+      "native": {
+       "itemId": "item_fake_5_0"
+      }
+     }
+    ],
+    "finish": "stop",
+    "native": {
+     "responseId": "resp_fake_5"
+    },
+    "cost": 0,
+    "tokens": {
+     "input": 10,
+     "output": 5,
+     "reasoning": 0,
+     "cache": {
+      "read": 0,
+      "write": 0
+     }
+    }
+   }
+  },
+  {
+   "id": "msg_b796e1e21001qkUj3cLGLbPvUA",
+   "session_id": "ses_4869229a7ffeUSNHLGTSoBQ7y6",
+   "type": "idle",
+   "seq": 41,
+   "time_created": 1767268818465,
+   "time_updated": 1767268818466,
+   "data": {
+    "time": {
+     "created": 1767268818465
+    },
+    "outcome": "succeeded"
+   }
+  }
+ ]
+}

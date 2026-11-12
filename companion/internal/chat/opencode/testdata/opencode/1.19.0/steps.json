@@ -23,7 +23,7 @@
     "agent": "build",
     "model": {
      "providerID": "fake",
-     "modelID": "gpt-5.5"
+     "modelID": "fake-model"
     },
     "summary": {
      "diffs": []
@@ -55,7 +55,7 @@
       "read": 0
      }
     },
-    "modelID": "gpt-5.5",
+    "modelID": "fake-model",
     "providerID": "fake",
     "time": {
      "created": 1767268800293,
@@ -89,7 +89,7 @@
       "read": 0
      }
     },
-    "modelID": "gpt-5.5",
+    "modelID": "fake-model",
     "providerID": "fake",
     "time": {
      "created": 1767268800762,
@@ -111,7 +111,7 @@
     "agent": "build",
     "model": {
      "providerID": "fake",
-     "modelID": "gpt-5.5"
+     "modelID": "fake-model"
     },
     "summary": {
      "diffs": []
@@ -143,7 +143,7 @@
       "read": 0
      }
     },
-    "modelID": "gpt-5.5",
+    "modelID": "fake-model",
     "providerID": "fake",
     "time": {
      "created": 1767268801865,
@@ -177,7 +177,7 @@
       "read": 0
      }
     },
-    "modelID": "gpt-5.5",
+    "modelID": "fake-model",
     "providerID": "fake",
     "time": {
      "created": 1767268801952,
@@ -199,7 +199,7 @@
     "agent": "build",
     "model": {
      "providerID": "fake",
-     "modelID": "gpt-5.5"
+     "modelID": "fake-model"
     },
     "summary": {
      "diffs": []
@@ -231,7 +231,7 @@
       "read": 0
      }
     },
-    "modelID": "gpt-5.5",
+    "modelID": "fake-model",
     "providerID": "fake",
     "time": {
      "created": 1767268803049,
@@ -253,7 +253,7 @@
     "agent": "build",
     "model": {
      "providerID": "fake",
-     "modelID": "gpt-5.5"
+     "modelID": "fake-model"
     },
     "summary": {
      "diffs": []
@@ -285,7 +285,7 @@
       "read": 0
      }
     },
-    "modelID": "gpt-5.5",
+    "modelID": "fake-model",
     "providerID": "fake",
     "time": {
      "created": 1767268804234,
@@ -319,7 +319,7 @@
       "read": 0
      }
     },
-    "modelID": "gpt-5.5",
+    "modelID": "fake-model",
     "providerID": "fake",
     "time": {
      "created": 1767268804325,

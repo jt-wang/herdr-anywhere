@@ -1,0 +1,34 @@
+[
+  {
+    "id": "",
+    "from": "you",
+    "said": "HELLO first",
+    "steps": [],
+    "reply": "Hello from the fake model.",
+    "end": "done"
+  },
+  {
+    "id": "",
+    "from": "you",
+    "said": "/model sonnet",
+    "steps": [],
+    "reply": "",
+    "end": "done"
+  },
+  {
+    "id": "",
+    "from": "you",
+    "said": "/usage",
+    "steps": [],
+    "reply": "",
+    "end": "done"
+  },
+  {
+    "id": "",
+    "from": "you",
+    "said": "HELLO again",
+    "steps": [],
+    "reply": "Hello from the fake model.",
+    "end": "done"
+  }
+]
