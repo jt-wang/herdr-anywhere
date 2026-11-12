@@ -104,9 +104,9 @@ final class EdgeScroll: XCTestCase {
           write("side \(sp) \(Int(x0)) \(kind) box \(box) back=\(back ? 1 : 0) kb=\(kb0 ? 1 : 0)\(kb1 ? 1 : 0) copied=\(said ? 1 : 0) tab=\(term.identifier == tab0 ? "same" : "changed")")
         }
       }
-      // What the checks above look for, made on purpose, so the script can tell they would see it: a hold on the
-      // middle selects a word and says Copied (the script learns the selection's colour from these two shots), and
-      // a tap there brings the keyboard up.
+      // A selection made on purpose, so the script can tell its check would see one: a hold on the middle selects a
+      // word (the script learns the selection's colour from these two shots). Whether Copied and, after a tap, the
+      // keyboard came up is written too; the script prints both and judges neither.
       let mid = term.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: f.width / 2, dy: f.height * 0.45))
       if app.keyboards.count > 0, el("hide-keyboard").exists { el("hide-keyboard").tap(); sleep(1) }
       shot("\(sp)-hold-0")

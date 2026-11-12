@@ -58,6 +58,8 @@ if [ "$rc" != 0 ]; then
   cp "$work/test.log" "${out%.txt}.xcodebuild.log" 2>/dev/null; exit 1
 fi
 head -1 "$out"; grep "^under " "$out" || true
+# Each swipe that did not go back: its screen and tree beside OUT, and whether it went back within 3 s more.
+grep "^miss " "$out" || true
 # page height distance speed: went back / swipes, tab changed
 awk '/^page=/{ split($0, f, " "); for (i in f) { split(f[i], kv, "="); v[kv[1]] = kv[2] }
   if (v["back"] == "skip") { skip++; next }

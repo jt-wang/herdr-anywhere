@@ -54,6 +54,19 @@ final class EdgeBack: XCTestCase {
     write("under page=\(page) y=\(hn) x=\(Int(x)) \(shown.joined(separator: " "))")
   }
 
+  /** A swipe that did not go back, as it looked: the screen and the element tree a second after the finger lifted, next
+   *  to OUT, then whether it went back after all within 3 s more (late=1: the pop was only slow to finish, the counted
+   *  miss is the test's 1 s wait; late=0: it never began or was undone). The count does not change: late or not, the
+   *  script counts back=0. */
+  func miss(_ tag: String, on: () -> Bool, under: () -> Bool) {
+    let base = ((env["OUT"] ?? "/tmp/edge-back.txt") as NSString).deletingPathExtension + "-miss-" + tag
+    try? XCUIScreen.main.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: base + ".png"))
+    try? app.debugDescription.write(toFile: base + ".tree.txt", atomically: true, encoding: .utf8)
+    var late = false
+    for _ in 0..<6 where !late { usleep(500_000); late = !on() && under() }
+    write("miss \(tag) late=\(late ? 1 : 0) shot=\((base as NSString).lastPathComponent).png")
+  }
+
   func swipe(y: CGFloat, x: CGFloat, v: CGFloat) {
     let w = app.frame.width, h = app.frame.height
     let start = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: x, dy: h * y))
@@ -119,6 +132,7 @@ final class EdgeBack: XCTestCase {
         let back = !on() && under()
         let after = page.hasPrefix("space") && !back ? paneName() : before
         write("page=\(page) y=\(hn) x=\(Int(x)) v=\(sn) i=\(i) back=\(back ? 1 : 0) tab=\(after == before ? "same" : "changed")")
+        if !back { miss("\(page)-\(hn)-\(Int(x))-\(sn)-\(i)", on: on, under: under) }
         if !back && on() { tapBack(); sleep(1) }
         if page == "space-settings", back { tapBack(); sleep(1) } // to home, so the next round opens both again
       } } } }
