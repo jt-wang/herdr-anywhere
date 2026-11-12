@@ -33,6 +33,7 @@ done
 here=$(cd "$(dirname "$0")" && pwd)
 "$here/android-watch.sh" --self-test
 sh "$here/../adb-note.sh" --self-test
+sh "$here/../android-glyphs.sh" --self-test
 nohup "$here/android-watch.sh" "$adb" "${OUT:-$RUNNER_TEMP/out}/emulator-lost" "$RUNNER_TEMP/emulator.log" "$RUNNER_TEMP/logcat.txt" \
   >/dev/null 2>&1 &
 # A minute for the phone to settle: without it the first suite after boot failed to
