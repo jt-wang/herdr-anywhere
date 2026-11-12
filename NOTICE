@@ -52,6 +52,11 @@ Noto Sans Mono, Copyright 2022 The Noto Project Authors, SIL Open Font License 1
 xterm.js 6.0.0, @xterm/addon-fit 0.11.0 and @xterm/addon-webgl 0.19.0, MIT License
   - app/src/vendor/xterm.ts (license: app/src/vendor/xterm-LICENSE)
 
+Ghostty (https://github.com/ghostty-org/ghostty) at commit cf5519b, MIT License (the same text as LICENSE),
+Copyright (c) 2024 Mitchell Hashimoto, Ghostty contributors
+  - the KITTY_MARKS table in app/src/model/kitty.ts: the combining marks that number a Kitty graphics placeholder's
+    row and column, in Ghostty's order (from src/terminal/kitty/graphics_unicode.zig)
+
 The Android and iOS apps include TailPocket at commit 8ae23dd (MIT License, see above), copied into
 third_party/tailpocket-8ae23dd: its phone library (connectmobile, built with gomobile), its Swift package and NSH
 adapter (sdk/apple), its Android modules (sdk/android) and its JavaScript client (sdk/js). The library is built from
