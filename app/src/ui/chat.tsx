@@ -4,7 +4,7 @@
 import { cleanup, effect, Image, Keyboard, Scroll, signal, Text, untracked, Video, View } from 'nsh'
 import { Sheet, TextView } from 'nsh/base'
 import type { Store } from '../store.ts'
-import { changeRows, clockText, pathsIn, sizeText, foldLine, refreshEvery, shows, unknownText, type ChatAnswer, type ChatSetup, type ChatChange, type ChatDetail, type ChatFile, type ChatPicture, type ChatRun, type ChatStep, type ChatTurn } from '../model/chat.ts'
+import { changeRows, clockText, pathsIn, sizeText, foldLine, outsideFold, refreshEvery, shows, unknownText, type ChatAnswer, type ChatSetup, type ChatChange, type ChatDetail, type ChatFile, type ChatPicture, type ChatRun, type ChatStep, type ChatTurn } from '../model/chat.ts'
 import { Glyph, IconButton } from './kit.tsx'
 import { t } from '../strings/index.ts'
 import { openFile, videoFrame, type VideoFrame } from '../page.ts'
@@ -214,6 +214,7 @@ function TurnView(props: { store: Store; address: string; turn: ChatTurn }) {
           </If>
         </View>
       </If>
+      <Each of={outsideFold(turn(), expanded())} key={(x) => x.id}>{(x) => <StepView store={props.store} address={props.address} step={x()} />}</Each>
       <If when={show().fold}>
         <View role="button" testID={`fold-${turn().id}`} onPress={() => expanded.set(!expanded())} class="flex-row items-center gap-1.5 py-1 active:opacity-70">
           <Glyph name={expanded() ? 'chevron-down' : 'chevron-right'} size={13} />
@@ -243,6 +244,13 @@ function TurnView(props: { store: Store; address: string; turn: ChatTurn }) {
 }
 
 function StepView(props: { store: Store; address: string; step: ChatStep }) {
+  // A message of yours the agent took while it worked: where it took it, as yours; nothing more to fetch.
+  if (props.step.kind === 'you') return (
+    <View testID={`you-${props.step.id}`} class="self-end max-w-[85%] items-end gap-1 py-1.5">
+      <View class="px-3 py-2 rounded-[12px] bg-secondary"><Text selectable class="text-[14px] text-foreground">{props.step.title}</Text></View>
+      <Text class="text-[11.5px] text-muted-foreground">{t('chatTakenMidTurn')}</Text>
+    </View>
+  )
   const detail = signal<ChatDetail | null | undefined>(undefined)
   const open = signal(false)
   const toggle = async () => {
