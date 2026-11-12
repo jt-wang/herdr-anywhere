@@ -24,7 +24,7 @@ failure_logs() {
   done | head -20 > "$to/.reports"
   while IFS= read -r f; do cp "$f" "$to/$(basename "$f").txt"; done < "$to/.reports"
   echo "  kept for the failure: the Companion's log, $(wc -l < "$to/.reports" | tr -d ' ') crash reports from the simulator (20 at most)"
-  rm -f "$to/.reports"
+  rm -f "${to:?}/.reports"
   # Names the upload takes (e2e/ios-xcresult.sh: one name with : or " in it loses the whole artifact).
   sh "$(dirname "$0")/ios-xcresult.sh" --tidy "$to"
 }
@@ -63,7 +63,24 @@ elif [ "${1:-}" = --self-test ]; then
   n=$(grep -cE '^[0-9]{2}:[0-9]{2}:[0-9]{2} .*[0-9]\.[0-9]' "$t/sampled" 2>/dev/null) || n=0
   [ "$n" -ge 2 ] || { echo "FAIL: ios-failure-logs self-test: the sampler wrote $n load lines in 1 s: $(head -3 "$t/sampled" 2>/dev/null)"; fail=1; }
   sleep 1; kill -0 "$(cat "$t/sampler")" 2>/dev/null && { echo "FAIL: ios-failure-logs self-test: the sampler outlived the suite"; kill "$(cat "$t/sampler")"; fail=1; }
-  rm -rf "$t"
+  # A suite stops its sampler before it deletes its folder: rm -rf unlinks load.txt before the folders after it (the
+  # keyboard suite's uitest, thousands of files), and a sample written meanwhile makes load.txt again, so the folder is
+  # not empty and the suite's cleanup failed after a pass. The stop the suites use leaves nothing writing.
+  mkdir "$t/w"
+  HM_LOAD_EVERY=0.05 sh "$0" --sample-load "$t/w/load.txt" >/dev/null 2>&1 & sampler=$!
+  sleep 0.5
+  { kill "$sampler"; wait "$sampler"; } 2>/dev/null
+  rm -f "${t:?}/w/load.txt"; sleep 0.3
+  [ -e "$t/w/load.txt" ] && { echo "FAIL: ios-failure-logs self-test: the sampler wrote after it was stopped"; fail=1; }
+  for f in "$(dirname "$0")"/*.sh; do
+    grep -q -- '--sample-load "\$work' "$f" || continue
+    started=$(grep -c -- '--sample-load "\$work.*& sampler=\$!' "$f")
+    stop=$(grep -n 'kill "\$sampler"; wait "\$sampler"' "$f" | head -1 | cut -d: -f1)
+    del=$(grep -n 'rm -rf "\${work:?}"' "$f" | head -1 | cut -d: -f1)
+    [ "$started" = 1 ] && [ -n "$stop" ] && [ -n "$del" ] && [ "$stop" -lt "$del" ] ||
+      { echo "FAIL: ios-failure-logs self-test: $(basename "$f") deletes its folder without first stopping its sampler"; fail=1; }
+  done
+  rm -rf "${t:?}"
   [ "$fail" = 0 ] && echo "PASS: ios-failure-logs self-test" || exit 1
 else
   failure_logs "$@"

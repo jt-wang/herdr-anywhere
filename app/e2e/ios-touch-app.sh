@@ -9,7 +9,7 @@ folder=$1; pair=$2; via=$3
 case $via in input|label|none) ;; *) echo "FAIL: ios-touch-app.sh: VIA is input, label or none, not $via" >&2; exit 2 ;; esac
 app=$(cd "$(dirname "$0")/.." && pwd)
 tree="$folder/tree"
-rm -rf "$tree"; mkdir -p "$tree"
+rm -rf "${tree:?}"; mkdir -p "$tree"
 rsync -a --exclude /ios/build --exclude /ios/nsh --exclude /android "$app/" "$tree/app/"
 ln -s "$app/../third_party" "$tree/third_party"
 cp "$pair" "$tree/app/e2e/pair.ts"

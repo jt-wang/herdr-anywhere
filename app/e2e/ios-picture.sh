@@ -17,7 +17,7 @@ id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$a
 port=7691; while nc -z 127.0.0.1 "$port" 2>/dev/null; do port=$((port + 1)); done
 work=$(mktemp -d)
 : > "$work/started" # what e2e/ios-failure-logs.sh keeps is from after this
-"$app/e2e/ios-failure-logs.sh" --sample-load "$work/load.txt" >/dev/null 2>&1 & # the machine's load, kept with a failure
+"$app/e2e/ios-failure-logs.sh" --sample-load "$work/load.txt" >/dev/null 2>&1 & sampler=$! # the machine's load, kept with a failure
 (cd "$app/../companion" && go build -o "$work/herdr-anywhere" ./cmd/herdr-anywhere)
 run=$(mktemp -d /tmp/hmXXXX)
 mkdir -p "$work/home" "$work/state" "$work/config" "$work/data"
@@ -31,10 +31,12 @@ cleanup() {
   status=$?
   trap - EXIT INT TERM HUP
   set +e # every step runs, even after one fails (a companion already gone)
+  # The sampler first: a sample written while rm -rf runs makes load.txt again, and the folder is not deleted.
+  { kill "$sampler"; wait "$sampler"; } 2>/dev/null
   [ -n "$serve_pid" ] && { pkill -P "$serve_pid" 2>/dev/null; kill "$serve_pid" 2>/dev/null; }
   L "$hc" server stop >/dev/null 2>&1 || true
   picture_cleanup
-  chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run"
+  chmod -R u+w "$work" 2>/dev/null; rm -rf "${work:?}" "${run:?}" || echo "NOTE: left after the cleanup: $(ls -A "$work" 2>/dev/null | head -5 | tr '\n' ' ')"
   exit "$status"
 }
 trap cleanup EXIT; trap 'exit 130' INT; trap 'exit 143' TERM HUP
@@ -67,7 +69,7 @@ size="$work/size"; before=$(size_now)
 # The time of the appearance switch just before, for the test to say how long after it the tap came.
 appearance() { xcrun simctl ui "$SIM_UDID" appearance "$1"; switched=$(python3 -c 'import time; print(time.time())'); }
 picture() {
-  rm -f "$size"; [ -n "${2:-}" ] && echo "$2" > "$size"
+  rm -f "${size:?}"; [ -n "${2:-}" ] && echo "$2" > "$size"
   miss=""; [ "$1" = dark ] && miss=${HM_PICTURE_MISS_FIRST:-}
   space_miss=""; [ "$1" = light ] && space_miss=${HM_MISS_SPACE:-}
   TEST_RUNNER_OUT="$work/picture-$1.txt" TEST_RUNNER_SHOTS="${shots:-$work}/$1" TEST_RUNNER_SIZE="$size" TEST_RUNNER_SPACE="$space" \

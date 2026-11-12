@@ -50,7 +50,7 @@ adb_exit() {
   adb_st=$1; shift
   set +e
   [ "$adb_st" = 0 ] || adb_failures
-  [ -n "${adb_file:-}" ] && rm -f "$adb_file" "$adb_file.141"
+  [ -n "${adb_file:-}" ] && rm -f "${adb_file:?}" "${adb_file:?}.141"
   if [ $# -gt 0 ]; then (exit "$adb_st"); "$@"; fi
   exit "$adb_st"
 }
@@ -86,7 +86,7 @@ if [ "${1:-}" = --self-test ]; then
     if [ "$want" = 137 ]; then grep -q "adb boom -> exit 137" "$t/out" || { echo "FAIL: adb-note self-test: the failed call is not shown at the end"; fail=1; }
       [ -e "$t/on" ] && { echo "FAIL: adb-note self-test: the suite went on after the failure"; fail=1; }; fi
     [ -e "$t/f" ] && { echo "FAIL: adb-note self-test: the list file is left behind"; fail=1; }
-    rm -f "$t/cleanup" "$t/on"
+    rm -f "${t:?}/cleanup" "${t:?}/on"
   done
   # adb_gone: the phone gone (adb no longer finds it) for HM_ADB_GONE s in a row; a blip (adb root) is not.
   echo device > "$t/state"
@@ -104,6 +104,6 @@ if [ "${1:-}" = --self-test ]; then
   echo "error: device offline" > "$t/state"
   adb_gone > "$t/said" && { echo "FAIL: adb-note self-test: gone at once after the phone was back"; fail=1; }
   unset HM_ADB_GONE
-  rm -rf "$t"
+  rm -rf "${t:?}"
   [ "$fail" = 0 ] && echo "PASS: adb-note self-test" || exit 1
 fi

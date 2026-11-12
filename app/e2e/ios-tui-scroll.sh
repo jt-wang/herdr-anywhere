@@ -18,7 +18,7 @@ port=7691
 while nc -z 127.0.0.1 "$port" 2>/dev/null; do port=$((port + 1)); done
 work=$(mktemp -d)
 : > "$work/started" # what e2e/ios-failure-logs.sh keeps is from after this
-"$app/e2e/ios-failure-logs.sh" --sample-load "$work/load.txt" >/dev/null 2>&1 & # the machine's load, kept with a failure
+"$app/e2e/ios-failure-logs.sh" --sample-load "$work/load.txt" >/dev/null 2>&1 & sampler=$! # the machine's load, kept with a failure
 (cd "$app/../companion" && go build -o "$work/herdr-anywhere" ./cmd/herdr-anywhere)
 run=$(mktemp -d /tmp/hmXXXX)
 mkdir -p "$work/sam/src/acme-api" "$work/state" "$work/config" "$work/data"
@@ -27,10 +27,12 @@ mkdir -p "$work/sam/src/acme-api" "$work/state" "$work/config" "$work/data"
 # Companion that had already gone left the core, the folder and the simulator).
 cleanup() {
   st=$?; set +e
+  # The sampler first: a sample written while rm -rf runs makes load.txt again, and the folder is not deleted.
+  { kill "$sampler"; wait "$sampler"; } 2>/dev/null
   [ -n "${serve_pid:-}" ] && kill "$serve_pid" 2>/dev/null
   # The same session the core was started in below, or `server stop` finds no core and leaves its holder running.
   HC_SESSION="hmios-$$" HC_SOCKET="" HOME="$work/sam" XDG_RUNTIME_DIR="$run" "$hc" server stop >/dev/null 2>&1 || true
-  chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run"
+  chmod -R u+w "$work" 2>/dev/null; rm -rf "${work:?}" "${run:?}" || echo "NOTE: left after the cleanup: $(ls -A "$work" 2>/dev/null | head -5 | tr '\n' ' ')"
   xcrun simctl shutdown "$SIM_UDID" 2>/dev/null || true
   exit "$st"
 }

@@ -20,7 +20,7 @@ if [ "${1:-}" = --self-test ]; then
   [ "$got" = '  app: serve: 127.0.0.1 GET /hm-e2e/openSpace/spscroll/{"name":"home"} 404 0s' ] || { echo "FAIL: app-lines self-test: the app's line in the Companion's log: $got"; fail=1; }
   got=$(app_lines "/hm-e2e/openSpace/" "$t/stream" "$t/missing")
   [ "$got" = '  app: no "/hm-e2e/openSpace/" line (the app opened no space)' ] || { echo "FAIL: app-lines self-test: no line, or a missing file: $got"; fail=1; }
-  rm -rf "$t"
+  rm -rf "${t:?}"
   [ "$fail" = 0 ] && echo "PASS: app-lines self-test" || exit 1
 else
   app_lines "$@"

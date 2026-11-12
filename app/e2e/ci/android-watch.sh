@@ -110,7 +110,7 @@ self_test() {
   grep -qE "^ *[0-9]+ completed/a1b2.dmp$" "$one" 2>/dev/null || { echo "FAIL: self-test: the emulator's crash report is not listed with its size"; fail=1; }
   grep -q "dump-bytes" "$t/out"/* 2>/dev/null && { echo "FAIL: self-test: a note holds a crash report's bytes"; fail=1; }
   grep -qE "$secret" "$t/out"/* 2>/dev/null && { echo "FAIL: self-test: a note holds something shaped like a pairing secret"; fail=1; }
-  rm -rf "$t"
+  rm -rf "${t:?}"
   [ "$fail" = 0 ] && echo "PASS: android-watch self-test" || { echo "FAIL: android-watch self-test"; return 1; }
 }
 
