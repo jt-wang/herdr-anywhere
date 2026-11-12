@@ -14,6 +14,7 @@ import { Linker, type Route, type Tunnel } from '../src/link.ts'
 import { PrefStore } from '../src/prefs.ts'
 import { Store } from '../src/store.ts'
 import { rowKeys } from '../src/ui/pane-bar.tsx'
+import { keptCount } from '../src/ui/kept.ts'
 import { Root } from '../src/ui/root.tsx'
 import { CLAUDE_EDIT_MENU, FakeCore, type FakeTab } from '../src/testing/fakecore.ts'
 import { FakeFolders } from '../src/testing/fake-folders.ts'
@@ -228,6 +229,9 @@ function chatSetups(url: string, init: any) {
 host.on('fake.label', (d: any) => core.label(d.address, d.labels))
 // A test drops the line: `app.host.send('fake.drop', {})`; the computer then stops answering.
 host.on('fake.drop', () => core.drop('network'))
+// How many computed values the app keeps alive now (src/ui/kept.ts): `app.host.send('fake.kept', {})`, then
+// `app.storage()['fake-kept']`.
+host.on('fake.kept', () => void Storage.setItem('fake-kept', String(keptCount())))
 // herdr-core holds a method's answers until released, as it holds terminal.send for a half-typed line:
 // `app.host.send('fake.hold', { method })`, then `app.host.send('fake.release', {})`.
 host.on('fake.hold', (d: any) => core.holding.add(d.method))

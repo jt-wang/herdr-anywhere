@@ -1,6 +1,7 @@
 // Sheets over any screen: the "+" menu in two steps: the folder on the computer first
 // (folder-picker.tsx), then a terminal or an agent installed there, with its first task; and renaming a space or a tab.
-import { computed, effect, Keyboard, keyboardFrame, signal, Text, View, type Signal } from 'nsh'
+import { effect, Keyboard, keyboardFrame, signal, Text, View, type Signal } from 'nsh'
+import { kept } from './kept.ts'
 import { Input, Sheet } from 'nsh/base'
 import type { Store } from '../store.ts'
 import { explain } from '../store.ts'
@@ -27,7 +28,7 @@ export function NewSheet(props: { store: Store; target: Signal<NewTarget | null>
   const busy = signal(false)
   const error = signal('')
   const open = () => props.target() !== null
-  const agents = computed(() => {
+  const agents = kept(() => {
     rev()
     const have = s.installed.get('')
     return have ? startable().filter((p) => p.agent && have.includes(p.run![0])) : []

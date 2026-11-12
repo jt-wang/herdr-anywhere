@@ -128,6 +128,8 @@ final class ChatFour: XCTestCase {
         XCUIDevice.shared.press(.home)
         sleep(secs)
         app.activate()
+        // app.state can still say background (3) a moment after activate() on iOS 27 with the chat already shown.
+        _ = app.wait(for: .runningForeground, timeout: 10)
         let back = el("chat-view").waitForExistence(timeout: 15)
         alive("\(agent) away \(secs) s")
         note("\(agent) away \(secs) s: chat there: \(back), says it can't reach the computer 15 s later: \(el("chat-offline").exists)")
