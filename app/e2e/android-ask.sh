@@ -58,7 +58,12 @@ xml() { "$adb" shell rm -f /sdcard/ha.xml; "$adb" shell uiautomator dump /sdcard
 centre() { tr '>' '\n' | grep -F "resource-id=\"$1\"" | head -1 | sed -E 's/.*bounds="\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\]".*/\1 \2 \3 \4/' | awk 'NF == 4 {print int(($1+$3)/2), int(($2+$4)/2)}'; }
 has() { xml | grep -qF "$1"; }
 snap() { [ -n "$shot" ] && "$adb" exec-out screencap -p > "$shot/$1.png" || true; }
-fail() { echo "FAIL: $1"; snap fail; [ -n "$shot" ] && xml > "$shot/fail.xml"; xml | tr '>' '\n' | grep -oE '(resource-id|text)="[^"]+"' | head -40; exit 1; }
+# What a failure shows of the screen leaves out the pairing code (in the link field when pairing failed).
+unpaired() { sed -E 's/#pair=[A-Za-z0-9_-]+/#pair=…/g'; }
+fail() {
+  echo "FAIL: $1"; snap fail; [ -n "$shot" ] && xml | unpaired > "$shot/fail.xml"
+  xml | unpaired | tr '>' '\n' | grep -oE '(resource-id|text)="[^"]+"' | head -40; exit 1
+}
 wait_for() { for _ in $(seq 1 30); do has "$1" && return 0; sleep 1; done; fail "$2"; }
 gone() { for _ in $(seq 1 30); do has "$1" || return 0; sleep 1; done; fail "$2"; }
 tap() {
@@ -66,13 +71,12 @@ tap() {
   [ -n "$xy" ] || fail "no $1 on screen"
   "$adb" shell input tap $xy
 }
-type_text() { rest=$1; while [ -n "$rest" ]; do "$adb" shell input text "'$(printf %s "$rest" | cut -c1-80 | sed 's/ /%s/g')'" < /dev/null; rest=$(printf %s "$rest" | cut -c81-); sleep 0.5; done; }
 # The pane's chat: its button, unless the chat is already up.
 chat() { wait_for 'resource-id="show-chat"' "the agent's pane has no chat button"; tap show-chat; }
 
 "$adb" shell am start -W -n "$id/.MainActivity" >/dev/null
-tap pair-link
-type_text "$invite"
+# adb's input text drops characters on CI's emulator: the helper types in short pieces and reads the field back.
+"$app/e2e/android-type-link.sh" "$invite"
 for _ in 1 2; do "$adb" shell dumpsys input_method | grep -q 'mInputShown=true' && { "$adb" shell input keyevent KEYCODE_BACK; sleep 1; }; done
 tap pair
 wait_for 'resource-id="space-spask"' "the phone did not pair (the invite typed, Pair tapped)"
