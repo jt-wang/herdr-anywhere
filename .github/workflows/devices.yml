@@ -473,15 +473,17 @@ jobs:
     name: Upload check, a grey link read on a Linux runner
     if: github.repository == 'jt-wang/herdr-anywhere' && github.event_name == 'workflow_dispatch' && inputs.ocr_probe
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - run: app/e2e/ci/tools.sh shots
       - run: app/e2e/ci-shots-check.sh --probe-grey 40
-      # The same with the CPU kept busy, 3 loops per core.
-      - run: app/e2e/ci-shots-check.sh --probe-grey 40 "$(( $(nproc) * 3 ))"
+      # The same with the CPU kept busy, a loop per core: with 3 per core, 40 links took over 25 minutes. Each link
+      # prints its line as it goes, and the step has its own time limit, so a slow one still leaves numbers.
+      - run: app/e2e/ci-shots-check.sh --probe-grey 10 "$(nproc)"
+        timeout-minutes: 40
 
   tailcat-probe:
     name: Tailcat, what a phone sees when it can't connect

@@ -141,15 +141,19 @@ probe_grey() {
   tesseract --version 2>&1 | sed 's/^/  /'
   echo "  cpus: $(nproc 2>/dev/null || sysctl -n hw.ncpu); $(grep -m1 'model name' /proc/cpuinfo 2>/dev/null || sysctl -n machdep.cpu.brand_string 2>/dev/null)"
   echo "  avx512: $(grep -o -w 'avx512[a-z0-9_]*' /proc/cpuinfo 2>/dev/null | sort -u | tr '\n' ' ')"
+  # A line per link as it goes, so a run cut short by its timeout still leaves its numbers.
+  local s0 r1 r2 same
   for i in $(seq 1 "$n"); do
+    s0=$(date +%s)
     link="http://127.0.0.1:9/#pair=$("$py" -c 'import secrets; print(secrets.token_urlsafe(16))')"
     rm -rf "$t/s" "$t/g"; mkdir -p "$t/g"
     "$py" "$here/shots-check.py" sample "$t/s" "$link" > /dev/null || return 1
     cp "$t/s/words-grey.png" "$t/g/"
     a=$("$py" "$here/shots-check.py" words "$t/g" 2>/dev/null | cksum); b=$("$py" "$here/shots-check.py" words "$t/g" 2>/dev/null | cksum)
-    [ "$a" = "$b" ] || differ=$((differ + 1))
-    check "$t/g" > /dev/null 2>&1 && miss=$((miss + 1))
-    OMP_THREAD_LIMIT=1 check "$t/g" > /dev/null 2>&1 && miss1=$((miss1 + 1))
+    same=yes; [ "$a" = "$b" ] || { same=no; differ=$((differ + 1)); }
+    r1=found; check "$t/g" > /dev/null 2>&1 && { r1=MISSED; miss=$((miss + 1)); }
+    r2=found; OMP_THREAD_LIMIT=1 check "$t/g" > /dev/null 2>&1 && { r2=MISSED; miss1=$((miss1 + 1)); }
+    echo "  link $i of $n: $r1 (threads as they come), $r2 (one thread), two reads the same: $same, $(( $(date +%s) - s0 )) s"
   done
   rm -rf "$t"
   echo "probe: $n grey-field links, $busy busy loops: the check missed $miss (threads as they come) and $miss1 (one thread); two reads of one picture differed $differ times; load at the end $(cut -d' ' -f1-3 /proc/loadavg 2>/dev/null || sysctl -n vm.loadavg)"
