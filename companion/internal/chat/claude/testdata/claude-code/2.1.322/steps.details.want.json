@@ -1,7 +1,0 @@
-[
-  { "read": { "file": "/work/acme/notes.txt", "from": 1, "count": 2, "total": 2 } },
-  { "change": { "file": "/work/acme/notes.txt", "added": 2, "deleted": 0,
-      "hunks": [ { "oldStart": 1, "newStart": 1, "lines": [" a", "+b", "+c"] } ] } },
-  { "run": { "command": "echo checking; echo 'one test failed' >&2; exit 3", "failed": true, "code": 3,
-      "output": "checking\none test failed", "lines": 2 } }
-]

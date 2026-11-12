@@ -17,7 +17,6 @@ work=$(mktemp -d)
 run=$(mktemp -d /tmp/hmXXXX)
 mkdir -p "$work/home" "$work/state" "$work/config" "$work/data"
 : > "$work/home/.zshrc"
-placeholder=$(cat "$app/e2e/pair.ts")
 [ -z "${HM_PICTURE_IMAGE:-}" ] || export DOCKER_HOST="${DOCKER_HOST:-$(docker context inspect --format '{{.Endpoints.docker.Host}}')}"
 L() { HC_SESSION="hmiospic-$$" HC_SOCKET="" HOME="$work/home" SHELL=/bin/zsh XDG_STATE_HOME="$work/state" XDG_CONFIG_HOME="$work/config" \
   XDG_DATA_HOME="$work/data" XDG_RUNTIME_DIR="$run" "$@"; }
@@ -30,7 +29,6 @@ cleanup() {
   [ -n "$serve_pid" ] && { pkill -P "$serve_pid" 2>/dev/null; kill "$serve_pid" 2>/dev/null; }
   L "$hc" server stop >/dev/null 2>&1 || true
   picture_cleanup
-  printf "%s\n" "$placeholder" > "$app/e2e/pair.ts"
   chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run"
   exit "$status"
 }
@@ -41,14 +39,15 @@ serve_pid=$!
 i=0; until curl -fsS "http://127.0.0.1:$port/api/info" >/dev/null 2>&1; do i=$((i + 1)); [ $i -gt 100 ] && { cat "$work/serve.log" >&2; exit 1; }; sleep 0.1; done
 link=$(L env HERDR_ANYWHERE_STATE="$work/companion" "$work/herdr-anywhere" pair --url "http://127.0.0.1:$port" 2>/dev/null | grep -o 'http://[^ ]*#pair=[A-Za-z0-9_-]*' | head -1)
 [ -n "$link" ] || { echo "FAIL: no pairing link"; exit 1; }
-printf "export const COMPANION: number = 0\nexport const PAIR: string = '%s'\n" "$link" > "$app/e2e/pair.ts"
-"$app/ios/build.sh" ios-e2e.tsx simulator > "$work/build.log" 2>&1 || { tail -20 "$work/build.log"; echo "FAIL: ios/build.sh"; exit 1; }
-printf "%s\n" "$placeholder" > "$app/e2e/pair.ts"
+# The app is built from a copy of app/ whose terminal page also tells the test when the page got each touch and what it
+# made of it (e2e/touch-times.ts), in a label the test reads, as the terminal runs a shell; app/ itself is not changed.
+printf "export const COMPANION: number = 0\nexport const PAIR: string = '%s'\n" "$link" > "$work/pair.ts"
+built=$("$app/e2e/ios-touch-app.sh" "$work" "$work/pair.ts" label) || exit 1
 
 xcrun simctl boot "$SIM_UDID" 2>/dev/null || true
 xcrun simctl bootstatus "$SIM_UDID" -b >/dev/null
 xcrun simctl uninstall "$SIM_UDID" "$id" 2>/dev/null || true
-xcrun simctl install "$SIM_UDID" "$app/ios/build/Herdr.app"
+xcrun simctl install "$SIM_UDID" "$built"
 xcrun simctl launch "$SIM_UDID" "$id" >/dev/null
 
 # The app is up and paired once the companion logs the phone connected.
@@ -72,7 +71,7 @@ picture() {
   done
   rc=0; wait $t || rc=$?
   sed 's/^/  /' "$work/picture-$1.txt" 2>/dev/null || true
-  [ "$rc" = 0 ] && echo "ok: $1" || { echo "FAIL: $1 (xcodebuild test exit $rc)"; "$app/e2e/ios-xcresult.sh" "$work/uitest/result-$1.xcresult" ${shots:+"$shots/$1-failure"}; exit 1; }
+  [ "$rc" = 0 ] && echo "ok: $1" || { echo "FAIL: $1 (xcodebuild test exit $rc)"; "$app/e2e/ios-xcresult.sh" "$work/uitest/result-$1.xcresult" ${shots:+"$shots/$1-failure"} all; exit 1; }
 }
 [ -n "$shots" ] && mkdir -p "$shots"
 xcrun simctl ui "$SIM_UDID" appearance light

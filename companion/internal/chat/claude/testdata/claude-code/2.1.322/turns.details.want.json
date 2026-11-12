@@ -1,6 +1,0 @@
-[
-  {},
-  { "run": { "command": "ls", "failed": false, "output": "notes.txt\nshot.png\ntodo.txt", "lines": 3 } },
-  { "change": { "file": "/work/acme/hello.txt", "added": 1, "deleted": 0,
-      "hunks": [ { "oldStart": 0, "newStart": 1, "lines": ["+hello"] } ] } }
-]

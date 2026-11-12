@@ -18,6 +18,12 @@ final class Picture: XCTestCase {
     app.activate()
     let el = { (id: String) in app.descendants(matching: .any)[id].firstMatch }
     let saying = { (text: String) in app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", text)).firstMatch }
+    // When the page got the last taps and what it made of them, from the label e2e/touch-times.ts keeps in the page (the
+    // test app is built with it). Read with no sheet over the page, which may hide it.
+    func touches(_ step: String) {
+      let t = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'hm-touch'")).firstMatch
+      note("\(step), the page's touch times: \(t.exists ? String(t.label.dropFirst(9)) : "none")")
+    }
     // A second run (dark) starts where the first left the app: on the space.
     if !el("terminal-" + terminal).waitForExistence(timeout: 3) {
       XCTAssertTrue(el("space-" + space).waitForExistence(timeout: 40), "home does not list the space")
@@ -43,6 +49,7 @@ final class Picture: XCTestCase {
     cell(0, 12).tap()
     let opened = el("picture-image").waitForExistence(timeout: 20)
     note("tap the path, picture shown: \(opened)")
+    if !opened { sleep(1); touches("tap the path") }
     XCTAssertTrue(opened, "the tap opened no picture")
     sleep(1); shot("sheet")
     let shown = saying(full).exists
@@ -59,6 +66,7 @@ final class Picture: XCTestCase {
     XCTAssertTrue(told && image, "holding the picture put no image on the pasteboard")
     el("picture-close").tap()
     sleep(1)
+    touches("sheet closed")
     // Not pictures there: a text file named .png, a path only mentioned. The Companion says so and nothing opens.
     for (r, c, name) in [(CGFloat(3), CGFloat(9), "notes.png"), (CGFloat(6), CGFloat(12), "art/sunset-wide.png")] {
       cell(r, c).tap()
@@ -68,5 +76,6 @@ final class Picture: XCTestCase {
       if opened { el("picture-close").tap(); sleep(1) }
     }
     shot("not-pictures")
+    sleep(1); touches("end")
   }
 }

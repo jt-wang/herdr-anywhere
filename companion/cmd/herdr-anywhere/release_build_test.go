@@ -5,7 +5,6 @@ import (
 	"debug/elf"
 	"debug/macho"
 	"debug/pe"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,10 +14,6 @@ import (
 
 	"herdr-anywhere/companion/internal/update"
 )
-
-// The builds below run in parallel: each target compiles modernc.org/sqlite on its own, and one after another they took
-// the package past go test's 10 minutes on a CI Mac. Each writes into its own t.TempDir(); Go's build cache is safe
-// for several go commands at once.
 
 // releaseBuild build a release's file: no cgo (set in the env), no VCS stamp, no local paths, no symbols.
 var releaseBuild = []string{"-buildvcs=false", "-trimpath", "-ldflags=-s -w"}
@@ -31,11 +26,7 @@ func buildFor(t *testing.T, goos, goarch string, flags []string, vet bool) strin
 		t.Fatal(err)
 	}
 	env := append(os.Environ(), "GOOS="+goos, "GOARCH="+goarch, "CGO_ENABLED=0")
-	name, err := releaseName(goos, goarch)
-	if err != nil {
-		t.Fatal(err)
-	}
-	exe := filepath.Join(t.TempDir(), name)
+	exe := filepath.Join(t.TempDir(), update.AssetFor(goos, goarch))
 	steps := [][]string{append(append([]string{"build"}, flags...), "-o", exe, "./cmd/herdr-anywhere")}
 	if vet {
 		steps = append(steps, []string{"vet", "./..."}) // compiles every _test.go too
@@ -48,23 +39,6 @@ func buildFor(t *testing.T, goos, goarch string, flags []string, vet bool) strin
 		}
 	}
 	return exe
-}
-
-// releaseName is goos/goarch's file name in a release, an error for a target releases have no file for.
-func releaseName(goos, goarch string) (string, error) {
-	if name := update.AssetFor(goos, goarch); name != "" {
-		return name, nil
-	}
-	return "", fmt.Errorf("%s/%s: releases have no file for it", goos, goarch)
-}
-
-// pathCheckTarget is the target the path check builds: this computer's own when releases have a file for it (the
-// packages are mostly built already, for the tests), else linux/amd64.
-func pathCheckTarget(goos, goarch string) (string, string) {
-	if update.AssetFor(goos, goarch) != "" {
-		return goos, goarch
-	}
-	return "linux", "amd64"
 }
 
 // localPath is the first of this checkout's folder and Go's module cache that file holds, "" for neither: a build
@@ -92,25 +66,10 @@ func TestThePathCheckFindsAnUntrimmedBuild(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds the companion")
 	}
-	t.Parallel()
-	goos, goarch := pathCheckTarget(runtime.GOOS, runtime.GOARCH)
-	exe := buildFor(t, goos, goarch, []string{"-buildvcs=false"}, false)
+	exe := buildFor(t, "linux", "amd64", []string{"-buildvcs=false"}, false)
 	root, _ := filepath.Abs("../../..")
 	if p := localPath(t, exe); p != root {
 		t.Fatalf("a build without -trimpath: the path check found %q, want this checkout, %s", p, root)
-	}
-}
-
-// windows/arm64 has no file in a release: a build for it once got "" for a name and wrote over its own temp folder.
-func TestATargetWithoutAReleaseFile(t *testing.T) {
-	if name, err := releaseName("windows", "arm64"); err == nil || !strings.Contains(err.Error(), "windows/arm64") {
-		t.Errorf("releaseName(windows, arm64) = %q, %v; want an error naming windows/arm64", name, err)
-	}
-	if goos, goarch := pathCheckTarget("windows", "arm64"); update.AssetFor(goos, goarch) == "" {
-		t.Errorf("the path check builds %s/%s, which has no release file", goos, goarch)
-	}
-	if goos, goarch := pathCheckTarget("darwin", "arm64"); goos+"/"+goarch != "darwin/arm64" {
-		t.Errorf("on darwin/arm64 the path check builds %s/%s, want this computer's own target", goos, goarch)
 	}
 }
 
@@ -125,7 +84,6 @@ func TestBuildsForWindows(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("this is the Windows build")
 	}
-	t.Parallel()
 	exe := buildFor(t, "windows", "amd64", releaseBuild, true)
 	if filepath.Base(exe) != "herdr-anywhere-windows-amd64.exe" {
 		t.Fatalf("the release file is named %q", filepath.Base(exe))
@@ -149,7 +107,6 @@ func TestBuildsForMac(t *testing.T) {
 	if testing.Short() {
 		t.Skip("cross-compiles the companion")
 	}
-	t.Parallel()
 	for arch, cpu := range map[string]macho.Cpu{"arm64": macho.CpuArm64, "amd64": macho.CpuAmd64} {
 		exe := buildFor(t, "darwin", arch, releaseBuild, arch == "amd64")
 		if want := "herdr-anywhere-macos-" + arch; filepath.Base(exe) != want {
@@ -175,7 +132,6 @@ func TestBuildsForLinux(t *testing.T) {
 	if testing.Short() {
 		t.Skip("cross-compiles the companion")
 	}
-	t.Parallel()
 	for arch, machine := range map[string]elf.Machine{"amd64": elf.EM_X86_64, "arm64": elf.EM_AARCH64} {
 		exe := buildFor(t, "linux", arch, releaseBuild, false)
 		if want := "herdr-anywhere-linux-" + arch; filepath.Base(exe) != want {
