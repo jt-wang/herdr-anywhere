@@ -35,13 +35,16 @@ final class Picture: XCTestCase {
       let t = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'hm-touch'")).firstMatch
       note("\(step), the page's touch times: \(t.exists ? String(t.label.dropFirst(9)) : "none")")
     }
-    // A second run (dark) starts where the first left the app: on the space.
-    if !el("terminal-" + terminal).waitForExistence(timeout: 3) {
-      XCTAssertTrue(el("space-" + space).waitForExistence(timeout: 40), "home does not list the space")
-      el("space-" + space).tap()
-    }
+    // A second run (dark) starts where the first left the app: on the space. The first opens it from home, the tap
+    // noted (OpenSpace.swift).
+    let opener = SpaceOpener(app: app, out: out, note: note)
+    var again: Bool? = nil
+    if !el("terminal-" + terminal).waitForExistence(timeout: 3) { again = opener.open(space) }
     let term = el("terminal-" + terminal)
-    XCTAssertTrue(term.waitForExistence(timeout: 20), "no terminal")
+    let showed = term.waitForExistence(timeout: 20)
+    note("terminal \(showed ? "showed" : "not there")")
+    XCTAssertTrue(showed, "no terminal")
+    if let again { opener.finish(again: again, shown: showed) }
     var size: [CGFloat] = []
     for _ in 0..<30 {
       size = ((try? String(contentsOfFile: sizeFile, encoding: .utf8)) ?? "").split(separator: " ").compactMap { Double($0.trimmingCharacters(in: .whitespacesAndNewlines)) }.map { CGFloat($0) }

@@ -12,13 +12,16 @@ rm -rf "$tree"; mkdir -p "$tree"
 rsync -a --exclude /ios/build --exclude /ios/nsh --exclude /android "$app/" "$tree/app/"
 ln -s "$app/../third_party" "$tree/third_party"
 cp "$pair" "$tree/app/e2e/pair.ts"
-# And a line on the app's stderr each time it opens a space (the copy's root.tsx), "hm-e2e openSpace ID top=…":
-# the test can tell a tap that never reached the app from one that did and opened nothing.
+# And a request to the Companion each time the app opens a space (the copy's root.tsx), which its log shows as
+# "GET /hm-e2e/openSpace/ID/<the top route>": the test can tell a tap that never reached the app from one that did and
+# opened nothing. Not a console.log: NSH's iOS runtime keeps those to itself (a run caught none on the app's stdout,
+# its stderr or the simulator's log).
 root="$tree/app/src/ui/root.tsx"
 [ "$(grep -c '^  const openSpace = (id: string) => {$' "$root")" = 1 ] ||
   { echo "FAIL: root.tsx has changed: no single openSpace for the log line" >&2; exit 1; }
 sed 's/^  const openSpace = (id: string) => {$/&\
-    console.log("hm-e2e openSpace " + id + " top=" + JSON.stringify(nav.routes().at(-1)))/' "$root" > "$root.new" && mv "$root.new" "$root"
+    fetch(new URL(hmPair).origin + "\/hm-e2e\/openSpace\/" + id + "\/" + encodeURIComponent(JSON.stringify(nav.routes().at(-1)))).catch(() => {})/' "$root" > "$root.new" && mv "$root.new" "$root"
+echo "import { PAIR as hmPair } from '../../e2e/pair.ts'" >> "$root"
 page="$tree/app/src/ui/terminal-page.ts"
 [ "$(grep -c '<script>window.__terminal=' "$page")" = 1 ] ||
   { echo "FAIL: the terminal page has changed: no single place for e2e/touch-times.ts" >&2; exit 1; }

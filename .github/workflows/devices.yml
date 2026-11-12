@@ -48,14 +48,22 @@ on:
         type: choice
         options: ["none", "miss-first"]
         default: "none"
+      # The tap that opens a space from home, in the keyboard and pictures suites (OpenSpace.swift): miss-first makes
+      # the first one land beside the space, so both must fail with their record of it and a second tap. A push never
+      # sets it.
+      ios_open_space_selftest:
+        description: "iOS open-the-space self-test (keyboard, pictures): none or miss-first (both must fail, with their record)"
+        type: choice
+        options: ["none", "miss-first"]
+        default: "none"
 
 permissions:
   contents: read
 
 concurrency:
   # A run of copies has a group of its own, so it doesn't cancel the branch's usual run, nor that run it.
-  # So does each scroll self-test, and the pictures self-test.
-  group: devices-${{ github.ref }}${{ ((inputs.ios_main_repeat || '0') != '0' || (inputs.ios_b_repeat || '0') != '0') && '-repeat' || '' }}${{ (inputs.ios_scroll_selftest || 'none') != 'none' && format('-{0}', inputs.ios_scroll_selftest) || '' }}${{ (inputs.ios_picture_selftest || 'none') != 'none' && '-picture-selftest' || '' }}
+  # So does each scroll self-test, the pictures self-test and the open-the-space one.
+  group: devices-${{ github.ref }}${{ ((inputs.ios_main_repeat || '0') != '0' || (inputs.ios_b_repeat || '0') != '0') && '-repeat' || '' }}${{ (inputs.ios_scroll_selftest || 'none') != 'none' && format('-{0}', inputs.ios_scroll_selftest) || '' }}${{ (inputs.ios_picture_selftest || 'none') != 'none' && '-picture-selftest' || '' }}${{ (inputs.ios_open_space_selftest || 'none') != 'none' && '-open-space-selftest' || '' }}
   cancel-in-progress: true
 
 env:
@@ -412,6 +420,7 @@ jobs:
           HM_SCROLL_MISS_FIRST: ${{ inputs.ios_scroll_selftest == 'miss-first' && '1' || '' }}
           HM_SCROLL_SLOW_TERM: ${{ inputs.ios_scroll_selftest == 'slow-terminal' && '1' || '' }}
           HM_PICTURE_MISS_FIRST: ${{ inputs.ios_picture_selftest == 'miss-first' && '1' || '' }}
+          HM_MISS_SPACE: ${{ inputs.ios_open_space_selftest == 'miss-first' && '1' || '' }}
         run: |
           s=e2e/ci/suite.sh
           case "${{ matrix.key }}" in
