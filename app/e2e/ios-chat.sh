@@ -23,12 +23,12 @@ placeholder=$(cat "$app/e2e/pair.ts")
 L() { env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin HOME="$work/h" SHELL=/bin/zsh TERM=xterm-256color \
   LANG=en_US.UTF-8 HC_SESSION="hmioschat-$$" HC_SOCKET="" XDG_STATE_HOME="$work/state" XDG_CONFIG_HOME="$work/config" \
   XDG_DATA_HOME="$work/data" XDG_RUNTIME_DIR="$run" CLAUDE_CONFIG_DIR="$work/claude" "$@"; }
-serve_pid=
+. "$app/e2e/companion.sh"  # companion_start, companion_stop
 cleanup() {
   status=$?
   trap - EXIT INT TERM HUP
   set +e # every step runs, even after one fails (a companion already gone)
-  [ -n "$serve_pid" ] && { pkill -P "$serve_pid" 2>/dev/null; kill "$serve_pid" 2>/dev/null; }
+  companion_stop || status=1
   L "$hc" server stop >/dev/null 2>&1 || true
   printf "%s\n" "$placeholder" > "$app/e2e/pair.ts"
   chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run" "$state"
@@ -37,9 +37,7 @@ cleanup() {
 trap cleanup EXIT; trap 'exit 130' INT; trap 'exit 143' TERM HUP
 L "$hc" run --bg --keep --cwd "$work/h/src/acme-api" --name claude --label herdr.space=spchat --label herdr.tab=tbchat \
   python3 "$app/e2e/fake-claude.py" "$fixtures/image.jsonl" "$fixtures/files.jsonl" >/dev/null
-L "$work/herdr-anywhere" serve --listen "127.0.0.1:$port" --hc "$hc" --state "$state" > "$work/serve.log" 2>&1 &
-serve_pid=$!
-i=0; until curl -fsS "http://127.0.0.1:$port/api/info" >/dev/null 2>&1; do i=$((i + 1)); [ $i -gt 100 ] && { cat "$work/serve.log" >&2; exit 1; }; sleep 0.1; done
+companion_start "$work/serve.log" L "$work/herdr-anywhere" serve --listen "127.0.0.1:$port" --hc "$hc" --state "$state" || exit 1
 link=$(L "$work/herdr-anywhere" pair --url "http://127.0.0.1:$port" --state "$state" 2>/dev/null | grep -o 'http://[^ ]*#pair=[A-Za-z0-9_-]*' | head -1)
 [ -n "$link" ] || { echo "FAIL: no pairing link"; exit 1; }
 printf "export const COMPANION: number = 0\nexport const PAIR: string = '%s'\n" "$link" > "$app/e2e/pair.ts"
