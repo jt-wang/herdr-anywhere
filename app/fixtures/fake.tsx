@@ -14,6 +14,7 @@ import { Linker, type Route, type Tunnel } from '../src/link.ts'
 import { PrefStore } from '../src/prefs.ts'
 import { Store } from '../src/store.ts'
 import { rowKeys } from '../src/ui/pane-bar.tsx'
+import { setDiag } from '../src/diag.ts'
 import { Root } from '../src/ui/root.tsx'
 import { CLAUDE_EDIT_MENU, FakeCore, type FakeTab } from '../src/testing/fakecore.ts'
 import { FakeFolders } from '../src/testing/fake-folders.ts'
@@ -176,7 +177,7 @@ core.onKeys = (addr, keys) => {
 // A test moves an agent to another state: `app.host.send('fake.status', { address, state })`.
 host.on('fake.status', (d: any) => {
   if (typeof d.screen === 'string') core.screens.set(d.address, d.screen)
-  core.setStatus(d.address, d.state, core.terms.get(d.address)?.status?.app, { kind: d.kind, msg: d.msg })
+  core.setStatus(d.address, d.state, 'app' in d ? d.app : core.terms.get(d.address)?.status?.app, { kind: d.kind, msg: d.msg })
 })
 // The computer's chat answer for every terminal (GET /api/chat/…): `params.chat` (JSON), else none; a test changes it
 // with `app.host.send('fake.chat', answer)`, or makes the computer unreachable with `{ offline: true }`. Each ask is
@@ -228,6 +229,9 @@ function chatSetups(url: string, init: any) {
 host.on('fake.label', (d: any) => core.label(d.address, d.labels))
 // A test drops the line: `app.host.send('fake.drop', {})`; the computer then stops answering.
 host.on('fake.drop', () => core.drop('network'))
+// What the app told setDiag (src/diag.ts), in order: `fake-diag`.
+const diags: string[] = []
+setDiag((what, fields) => { diags.push(`${what} ${Object.entries(fields).map(([k, v]) => `${k}=${v}`).join(' ')}`); void Storage.setItem('fake-diag', JSON.stringify(diags)) })
 // herdr-core holds a method's answers until released, as it holds terminal.send for a half-typed line:
 // `app.host.send('fake.hold', { method })`, then `app.host.send('fake.release', {})`.
 host.on('fake.hold', (d: any) => core.holding.add(d.method))

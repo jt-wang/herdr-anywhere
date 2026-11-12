@@ -62,6 +62,15 @@ final class ChatFour: XCTestCase {
       f.tap(); sleep(1)
       return true
     }
+    // After a failed step: which of the pane's views is up, and what herdr-core says of the agent's terminal (the
+    // script writes it to hc-get.txt next to the screenshots).
+    func onScreen(_ step: String, _ name: String) {
+      note("\(step): on screen: chat-view \(el("chat-view").exists), show-chat \(el("show-chat").exists), show-terminal \(el("show-terminal").exists)")
+      guard !ctl.isEmpty else { return }
+      FileManager.default.createFile(atPath: "\(ctl)/get", contents: name.data(using: .utf8))
+      _ = until(10) { FileManager.default.fileExists(atPath: "\(ctl)/got") }
+      try? FileManager.default.removeItem(atPath: "\(ctl)/got")
+    }
     func ctlDo(_ what: String, _ done: String) -> Bool {
       guard !ctl.isEmpty else { return false }
       FileManager.default.createFile(atPath: "\(ctl)/\(what)", contents: nil)
@@ -95,6 +104,7 @@ final class ChatFour: XCTestCase {
       let more = saying("Show all 500 lines").waitForExistence(timeout: 20)
       note("\(agent) long: 'Show all 500 lines': \(more)")
       XCTAssertTrue(more, "\(agent) long: the command's 500 lines are not offered")
+      if !more { onScreen("\(agent) long", a) }
       if more { saying("Show all 500 lines").tap(); sleep(2) }
       let end = starting("line 500 of the long listing").firstMatch.exists || all().matching(NSPredicate(format: "label CONTAINS 'line 500 of the long listing'")).count > 0
       note("\(agent) long: the last line shown: \(end)")

@@ -49,6 +49,8 @@ cleanup() {
   set +e
   [ -n "$ctl_pid" ] && kill "$ctl_pid" 2>/dev/null
   [ -n "$log_pid" ] && kill "$log_pid" 2>/dev/null
+  # The app's diagnostics (src/diag.ts, sent by ios-e2e.tsx) the Companion logged: printed when the run failed.
+  [ "$status" != 0 ] && grep -h ' /hm-e2e/' "$work/serve.log" 2>/dev/null | tail -10 | sed 's/^/  diagnostic: /'
   # What the app logged as errors (nsh writes the errors it reports there): printed when the run failed, kept always.
   [ "$status" != 0 ] && [ -s "$work/app.log" ] && { echo "  the app's errors (last 20):"; grep -vE '^(Filtering the log data|Timestamp )' "$work/app.log" | tail -20 | cut -c1-300 | sed 's/^/    /'; }
   [ -n "$shots" ] && [ -s "$work/app.log" ] && cp "$work/app.log" "$shots/app.log"
@@ -99,6 +101,11 @@ printf "%s\n" "$placeholder" > "$app/e2e/pair.ts"
     if [ -e "$ctl/stop" ]; then
       rm -f "$ctl/stop"; pkill -f -- "--state $state" 2>/dev/null; sleep 1
       echo "--- stopped by the test $(date +%T)" >> "$work/serve.log"; : > "$ctl/stopped"
+    fi
+    # A failed step asks what herdr-core says of its agent's terminal (its name in the file): the run's output keeps it.
+    if [ -e "$ctl/get" ]; then
+      g=$(cat "$ctl/get"); rm -f "$ctl/get"
+      { echo "--- hc get $g at $(date +%T)"; L "$hc" get "$g" 2>&1; } >> "${shots:-$work}/hc-get.txt"; : > "$ctl/got"
     fi
     if [ -e "$ctl/start" ]; then
       rm -f "$ctl/start"; echo "--- started by the test $(date +%T)" >> "$work/serve.log"
