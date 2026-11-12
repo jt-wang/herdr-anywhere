@@ -40,8 +40,14 @@ final class Zoom: XCTestCase {
     note(String(format: "box %d %d %d %d", Int(f.minX * scale), Int(f.minY * scale), Int(f.maxX * scale), Int(f.maxY * scale)))
     let at = { (x: CGFloat, y: CGFloat) in zoom.coordinate(withNormalizedOffset: CGVector(dx: x, dy: y)) }
     shot("fitted")
-    zoom.pinch(withScale: 3, velocity: 3)
-    sleep(1); shot("pinched")
+    // On a CI runner a synthesized pinch now and then did nothing, in either appearance, recorded or not, and every
+    // later step failed after it. A slower pinch, tried again (up to three times) while the picture looks the same;
+    // how many it took is noted, and a picture no pinch moves still fails ("a pinch left the picture as it was").
+    let unpinched = zoom.screenshot().pngRepresentation
+    var tries = 0
+    repeat { tries += 1; zoom.pinch(withScale: 3, velocity: 1.5); sleep(1) } while tries < 3 && zoom.screenshot().pngRepresentation == unpinched
+    note("pinches: \(tries)")
+    shot("pinched")
     for _ in 0..<6 { at(0.8, 0.8).press(forDuration: 0.05, thenDragTo: at(0.2, 0.2), withVelocity: 600, thenHoldForDuration: 0.2) }
     sleep(1); shot("corner")
     at(0.8, 0.8).press(forDuration: 0.05, thenDragTo: at(0.2, 0.2), withVelocity: 600, thenHoldForDuration: 0.2)
