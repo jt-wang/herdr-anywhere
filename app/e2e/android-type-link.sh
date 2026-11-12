@@ -11,6 +11,8 @@ set -eu
 : "${ANDROID_SERIAL:?set ANDROID_SERIAL to the device to use}"
 link=$1
 adb="${ANDROID_HOME:-$HOME/Library/Android/sdk}/platform-tools/adb"
+. "$(dirname "$0")/adb-note.sh"; adb_note "$adb"  # a failed adb call is written down and shown if the suite fails
+trap 'adb_exit $?' EXIT
 xml() { "$adb" shell rm -f /sdcard/hm-link.xml; "$adb" shell uiautomator dump /sdcard/hm-link.xml >/dev/null 2>&1; "$adb" shell cat /sdcard/hm-link.xml 2>/dev/null || true; }
 # The field's text: pair-link is the field's wrapper; the text is its EditText child's.
 field() {
@@ -40,7 +42,7 @@ done
 sleep 1
 if [ ${#link} -gt 200 ]; then
   clip="$(dirname "$0")/android-clip.sh"
-  tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
+  tmp=$(mktemp -d); trap 'adb_exit $? rm -rf "$tmp"' EXIT
   (umask 077; printf %s "$link" > "$tmp/link"); : > "$tmp/empty"
   "$clip" set "$tmp/link"
   [ "$("$clip" get)" = "${#link}" ] || { echo "FAIL: the clipboard does not hold the link's ${#link} characters"; exit 1; }

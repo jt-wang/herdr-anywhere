@@ -465,7 +465,7 @@ func transcript(t *testing.T, dir, project, id string) string {
 	return p
 }
 
-const sid = "0ff888dd-6fdf-48a6-a0c3-f255c5328133"
+const sid = "00000000-0000-4000-8000-0000000000aa"
 
 func miss(t *testing.T, err error) string {
 	t.Helper()

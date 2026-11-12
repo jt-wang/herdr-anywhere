@@ -166,7 +166,21 @@ var (
 
 var stops = map[string]bool{"end_turn": true, "stop_sequence": true, "max_tokens": true, "tool_use": true}
 
-// lines reads the file's last MaxTail bytes as whole lines. from0 says the window starts at the file's start.
+// window is where the record is read from: its last MaxTail bytes, or from the last prompt when that is further back
+// (a turn running commands with large outputs).
+func window(path string) (int64, bool, error) {
+	return chat.Start(path, []byte(`"turnPosition"`), isPrompt)
+}
+
+func isPrompt(raw []byte) bool {
+	var l struct {
+		Type         string          `json:"type"`
+		TurnPosition json.RawMessage `json:"turnPosition"`
+		IsSidechain  bool            `json:"isSidechain"`
+		IsMeta       bool            `json:"isMeta"`
+	}
+	return json.Unmarshal(raw, &l) == nil && l.Type == "user" && len(l.TurnPosition) > 0 && string(l.TurnPosition) != "null" && !l.IsSidechain && !l.IsMeta
+}
 
 func parse(raw []byte) (line, error) {
 	var l line
@@ -204,6 +218,9 @@ type building struct {
 	texts  []string // assistant text since the last tool call: the reply, if nothing follows
 	textID string
 	asked  map[string]*chat.Ask // open AskUserQuestion calls by tool id
+	// head: the lines before the window's first prompt, a turn that began before the window. Shown only when the
+	// window has no prompt (its prompt is further back than MaxBack), so a long turn is never no turn at all.
+	head bool
 }
 
 // sources gives the turn's images, in order, the paths a meta line names for them.
@@ -282,17 +299,21 @@ func (r *Reader) Turns(path string) ([]chat.Turn, error) {
 	return ts, nil
 }
 
-// parse reads the transcript's end. A turn the window starts in the middle of is left out.
+// parse reads the transcript's end, from the last prompt at least. A turn the window starts in the middle of is left
+// out, unless it is the only one.
 func (r *Reader) parse(path string) ([]chat.Turn, error) {
 	r.parses++
-	ls, from0, err := chat.TailLines(path)
+	off, from0, err := window(path)
 	if err != nil {
 		return nil, err
 	}
 	var out []chat.Turn
 	var cur *building
-	partial := !from0 // lines before the first prompt belong to a turn that began before the window
-	for _, raw := range ls {
+	if !from0 {
+		cur = &building{t: chat.Turn{ID: "earlier", From: "you", End: "open"}, asked: map[string]*chat.Ask{}, head: true}
+	}
+	var rerr error
+	for raw := range chat.Lines(path, off, &rerr) {
 		l, err := parse(raw)
 		if err != nil {
 			return nil, err
@@ -358,10 +379,9 @@ func (r *Reader) parse(path string) ([]chat.Turn, error) {
 			}
 			// begin ends the turn being built and starts one.
 			begin := func(from, said, end string) {
-				if cur != nil {
+				if cur != nil && !cur.head {
 					out = append(out, cur.finish())
 				}
-				partial = false
 				cur = &building{t: chat.Turn{ID: l.UUID, From: from, Said: strings.TrimSpace(said), At: l.Timestamp, Images: images, End: end}, start: when(l.Timestamp), cwd: l.Cwd, asked: map[string]*chat.Ask{}}
 			}
 			marked := len(l.TurnPosition) > 0 && string(l.TurnPosition) != "null"
@@ -401,7 +421,7 @@ func (r *Reader) parse(path string) ([]chat.Turn, error) {
 			continue
 		}
 		// assistant
-		if partial || cur == nil {
+		if cur == nil {
 			continue
 		}
 		var stop string
@@ -446,7 +466,10 @@ func (r *Reader) parse(path string) ([]chat.Turn, error) {
 			cur.t.End = "done"
 		}
 	}
-	if cur != nil {
+	if rerr != nil {
+		return nil, rerr
+	}
+	if cur != nil && !(cur.head && len(cur.t.Steps) == 0 && len(cur.texts) == 0) {
 		out = append(out, cur.finish())
 	}
 	if len(out) > chat.MaxTurns {
@@ -527,14 +550,15 @@ func describe(name string, in json.RawMessage, cwd string) (string, string) {
 
 // Detail finds a step again: a tool call's input and result, or a note's whole text.
 func (r *Reader) Detail(path, step string) (chat.Detail, error) {
-	ls, _, err := chat.TailLines(path)
+	off, _, err := window(path)
 	if err != nil {
 		return chat.Detail{}, err
 	}
 	var d chat.Detail
 	found, read := false, "" // read: the file the step's tool read, where its result's images came from
 	tool, input := "", json.RawMessage(nil)
-	for _, raw := range ls {
+	var rerr error
+	for raw := range chat.Lines(path, off, &rerr) {
 		l, err := parse(raw)
 		if err != nil || l.Message == nil || (l.Type != "user" && l.Type != "assistant") {
 			continue
@@ -572,6 +596,9 @@ func (r *Reader) Detail(path, step string) (chat.Detail, error) {
 				}
 			}
 		}
+	}
+	if rerr != nil {
+		return chat.Detail{}, rerr
 	}
 	for i := range d.Images {
 		d.Images[i].Source = read
@@ -616,11 +643,12 @@ func (r *Reader) Image(path, id string) (string, []byte, error) {
 	if err != nil || n < 0 {
 		return "", nil, chat.ErrNoStep
 	}
-	ls, _, err := chat.TailLines(path)
+	off, _, err := window(path)
 	if err != nil {
 		return "", nil, err
 	}
-	for _, raw := range ls {
+	var rerr error
+	for raw := range chat.Lines(path, off, &rerr) {
 		l, err := parse(raw)
 		if err != nil || l.Type != "user" || l.Message == nil {
 			continue
@@ -646,6 +674,9 @@ func (r *Reader) Image(path, id string) (string, []byte, error) {
 			}
 			return in[n].Source.MediaType, data, nil
 		}
+	}
+	if rerr != nil {
+		return "", nil, rerr
 	}
 	return "", nil, chat.ErrNoStep
 }

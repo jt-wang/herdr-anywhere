@@ -358,6 +358,21 @@ type building struct {
 	turn    chat.Turn
 	cwd     string
 	pending []struct{ id, text string } // what the agent said since its last step
+	// head: the turn the window starts in, its task_started further back than MaxBack. Shown only when no turn starts
+	// in the window, so a long turn is never no turn at all.
+	head bool
+}
+
+// window is where the record is read from: its last MaxTail bytes, or from the last turn's start when that is further
+// back (a turn running commands with large outputs).
+func window(path string) (int64, bool, error) {
+	return chat.Start(path, []byte(`"task_started"`), isStart)
+}
+
+func isStart(raw []byte) bool {
+	var l line
+	var e event
+	return json.Unmarshal(raw, &l) == nil && l.Type == "event_msg" && json.Unmarshal(l.Payload, &e) == nil && e.Type == "task_started"
 }
 
 func (b *building) flushNotes() {
@@ -386,17 +401,34 @@ func (b *building) finish(end string) chat.Turn {
 	return b.turn
 }
 
-// parse reads the record's end. A turn the window starts in the middle of is left out.
+// parse reads the record's end, from the last turn's start at least. A turn the window starts in the middle of is left
+// out, unless it is the only one.
 func (r *Reader) parse(path string) ([]chat.Turn, error) {
 	r.parses++
-	ls, _, err := chat.TailLines(path)
+	off, from0, err := window(path)
 	if err != nil {
 		return nil, err
 	}
 	var turns []chat.Turn
 	var b *building
+	var head *chat.Turn
+	begun := false
+	if !from0 {
+		b = &building{turn: chat.Turn{From: "you"}, head: true}
+	}
+	// done ends the turn being built.
+	done := func(end string) {
+		t := b.finish(end)
+		if b.head {
+			head = &t
+		} else {
+			turns = append(turns, t)
+		}
+		b = nil
+	}
 	cwd := ""
-	for _, raw := range ls {
+	var rerr error
+	for raw := range chat.Lines(path, off, &rerr) {
 		var l line
 		if err := json.Unmarshal(raw, &l); err != nil {
 			return nil, chat.Formatf("a line that isn't JSON")
@@ -423,11 +455,15 @@ func (r *Reader) parse(path string) ([]chat.Turn, error) {
 		}
 		switch e.Type {
 		case "task_started":
-			if b != nil { // a turn that never said it ended: a newer one started, so it stopped
+			begun = true
+			if b != nil && !b.head { // a turn that never said it ended: a newer one started, so it stopped
 				turns = append(turns, b.finish("stopped"))
 			}
 			b = &building{turn: chat.Turn{ID: e.TurnID, From: "you", At: l.Timestamp}, cwd: cwd}
 		case "task_complete", "turn_aborted":
+			if b != nil && b.head && b.turn.ID == "" {
+				b.turn.ID = e.TurnID
+			}
 			if b == nil || (e.TurnID != "" && e.TurnID != b.turn.ID) {
 				continue
 			}
@@ -438,9 +474,11 @@ func (r *Reader) parse(path string) ([]chat.Turn, error) {
 			if e.Type == "turn_aborted" {
 				end = "stopped"
 			}
-			turns = append(turns, b.finish(end))
-			b = nil
+			done(end)
 		case "item_completed":
+			if b != nil && b.head && b.turn.ID == "" {
+				b.turn.ID = e.TurnID
+			}
 			if b == nil || (e.TurnID != "" && e.TurnID != b.turn.ID) {
 				continue
 			}
@@ -451,8 +489,14 @@ func (r *Reader) parse(path string) ([]chat.Turn, error) {
 			r.add(b, &it)
 		}
 	}
+	if rerr != nil {
+		return nil, rerr
+	}
 	if b != nil {
-		turns = append(turns, b.finish("open"))
+		done("open")
+	}
+	if !begun && head != nil {
+		turns = []chat.Turn{*head}
 	}
 	var out []chat.Turn
 	for _, t := range turns {
@@ -511,12 +555,13 @@ func (r *Reader) add(b *building, it *item) {
 
 // find returns the item a step was made from, and the cwd the record had then.
 func find(path, id string) (*item, string, error) {
-	ls, _, err := chat.TailLines(path)
+	off, _, err := window(path)
 	if err != nil {
 		return nil, "", err
 	}
 	cwd := ""
-	for _, raw := range ls {
+	var rerr error
+	for raw := range chat.Lines(path, off, &rerr) {
 		var l line
 		if json.Unmarshal(raw, &l) != nil {
 			continue
@@ -538,6 +583,9 @@ func find(path, id string) (*item, string, error) {
 		if json.Unmarshal(l.Payload, &e) == nil && e.Type == "item_completed" && json.Unmarshal(e.Item, &it) == nil && it.ID == id {
 			return &it, cwd, nil
 		}
+	}
+	if rerr != nil {
+		return nil, "", rerr
 	}
 	return nil, "", chat.ErrNoStep
 }
@@ -621,11 +669,12 @@ func change(file, kind, diff, content string) *chat.Change {
 
 // Image finds the image a step looked at, as Codex sent it to the model: the output of the call with the step's id.
 func (r *Reader) Image(path, id string) (string, []byte, error) {
-	ls, _, err := chat.TailLines(path)
+	off, _, err := window(path)
 	if err != nil {
 		return "", nil, err
 	}
-	for _, raw := range ls {
+	var rerr error
+	for raw := range chat.Lines(path, off, &rerr) {
 		if !bytes.Contains(raw, []byte(id)) || !bytes.Contains(raw, []byte(`"input_image"`)) {
 			continue
 		}
@@ -657,6 +706,9 @@ func (r *Reader) Image(path, id string) (string, []byte, error) {
 			}
 			return media, b, nil
 		}
+	}
+	if rerr != nil {
+		return "", nil, rerr
 	}
 	return "", nil, chat.ErrNoStep
 }
