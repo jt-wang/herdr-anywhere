@@ -1,0 +1,95 @@
+nsh pull request #1014 (https://github.com/longbridge/nsh/pull/1014), upstream commit
+0d0338ac55e94a004acdb59a333356410c3530c4 in https://github.com/longbridge/nsh, unchanged:
+js: Keep a live memo's value when its object is collected (#1014)
+A live computed's value in a cycle with its object was freed by the collector while the graph still held it;
+the memo's next run freed it again. Herdr Anywhere's chat view crashed on iOS 27 with that stack
+(js_free_value_rt <- js_array_finalizer <- free_gc_object).
+
+nsh is Copyright Longbridge, licensed under the Apache License 2.0
+(https://github.com/longbridge/nsh/blob/v0.3.0/LICENSE-APACHE); this patch is under the same license.
+build-nsh-ios.sh applies it after 0001.
+
+diff --git a/crates/nsh-core/src/reactive.rs b/crates/nsh-core/src/reactive.rs
+index 7ec0cd72..143f0261 100644
+--- a/crates/nsh-core/src/reactive.rs
++++ b/crates/nsh-core/src/reactive.rs
+@@ -425,13 +425,22 @@ impl<H: Host> Graph<H> {
+         self.nodes[id as usize].handle = true;
+     }
+ 
++    /// Whether node `id`'s handle owns what the node holds: it is freed with
++    /// the handle ([`Self::drop_handle`]), as a signal or a disposed
++    /// computation is. A live computation belongs to its owner and outlives
++    /// its handle, so what it holds is not the handle's (a garbage collector
++    /// must not count it among the handle's children).
++    pub fn held_by_handle(&self, id: u32) -> bool {
++        let n = &self.nodes[id as usize];
++        n.kind == Kind::Signal || n.disposed
++    }
++
+     /// The handle of node `id` went: a signal, or a disposed computation,
+     /// is freed now (what it held comes back, to free once the graph is no
+     /// longer borrowed).
+     pub fn drop_handle(&mut self, id: u32) -> Option<Held<H>> {
+-        let n = &mut self.nodes[id as usize];
+-        n.handle = false;
+-        if n.kind == Kind::Signal || n.disposed {
++        self.nodes[id as usize].handle = false;
++        if self.held_by_handle(id) {
+             self.unlink_observers(id);
+             Some(self.release(id))
+         } else {
+diff --git a/crates/nsh-js/src/reactive.rs b/crates/nsh-js/src/reactive.rs
+index b1e4cffe..c56757a0 100644
+--- a/crates/nsh-js/src/reactive.rs
++++ b/crates/nsh-js/src/reactive.rs
+@@ -533,7 +533,10 @@ unsafe extern "C" fn gc_mark(rt: *mut qjs::JSRuntime, obj: JsValue, mark: qjs::J
+         return;
+     }
+     let (id, generation) = unpack(p);
+-    if g.live(id, generation, GENERATION_MASK) {
++    // Only what the object owns: the value of a live memo is its node's,
++    // which its owner keeps after the object goes. Marked as the object's,
++    // a cycle through the object would free it under the graph.
++    if g.live(id, generation, GENERATION_MASK) && g.held_by_handle(id) {
+         unsafe { qjs::JS_MarkValue(rt, *g.value(id), mark) };
+         if let Some(f) = g.custom_equals(id) {
+             unsafe { qjs::JS_MarkValue(rt, *f, mark) };
+@@ -1473,6 +1476,37 @@ mod tests {
+         assert_eq!(after, before, "every signal collected");
+     }
+ 
++    #[test]
++    fn a_live_memo_keeps_its_value_when_its_object_is_collected() {
++        // The memo's object goes, but its root does not: the node (and the
++        // value it holds) lives on in the graph. A cycle through the value
++        // must not let the collector free the value under the graph, which
++        // frees it again when the memo runs again or the graph goes.
++        let rt = rquickjs::Runtime::new().unwrap();
++        let cx = rquickjs::Context::full(&rt).unwrap();
++        cx.with(|cx| {
++            crate::state::install(&cx, std::rc::Rc::default(), &[], Default::default());
++            super::install_globals(&cx);
++            let _: () = cx
++                .eval(
++                    r#"
++                    const R = globalThis.__nsh_reactive;
++                    R.createRoot(() => {
++                        const m = R.createMemo(() => ({ n: 1 }));
++                        // A cycle: the value holds the memo's object.
++                        m().memo = m;
++                        globalThis.weak = new WeakRef(m());
++                    });
++                    "#,
++                )
++                .unwrap();
++        });
++        rt.run_gc();
++        let kept: bool = cx.with(|cx| cx.eval("globalThis.weak.deref()?.n === 1").unwrap());
++        assert!(kept, "the live memo's value was collected");
++        cx.with(|cx| crate::state::uninstall(&cx));
++    }
++
+     #[test]
+     fn effects_made_untracked_in_a_root_still_track() {
+         // The renderer's shape: `render` (a root), `createComponent`

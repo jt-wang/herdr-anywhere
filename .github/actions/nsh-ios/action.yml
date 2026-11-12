@@ -1,0 +1,35 @@
+name: NativeShell with the app's nsh patches
+description: >
+  nsh v0.3.0 with app/ios/nsh-patches (upstream #530 and #1014) built into NativeShell.xcframework with the given
+  Xcode, once per patches and Xcode, then taken from the cache. Sets NSH_IOS_EMBED, where app/ios/build.sh takes it.
+inputs:
+  xcode:
+    description: The Xcode to build with (the job's own, as it links the framework)
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Key
+      id: key
+      shell: bash
+      env:
+        XCODE: ${{ inputs.xcode }}
+      run: |
+        echo "NSH_IOS_EMBED=$RUNNER_TEMP/nsh-ios" >> "$GITHUB_ENV"
+        echo "key=nsh-ios-$(app/ios/nsh-patches/key.sh | tr ' ' '-')-$(basename "$XCODE" .app)" >> "$GITHUB_OUTPUT"
+    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      id: cache
+      with:
+        path: ${{ runner.temp }}/nsh-ios
+        key: ${{ steps.key.outputs.key }}
+    - name: Build it (none in the cache)
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        DEVELOPER_DIR: ${{ inputs.xcode }}/Contents/Developer
+      run: |
+        rustup toolchain install "$(app/ios/nsh-patches/key.sh | awk '{print $4}')" --profile minimal \
+          --target aarch64-apple-ios --target aarch64-apple-ios-sim
+        start=$(date +%s)
+        app/ios/nsh-patches/build-nsh-ios.sh "$RUNNER_TEMP/nsh-src" "$RUNNER_TEMP/nsh-ios"
+        echo "NativeShell built in $(( $(date +%s) - start )) s"

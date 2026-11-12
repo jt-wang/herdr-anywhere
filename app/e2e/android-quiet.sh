@@ -11,6 +11,7 @@ app=$(cd "$(dirname "$0")/.." && pwd)
 apk=${1:-$app/android/build/Herdr.apk}
 shot=${2:-}
 adb="${ANDROID_HOME:-$HOME/Library/Android/sdk}/platform-tools/adb"
+. "$(dirname "$0")/adb-note.sh"; adb_note "$adb"  # a failed adb call is written down and shown if the suite fails
 hc=${HM_TEST_HC:-$(command -v hc || echo "$HOME/.local/bin/hc")}
 id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$app/nsh.json")
 
@@ -42,7 +43,9 @@ cleanup() {
   "$hc" server stop >/dev/null 2>&1 || true
   chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run" "$state"
 }
-trap cleanup EXIT INT TERM
+trap 'adb_exit $? cleanup' EXIT
+# INT and TERM end the suite; the EXIT trap cleans up (a handler that only cleans up lets the script go on).
+trap 'exit 130' INT; trap 'exit 143' TERM
 
 # Install first: Tailcat's pairing window lasts 2 minutes.
 "$adb" install -r "$apk" >/dev/null
@@ -89,6 +92,7 @@ tap pair
 ok=""
 for _ in $(seq 1 120); do
   if grep -q "device .* connected (binary," "$work/serve.log" && screen_has acme-api; then ok=1; break; fi
+  adb_gone && exit 1
   sleep 1
 done
 took=$(($(date +%s) - started))
@@ -124,7 +128,7 @@ if [ -n "${HM_UPLOAD_MB:-}" ]; then
   tap_text() {
     xy=""; for _ in $(seq 1 "${2:-15}"); do "$adb" shell uiautomator dump /sdcard/hm.xml >/dev/null 2>&1
       xy=$("$adb" shell cat /sdcard/hm.xml | tr '>' '\n' | grep -F "text=\"$1\"" | head -1 | sed -E 's/.*bounds="\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\]".*/\1 \2 \3 \4/' | awk '{print int(($1+$3)/2), int(($2+$4)/2)}')
-      [ -n "$xy" ] && break; sleep 1; done
+      [ -n "$xy" ] && break; adb_gone && exit 1; sleep 1; done
     [ -n "$xy" ] || { echo "FAIL: nothing says $1 on screen"; "$adb" exec-out screencap -p > "${shot:-/tmp}/upload-fail.png"; "$adb" shell cat /sdcard/hm.xml | tr '>' '\n' | grep -o ' text="[^"]\+"' | head -20; exit 1; }
     "$adb" shell input tap $xy
   }
@@ -138,6 +142,8 @@ if [ -n "${HM_UPLOAD_MB:-}" ]; then
     for f in "$work"/home/.cache/herdr-anywhere/uploads/*/"$big"; do
       [ -f "$f" ] && screen_has "$big" && [ "$(wc -c < "$f")" = "$(wc -c < "$work/$big")" ] && { got=$f; break 2; }
     done
+    # The emulator gone (a run lost it 15 s into the upload): stop now, not after the 600 s.
+    adb_gone && { ls -la "$work"/home/.cache/herdr-anywhere/uploads/* 2>/dev/null | tail -3; exit 1; }
     sleep 1
   done
   [ -n "$got" ] || { echo "FAIL: ${HM_UPLOAD_MB} MB did not land on the computer"; ls -la "$work"/home/.cache/herdr-anywhere/uploads/* 2>/dev/null | tail -3; exit 1; }
