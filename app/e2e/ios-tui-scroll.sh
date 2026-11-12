@@ -66,7 +66,8 @@ container=$(xcrun simctl get_app_container "$SIM_UDID" "$id")
 for s in request done; do
   [ -f "$container/nsh/assets/assets/sounds/$s.mp3" ] || { echo "FAIL: the app has no sounds/$s.mp3"; exit 1; }
 done
-xcrun simctl launch "$SIM_UDID" "$id" >/dev/null
+# The app's stderr kept: NSH's iOS runtime logs there (its console.log too), not to the simulator's log.
+xcrun simctl launch --stdout="$work/app-out.txt" --stderr="$work/app-err.txt" "$SIM_UDID" "$id" >/dev/null
 
 screen() { perl -e 'alarm 60; exec @ARGV' idb ui describe-all --udid "$SIM_UDID" 2>/dev/null; }
 ok=""
@@ -86,16 +87,11 @@ cp -R "$app/e2e/ios-uitest" "$work/uitest"
 (cd "$work/uitest" && xcodegen generate --quiet)
 : > "$work/wheels"
 rc=0
-# The app's own "hm-e2e" lines (each space it opens, e2e/ios-touch-app.sh), from the simulator's system log.
-xcrun simctl spawn "$SIM_UDID" log stream --style compact --predicate 'eventMessage CONTAINS "hm-e2e"' > "$work/app-log.txt" 2>&1 &
-logs=$!
-sleep 2
 TEST_RUNNER_EVENTS="$work/wheels" TEST_RUNNER_SPACE=spscroll TEST_RUNNER_OUT="$work/scroll.txt" TEST_RUNNER_MISS_FIRST="${HM_SCROLL_MISS_FIRST:-}" TEST_RUNNER_SLOW_TERM="${HM_SCROLL_SLOW_TERM:-}" perl -e 'alarm 600; exec @ARGV' xcodebuild test -quiet -project "$work/uitest/KeyboardCheck.xcodeproj" -scheme UITests -only-testing:UITests/Scroll -destination "id=$SIM_UDID" -derivedDataPath "$work/uitest/derived" -resultBundlePath "$work/uitest/result.xcresult" > "$work/uitest/test.log" 2>&1 || rc=$?
 [ -n "$shot" ] && perl -e 'alarm 40; exec @ARGV' xcrun simctl io "$SIM_UDID" screenshot "${shot%.png}-scroll.png" >/dev/null 2>&1
-sleep 1; kill "$logs" 2>/dev/null
-echo "the test's notes, and the app's lines:"
+echo "the test's notes, and the app's lines (each space it opened, e2e/ios-touch-app.sh):"
 sed 's/^/  /' "$work/scroll.txt" 2>/dev/null || true
-grep -h 'hm-e2e' "$work/app-log.txt" | sed 's/^/  app: /' || echo "  app: no hm-e2e line (the app opened no space)"
+"$app/e2e/app-lines.sh" "hm-e2e openSpace" "$work/app-err.txt" "$work/app-out.txt"
 if [ "$rc" != 0 ]; then
   echo "FAIL: the scroll test (xcodebuild test exit $rc)"
   "$app/e2e/ios-xcresult.sh" "$work/uitest/result.xcresult" ${shot:+"${shot%.png}-failure"}

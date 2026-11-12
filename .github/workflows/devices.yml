@@ -41,14 +41,21 @@ on:
         type: choice
         options: ["none", "miss-first", "slow-terminal"]
         default: "none"
+      # The iOS pictures suite's self-test (e2e/ios-picture.sh): the dark run's first tap lands beside the path, so the
+      # suite must fail with its record of that tap. Meant with ios_b_repeat; a push never sets it.
+      ios_picture_selftest:
+        description: "iOS pictures suite self-test: none or miss-first (must fail, with its record)"
+        type: choice
+        options: ["none", "miss-first"]
+        default: "none"
 
 permissions:
   contents: read
 
 concurrency:
   # A run of copies has a group of its own, so it doesn't cancel the branch's usual run, nor that run it.
-  # So does each scroll self-test.
-  group: devices-${{ github.ref }}${{ ((inputs.ios_main_repeat || '0') != '0' || (inputs.ios_b_repeat || '0') != '0') && '-repeat' || '' }}${{ (inputs.ios_scroll_selftest || 'none') != 'none' && format('-{0}', inputs.ios_scroll_selftest) || '' }}
+  # So does each scroll self-test, and the pictures self-test.
+  group: devices-${{ github.ref }}${{ ((inputs.ios_main_repeat || '0') != '0' || (inputs.ios_b_repeat || '0') != '0') && '-repeat' || '' }}${{ (inputs.ios_scroll_selftest || 'none') != 'none' && format('-{0}', inputs.ios_scroll_selftest) || '' }}${{ (inputs.ios_picture_selftest || 'none') != 'none' && '-picture-selftest' || '' }}
   cancel-in-progress: true
 
 env:
@@ -404,6 +411,7 @@ jobs:
         env:
           HM_SCROLL_MISS_FIRST: ${{ inputs.ios_scroll_selftest == 'miss-first' && '1' || '' }}
           HM_SCROLL_SLOW_TERM: ${{ inputs.ios_scroll_selftest == 'slow-terminal' && '1' || '' }}
+          HM_PICTURE_MISS_FIRST: ${{ inputs.ios_picture_selftest == 'miss-first' && '1' || '' }}
         run: |
           s=e2e/ci/suite.sh
           case "${{ matrix.key }}" in
@@ -430,6 +438,10 @@ jobs:
           (cd companion && CGO_ENABLED=0 go build -buildvcs=false -o "$RUNNER_TEMP/check/herdr-anywhere" ./cmd/herdr-anywhere)
           app/e2e/ci-shots-check.sh --self-test "$RUNNER_TEMP/check/herdr-anywhere"
           app/e2e/ci-shots-check.sh "$OUT"
+          # A failure folder's names are made fit for the upload; checked here, as one bad name loses the whole artifact.
+          sh app/e2e/ios-xcresult.sh --self-test
+          # The suites' "app:" lines are the app's own, not log stream's header that repeats the words.
+          sh app/e2e/app-lines.sh --self-test
       - name: Shut the simulator
         if: always()
         run: '[ -z "${SIM_UDID:-}" ] || { xcrun simctl shutdown "$SIM_UDID"; xcrun simctl delete "$SIM_UDID"; }'

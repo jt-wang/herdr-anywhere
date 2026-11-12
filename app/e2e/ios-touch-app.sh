@@ -12,7 +12,7 @@ rm -rf "$tree"; mkdir -p "$tree"
 rsync -a --exclude /ios/build --exclude /ios/nsh --exclude /android "$app/" "$tree/app/"
 ln -s "$app/../third_party" "$tree/third_party"
 cp "$pair" "$tree/app/e2e/pair.ts"
-# And a line in the system log each time the app opens a space (the copy's root.tsx), "hm-e2e openSpace ID top=…":
+# And a line on the app's stderr each time it opens a space (the copy's root.tsx), "hm-e2e openSpace ID top=…":
 # the test can tell a tap that never reached the app from one that did and opened nothing.
 root="$tree/app/src/ui/root.tsx"
 [ "$(grep -c '^  const openSpace = (id: string) => {$' "$root")" = 1 ] ||

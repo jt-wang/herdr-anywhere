@@ -4,6 +4,8 @@
 # The app is built from ios-e2e.tsx, which opens it at this run's pairing link (as e2e/ios.sh). Fake data only.
 # The terminal is here, or with HM_PICTURE_IMAGE in a container, for screenshots to publish (picture-terminal.sh).
 # Usage: SIM_UDID=<udid> [HM_PICTURE_IMAGE=alpine:latest] e2e/ios-picture.sh [folder for screenshots]
+# HM_PICTURE_MISS_FIRST=1 is its self-test: the dark run's first tap lands beside the path, so the suite must fail with
+# the test's record of that tap (the terminal's frame, the time since the switch to dark, a second tap).
 # SIM_UDID is required, so the run never lands on another simulator. Needs go, nsh, hc, xcodegen and Xcode.
 set -eu
 : "${SIM_UDID:?set SIM_UDID to the simulator to use}"
@@ -56,10 +58,13 @@ cp -R "$app/e2e/ios-uitest" "$work/uitest"
 (cd "$work/uitest" && xcodegen generate --quiet)
 size="$work/size"; before=$(L "$hc" get "$term" --json | python3 -c 'import json,sys; t=json.load(sys.stdin); print(t["cols"], t["rows"])')
 # Each run: the XCUITest taps; meanwhile the terminal's size, once the phone has set it, goes to $size for it.
+# The time of the appearance switch just before, for the test to say how long after it the tap came.
+appearance() { xcrun simctl ui "$SIM_UDID" appearance "$1"; switched=$(python3 -c 'import time; print(time.time())'); }
 picture() {
   rm -f "$size"; [ -n "${2:-}" ] && echo "$2" > "$size"
+  miss=""; [ "$1" = dark ] && miss=${HM_PICTURE_MISS_FIRST:-}
   TEST_RUNNER_OUT="$work/picture-$1.txt" TEST_RUNNER_SHOTS="${shots:-$work}/$1" TEST_RUNNER_SIZE="$size" TEST_RUNNER_SPACE="$space" \
-    TEST_RUNNER_TERMINAL="$term" TEST_RUNNER_FULL="$full" \
+    TEST_RUNNER_TERMINAL="$term" TEST_RUNNER_FULL="$full" TEST_RUNNER_SWITCHED="$switched" TEST_RUNNER_MISS_FIRST="$miss" \
     perl -e 'alarm 600; exec @ARGV' xcodebuild test -quiet -project "$work/uitest/KeyboardCheck.xcodeproj" -scheme UITests \
     -only-testing:UITests/Picture -destination "id=$SIM_UDID" -derivedDataPath "$work/uitest/derived" \
     -resultBundlePath "$work/uitest/result-$1.xcresult" > "$work/uitest/test-$1.log" 2>&1 &
@@ -71,12 +76,17 @@ picture() {
   done
   rc=0; wait $t || rc=$?
   sed 's/^/  /' "$work/picture-$1.txt" 2>/dev/null || true
-  [ "$rc" = 0 ] && echo "ok: $1" || { echo "FAIL: $1 (xcodebuild test exit $rc)"; "$app/e2e/ios-xcresult.sh" "$work/uitest/result-$1.xcresult" ${shots:+"$shots/$1-failure"} all; exit 1; }
+  [ "$rc" = 0 ] && { echo "ok: $1"; return; }
+  echo "FAIL: $1 (xcodebuild test exit $rc)"
+  # The screen's elements around the tap on the path, as the test noted them.
+  [ -n "$shots" ] && { mkdir -p "$shots/$1-failure"; for f in "$work/picture-$1.txt"-*.txt; do [ -f "$f" ] && cp "$f" "$shots/$1-failure/${f##*/picture-$1.txt-}"; done; } || true
+  "$app/e2e/ios-xcresult.sh" "$work/uitest/result-$1.xcresult" ${shots:+"$shots/$1-failure"} all
+  exit 1
 }
 [ -n "$shots" ] && mkdir -p "$shots"
-xcrun simctl ui "$SIM_UDID" appearance light
+appearance light
 picture light
-xcrun simctl ui "$SIM_UDID" appearance dark
+appearance dark
 picture dark "$(cat "$size")"
 xcrun simctl ui "$SIM_UDID" appearance light
 echo PASS
