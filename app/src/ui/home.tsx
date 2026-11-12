@@ -2,7 +2,7 @@
 // then the desktop sidebar's spaces with their git and their agents, and the status bar (herdr-app defaults/mods/spaces,
 // mods/agents, mods/workspace-status).
 import { colorScheme, computed, Image, Scroll, signal, Text, View } from 'nsh'
-import { AlertDialog } from 'nsh/base'
+import { confirmClose, pickFrom } from './menu-sheet.tsx'
 import { ViewSwitch, type ViewSwitchProps } from './view-switch.tsx'
 import type { Store } from '../store.ts'
 import type { AgentInfo, SubRow } from '../model/agents.ts'
@@ -155,10 +155,11 @@ function AgentRows(props: { store: Store; agents: () => AgentInfo[]; full?: bool
   const s = props.store
   const words = agentWords(s)
   const menu = async (a: AgentInfo) => {
-    const r = await AlertDialog.show({ ...words.menu(a), presentation: 'actionSheet', actions: [
-      { id: 'pin', label: a.pinned ? t('unpin') : t('pinToTop') },
-      { id: 'close', label: t('close'), role: 'destructive' }, { id: 'cancel', label: t('cancel'), role: 'cancel' }] })
-    if (r === 'close') s.closePane(a.pane)
+    const w = words.menu(a)
+    const r = await pickFrom({ title: w.title, message: w.description || undefined, items: [
+      { id: 'pin', label: a.pinned ? t('unpin') : t('pinToTop'), icon: a.pinned ? 'pin-off' : 'pin' },
+      { id: 'close', label: t('close'), icon: 'x', role: 'destructive' }] })
+    if (r === 'close' && await confirmClose(w.title, 'closePaneDetail')) s.closePane(a.pane)
     if (r === 'pin') s.pin(a.address, !a.pinned).catch((e) => s.toast({ title: String(e?.message ?? e), level: 'error' }))
   }
   return (
@@ -211,13 +212,11 @@ function SpaceRow(props: { store: Store; space: Space; color: string; actions: H
   }
   const active = () => { rev(); return s.model.activeSpace()?.id === props.space.id }
   const menu = async () => {
-    const r = await AlertDialog.show({ title: name(), presentation: 'actionSheet', actions: [
-      { id: 'rename', label: t('rename') }, { id: 'close', label: t('closeSpace'), role: 'destructive' }, { id: 'cancel', label: t('cancel'), role: 'cancel' }] })
+    const r = await pickFrom({ title: name(), items: [
+      { id: 'rename', label: t('rename'), icon: 'square-pen' }, { id: 'close', label: t('closeSpace'), icon: 'x', role: 'destructive' }] })
     if (r === 'rename') props.actions.rename('space', props.space.id, props.space.name)
     else if (r === 'close') {
-      const ok = await AlertDialog.show({ title: t('closeTitle', { name: name() }), description: t('closeDetail'), actions: [
-        { id: 'cancel', label: t('cancel'), role: 'cancel' }, { id: 'close', label: t('close'), role: 'destructive' }] })
-      if (ok === 'close') s.closeSpace(props.space.id)
+      if (await confirmClose(name(), 'closeDetail')) s.closeSpace(props.space.id)
     }
   }
   return (

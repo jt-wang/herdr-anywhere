@@ -2,6 +2,12 @@
 import { expect, open, test } from 'nsh/test'
 
 const busy = () => open('./fixtures/fake.tsx', { host: { params: { scene: 'busy' } } })
+/** Opens a menu (ui/menu-sheet.tsx) with `opener` and picks the choice `id`. */
+const pick = async (app: any, opener: () => Promise<void>, id: string) => {
+  await opener()
+  await app.waitFor('id:menu')
+  await app.press(`id:menu-${id}`)
+}
 
 test('a row of choices too long for the phone fades at its end until it is scrolled there, so no button reads as cut off', async () => {
   const app = await busy()
@@ -235,27 +241,23 @@ test('a split on a phone asks first, then shows both panes; one at a time is a m
 
   // Declining the warning leaves one pane.
   const asked: string[] = []
-  app.onDialog((d) => {
-    if (d.buttons.includes('Split right')) return 'Split right'
-    if (d.buttons.includes('Split anyway')) { asked.push(d.title ?? ''); return 'Cancel' }
-    return null
-  })
-  await app.press('id:space-more')
+  const more = () => app.press('id:space-more')
+  app.onDialog((d) => { if (d.buttons.includes('Split anyway')) { asked.push(d.title ?? ''); return 'Cancel' } return null })
+  await pick(app, more, 'split-right')
   await app.waitUntil(() => asked.length === 1)
   expect(app.count('id:pane-header')).toBe(1)
   expect(app.shows('id:terminal-t3')).toBe(true)
   expect(app.shows('id:split-right-p-tb3')).toBe(false)
 
   // Going ahead puts both on the screen, each with its own header, and the row under them stays.
-  app.onDialog((d) => (d.buttons.includes('Split right') ? 'Split right' : d.buttons.includes('Split anyway') ? 'Split anyway' : null))
-  await app.press('id:space-more')
+  app.onDialog((d) => (d.buttons.includes('Split anyway') ? 'Split anyway' : null))
+  await pick(app, more, 'split-right')
   await app.waitFor('id:close-p-tb3')
   expect(app.shows('id:terminal-t3')).toBe(true)
   expect(app.count('id:compose-input')).toBe(1)
 
   // One at a time: the new pane has focus, and the switcher goes back to the first.
-  app.onDialog((d) => (d.buttons.includes('Show one pane') ? 'Show one pane' : null))
-  await app.press('id:space-more')
+  await pick(app, more, 'show-one')
   await app.waitUntil(() => !app.shows('id:terminal-t3'))
   await app.press('id:switcher')
   await app.waitFor('id:switch-pane-p-tb3')
@@ -263,8 +265,7 @@ test('a split on a phone asks first, then shows both panes; one at a time is a m
   await app.waitFor('id:terminal-t3')
 
   // Both again: the same warning, and it can be declined.
-  app.onDialog((d) => (d.buttons.includes('Show all panes') ? 'Show all panes' : d.buttons.includes('Split anyway') ? 'Split anyway' : null))
-  await app.press('id:space-more')
+  await pick(app, more, 'show-all')
   await app.waitFor('id:close-p-tb3')
 
   // Closing the other pane leaves one, drawn the phone's way.
@@ -278,8 +279,7 @@ test('going to another screen puts the keyboard away: Settings is not left under
   await app.press('id:space-sp2')
   await app.waitFor('id:terminal-t3')
   const before = Number(app.storage()['keyboard-away'] ?? 0)
-  app.onDialog((d) => (d.buttons.includes('Settings') ? 'Settings' : null))
-  await app.press('id:space-more')
+  await pick(app, () => app.press('id:space-more'), 'settings')
   await app.waitFor('text:Appearance')
   await app.waitUntil(() => Number(app.storage()['keyboard-away'] ?? 0) === before + 1)
 })
@@ -450,8 +450,7 @@ test('renaming a space from its menu changes it everywhere', async () => {
   await app.waitFor('text:Needs you')
   await app.press('id:space-sp2')
   await app.waitFor('id:space-more')
-  app.onDialog((d) => (d.buttons.includes('Rename space') ? 'Rename space' : null))
-  await app.press('id:space-more')
+  await pick(app, () => app.press('id:space-more'), 'rename')
   await app.waitFor('id:rename')
   await app.clear('id:rename')
   await app.type('id:rename', 'frontend')
@@ -772,23 +771,24 @@ test('an agent pinned on the desktop shows under Pinned on top, and leaves its s
 test('pinning from an agent\'s menu pins it on the computer; Unpin from the Pinned row puts it back', async () => {
   const app = await busy()
   await app.waitFor('id:space-agent-t2')
-  app.onDialog((d) => (d.buttons.includes('Pin to the top') ? 'Pin to the top' : null))
-  await app.longPress('id:space-agent-t2')
+  await pick(app, () => app.longPress('id:space-agent-t2'), 'pin')
   await app.waitFor('id:pinned-agent-t2')
   expect(app.count('id:space-agent-t2')).toBe(0)
-  app.onDialog((d) => (d.buttons.includes('Unpin') ? 'Unpin' : null))
-  await app.longPress('id:pinned-agent-t2')
+  await pick(app, () => app.longPress('id:pinned-agent-t2'), 'pin')
   await app.waitFor('id:space-agent-t2')
   expect(app.count('text:Pinned')).toBe(0)
 })
 
 test("an agent's menu is titled with its row's main text, its space and program under it", async () => {
-  const shown: { title?: string | null; message?: string | null }[] = []
+  // What the menu's title and the line under it say, then it is closed.
   const menuOf = async (app: any, row: string) => {
-    app.onDialog((d: any) => { shown.push({ title: d.title, message: d.message }); return 'Cancel' })
     await app.longPress(row)
-    await app.waitUntil(() => shown.length > 0)
-    return shown.pop()
+    await app.waitFor('id:menu')
+    const said = (id: string) => app.texts().filter((t: string) => app.count(`id:${id} >> text:${t}`) > 0)[0] ?? null
+    const r = { title: said('menu-title'), message: said('menu-message') }
+    await app.press('id:menu-cancel')
+    await app.waitUntil(() => app.count('id:menu') === 0)
+    return r
   }
   const twins = await open('./fixtures/fake.tsx', { host: { params: { scene: 'twins' } } })
   await twins.waitFor('id:space-agent-t1')

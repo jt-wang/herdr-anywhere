@@ -67,7 +67,7 @@ export const zhHant: Table = {
   forgetComputer: '忘記這台電腦', forget: '忘記', forgetTitle: '要忘記 {name} 嗎？',
   forgetDetail: '重新配對之前，這支手機看不到它的 agent。',
   cancel: '取消', close: '關閉', rename: '重新命名', save: '儲存', open: '開啟', new: '新增', send: '傳送', clear: '清除',
-  closeTitle: '要關閉 {name} 嗎？', closeDetail: '裡面的終端機和正在執行的程式都會結束。',
+  closeTitle: '要關閉 {name} 嗎？', closeDetail: '裡面的終端機和正在執行的程式都會結束。', closePaneDetail: '裡面的終端機和正在執行的程式都會結束。',
   thisComputer: '這台電腦', noAgentsRunning: '沒有執行中的 agent',
   agents: { other: '{n} 個 agent' }, needYou: { other: '{n} 個在等你' },
   waitingOpen: '{program}，{place}，已等待 {age}：開啟', oldestFirst: '等最久的在前', spaces: '空間',
@@ -107,7 +107,7 @@ export const zhHant: Table = {
   programExited: '程式已結束。', terminalClosed: '終端機已關閉。',
   terminalLost: '電腦重新啟動過，這個終端機已經不在了。', terminalFinished: '這個終端機已結束。',
   terminalEnded: '終端機已結束（{reason}）。',
-  terminalPageFailed: '終端機沒有載入。', tryAgain: '重試',
+  terminalLoading: '終端機還在載入…', tryAgain: '重試',
   nameNeedsYou: '{name} 在等你', nameFinished: '{name} 已完成',
   titleNeedsYou: '「{name}」在等你', titleFinished: '「{name}」已完成',
   layoutChanged: '版面在別處變更了', layoutChangedBody: '現在顯示的是另一個畫面的版面。',
@@ -119,7 +119,7 @@ export const zhHant: Table = {
   checksQuestion: "要檢查新版本嗎？", checksQuestionDetail: "電腦每天問一次 GitHub。不經你同意，不會安裝任何東西。", checksYes: "每天檢查", checksNo: "不檢查", checksDaily: "每天檢查新版本", checksDailyDetail: "電腦每天問一次 GitHub。", newVersions: "新版本", checkNow: "檢查", checking: "正在檢查…", upToDate: "已是最新版本", couldntCheck: "無法檢查：{error}",
   updateWrongKey: "這個檔案的簽署和手機上的 App 不同，Android 不允許覆蓋安裝。",
   // The chat view (ui/chat.tsx).
-  showChat: "顯示對話", showTerminal: "顯示終端機", chatWorked: "用時 {time}", chatSteps: { other: "{n} 步" }, chatWorking: "正在工作…", chatStopped: "已停止", chatAnswerInTerminal: "請在終端機裡回答。", chatFromOther: "來自另一個程式", chatEmpty: "還沒有對話。", chatBehind: "紀錄還沒跟上螢幕。", chatUpdating: "正在更新…", chatNoRecord: "這個 agent 關掉了對話紀錄，沒有對話可以顯示。", chatFormat: "這個版本的 agent 紀錄格式，App 還讀不了。", chatUnsure: "無法確定這是哪一段對話。", chatNotReported: "暫時認不出是哪一段對話，{agent} 工作一次之後就能顯示。", chatOffline: "連不上電腦，下面是它上次說的。", stepGone: "這一步的詳情已經沒了。", chatExitCode: "失敗 · 結束代碼 {code}", chatFailed: "失敗", chatShowAll: "顯示全部 {n} 行", chatReadLines: "讀了第 {from}–{to} 行，共 {total} 行", chatChangeCut: "只顯示前 {n} 行。", fileVideo: "影片", filePdf: "PDF", fileText: "文字", fileImage: "圖片", fileOther: "檔案", fileCantRead: "電腦讀不了這個檔案。", videoCantPlay: "這個影片無法播放。", fileNoApp: "這支手機上沒有能打開這個檔案的程式。", fileCantGet: "沒能從電腦上取得這個檔案。",
+  showChat: "顯示對話", showTerminal: "顯示終端機", chatWorked: "用時 {time}", chatSteps: { other: "{n} 步" }, chatWorking: "正在工作…", chatStopped: "已停止", chatTakenMidTurn: "做到一半插進去的", chatAnswerInTerminal: "請在終端機裡回答。", chatFromOther: "來自另一個程式", chatEmpty: "還沒有對話。", chatBehind: "紀錄還沒跟上螢幕。", chatUpdating: "正在更新…", chatNoRecord: "這個 agent 關掉了對話紀錄，沒有對話可以顯示。", chatFormat: "這個版本的 agent 紀錄格式，App 還讀不了。", chatUnsure: "無法確定這是哪一段對話。", chatNotReported: "暫時認不出是哪一段對話，{agent} 工作一次之後就能顯示。", chatOffline: "連不上電腦，下面是它上次說的。", stepGone: "這一步的詳情已經沒了。", chatExitCode: "失敗 · 結束代碼 {code}", chatFailed: "失敗", chatShowAll: "顯示全部 {n} 行", chatReadLines: "讀了第 {from}–{to} 行，共 {total} 行", chatChangeCut: "只顯示前 {n} 行。", fileVideo: "影片", filePdf: "PDF", fileText: "文字", fileImage: "圖片", fileOther: "檔案", fileCantRead: "電腦讀不了這個檔案。", videoCantPlay: "這個影片無法播放。", fileNoApp: "這支手機上沒有能打開這個檔案的程式。", fileCantGet: "沒能從電腦上取得這個檔案。",
   // The progress page (experimental).
   experimental: "實驗功能", progressPage: "進度頁", progressPageDetail: "首頁按任務列出進度", progressBy: "{agent} 在整理中", progressPickTitle: "用哪個 agent 整理你說的話", progressPickDetail: "它在電腦上自己開一個窗格，把你在各個窗格裡說的事歸成任務，窗格停下來時判斷做完沒有。", progressLooking: "正在看電腦上裝了哪些 agent…", progressNoAgent: "這台電腦上沒找到能用的 agent（Claude Code、Pi、Kimi Code 或 Codex）。", progressCantRead: "讀不到電腦上的 agent：{error}", progressCouldntOn: "電腦上沒有打開", progressCouldntOff: "電腦上沒有關掉", agentTooOld: "要 {need} 以上才看得到它在不在忙，這台是 {have}",
   progressTitle: "進度", viewAgents: "Agent", secNeedsYou: "要你處理", secInProgress: "進行中", stageWaiting: "等你", stageStuck: "卡住", stageReview: "做完待驗收", stageDoing: "在做", stageParked: "排隊中", stageDone: "完成", stageDropped: "放下", openPaneBtn: "打開窗格", openNamed: "打開 {name}", organizerWaitsTitle: "整理窗格還沒開始", organizerWaitsBody: "它可能停在「信任這個目錄」或登入畫面。打開它回答一次，之後你說的話才會整理成任務。", queueLeft: "還有 {n} 條在整理", doneCount: "已完成 {n} 個", progressEmpty: "還沒有任務。你在各個窗格裡說要做的事，會整理到這裡。", cantReadProgress: "讀不到進度", doneWhen: "完成標準：{std}", tasksUnder: "下面的任務", paneMovedOn: "在做下一件", fold: "收起", unfold: "展開", paneTurns: "{status} · 交給它後 {n} 輪", paneMissing: "找不到", doingLine: "在做：{task}", alertWaiting: "等你：{text}", alertDone: "做完了：{text}", alertReview: "做完待驗收：{text}", withEvidence: "{text}（{evidence}）", flagAsks: "{pane} 在問：{msg}", flagBlocked: "{pane} 在等你", flagError: "{pane} 出錯了", flagQuiet: "{pane} 派工後 {age} 沒有新一輪", flagNoStatus: "{pane} 派工後 1 分鐘沒有狀態，可能停在信任或登入畫面", flagMissing: "{pane} 找不到",

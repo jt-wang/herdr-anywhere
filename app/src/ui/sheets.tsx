@@ -6,7 +6,7 @@ import type { Store } from '../store.ts'
 import { explain } from '../store.ts'
 import { startable, type Program } from '../model/programs.ts'
 import { tilde, type FolderApi } from '../model/folders.ts'
-import { Button, Glyph, ProgramIcon, useRev } from './kit.tsx'
+import { Button, Glyph, PANEL, PANEL_BACKDROP, ProgramIcon, useRev } from './kit.tsx'
 import { t } from '../strings/index.ts'
 import { FolderPickerView } from './folder-picker.tsx'
 
@@ -64,7 +64,7 @@ export function NewSheet(props: { store: Store; target: Signal<NewTarget | null>
     }
   }
   return (
-    <Sheet open={open()} side="bottom" onOpenChange={(o) => { if (!o) close() }} popupClass="bg-popover rounded-t-[14px] px-4 pt-3 pb-[env(safe-area-inset-bottom)]" popupStyle={above()}>
+    <Sheet open={open()} side="bottom" onOpenChange={(o) => { if (!o) close() }} popupClass={`${PANEL} px-4 pt-3 pb-[env(safe-area-inset-bottom)]`} backdropClass={PANEL_BACKDROP} popupStyle={above()}>
       <View class="gap-1">
         <If when={open() && picking() && local()}>
           <FolderPickerView title={title()} api={props.folders!} home={s.home} start={where()} recent={s.recentFolders()}
@@ -126,7 +126,7 @@ export function RenameSheet(props: { store: Store; target: Signal<RenameTarget |
   }
   return (
     <Sheet open={props.target() !== null} side="bottom" onOpenChange={(o) => { if (!o) props.target.set(null); else text.set(props.target()?.current ?? '') }}
-      popupClass="bg-popover rounded-t-[14px] px-4 pt-3 pb-[env(safe-area-inset-bottom)]" popupStyle={above()}>
+      popupClass={`${PANEL} px-4 pt-3 pb-[env(safe-area-inset-bottom)]`} backdropClass={PANEL_BACKDROP} popupStyle={above()}>
       <View class="gap-2">
         <Text class="text-[15px] font-semibold text-foreground">{props.target()?.kind === 'tab' ? t('renameTab') : t('renameSpace')}</Text>
         <Input testID="rename" value={text()} defaultValue={props.target()?.current ?? ''} onChange={(t) => text.set(t)} autoFocus submitBehavior="submit" onSubmit={save}

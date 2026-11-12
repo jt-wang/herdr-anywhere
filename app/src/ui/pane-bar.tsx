@@ -1,7 +1,8 @@
 // The row under a pane's terminal on a phone: the composer; for a blocked agent, its own choices as its screen shows
 // them (model/menu.ts), or the keys when they can't be read; and, while the keyboard is up, the key row under them.
 import { cleanup, effect, Keyboard, keyboardFrame, Picker, platform, signal, Text, View } from 'nsh'
-import { AlertDialog, Input } from 'nsh/base'
+import { Input } from 'nsh/base'
+import { pickFrom } from './menu-sheet.tsx'
 import type { Sending, Store } from '../store.ts'
 import { explain } from '../store.ts'
 import { MAX_FILE } from '../link.ts'
@@ -119,8 +120,8 @@ export async function attachFiles(store: Store, addr: string, land: (name: strin
   const api = store.files
   if (!api) return
   const failed = (body: string) => store.toast({ title: t('couldntAttach'), body, level: 'error' })
-  const choice = await AlertDialog.show({ title: t('attach'), presentation: 'actionSheet', actions: [
-    { id: 'photo', label: t('attachPhoto') }, { id: 'file', label: t('attachFile') }, { id: 'cancel', label: t('cancel'), role: 'cancel' }] })
+  const choice = await pickFrom({ title: t('attach'), items: [
+    { id: 'photo', label: t('attachPhoto'), icon: 'image' }, { id: 'file', label: t('attachFile'), icon: 'file' }] })
   const on = machineOfAddress(addr)
   try {
     if (choice === 'photo') {
