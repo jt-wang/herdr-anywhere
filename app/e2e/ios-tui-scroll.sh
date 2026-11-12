@@ -17,6 +17,7 @@ id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$a
 port=7691
 while nc -z 127.0.0.1 "$port" 2>/dev/null; do port=$((port + 1)); done
 work=$(mktemp -d)
+: > "$work/started" # what e2e/ios-failure-logs.sh keeps is from after this
 (cd "$app/../companion" && go build -o "$work/herdr-anywhere" ./cmd/herdr-anywhere)
 run=$(mktemp -d /tmp/hmXXXX)
 mkdir -p "$work/sam/src/acme-api" "$work/state" "$work/config" "$work/data"
@@ -94,6 +95,7 @@ sed 's/^/  /' "$work/scroll.txt" 2>/dev/null || true
 if [ "$rc" != 0 ]; then
   echo "FAIL: the scroll test (xcodebuild test exit $rc)"
   "$app/e2e/ios-xcresult.sh" "$work/uitest/result.xcresult" ${shot:+"${shot%.png}-failure"}
+  [ -n "$shot" ] && "$app/e2e/ios-failure-logs.sh" "$work/started" "$work/serve.log" "${shot%.png}-failure" || true
   # The screen's elements around the tap on the space, as the test noted them.
   [ -n "$shot" ] && { mkdir -p "${shot%.png}-failure"; for f in "$work"/scroll.txt-*.txt; do [ -f "$f" ] && cp "$f" "${shot%.png}-failure/${f##*/scroll.txt-}"; done; } || true
   exit 1
@@ -122,5 +124,6 @@ if [ "$failed" = 1 ]; then
   # What the program got, in order, and the screens the test kept before and after the first drag.
   echo "the program's reports and the test's marks:"; head -60 "$work/wheels" | sed 's/^/  /'
   "$app/e2e/ios-xcresult.sh" "$work/uitest/result.xcresult" ${shot:+"${shot%.png}-test"} all
+  [ -n "$shot" ] && "$app/e2e/ios-failure-logs.sh" "$work/started" "$work/serve.log" "${shot%.png}-test" || true
 fi
 exit $failed

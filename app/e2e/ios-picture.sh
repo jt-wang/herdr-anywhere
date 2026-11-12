@@ -16,6 +16,7 @@ hc=${HM_TEST_HC:-$(command -v hc || echo "$HOME/.local/bin/hc")}
 id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$app/nsh.json")
 port=7691; while nc -z 127.0.0.1 "$port" 2>/dev/null; do port=$((port + 1)); done
 work=$(mktemp -d)
+: > "$work/started" # what e2e/ios-failure-logs.sh keeps is from after this
 (cd "$app/../companion" && go build -o "$work/herdr-anywhere" ./cmd/herdr-anywhere)
 run=$(mktemp -d /tmp/hmXXXX)
 mkdir -p "$work/home" "$work/state" "$work/config" "$work/data"
@@ -85,6 +86,7 @@ picture() {
   # The screen's elements around the tap on the path, as the test noted them.
   [ -n "$shots" ] && { mkdir -p "$shots/$1-failure"; for f in "$work/picture-$1.txt"-*.txt; do [ -f "$f" ] && cp "$f" "$shots/$1-failure/${f##*/picture-$1.txt-}"; done; } || true
   "$app/e2e/ios-xcresult.sh" "$work/uitest/result-$1.xcresult" ${shots:+"$shots/$1-failure"} all
+  [ -n "$shots" ] && "$app/e2e/ios-failure-logs.sh" "$work/started" "$work/serve.log" "$shots/$1-failure" || true
   exit 1
 }
 [ -n "$shots" ] && mkdir -p "$shots"

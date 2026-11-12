@@ -458,6 +458,8 @@ jobs:
           sh app/e2e/ios-xcresult.sh --self-test
           # The suites' "app:" lines are the app's own, not log stream's header that repeats the words.
           sh app/e2e/app-lines.sh --self-test
+          # A failed suite's Companion log and the simulator's crash reports from the suite, and only those.
+          sh app/e2e/ios-failure-logs.sh --self-test
       - name: Shut the simulator
         if: always()
         run: '[ -z "${SIM_UDID:-}" ] || { xcrun simctl shutdown "$SIM_UDID"; xcrun simctl delete "$SIM_UDID"; }'
