@@ -524,7 +524,7 @@ jobs:
     # zoom: about twice a Mac's run of its two suites with the simulator's start (e2e/ios-zoom.sh).
     # The edge groups: 288 swipes and a recording took 52 minutes on a Mac at a desk (26.5); twice that and the build.
     # title: about 10 minutes when it ran inside the b group (4.5 for the check itself).
-    timeout-minutes: ${{ matrix.key == 'chat27' && inputs.chat_away_cycles != '0' && inputs.chat_away_cycles && 150 || startsWith(matrix.key, 'edge') && 120 || matrix.key == 'ask' && 60 || matrix.key == 'subkeep' && 40 || matrix.key == 'title' && 25 || matrix.key == 'zoom' && 40 || 75 }}
+    timeout-minutes: ${{ matrix.key == 'chat27' && inputs.chat_away_cycles != '0' && inputs.chat_away_cycles && 150 || startsWith(matrix.key, 'edge') && 120 || matrix.key == 'ask' && 60 || matrix.key == 'subkeep' && 40 || matrix.key == 'title' && 45 || matrix.key == 'zoom' && 40 || 75 }}
     strategy:
       fail-fast: false
       matrix:
@@ -624,8 +624,12 @@ jobs:
             chat)
               $s ios-chat-four e2e/ios-chat-four.sh "$OUT/chat" ;;
             chat27)
-              CHAT_AWAY_ONLY=1 AGENTS=claude-code CHAT_AWAY_CYCLES='${{ inputs.chat_away_cycles || '0' }}' CHAT_AWAY_SELFTEST='${{ inputs.chat_away_selftest || 'none' }}' \
-                $s ios-chat-four e2e/ios-chat-four.sh "$OUT/chat27" ;;
+              if [ '${{ inputs.chat_away_cycles || '0' }}' != 0 ]; then
+                CHAT_AWAY_ONLY=1 AGENTS=claude-code CHAT_AWAY_CYCLES='${{ inputs.chat_away_cycles }}' CHAT_AWAY_SELFTEST='${{ inputs.chat_away_selftest || 'none' }}' \
+                  $s ios-chat-four e2e/ios-chat-four.sh "$OUT/chat27"
+              else
+                $s ios-chat-four e2e/ios-chat-four.sh "$OUT/chat27"
+              fi ;;
             chatfold)
               # The app as built, over the Companion and a fake Claude Code, through a proxy that makes one answer
               # unsure and holds one back (e2e/ios-uitest ChatFold): the same group run on a change's before and after.

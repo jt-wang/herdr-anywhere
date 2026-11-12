@@ -48,7 +48,7 @@ final class ChatFour: XCTestCase {
     }
     func completedReply(_ current: (ids: Set<String>, labels: Set<String>), _ oldReplies: Set<String>, _ prompt: String) -> Bool {
       let fresh = Set(current.ids.filter { $0.hasPrefix("reply-") }).subtracting(oldReplies)
-      return current.labels.contains(prompt) && !current.ids.contains("chat-offline") && !current.labels.contains("Working…") &&
+      return current.labels.contains(prompt) && !current.ids.contains("chat-offline") && !current.labels.contains(where: { $0 == "Working…" || $0.hasPrefix("Working… · ") }) &&
         fresh.contains { current.ids.contains("fold-" + String($0.dropFirst("reply-".count))) }
     }
     // The app is still up and in front; a crash or a hang shows here first.

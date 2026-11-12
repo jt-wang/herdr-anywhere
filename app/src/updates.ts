@@ -102,6 +102,8 @@ export class Updates {
     clearInterval?: typeof clearInterval
   }) {}
 
+  private loop?: ReturnType<typeof setInterval>
+
   start() {
     this.off = this.d.conn.sub((c) => this.follow(c), 'Updates.follow')
     this.follow(this.d.conn.get())
@@ -113,8 +115,15 @@ export class Updates {
     this.follow('idle')
   }
 
+  /** Asks when the connection comes, then each hour while it lasts and the person said yes to daily checks: Android
+   *  keeps it for days, and the computer's daily check reaches the phone only through this answer. Only the computer
+   *  is asked, never GitHub. */
   private follow(c: Conn) {
-    if (c === 'ready') void this.refresh()
+    if (this.loop) (this.d.clearInterval ?? globalThis.clearInterval)(this.loop)
+    this.loop = undefined
+    if (c !== 'ready') return
+    void this.refresh()
+    this.loop = (this.d.setInterval ?? globalThis.setInterval)(() => { if (this.info.get()?.checks === 'on') void this.refresh() }, this.d.everyMs ?? 60 * 60_000)
   }
 
   async refresh() {

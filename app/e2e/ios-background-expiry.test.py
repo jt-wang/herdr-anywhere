@@ -20,7 +20,7 @@ LAUNCH = "11111111-2222-3333-4444-555555555555"
 
 
 def background(pid=PID, bundle=BUNDLE):
-    return (f'2030-01-02 03:04:05.000 Df SpringBoard[90:ab] Application process state changed for {bundle}: '
+    return (f'2006-01-02 03:04:05.000 Df SpringBoard[90:ab] Application process state changed for {bundle}: '
             f'<State; pid: {pid}; taskState: Running; visibility: Background>')
 
 

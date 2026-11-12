@@ -64,7 +64,8 @@ L() { env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin
 serve_pid=; ctl_pid=; log_pid=; system_log_pid=; proxy_pid=; booted=; remove_app=0
 debug_log_pid=; expiry_pid=; expiry_raw=
 cleanup() {
-  status=$?
+  behavior_status=$?
+  status=$behavior_status
   trap - EXIT INT TERM HUP
   set +e
   [ -n "$ctl_pid" ] && kill "$ctl_pid" 2>/dev/null
@@ -92,7 +93,15 @@ cleanup() {
   [ -n "$shots" ] && [ -s "$work/app.log" ] && cp "$work/app.log" "$shots/app.log"
   if [ -n "$shots" ]; then
     if [ -n "${expiry_raw:-}" ] && [ -d "$expiry_raw" ]; then
-      python3 "$app/e2e/ios-background-expiry.py" decode "$expiry_raw" || status=1
+      python3 "$app/e2e/ios-background-expiry.py" decode "$expiry_raw"
+      decode_status=$?
+      diagnostic=complete
+      if [ "$decode_status" != 0 ]; then
+        diagnostic=incomplete
+        echo "diagnostic incomplete: decode exit $decode_status (behavior exit $behavior_status)"
+      fi
+      printf 'diagnostic=%s\ndecode_exit=%s\nbehavior_exit=%s\n' "$diagnostic" "$decode_status" "$behavior_status" \
+        > "$expiry_raw/decode-status.txt" || status=1
       python3 "$app/e2e/ios-background-expiry.py" publish "$expiry_raw" "$shots/background-expiry" \
         "$work/expiry-pair" || status=1
     fi

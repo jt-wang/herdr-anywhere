@@ -1,6 +1,8 @@
 """Check the explicit background entry and execute its Swift completion predicate."""
 from pathlib import Path
 import hashlib
+import json
+import shlex
 import os
 import subprocess
 import tempfile
@@ -21,6 +23,33 @@ def block(source, start):
 
 
 class AwayOnlyTest(unittest.TestCase):
+    def test_workflow_routes_regular_and_pressure_runs(self):
+        workflow = (HERE.parents[1] / '.github/workflows/devices.yml').read_text()
+        branch = workflow.split('            chat27)\n', 1)[1].split(';;', 1)[0]
+        with tempfile.TemporaryDirectory() as folder:
+            suite = Path(folder) / 'suite'
+            subprocess.run(['go', 'build', '-o', str(suite), './internal/testfake/chatevidence'],
+                           cwd=HERE.parents[1] / 'companion', check=True)
+            env = {k: v for k, v in os.environ.items() if k not in
+                   ['CHAT_AWAY_ONLY', 'AGENTS', 'CHAT_AWAY_CYCLES', 'CHAT_AWAY_SELFTEST']}
+            for cycles in ['0', '30']:
+                with self.subTest(cycles=cycles):
+                    rendered = branch.replace("${{ inputs.chat_away_cycles || '0' }}", cycles)
+                    rendered = rendered.replace('${{ inputs.chat_away_cycles }}', cycles)
+                    rendered = rendered.replace("${{ inputs.chat_away_selftest || 'none' }}", 'none')
+                    self.assertNotIn('${{', rendered)
+                    command = 'set -eu\ns=' + shlex.quote(str(suite)) + '\nOUT=' + shlex.quote(folder) + '\n' + rendered
+                    result = subprocess.run(['sh', '-c', command], env=env, capture_output=True, text=True)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    got = json.loads(result.stdout)
+                    self.assertEqual(got['args'], ['ios-chat-four', 'e2e/ios-chat-four.sh', folder + '/chat27'])
+                    expected = {'mode': '1', 'agents': 'claude-code', 'cycles': '30', 'control': 'none'} if cycles == '30' else {
+                        'mode': '', 'agents': '', 'cycles': '', 'control': ''}
+                    self.assertEqual({k: got[k] for k in expected}, expected)
+        shell = (HERE / 'ios-chat-four.sh').read_text()
+        self.assertIn('agents=${AGENTS:-claude-code codex pi opencode}', shell)
+        self.assertIn('TEST_RUNNER_CHAT_AWAY_ONLY="${CHAT_AWAY_ONLY:-0}"', shell)
+
     def test_explicit_mode_reaches_swift_and_only_trial_chat27_enables_it(self):
         source = SWIFT.read_text()
         shell = (HERE / 'ios-chat-four.sh').read_text()
@@ -93,14 +122,15 @@ check(["reply-new", "fold-other"], [prompt], false, "wrong fold")
 check(["reply-new", "fold-new"], [], false, "missing prompt")
 check(["reply-new", "fold-new", "chat-offline"], [prompt], false, "offline")
 check(["reply-new", "fold-new"], [prompt, "Working…"], false, "still working")
-print("completion predicate: 1 positive, 6 negative passed")
+check(["reply-new", "fold-new"], [prompt, "Working… · 15 steps"], false, "open folded turn")
+print("completion predicate: 1 positive, 7 negative passed")
 '''
         with tempfile.TemporaryDirectory() as folder:
             test = Path(folder) / 'main.swift'; test.write_text(program)
             result = subprocess.run(['swift', str(test)], capture_output=True, text=True,
                                     env=os.environ, timeout=45)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            self.assertIn('1 positive, 6 negative passed', result.stdout)
+            self.assertIn('1 positive, 7 negative passed', result.stdout)
         self.assertEqual(source.count('return completedReply(current, oldReplies, prompt)'), 2,
                          'preflight and original resume must share the same condition')
 

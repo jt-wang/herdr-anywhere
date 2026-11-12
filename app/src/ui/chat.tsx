@@ -4,7 +4,7 @@
 import { cleanup, effect, Image, Keyboard, Scroll, signal, Text, untracked, Video, View } from 'nsh'
 import { Sheet, TextView } from 'nsh/base'
 import type { Store } from '../store.ts'
-import { changeRows, clockText, pathsIn, sizeText, foldLine, outsideFold, refreshEvery, shows, unknownText, type ChatAnswer, type ChatSetup, type ChatChange, type ChatDetail, type ChatFile, type ChatPicture, type ChatRun, type ChatStep, type ChatTurn } from '../model/chat.ts'
+import { changeRows, clockText, pathsIn, sizeText, foldLine, outsideFold, workPreview, refreshEvery, shows, unknownText, type ChatAnswer, type ChatSetup, type ChatChange, type ChatDetail, type ChatFile, type ChatPicture, type ChatRun, type ChatStep, type ChatTurn } from '../model/chat.ts'
 import { Glyph, IconButton, useRev } from './kit.tsx'
 import { AskCard } from './ask-card.tsx'
 import { askCard } from '../model/ask.ts'
@@ -97,7 +97,7 @@ export function ChatView(props: { store: Store; address: string; status: () => s
         </View>
       </If>
       <If when={unknown()} else={
-        <Scroll ref={(r: any) => { scroller = r }} class="flex-1" contentClass="px-3 py-3 gap-4"
+        <Scroll testID="chat-scroll" ref={(r: any) => { scroller = r }} class="flex-1" contentClass="px-3 py-3 gap-4"
           /* After a prompt sent from the composer its box keeps focus with the keyboard down, and a Scroll that doesn't
              persist taps spent every tap on that focus: a fold or a step didn't open (seen on Android). */
           /* A view at the end that gets smaller goes to the end again: on Android a pane that opens in its chat is laid
@@ -107,7 +107,7 @@ export function ChatView(props: { store: Store; address: string; status: () => s
           scrollEventThrottle={64} onScroll={(e) => { pinned = (e?.offset?.y ?? 0) + viewport() >= content - 40 }}>
           <View class="gap-4" onLayout={(b) => toEnd(b.size.height)}>
             <If when={turns()?.length} else={<If when={answer()}><Text class="text-[13px] text-muted-foreground text-center py-6">{t('chatEmpty')}</Text></If>}>
-              <Each of={turns() ?? []} key={(x) => x.id}>{(x) => <TurnView store={s} address={props.address} turn={x()} carded={!!card()} back={props.back} opened={opened} />}</Each>
+              <Each of={turns() ?? []} key={(x) => x.id}>{(x) => <TurnView store={s} address={props.address} turn={x()} carded={!!card()} back={props.back} opened={opened} inspect={() => { pinned = false }} />}</Each>
               <If when={card()}>{(c) => <AskCard store={s} address={props.address} agent={s.program(props.address).name} card={c} back={props.back} />}</If>
               <If when={behind()}><Text testID="chat-updating" class="text-[12.5px] text-muted-foreground">{t('chatUpdating')}</Text></If>
             </If>
@@ -219,10 +219,11 @@ function SetupPage(props: { store: Store; address: string; agent: string; needed
   )
 }
 
-function TurnView(props: { store: Store; address: string; turn: ChatTurn; carded: boolean; back: () => void; opened: Opened }) {
+function TurnView(props: { store: Store; address: string; turn: ChatTurn; carded: boolean; back: () => void; opened: Opened; inspect: () => void }) {
   const expanded = props.opened(`turn ${props.turn.id}`)
   const turn = () => props.turn
   const show = () => shows(turn(), expanded())
+  const preview = () => workPreview(turn())
   return (
     <View class="gap-2">
       <If when={turn().from === 'you'} else={
@@ -240,16 +241,30 @@ function TurnView(props: { store: Store; address: string; turn: ChatTurn; carded
           </If>
         </View>
       </If>
-      <Each of={outsideFold(turn(), expanded())} key={(x) => x.id}>{(x) => <StepView store={props.store} address={props.address} step={x()} opened={props.opened} />}</Each>
+      <Each of={outsideFold(turn(), expanded())} key={(x) => x.id}>{(x) => <StepView store={props.store} address={props.address} step={x()} opened={props.opened} inspect={props.inspect} />}</Each>
       <If when={show().fold}>
-        <View role="button" testID={`fold-${turn().id}`} onPress={() => expanded.set(!expanded())} class="flex-row items-center gap-1.5 py-1 active:opacity-70">
-          <Glyph name={expanded() ? 'chevron-down' : 'chevron-right'} size={13} />
-          <Text class="text-[12.5px] text-muted-foreground">{foldLine(turn())}</Text>
-        </View>
-      </If>
-      <If when={show().steps}>
-        <View class="gap-0.5 pl-1">
-          <Each of={turn().steps} key={(x) => x.id}>{(x) => <StepView store={props.store} address={props.address} step={x()} opened={props.opened} />}</Each>
+        <View class="gap-1">
+          <View role="button" testID={`fold-${turn().id}`} accessibilityState={{ expanded: expanded() }} onPress={() => { props.inspect(); expanded.set(!expanded()) }} class="min-h-[44px] justify-center gap-1 py-2 active:opacity-70">
+            <View class="flex-row items-center gap-1.5">
+              <Glyph name={expanded() ? 'chevron-down' : 'chevron-right'} size={13} />
+              <Text class="flex-1 text-[12.5px] text-muted-foreground">{foldLine(turn())}</Text>
+              <If when={preview().failures}><Text testID={`failures-${turn().id}`} class="text-[11.5px] text-destructive">{`${t('chatFailed')} · ${preview().failures}`}</Text></If>
+            </View>
+            <If when={!expanded()}>
+              <If when={preview().note}>{(n) => <Text testID={`progress-${turn().id}`} class="pl-5 text-[13px] text-muted-foreground" numberOfLines={2}>{n().title}</Text>}</If>
+              <If when={preview().step}>{(st) => (
+                <View class="pl-5 flex-row items-center gap-1.5">
+                  <Glyph name={(STEP_GLYPH[st().kind] ?? 'chevron-right') as any} size={12} />
+                  <Text testID={`latest-${turn().id}`} class="flex-1 text-[12px] text-muted-foreground" numberOfLines={1}>{st().title}</Text>
+                </View>
+              )}</If>
+            </If>
+          </View>
+          <If when={show().steps}>
+            <View class="gap-1 ml-1.5 pl-3 border-l border-border">
+              <Each of={turn().steps} key={(x) => x.id}>{(x) => <StepView store={props.store} address={props.address} step={x()} opened={props.opened} inspect={props.inspect} />}</Each>
+            </View>
+          </If>
         </View>
       </If>
       <If when={turn().reply}>
@@ -269,13 +284,13 @@ function TurnView(props: { store: Store; address: string; turn: ChatTurn; carded
           </View>
         </View>
       )}</If>
-      <If when={turn().end === 'open' && !turn().ask && !props.carded}><Text class="text-[12.5px] text-muted-foreground">{t('chatWorking')}</Text></If>
+      <If when={turn().end === 'open' && !turn().ask && !props.carded && !show().fold}><Text class="text-[12.5px] text-muted-foreground">{t('chatWorking')}</Text></If>
       <If when={turn().end === 'stopped'}><Text class="text-[12.5px] text-muted-foreground">{t('chatStopped')}</Text></If>
     </View>
   )
 }
 
-function StepView(props: { store: Store; address: string; step: ChatStep; opened: Opened }) {
+function StepView(props: { store: Store; address: string; step: ChatStep; opened: Opened; inspect: () => void }) {
   // A message of yours the agent took while it worked: where it took it, as yours; nothing more to fetch.
   if (props.step.kind === 'you') return (
     <View testID={`you-${props.step.id}`} class="self-end max-w-[85%] items-end gap-1 py-1.5">
@@ -287,6 +302,7 @@ function StepView(props: { store: Store; address: string; step: ChatStep; opened
   const open = props.opened(`step ${props.step.id}`)
   const load = async () => { if (detail() === undefined) detail.set(await props.store.chat!.step(props.address, props.step.id).catch(() => null)) }
   const toggle = async () => {
+    props.inspect()
     if (open()) { open.set(false); return }
     open.set(true)
     await load()
@@ -295,9 +311,9 @@ function StepView(props: { store: Store; address: string; step: ChatStep; opened
   if (untracked(open)) void load()
   return (
     <View>
-      <View role="button" testID={`step-${props.step.id}`} onPress={() => void toggle()} class="flex-row items-center gap-2 min-h-[30px] active:opacity-70">
+      <View role="button" testID={`step-${props.step.id}`} onPress={() => void toggle()} class="flex-row items-center gap-2 min-h-[44px] active:opacity-70">
         <If when={STEP_GLYPH[props.step.kind]} else={<View style={{ width: 13 }} />}>{(g) => <Glyph name={g() as any} size={13} />}</If>
-        <Text class={`flex-1 text-[13px] ${props.step.kind === 'note' || props.step.kind === 'think' ? 'text-muted-foreground italic' : 'text-foreground'}`} numberOfLines={2}>{props.step.title}</Text>
+        <Text class={`flex-1 text-[13px] ${props.step.kind === 'note' || props.step.kind === 'think' ? 'text-muted-foreground' : 'text-foreground'}`} numberOfLines={2}>{props.step.title}</Text>
         <If when={props.step.failed}><Text class="text-[11.5px] text-destructive">{t('chatFailed')}</Text></If>
         <If when={!props.step.failed && (props.step.added || props.step.deleted)}>
           <Text class="text-[11.5px] text-muted-foreground">{`+${props.step.added ?? 0} −${props.step.deleted ?? 0}`}</Text>

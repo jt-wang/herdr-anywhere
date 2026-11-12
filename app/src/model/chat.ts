@@ -124,16 +124,15 @@ const span = (secs: number) => {
   return m < 60 ? formats().span('m', m) : formats().span('h', Math.floor(m / 60))
 }
 
-/** The one line a finished turn's steps fold behind. */
+/** The summary of a turn's work, whether it is still open or finished. */
 export function foldLine(turn: ChatTurn): string {
   const n = t('chatSteps', { n: turn.steps.filter((x) => x.kind !== 'you').length })
-  return turn.secs ? `${t('chatWorked', { time: span(turn.secs) })} · ${n}` : n
+  return turn.end === 'open' ? `${t('chatWorking')} · ${n}` : turn.secs ? `${t('chatWorked', { time: span(turn.secs) })} · ${n}` : n
 }
 
 /** Whether a turn shows its fold line, and its steps. */
 export function shows(turn: ChatTurn, expanded: boolean): { fold: boolean; steps: boolean } {
-  if (!turn.steps.length) return { fold: false, steps: false }
-  if (turn.end === 'open') return { fold: false, steps: true }
+  if (!turn.steps.some((x) => x.kind !== 'you')) return { fold: false, steps: false }
   return { fold: true, steps: expanded }
 }
 
@@ -141,7 +140,18 @@ export function shows(turn: ChatTurn, expanded: boolean): { fold: boolean; steps
  *  doesn't hide it; in its place among the steps once they show. */
 export function outsideFold(turn: ChatTurn, expanded: boolean): ChatStep[] {
   const s = shows(turn, expanded)
-  return s.fold && !s.steps ? turn.steps.filter((x) => x.kind === 'you') : []
+  return !s.steps ? turn.steps.filter((x) => x.kind === 'you') : []
+}
+
+/** A small preview of an open turn's work. A step has no running/completed field, so this is only the latest
+ *  recorded activity. Replies already rendered below the work are not repeated here. */
+export function workPreview(turn: ChatTurn): { note?: ChatStep; step?: ChatStep; failures: number } {
+  const work = turn.steps.filter((x) => x.kind !== 'you')
+  const failures = work.filter((x) => x.failed).length
+  if (turn.end !== 'open') return { failures }
+  const note = work.findLast((x) => x.kind === 'note')
+  const step = work.findLast((x) => x.kind !== 'note')
+  return { note: note?.title.trim() === turn.reply.trim() ? undefined : note, step, failures }
 }
 
 /** How often an open chat view asks again: while the agent works or waits on you, its record grows; an agent that

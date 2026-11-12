@@ -10,7 +10,7 @@ import { AgentList, type AgentInfo } from './model/agents.ts'
 import { PIN_ORDER, missingPlaces, moveWrites, pinOrder, placeAfterLast, type Write } from './model/pin-order.ts'
 import { programOf, agentArgv, INSTALLED_PROBE, parseInstalled, startable, type Program } from './model/programs.ts'
 const AGENT_KEYS = new Set(startable().map((p) => p.key))
-import { addresses, find, modBlock, panes, terminalOf, type Axis, type Node } from './model/layout.ts'
+import { addresses, find, modBlock, panes, parentOf, terminalOf, type Axis, type Node } from './model/layout.ts'
 import { recentFolders } from './model/folders.ts'
 import { activity, asks } from './model/answers.ts'
 import type { Restart } from './restart.ts'
@@ -169,6 +169,8 @@ export class Store {
   /** The tabs (`space tab`) this screen is starting a terminal in and places it itself: herdr-core reports the terminal
    *  (`created`) before terminal.run answers, and adopting it then put the space or tab in twice (seen on Android). */
   private placing = new Set<string>()
+  /** Original panes for terminals this screen placed but has not yet persisted in the shared document. */
+  private unpersisted = new Map<string, string>()
   private firstSync = true
   /** Places a move is writing (pin-order.ts), shown until herdr-core's `labels` event for the terminal comes back. */
   private moving = new Map<string, string>()
@@ -458,10 +460,44 @@ export class Store {
       const d = await this.call<{ value: unknown; version: number }>('doc.get', machine ? { name: 'herdr-app', on: machine } : { name: 'herdr-app' })
       const slot = this.slots.get(key)
       if (slot && slot.writing) return
-      if (slot && slot.loaded && slot.version === d.version) return
+      if (slot && slot.loaded && slot.version >= d.version) return
+      const view = captureView(this.model)
+      const created = [...this.unpersisted].flatMap(([address, pane]) => {
+        const space = this.model.spaceOf(pane)
+        const tab = this.model.tabOf(pane)
+        if (!space || !tab || space.machine !== machine) return []
+        const parent = parentOf(tab.root, pane)
+        const siblings = panes(parent ?? tab.root)
+        const target = siblings[siblings.findIndex(n => n.id === pane) - 1]?.id
+        return [{ address, pane, space, tab, target, axis: parent?.type === 'column' ? 'column' as const : 'row' as const }]
+      })
       replaceDoc(d.value, this.model, machine)
+      const last = JSON.stringify(captureDoc(this.model, machine))
+      // Only replay unacknowledged creations. All other layout edits retain the remote-wins policy.
+      for (const c of created) {
+        const existing = this.model.paneOf(c.address)
+        if (existing === c.pane) {
+          this.unpersisted.delete(c.address)
+        } else if (existing) {
+          // The other screen may already have adopted terminal.run's labels, with its own pane ID.
+          const tab = this.model.tabOf(existing)!
+          find(tab.root, existing)!.id = c.pane
+          const parent = parentOf(tab.root, c.pane)
+          if (parent?.active === existing) parent.active = c.pane
+        } else if (!this.model.space(c.space.id)) {
+          this.model.addSpace(c.space.id, c.space.name, c.space.folder, newTab(c.tab.id, c.tab.name, c.pane, c.address), machine)
+        } else if (!this.model.tab(c.tab.id)) {
+          this.model.addTab(c.space.id, newTab(c.tab.id, c.tab.name, c.pane, c.address))
+        } else {
+          const tab = this.model.tab(c.tab.id)!
+          const target = c.target && find(tab.root, c.target) ? c.target : panes(tab.root).at(-1)?.id
+          if (target) this.model.split(target, c.axis, c.pane, c.address)
+        }
+      }
+      if (created.length) applyView(view, this.model)
       if (!slot?.loaded && this.savedView) applyView(this.savedView, this.model)
-      this.slots.set(key, { version: d.version, last: JSON.stringify(captureDoc(this.model, machine)), available: true, loaded: true, writing: false })
+      this.slots.set(key, { version: d.version, last, available: true, loaded: true, writing: false })
+      if (created.length && JSON.stringify(captureDoc(this.model, machine)) !== last) this.schedule()
       this.bump()
     } catch (e: any) {
       const slot = this.slots.get(key)
@@ -470,7 +506,7 @@ export class Store {
     }
   }
 
-  /** Writes each machine's document that this screen changed. On a conflict the other screen's layout wins. */
+  /** Writes with compare-and-set; remote edits win conflicts, while unpersisted terminal creations survive. */
   private async flush() {
     for (const machine of this.machineNames()) {
       const key = machine ?? ''
@@ -484,10 +520,13 @@ export class Store {
         const r = await this.call<{ version: number }>('doc.set', { name: 'herdr-app', ...(machine ? { on: machine } : {}), version: slot.version, value: doc })
         slot.version = r.version
         slot.last = text
+        for (const [address, pane] of this.unpersisted) {
+          if (machineOfAddress(address) !== machine) continue
+          if (doc.spaces.some(s => s.tabs.some(t => panes(t.root).some(p => p.id === local(pane, machine) && terminalOf(p) === local(address, machine))))) this.unpersisted.delete(address)
+        }
       } catch (e: any) {
         if (e instanceof HcError && e.kind === 'conflict') {
           slot.writing = false
-          slot.loaded = false
           await this.readDoc(machine)
           this.toast({ title: tr('layoutChanged'), body: tr('layoutChangedBody'), level: 'info' })
           continue
@@ -1107,6 +1146,8 @@ export class Store {
     try {
       const addr = await this.spawn(argv, cwd, space, tab, on)
       place(addr)
+      const pane = this.model.paneOf(addr)
+      if (pane) this.unpersisted.set(addr, pane)
       return addr
     } finally {
       this.placing.delete(key)
