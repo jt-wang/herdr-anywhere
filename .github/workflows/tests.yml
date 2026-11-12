@@ -1,13 +1,16 @@
 name: Tests
 
-# Every pull request and every push to main or ci (where a release's commit is tested before main) runs the
+# Every pull request and every push to main, ci (where a release's commit is tested before main) or a ci-* branch (a
+# change tried on its own, beside the others) runs the
 # tests a contributor runs locally, plus a secret scan over the whole history. The device suites (app/e2e/android*.sh,
 # ios*.sh) and user-path.sh run in devices.yml, on emulators and simulators; app/e2e/run.sh runs in computers.yml,
 # with herdr-core.
 on:
   pull_request:
   push:
-    branches: [main, ci]
+    # A ci-try-* branch runs nothing when pushed: a trial is run by hand (workflow_dispatch), only what it needs. The
+    # "!" pattern comes after "ci-*", as GitHub applies the patterns in order.
+    branches: [main, ci, "ci-*", "!ci-try-*"]
   workflow_dispatch:
 
 permissions:
@@ -27,6 +30,8 @@ jobs:
   companion:
     name: Companion (go test)
     runs-on: macos-26
+    # About twice its longest recent run: without it a stuck job holds one of the account's 5 macOS runners for 6 hours.
+    timeout-minutes: 32
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -46,6 +51,8 @@ jobs:
   app:
     name: App (unit and screen tests)
     runs-on: macos-26
+    # About twice its longest recent run.
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -62,6 +69,8 @@ jobs:
   page:
     name: Terminal page (touch and keyboard, Chromium)
     runs-on: macos-26
+    # About twice its longest recent run.
+    timeout-minutes: 20
     env:
       PLAYWRIGHT_VERSION: "1.58.2"
     steps:
