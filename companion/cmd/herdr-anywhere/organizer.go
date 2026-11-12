@@ -455,6 +455,15 @@ func progressCommand(args []string, stdout, stderr io.Writer) error {
 		fmt.Fprint(stdout, progressUsage)
 		return usageError{errors.New("missing subcommand")}
 	}
+	switch args[0] {
+	case "-h", "--help", "help":
+		fmt.Fprint(stdout, progressUsage)
+		return nil
+	case "on", "off", "once", "status", "lang", "agents", "organizer":
+	default:
+		return usageError{fmt.Errorf("unknown progress subcommand %q", args[0])}
+	}
+	// The state folder is made only for a subcommand: help and a word it does not know write nothing.
 	home, _ := os.UserHomeDir()
 	state := stateDir("", os.Getenv("HERDR_ANYWHERE_STATE"), home)
 	if err := os.MkdirAll(state, 0o700); err != nil {
@@ -536,9 +545,6 @@ func progressCommand(args []string, stdout, stderr io.Writer) error {
 			}
 		}
 		return writeJSON(stdout, cfg)
-	case "-h", "--help", "help":
-		fmt.Fprint(stdout, progressUsage)
-		return nil
 	}
-	return usageError{fmt.Errorf("unknown progress subcommand %q", args[0])}
+	return nil
 }
