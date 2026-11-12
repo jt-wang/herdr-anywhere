@@ -5,8 +5,8 @@ import { expect, open, test } from 'nsh/test'
 const KEEP = 'text:Tap here to keep it for every pane.'
 const prefs = (app: any) => JSON.parse(app.storage()['fake-prefs'] ?? '{}')
 // Switching a pane to the terminal shows a toast whose tap keeps the terminal for every pane: a toast with an action.
-const withToast = async () => {
-  const app = await open('./fixtures/fake.tsx', { platform: 'ios', safeArea: { top: 62, bottom: 34 }, host: { params: { scene: 'busy' } } })
+const withToast = async (safeArea = { top: 62, bottom: 34 }) => {
+  const app = await open('./fixtures/fake.tsx', { platform: 'ios', safeArea, host: { params: { scene: 'busy' } } })
   await app.waitFor('text:Needs you')
   await app.press('id:space-sp2')
   await app.waitFor('id:terminal-t3')
@@ -18,6 +18,15 @@ const withToast = async () => {
 test('swiped up, the toast goes, and what it offers is not done', async () => {
   const app = await withToast()
   await app.drag(KEEP, { y: -80 })
+  await app.waitUntil(() => app.count(KEEP) === 0, { timeout: 1500 })
+  expect(prefs(app).typeIn ?? 'composer').toBe('composer')
+})
+
+// An iPhone SE has no Dynamic Island: the toast sits 8 pt from the top, so a finger has about 35 pt above the card's
+// middle before it leaves the screen. A slow pull of 30 pt (about 600 pt/s, under a flick's speed) has to be enough.
+test('on a phone without a Dynamic Island, a slow pull up within the screen takes the toast away', async () => {
+  const app = await withToast({ top: 20, bottom: 0 })
+  await app.drag(KEEP, { y: -30 })
   await app.waitUntil(() => app.count(KEEP) === 0, { timeout: 1500 })
   expect(prefs(app).typeIn ?? 'composer').toBe('composer')
 })

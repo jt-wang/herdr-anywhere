@@ -68,9 +68,28 @@ final class Menus: XCTestCase {
       guard saying("Codex needs you").waitForExistence(timeout: 50), card().exists else { note("FAIL \(step): no toast"); return nil }
       return card()
     }
+    // Each from the card's middle, ending on the screen (2 pt from the top): on an iPhone SE the card is 8 pt from the
+    // top, so a drag ending a card's height above it would end off the screen. A swipe as XCUITest makes it; a slow
+    // pull (150 pt/s, under a flick's speed, so only the distance counts); a fast flick of 16 pt (2500 pt/s, under the
+    // distance, so only the speed counts).
+    let gone = { saying("Codex needs you").exists ? "still there" : "gone" }
+    func up(_ c: XCUIElement, by: CGFloat?, speed: CGFloat?) {
+      let from = c.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+      let to = by.map { from.withOffset(CGVector(dx: 0, dy: -$0)) } ?? app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: c.frame.midX, dy: 2))
+      if let v = speed { from.press(forDuration: 0.05, thenDragTo: to, withVelocity: XCUIGestureVelocity(v), thenHoldForDuration: 0) }
+      else { from.press(forDuration: 0.05, thenDragTo: to) }
+    }
     if let c = withToast("swipe") {
-      c.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 0.05, thenDragTo: c.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: -1.5)))
-      sleep(1); shot("swipe"); note("swipe up: toast \(saying("Codex needs you").exists ? "still there" : "gone"); in the space: \(el("space-more").exists)")
+      let room = Int(c.frame.midY - 2); up(c, by: nil, speed: nil)
+      sleep(1); shot("swipe"); note("swipe up \(room) pt to the top: toast \(gone()); in the space: \(el("space-more").exists)")
+    }
+    if let c = withToast("pull") {
+      let room = Int(c.frame.midY - 2); up(c, by: nil, speed: 150)
+      sleep(1); shot("pull"); note("slow pull up \(room) pt at 150 pt/s: toast \(gone())")
+    }
+    if let c = withToast("flick") {
+      up(c, by: 16, speed: 2500)
+      sleep(1); shot("flick"); note("fast flick up 16 pt at 2500 pt/s: toast \(gone())")
     }
     if let c = withToast("tap") {
       c.tap(); sleep(2); shot("tap"); note("tap: toast \(saying("Codex needs you").exists ? "still there" : "gone"); Codex's pane open: \(saying("Codex").exists && el("space-more").exists)")

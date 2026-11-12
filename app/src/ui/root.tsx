@@ -46,8 +46,9 @@ export type RootDeps = {
 
 type Route = { name: 'home' } | { name: 'space'; id: string } | { name: 'settings' } | { name: 'progress' } | { name: 'task'; id: string }
 
-/** Points up, or points a second up at the release, past which a pull on a toast takes it away. */
-const SWIPE_AWAY = 40, FLICK = 1000
+/** Points up, or points a second up at the release, past which a pull on a toast takes it away. 24, as on an iPhone
+ *  SE the toast sits 8 pt from the top and a finger has about 35 pt above the card's middle. */
+const SWIPE_AWAY = 24, FLICK = 1000
 
 function Toasts(props: { store: Store; open: (terminal: string) => void }) {
   const toasts = useSignal(props.store.toasts)
