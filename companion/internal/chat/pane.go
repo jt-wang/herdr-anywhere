@@ -2,6 +2,7 @@ package chat
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -97,44 +98,68 @@ func (s *Service) Follow(ctx context.Context) {
 	}
 }
 
+// maxEvent: an `hc events` line longer than this is passed over (a status event is a few hundred bytes).
+const maxEvent = 4 << 20
+
 // follow reads `hc events --json` lines: a status event whose records name a session is remembered with the
-// process running in that terminal then.
+// process running in that terminal then. A line over maxEvent is passed over without holding it.
 func (s *Service) follow(r io.Reader) {
-	sc := bufio.NewScanner(r)
-	sc.Buffer(make([]byte, 0, 64<<10), 4<<20)
-	for sc.Scan() {
-		var ev struct {
-			Params struct {
-				Terminal string `json:"terminal"`
-				Type     string `json:"type"`
-				Data     struct {
-					Records map[string]struct {
-						App string `json:"app"`
-					} `json:"records"`
-				} `json:"data"`
-			} `json:"params"`
+	br := bufio.NewReaderSize(r, 64<<10)
+	var line []byte
+	long := false
+	for {
+		part, err := br.ReadSlice('\n')
+		if len(line)+len(part) > maxEvent {
+			line, long = line[:0], true
+		} else if !long {
+			line = append(line, part...)
 		}
-		if json.Unmarshal(sc.Bytes(), &ev) != nil || ev.Params.Type != "status" || len(ev.Params.Data.Records) != 1 {
+		if err == bufio.ErrBufferFull {
 			continue
 		}
-		for id, rec := range ev.Params.Data.Records {
-			s.mu.Lock()
-			old, ok := s.sessions[ev.Params.Terminal]
-			s.mu.Unlock()
-			if ok && old.id == id && old.app == rec.App {
-				continue
-			}
-			out, err := s.hcGet(ev.Params.Terminal)
-			var t terminal
-			if err != nil || json.Unmarshal(out, &t) != nil || t.Foreground == nil {
-				continue
-			}
-			s.mu.Lock()
-			if s.sessions == nil {
-				s.sessions = map[string]seen{}
-			}
-			s.sessions[ev.Params.Terminal] = seen{app: rec.App, id: id, pid: t.Foreground.Pid}
-			s.mu.Unlock()
+		if len(bytes.TrimSpace(line)) > 0 {
+			s.event(line)
 		}
+		line, long = line[:0], false
+		if err != nil {
+			return
+		}
+	}
+}
+
+// event remembers the session a status event names.
+func (s *Service) event(b []byte) {
+	var ev struct {
+		Params struct {
+			Terminal string `json:"terminal"`
+			Type     string `json:"type"`
+			Data     struct {
+				Records map[string]struct {
+					App string `json:"app"`
+				} `json:"records"`
+			} `json:"data"`
+		} `json:"params"`
+	}
+	if json.Unmarshal(b, &ev) != nil || ev.Params.Type != "status" || len(ev.Params.Data.Records) != 1 {
+		return
+	}
+	for id, rec := range ev.Params.Data.Records {
+		s.mu.Lock()
+		old, ok := s.sessions[ev.Params.Terminal]
+		s.mu.Unlock()
+		if ok && old.id == id && old.app == rec.App {
+			continue
+		}
+		out, err := s.hcGet(ev.Params.Terminal)
+		var t terminal
+		if err != nil || json.Unmarshal(out, &t) != nil || t.Foreground == nil {
+			continue
+		}
+		s.mu.Lock()
+		if s.sessions == nil {
+			s.sessions = map[string]seen{}
+		}
+		s.sessions[ev.Params.Terminal] = seen{app: rec.App, id: id, pid: t.Foreground.Pid}
+		s.mu.Unlock()
 	}
 }
