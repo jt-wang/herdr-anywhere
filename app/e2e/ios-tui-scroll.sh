@@ -18,6 +18,7 @@ port=7691
 while nc -z 127.0.0.1 "$port" 2>/dev/null; do port=$((port + 1)); done
 work=$(mktemp -d)
 : > "$work/started" # what e2e/ios-failure-logs.sh keeps is from after this
+"$app/e2e/ios-failure-logs.sh" --sample-load "$work/load.txt" >/dev/null 2>&1 & # the machine's load, kept with a failure
 (cd "$app/../companion" && go build -o "$work/herdr-anywhere" ./cmd/herdr-anywhere)
 run=$(mktemp -d /tmp/hmXXXX)
 mkdir -p "$work/sam/src/acme-api" "$work/state" "$work/config" "$work/data"

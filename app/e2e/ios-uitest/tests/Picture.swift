@@ -20,7 +20,8 @@ final class Picture: XCTestCase {
     clock.dateFormat = "HH:mm:ss.SSS"
     // The time of day too, to line up with the app's and the script's lines.
     func note(_ s: String) {
-      lines.append(clock.string(from: Date()) + String(format: " +%.1f s ", Date().timeIntervalSince(start)) + s)
+      let since = String(format: "+%.1f s", Date().timeIntervalSince(start))
+      lines.append([clock.string(from: Date()), since, runnerLoad(), s].joined(separator: " "))
       try? (lines.joined(separator: "\n") + "\n").write(toFile: out, atomically: true, encoding: .utf8)
     }
     func shot(_ name: String) { try? XCUIScreen.main.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: "\(shots)-\(name).png")) }
