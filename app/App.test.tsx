@@ -128,6 +128,24 @@ test('the switcher tells two Claude Codes apart as home does: the tab name or ti
   await app.waitFor('id:terminal-t2')
 })
 
+test('a sub-agent kept as a tab opens that tab from its row on home, with no peek and no second Keep', async () => {
+  const app = await open('./fixtures/fake.tsx', { host: { params: { scene: 'twins' } } })
+  await app.waitFor('id:sub-t5')
+  await app.press('id:sub-t5')
+  await app.waitFor('id:peek-keep')
+  await app.press('id:peek-keep')
+  await app.waitUntil(() => app.count('id:peek-keep') === 0)
+  // Still listed under its parent, as on the desktop.
+  await app.waitFor('id:sub-t5')
+  await app.press('id:sub-t5')
+  await app.waitFor('id:terminal-t5')
+  await app.wait(300)
+  expect(app.count('id:peek-keep')).toBe(0)
+  await app.press('id:switcher')
+  await app.waitFor('id:switch-tab-tb1')
+  expect(app.texts().filter((x) => x === 'test runner').length).toBe(1)
+})
+
 // What a row's text looks like, against texts on the same screen in the colours it should take (a headless run draws
 // with NSH's own palette, where sidebar-foreground is foreground: the sizes tell the name from the title).
 const look = (app: any, sel: string) => app.spanStyle(sel)
