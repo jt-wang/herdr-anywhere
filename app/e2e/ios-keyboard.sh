@@ -84,9 +84,13 @@ screen | grep -q '"AXIdentifier":"pair"\|"AXUniqueId":"pair"' && { echo "FAIL: t
 cp -R "$app/e2e/ios-uitest" "$work/uitest"
 (cd "$work/uitest" && xcodegen generate --quiet)
 rc=0
-TEST_RUNNER_OUT="$work/typein.txt" TEST_RUNNER_RAW="$work/sam/src/acme-api/hm-raw" perl -e 'alarm 600; exec @ARGV' xcodebuild test -quiet -project "$work/uitest/KeyboardCheck.xcodeproj" -scheme UITests -only-testing:UITests/TypeIn -destination "id=$SIM_UDID" -derivedDataPath "$work/uitest/derived" > "$work/uitest/test.log" 2>&1 || rc=$?
+TEST_RUNNER_OUT="$work/typein.txt" TEST_RUNNER_RAW="$work/sam/src/acme-api/hm-raw" perl -e 'alarm 600; exec @ARGV' xcodebuild test -quiet -project "$work/uitest/KeyboardCheck.xcodeproj" -scheme UITests -only-testing:UITests/TypeIn -destination "id=$SIM_UDID" -derivedDataPath "$work/uitest/derived" -resultBundlePath "$work/uitest/result.xcresult" > "$work/uitest/test.log" 2>&1 || rc=$?
 [ -n "$shot" ] && perl -e 'alarm 40; exec @ARGV' xcrun simctl io "$SIM_UDID" screenshot "${shot%.png}-keyboard.png" >/dev/null 2>&1
 sed 's/^/  /' "$work/typein.txt" 2>/dev/null || true
 [ -n "$shot" ] && { cp "$work/typein-terminal.png" "${shot%.png}-terminal.png" 2>/dev/null; cp "$work/uitest/test.log" "${shot%.png}-xctest.log" 2>/dev/null; } || true
-if [ "$rc" != 0 ]; then echo "FAIL: the keyboard test (xcodebuild test exit $rc)"; grep -E "error:|XCTAssert|failed" "$work/uitest/test.log" | head -8; exit 1; fi
+if [ "$rc" != 0 ]; then
+  echo "FAIL: the keyboard test (xcodebuild test exit $rc)"
+  "$app/e2e/ios-xcresult.sh" "$work/uitest/result.xcresult" ${shot:+"${shot%.png}-failure"}
+  exit 1
+fi
 echo "PASS: Type in the terminal brings the keyboard up, also after the key bar's hide button; typing straight into the terminal sends what was typed"

@@ -15,6 +15,10 @@ import (
 	"herdr-anywhere/companion/internal/update"
 )
 
+// The builds below run in parallel: each target compiles modernc.org/sqlite on its own, and one after another they took
+// the package past go test's 10 minutes on a CI Mac. Each writes into its own t.TempDir(); Go's build cache is safe
+// for several go commands at once.
+
 // releaseBuild build a release's file: no cgo (set in the env), no VCS stamp, no local paths, no symbols.
 var releaseBuild = []string{"-buildvcs=false", "-trimpath", "-ldflags=-s -w"}
 
@@ -66,7 +70,9 @@ func TestThePathCheckFindsAnUntrimmedBuild(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds the companion")
 	}
-	exe := buildFor(t, "linux", "amd64", []string{"-buildvcs=false"}, false)
+	t.Parallel()
+	// This computer's own target: the packages are mostly built already, for the tests.
+	exe := buildFor(t, runtime.GOOS, runtime.GOARCH, []string{"-buildvcs=false"}, false)
 	root, _ := filepath.Abs("../../..")
 	if p := localPath(t, exe); p != root {
 		t.Fatalf("a build without -trimpath: the path check found %q, want this checkout, %s", p, root)
@@ -84,6 +90,7 @@ func TestBuildsForWindows(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("this is the Windows build")
 	}
+	t.Parallel()
 	exe := buildFor(t, "windows", "amd64", releaseBuild, true)
 	if filepath.Base(exe) != "herdr-anywhere-windows-amd64.exe" {
 		t.Fatalf("the release file is named %q", filepath.Base(exe))
@@ -107,6 +114,7 @@ func TestBuildsForMac(t *testing.T) {
 	if testing.Short() {
 		t.Skip("cross-compiles the companion")
 	}
+	t.Parallel()
 	for arch, cpu := range map[string]macho.Cpu{"arm64": macho.CpuArm64, "amd64": macho.CpuAmd64} {
 		exe := buildFor(t, "darwin", arch, releaseBuild, arch == "amd64")
 		if want := "herdr-anywhere-macos-" + arch; filepath.Base(exe) != want {
@@ -132,6 +140,7 @@ func TestBuildsForLinux(t *testing.T) {
 	if testing.Short() {
 		t.Skip("cross-compiles the companion")
 	}
+	t.Parallel()
 	for arch, machine := range map[string]elf.Machine{"amd64": elf.EM_X86_64, "arm64": elf.EM_AARCH64} {
 		exe := buildFor(t, "linux", arch, releaseBuild, false)
 		if want := "herdr-anywhere-linux-" + arch; filepath.Base(exe) != want {
