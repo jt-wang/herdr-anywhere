@@ -10,6 +10,8 @@
 # in a typed folder that doesn't exist, which the app makes after the tap on Create it.
 # Usage: ANDROID_SERIAL=emulator-5554 e2e/android.sh [apk] [screenshot.png]
 # ANDROID_SERIAL is required, so the run never lands on another emulator.
+# HM_SWITCHER_MISS_FIRST=1 is a self-test: the first tap on the pane's switcher is not sent, as a tap lost while the
+# app comes to the front (seen on CI).
 set -eu
 : "${ANDROID_SERIAL:?set ANDROID_SERIAL to the device to use}"
 app=$(cd "$(dirname "$0")/.." && pwd)
@@ -485,8 +487,17 @@ to_home() {
 sleep 1
 # The switcher sheet: its rows fit, so a drag leaves them where they are (NSH 0.3.0 sized the sheet's scroll content far
 # past its rows, and a drag left the sheet blank; measured on Android).
-tap switcher
-sleep 2
+# A tap as the app comes to the front can be lost (on CI the tap a second after am start was: the pane on screen, no
+# sheet), as to_home says: the rows are looked for 5 s after a tap, and the switcher tapped again, three taps at most.
+miss=${HM_SWITCHER_MISS_FIRST:-}; rows=""
+for n in 1 2 3; do
+  if [ -n "$miss" ]; then miss=""; echo "note: self-test: the first tap on switcher is not sent"; else tap switcher; fi
+  for _ in 1 2 3 4 5; do sleep 1; rows=$(at switch-new-folder); [ -n "$rows" ] && break; done
+  [ -n "$rows" ] && break
+  echo "note: no switcher rows 5 s after tap $n on switcher; it is tapped again"
+done
+[ -n "$rows" ] || { echo "FAIL: no switcher rows after three taps on switcher"; exit 1; }
+sleep 2 # the sheet settled: its rows where they stay
 before=$(at switch-new-folder)
 [ -n "$before" ] || { echo "FAIL: no switcher rows"; exit 1; }
 # From a row itself: a fixed point can land above a short sheet, where a touch closes it (seen on the CI emulator).

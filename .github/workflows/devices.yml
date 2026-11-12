@@ -69,7 +69,7 @@ on:
         default: false
       # Some of the suite groups and not the others (app/e2e/ci/groups.sh has the names and what each runs).
       groups:
-        description: "Only these groups, by commas or spaces (empty: all but ios-onerror-27): ios-main ios-b ios-onerror ios-onerror-27 android-main android-panes android-tunnel android-notify android-progress android-picture android-update remote-picture user-path"
+        description: "Only these groups, by commas or spaces (empty: all but ios-onerror-27 and ios-kitty): ios-main ios-b ios-onerror ios-onerror-27 ios-kitty android-main android-panes android-tunnel android-notify android-progress android-picture android-update remote-picture user-path"
         type: string
         default: ""
 
@@ -148,6 +148,8 @@ jobs:
           cp app/android/build/Herdr.apk "$RUNNER_TEMP/build/"
           (cd companion && CGO_ENABLED=0 go build -buildvcs=false -trimpath -ldflags="-s -w" -o "$RUNNER_TEMP/build/herdr-anywhere-linux-amd64" ./cmd/herdr-anywhere)
           "$RUNNER_TEMP/build/herdr-anywhere-linux-amd64" --version
+      - name: The suites' start and stop of their Companion (e2e/companion.sh)
+        run: sh app/e2e/companion.sh --self-test "$RUNNER_TEMP/build/herdr-anywhere-linux-amd64"
       - run: app/e2e/ci/tools.sh shots
       - name: Check what is uploaded
         run: |
@@ -435,7 +437,7 @@ jobs:
           retention-days: 7
 
   ios:
-    name: iOS ${{ fromJSON('{"a":"main, keyboard, letters, languages, scrolling","b":"Tailcat, pictures","onerror":"an error the JS does not catch","onerror27":"an error the JS does not catch (iOS 27)"}')[matrix.key] }}${{ matrix.copy != 0 && format(' (copy {0})', matrix.copy) || '' }}
+    name: iOS ${{ fromJSON('{"a":"main, keyboard, letters, languages, scrolling","b":"Tailcat, pictures","onerror":"an error the JS does not catch","onerror27":"an error the JS does not catch (iOS 27)","kitty":"Oh My Pi's pictures"}')[matrix.key] }}${{ matrix.copy != 0 && format(' (copy {0})', matrix.copy) || '' }}
     needs: plan
     if: needs.plan.outputs.ios != '[]'
     # xcode-27 is the runner image with Xcode 27 and the iOS 27 simulators (as tests.yml's ios27).
@@ -445,7 +447,8 @@ jobs:
       fail-fast: false
       matrix:
         # a: main, keyboard, letters, languages, scrolling (group ios-main); b: Tailcat, pictures (ios-b); onerror: an
-        # error the app's JS doesn't catch (ios-onerror); onerror27: the same on iOS 27 (ios-onerror-27). copy 0 is the
+        # error the app's JS doesn't catch (ios-onerror); onerror27: the same on iOS 27 (ios-onerror-27); kitty: Oh My Pi's
+        # pictures (ios-kitty, only when named). copy 0 is the
         # usual run; a run of copies (ios_main_repeat or ios_b_repeat) has only that group, numbered from 1.
         key: ${{ fromJSON(needs.plan.outputs.ios) }}
         copy: ${{ fromJSON('{"0":[0],"1":[1],"2":[1,2],"3":[1,2,3],"4":[1,2,3,4],"5":[1,2,3,4,5]}')[inputs.ios_main_repeat != '0' && inputs.ios_main_repeat || inputs.ios_b_repeat != '0' && inputs.ios_b_repeat || '0'] }}
@@ -465,6 +468,8 @@ jobs:
         with:
           python-version: "3.13"
       - run: app/e2e/ci/tools.sh core nsh zsh ios shots
+      - if: matrix.key == 'kitty'
+        run: app/e2e/ci/tools.sh omp
       - run: app/e2e/ci/ios-up.sh
         env:
           HM_XCODE: ${{ matrix.key == 'onerror27' && '/Applications/Xcode_27.0.app' || '' }}
@@ -497,6 +502,11 @@ jobs:
               $s ios-onerror e2e/ios-onerror.sh "$OUT/onerror.png" ;;
             onerror27)
               $s ios-onerror e2e/ios-onerror.sh "$OUT/onerror27.png" ;;
+            kitty)
+              mkdir -p "$OUT/kitty"
+              # A tree from before the pictures (no model/kitty.ts) takes the same steps for screenshots of how it was.
+              [ -f src/model/kitty.ts ] || export HM_KITTY_BEFORE=1
+              $s ios-kitty e2e/ios-kitty.sh "$OUT/kitty" ;;
           esac
           $s --finish
       - name: Check what is uploaded

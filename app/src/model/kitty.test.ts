@@ -59,17 +59,34 @@ test('placeholder cells reach the terminal hidden, so it draws their background 
   }
 })
 
-test('a command cut anywhere between two writes is read the same', () => {
-  const all = [...debug.open, ...debug.live].join('')
-  for (const size of [1, 2, 3, 7, 4099]) {
+// xterm joins combining marks to the cell before them across writes, but not across an escape sequence: marks after
+// SGR 28 take a cell of their own, and the rest of that row of the picture lands one cell to the right.
+test('a write that ends between a placeholder and its marks leaves them together, still hidden', () => {
+  const k = new KittyImages()
+  const text = ['\x1b[38;2;0;0;7m\u{10EEEE}\u0305\u0305\u{10EEEE}', '\u0305\u030d\u{10EEEE}', '\u0305\u030e\x1b[39m\r\n'].map((w) => k.take(w).text).join('')
+  expect(text).toBe('\x1b[38;2;0;0;7m\x1b[8m\u{10EEEE}\u0305\u0305\u{10EEEE}\u0305\u030d\u{10EEEE}\u0305\u030e\x1b[28m\x1b[39m\r\n')
+  for (const size of [1, 7]) {
+    const all = [...read.open, ...read.live].join('')
+    const pieces: string[] = []
+    for (let i = 0; i < all.length; i += size) pieces.push(all.slice(i, i + size))
+    expect(/\u{10EEEE}\p{M}*(?:\x1b\[[0-9;]*m)+\p{M}/u.test(feed(new KittyImages(), pieces).text)).toBe(false)
+  }
+})
+
+// One test for each size the output is cut into, as a test has 2 s and a CI runner is three times slower than a Mac or
+// more. One character at a time: 0.09 s here (nsh test); 0.65 s, and over 2 s on a runner, while each write searched
+// the whole held command for its end again.
+for (const size of [1, 2, 3, 7, 4099]) {
+  test(`a command cut anywhere between two writes is read the same (writes of ${size})`, () => {
+    const all = [...debug.open, ...debug.live].join('')
     const pieces: string[] = []
     for (let i = 0; i < all.length; i += size) pieces.push(all.slice(i, i + size))
     const k = new KittyImages()
     const r = feed(k, pieces)
     expect(unhide(r.text)).toBe(all.replace(APC, ''))
     expect(k.all().map((i) => [i.id, i.png.length])).toEqual([[13180035, 17 * 4096 + 28]])
-  }
-})
+  })
+}
 
 test('output with no graphics passes unchanged, an escape at a write\'s end included', () => {
   const k = new KittyImages()

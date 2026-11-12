@@ -25,8 +25,11 @@ const END = '\x1b\\'
 // Placeholder cells with their marks. xterm draws a cell's combining marks past its right edge, over the next cell,
 // where the page's picture does not reach, so the app sends them hidden (SGR 8, ended by SGR 28): xterm draws only
 // their background, and the page still reads their colour and marks from the buffer.
+// A write may end inside a run: its last cell's marks, or more cells, may come in the next. The run is then left
+// hidden and ended there, after them: xterm joins marks to the cell before them across writes, not across an escape
+// sequence (SGR 28 there gave the marks a cell of their own, and the rest of that row of the picture moved right).
 const PLACEHOLDERS = /(?:\u{10EEEE}\p{M}*)+/gu
-const hide = (text: string) => (text.includes('\u{10EEEE}') ? text.replace(PLACEHOLDERS, '\x1b[8m$&\x1b[28m') : text)
+const GOES_ON = /^(?:\u{10EEEE}|\p{M})*/u
 
 type Stored = KittyImage & { used: number; placed: boolean }
 type Incoming = { id: number; png: boolean; parts: string[]; place?: { cols: number; rows: number } }
@@ -38,12 +41,17 @@ export class KittyImages {
   private held = ''
   private incoming?: Incoming
   private clock = 0
+  /** The last write ended inside a run of placeholder cells, hidden (SGR 8) and not ended yet. */
+  private hiding = false
   // Two of the largest pictures omp sends (1568 by 1045 px, 4.37M base64 characters each). The page holds the open
   // terminal's pictures: in headless Chromium the first of these added 57 MB, each one after it 4 to 12 MB.
   constructor(private limits: KittyLimits = { chars: 9_000_000, count: 32 }) {}
 
   /** The terminal's text with the graphics commands taken out, the pictures that can be drawn now, and those gone. */
   take(chunk: string): Taken {
+    // A command held from the writes before is searched for its end only from where those left off (its last ESC
+    // may be the end's first half): written a character at a time, each write searched the whole of it again.
+    const searched = this.held.startsWith(START) ? Math.max(START.length, this.held.length - 1) : START.length
     let s = this.held + chunk
     this.held = ''
     const out: Taken = { text: '', put: [] }
@@ -58,15 +66,32 @@ export class KittyImages {
         this.held = s.slice(s.length - tail)
         break
       }
-      const end = s.indexOf(END, at + START.length)
+      const end = s.indexOf(END, at + (from === 0 && at === 0 ? searched : START.length))
       out.text += s.slice(from, at)
       if (end < 0) { this.held = s.slice(at); break }
       this.command(s.slice(at + START.length, end), changed, out)
       from = end + END.length
     }
     for (const img of changed.values()) if (this.images.get(img.id) === img) out.put.push(img)
-    out.text = hide(out.text)
+    out.text = this.hide(out.text)
     return out
+  }
+
+  /** TEXT with each run of placeholder cells hidden: SGR 8 before it, SGR 28 after. */
+  private hide(text: string): string {
+    let head = ''
+    if (this.hiding) {
+      const goes = GOES_ON.exec(text)![0].length
+      if (goes === text.length) return text
+      head = text.slice(0, goes) + '\x1b[28m'
+      text = text.slice(goes)
+      this.hiding = false
+    }
+    if (!text.includes('\u{10EEEE}')) return head + text
+    const hidden = text.replace(PLACEHOLDERS, '\x1b[8m$&\x1b[28m')
+    if (!hidden.endsWith('\x1b[28m') || !/(?:\u{10EEEE}|\p{M})$/u.test(text)) return head + hidden
+    this.hiding = true
+    return head + hidden.slice(0, -'\x1b[28m'.length)
   }
 
   /** The pictures kept, oldest used first. */

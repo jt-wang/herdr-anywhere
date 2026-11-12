@@ -7,7 +7,7 @@
 #   zsh    zsh (the e2e terminals run zsh, as on a Mac)
 #   shots  what ci-shots-check.sh needs: python with zxing-cpp and Pillow as HM_SHOTS_PYTHON, tesseract and ffmpeg
 #   ios    xcodegen and idb (idb-companion and the fb-idb client)
-#   omp    Oh My Pi's release binary for Linux x64, as HM_TEST_OMP (android-kitty.sh)
+#   omp    Oh My Pi's release binary (18.13.3), as HM_TEST_OMP (android-kitty.sh, ios-kitty.sh)
 # herdr-core and nsh are the versions computers.yml pins; update both files together.
 set -euo pipefail
 tmp=${RUNNER_TEMP:?run on a GitHub runner}
@@ -90,9 +90,10 @@ ios() {
 }
 
 omp() {
-  [ $os = linux ] || { echo "omp is fetched only on a Linux runner"; exit 2; }
-  get https://github.com/can1357/oh-my-pi/releases/download/v18.13.3/omp-linux-x64 omp \
-    42d39fa8996fed9f999e26306e60e2fdbea0c0de0d0b2d68feba275f44c41d04
+  local f s
+  if [ $os = linux ]; then f=omp-linux-x64; s=42d39fa8996fed9f999e26306e60e2fdbea0c0de0d0b2d68feba275f44c41d04
+  else f=omp-darwin-arm64; s=b449d0d0d779a0b2e655f0ce41d5c414a253de71c67b3affc30a6528fc967314; fi
+  get "https://github.com/can1357/oh-my-pi/releases/download/v18.13.3/$f" omp "$s"
   chmod +x "$tmp/omp"
   echo "HM_TEST_OMP=$tmp/omp" >> "$env_"
 }
