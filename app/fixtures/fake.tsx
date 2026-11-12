@@ -181,7 +181,8 @@ host.on('fake.status', (d: any) => {
 // The computer's chat answer for every terminal (GET /api/chat/…): `params.chat` (JSON), else none; a test changes it
 // with `app.host.send('fake.chat', answer)`, or makes the computer unreachable with `{ offline: true }`. Each ask is
 // recorded in `fake-chat-asks`; a step's details are "input of <id>" and "output of <id>" (with an image when the id
-// ends in "img"), unless the answer's `details` has the id; and "gone" is gone. Every image is a one-pixel PNG.
+// ends in "img"), unless the answer's `details` has the id; and "gone" is gone. Every image is a one-pixel PNG, or with
+// `params.chatPicture` the drawn sunset (fixtures/picture.ts), to zoom (e2e/android-zoom.sh, ios-zoom.sh with CHAT=1).
 const PIXEL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
 let chatAnswer: any = params.chat ? JSON.parse(params.chat) : { chat: false }
 const chatAsks: string[] = []
@@ -192,7 +193,7 @@ async function chat(url: string) {
   chatAsks.push(path)
   void Storage.setItem('fake-chat-asks', JSON.stringify(chatAsks))
   if (chatAnswer.offline) throw new Error('unreachable')
-  if (/\/images\/[^/?]+$/.test(path)) return answer(200, { url: PIXEL })
+  if (/\/images\/[^/?]+$/.test(path)) return answer(200, { url: params.chatPicture ? SAMPLE_PICTURE : PIXEL })
   const step = /\/steps\/([^/?]+)$/.exec(path)
   if (!step) return answer(200, chatAnswer)
   const id = decodeURIComponent(step[1])
@@ -202,7 +203,8 @@ async function chat(url: string) {
 }
 // The computer's chat setups (GET /api/chat-setups, PUT/DELETE /api/chat-setups/{agent}): `params.setups` (JSON), else
 // none. Install over a "changed" file without ?force=1 is refused (409); each ask is recorded in `fake-setup-asks` as
-// "METHOD path".
+// "METHOD path". As the Companion, which reads the file at each ask (internal/chat/pi/reader.go), a chat answer of
+// setup-needed for that agent turns setup-not-loaded once it is installed, and back once it is removed.
 let setups: any[] = params.setups ? JSON.parse(params.setups) : []
 const setupAsks: string[] = []
 function chatSetups(url: string, init: any) {
@@ -217,6 +219,10 @@ function chatSetups(url: string, init: any) {
   const force = /[?&]force=1/.test(path)
   if (setups[i].state === 'no-agent' || (setups[i].state === 'changed' && !force)) return answer(409, setups[i])
   setups[i] = { ...setups[i], state: method === 'PUT' ? 'installed' : 'absent' }
+  if (chatAnswer.setup === agent) {
+    if (method === 'PUT' && chatAnswer.unknown === 'setup-needed') chatAnswer = { ...chatAnswer, unknown: 'setup-not-loaded' }
+    if (method === 'DELETE' && chatAnswer.unknown === 'setup-not-loaded') chatAnswer = { ...chatAnswer, unknown: 'setup-needed' }
+  }
   return answer(200, setups[i])
 }
 // Another Herdr screen pins or unpins an agent: `app.host.send('fake.label', { address, labels: { 'herdr.pinned': '1' } })`.

@@ -5,13 +5,17 @@
 # The app is e2e/picture-app.tsx (the made-up computer of fixtures/fake.tsx with the drawn sunset open), packaged
 # under its own id by e2e/zoom-package.sh, so an installed Herdr Anywhere stays as it is. Fake data only; needs no
 # computer of its own.
-# Usage: ANDROID_SERIAL=emulator-5554 e2e/android-zoom.sh [APK] [folder for screenshots and the recording]
+# CHAT=1: the sunset is in a chat (e2e/chat-picture-params.ts) and is opened from there with a tap, on the whole
+# screen. Then also: Close and back go back to the chat, a swipe down closes it, and a drag down while zoomed in
+# moves the picture instead. The APK given must be packaged with CHAT=1 too.
+# Usage: [CHAT=1] ANDROID_SERIAL=emulator-5554 e2e/android-zoom.sh [APK] [folder for screenshots and the recording]
 # Without an APK it packages one (nsh and a JDK). Needs the SDK, python3 with Pillow, and an emulator (adb emu).
 set -eu
 : "${ANDROID_SERIAL:?set ANDROID_SERIAL to the emulator to use}"
 app=$(cd "$(dirname "$0")/.." && pwd)
 apk=""; case ${1:-} in *.apk) apk=$1; shift;; esac
 out=${1:-}
+chat=${CHAT:-}
 export ANDROID_HOME="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
 adb="$ANDROID_HOME/platform-tools/adb"; command -v adb >/dev/null 2>&1 && adb=$(command -v adb)
 id=io.jingtao.herdranywhere.zoomcheck
@@ -58,6 +62,7 @@ down() { emu EV_ABS:ABS_MT_SLOT:$1 EV_ABS:ABS_MT_TRACKING_ID:$(($1 + 1)) EV_ABS:
 move() { emu EV_ABS:ABS_MT_SLOT:$1 EV_ABS:ABS_MT_POSITION_X:$(ex $2) EV_ABS:ABS_MT_POSITION_Y:$(ey $3) EV_SYN:0:0; }
 up() { emu EV_ABS:ABS_MT_SLOT:$1 EV_ABS:ABS_MT_TRACKING_ID:-1 EV_SYN:0:0; }
 lift() { emu EV_KEY:BTN_TOUCH:0 EV_SYN:0:0; }
+tap_id() { wait_for "$1"; set -- $B; "$adb" shell input tap $((($1 + $3) / 2)) $((($2 + $4) / 2)); }
 tap2() { # x y: two taps 120 ms apart, each 60 ms down
   for _ in 1 2; do down 0 $1 $2; sleep 0.06; up 0; lift; sleep 0.12; done
 }
@@ -74,6 +79,8 @@ for scheme in light dark; do
   "$adb" shell am start -n "$id/com.longbridge.nsh.AppActivity" >/dev/null
   # The box: the zooming scroll view, which stays put while the picture in it zooms (a build from before zoom has
   # only the picture, which is as big as the box until then).
+  # In a chat: the pane opens in its chat view (shot as it is); a tap on the image there opens it.
+  [ "$chat" != 1 ] || { tap_id space-sp1; wait_for image-u1.1; sleep 1; shot $scheme-chat; tap_id image-u1.1; }
   wait_for picture-image; box=$(xml | bounds picture-zoom); [ -n "$box" ] || box=$B; set -- $box; l=$1 t=$2 r=$3 b=$4; cx=$(((l + r) / 2)); cy=$(((t + b) / 2)); w=$((r - l))
   bg=$([ $scheme = dark ] && echo '#25272b' || echo '#ffffff') # the sheet's colour (nsh.json popover)
   sleep 1; shot $scheme-fitted
@@ -112,5 +119,23 @@ for scheme in light dark; do
   fi
   wait_for picture-close; set -- $B; "$adb" shell input tap $((($1 + $3) / 2)) $((($2 + $4) / 2)); sleep 1.5
   has 'resource-id="picture-sheet"' && say "FAIL: Close left the sheet open" || say "ok: Close closes the sheet"
+  if [ "$chat" = 1 ]; then
+    has 'resource-id="image-u1.1"' && say "ok: Close goes back to the chat" || say "FAIL: Close did not go back to the chat"
+    # On the whole screen: the sheet from the top (under the status bar) to the bottom.
+    tap_id image-u1.1; wait_for picture-sheet; set -- $B
+    [ "$2" -lt $((sh / 10)) ] && [ "$4" -gt $((sh * 9 / 10)) ] && say "ok: the picture opens on the whole screen" || say "FAIL: the sheet is not on the whole screen: $B"
+    "$adb" shell input keyevent 4; sleep 1.5
+    xml > "$work/back.xml"
+    ! grep -qF 'resource-id="picture-sheet"' "$work/back.xml" && grep -qF 'resource-id="image-u1.1"' "$work/back.xml" \
+      && say "ok: back closes the picture, back in the chat" || say "FAIL: back did not go back to the chat"
+    tap_id image-u1.1; wait_for picture-image; sleep 1
+    "$adb" shell input swipe $cx $cy $cx $((sh * 9 / 10)) 250; sleep 1.5
+    has 'resource-id="picture-sheet"' && say "FAIL: a swipe down left the picture open" || say "ok: a swipe down closes the picture"
+    tap_id image-u1.1; wait_for picture-image; sleep 1
+    pinch $cx $cy $((w / 5)) $((w * 4 / 5)); sleep 1
+    "$adb" shell input swipe $cx $((t + (b - t) / 5)) $cx $((b - (b - t) / 5)) 400; sleep 1.5
+    has 'resource-id="picture-image"' && say "ok: zoomed in, a drag down moves the picture and leaves it open" || say "FAIL: zoomed in, a drag down closed the picture"
+    tap_id picture-close; sleep 1.5
+  fi
 done
 [ $failed = 0 ] && echo PASS || { echo FAILED; exit 1; }
