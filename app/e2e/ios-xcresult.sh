@@ -32,8 +32,14 @@ for test in json.load(open(os.path.join(d, "manifest.json"))):
         if new and os.path.isfile(old) and not os.path.exists(os.path.join(d, new)):
             os.rename(old, os.path.join(d, new))' "$folder"
   rm -f "$folder/manifest.json"
+  # At a failure Xcode 26.6 also exported "UI Snapshot <time>", a binary property list, and "App UI hierarchy for
+  # <app>", text, neither with an extension (both have dots in their names). The list goes: the upload check reads no
+  # picture in it, and its strings may be UTF-16, which a byte search misses. Text keeps its words and gets .txt.
+  find "$folder" -type f ! -name '*.png' ! -name '*.jpg' ! -name '*.jpeg' ! -name '*.txt' | while IFS= read -r f; do
+    if [ "$(head -c 6 "$f")" = bplist ]; then rm -f "$f"; else mv "$f" "$f.txt"; fi
+  done
   n=$(find "$folder" -type f | wc -l | tr -d ' ')
   [ "$n" = 0 ] && rmdir "$folder" 2>/dev/null
-  echo "  $n screenshots${which:+ at the failures}"
+  echo "  $n files${which:+ at the failures} (screenshots and what XCTest wrote)"
 fi
 exit 0

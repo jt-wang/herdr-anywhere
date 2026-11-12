@@ -44,28 +44,15 @@ until curl -fsS "http://127.0.0.1:$port/api/info" >/dev/null 2>&1; do
 done
 link=$(HERDR_ANYWHERE_STATE="$work/companion" "$work/herdr-anywhere" pair --url "http://127.0.0.1:$port" 2>/dev/null | grep -o 'http://[^ ]*#pair=[A-Za-z0-9_-]*' | head -1)
 [ -n "$link" ] || { echo "pair printed no link" >&2; exit 1; }
-# The app is built from a copy of app/ whose terminal page also runs e2e/touch-times.ts, which tells the program when
-# the page got each touch (a "touch" line in the program's file); app/ itself is not changed.
-tree="$work/tree"
-mkdir -p "$tree"
-rsync -a --exclude /ios/build --exclude /ios/nsh --exclude /android "$app/" "$tree/app/"
-ln -s "$app/../third_party" "$tree/third_party"
-printf "export const PAIR: string = '%s'\n" "$link" > "$tree/app/e2e/pair.ts"
-page="$tree/app/src/ui/terminal-page.ts"
-[ "$(grep -c '<script>window.__terminal=' "$page")" = 1 ] || { echo "FAIL: the terminal page has changed: no single place for e2e/touch-times.ts"; exit 1; }
-sed 's/^export function terminalPage(/function terminalPageAsShipped(/' "$page" > "$page.new" && mv "$page.new" "$page"
-cat >> "$page" <<'TS'
-import { TOUCH_TIMES } from '../../e2e/touch-times.ts'
-export function terminalPage(opts: Parameters<typeof terminalPageAsShipped>[0]): string {
-  return terminalPageAsShipped(opts).replace('<script>window.__terminal=', () => '<script>' + TOUCH_TIMES + '</script><script>window.__terminal=')
-}
-TS
-"$tree/app/ios/build.sh" ios-e2e.tsx simulator >/dev/null 2>&1 || { echo "FAIL: ios/build.sh"; exit 1; }
+# The app is built from a copy of app/ whose terminal page also tells the program when the page got each touch (a
+# "touch" line in the program's file, e2e/touch-times.ts); app/ itself is not changed.
+printf "export const PAIR: string = '%s'\n" "$link" > "$work/pair.ts"
+built=$("$app/e2e/ios-touch-app.sh" "$work" "$work/pair.ts" input) || exit 1
 
 xcrun simctl boot "$SIM_UDID" 2>/dev/null || true
 xcrun simctl bootstatus "$SIM_UDID" -b >/dev/null
 xcrun simctl uninstall "$SIM_UDID" "$id" 2>/dev/null || true
-xcrun simctl install "$SIM_UDID" "$tree/app/ios/build/Herdr.app"
+xcrun simctl install "$SIM_UDID" "$built"
 # Herdr's alert sounds ship with the app, where the app's asset: URIs look (next to its bundle, as nsh build lays out).
 container=$(xcrun simctl get_app_container "$SIM_UDID" "$id")
 for s in request done; do

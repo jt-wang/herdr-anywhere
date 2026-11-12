@@ -81,7 +81,7 @@ func TestReportFindsRepliesCommitsAndMsg(t *testing.T) {
 	write(t, filepath.Join(claudeHome, "sessions", "101.json"), `{"pid":101,"sessionId":"sid-a","cwd":"/tmp/p/acme-api"}`)
 	write(t, filepath.Join(claudeHome, "projects", "-tmp-p-acme-api", "sid-a.jsonl"), claudeTranscript)
 	write(t, filepath.Join(claudeHome, "projects", "-tmp-p-acme-web", "sid-w.jsonl"), claudeTranscript)
-	write(t, filepath.Join(piHome, "sessions", piDirName("/tmp/p/acme-launch"), "2026-01-01T12-00-00_s1.jsonl"), piSession)
+	write(t, filepath.Join(piHome, "sessions", piDirName("/tmp/p/acme-launch"), "2026-11-07T05-00-00_s1.jsonl"), piSession)
 
 	f := File{Things: []Thing{
 		{ID: "A1", Outcome: "fix", Stage: Doing, Panes: []PaneRef{{Side: "hc", Addr: "api", TurnAt: ip(0), At: ms(t0)}}},
