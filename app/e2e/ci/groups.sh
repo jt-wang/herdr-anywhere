@@ -7,16 +7,17 @@
 #          update=, remote=, user_path= (true or false), one per line, for $GITHUB_OUTPUT
 #        app/e2e/ci/groups.sh --self-test
 # The groups, as devices.yml's jobs and matrix keys:
-#   ios-main (ios, key a), ios-b (ios, key b), android-<key> (android: main, panes, tunnel, notify, progress, picture),
-#   android-update, remote-picture, user-path.
-# Run only when a dispatch names them, until they have passed on the runners a few times: ios-chat (ios, key chat: the
-# chat view of four agents, e2e/ios-chat-four.sh), ios27-chat (ios, key chat27: the same with Xcode 27.0 on iOS 27.0),
-# android-chat (android, key chat: e2e/android-chat-four.sh).
+#   ios-main (ios, key a), ios-b (ios, key b), ios-onerror (ios, key onerror: an error the app's JS doesn't catch),
+#   android-<key> (android: main, panes, tunnel, notify, progress, picture), android-update, remote-picture, user-path.
+# Run only when a dispatch names them: ios-onerror-27 (ios, key onerror27: the same built with Xcode 27.0 on iOS 27.0),
+# as the main suite has not yet passed on that runner image; and, until they have passed on the runners a few times,
+# ios-chat (ios, key chat: the chat view of four agents, e2e/ios-chat-four.sh), ios27-chat (ios, key chat27: the same
+# with Xcode 27.0 on iOS 27.0), android-chat (android, key chat: e2e/android-chat-four.sh).
 android_keys="main panes tunnel notify progress picture"
 android_named="chat"
-ios_keys="a b chat chat27"
-all="ios-main ios-b $(for k in $android_keys; do printf 'android-%s ' "$k"; done)android-update remote-picture user-path"
-named_only="ios-chat ios27-chat android-chat"
+ios_keys="a b onerror onerror27 chat chat27"
+all="ios-main ios-b ios-onerror $(for k in $android_keys; do printf 'android-%s ' "$k"; done)android-update remote-picture user-path"
+named_only="ios-onerror-27 ios-chat ios27-chat android-chat"
 
 json() { printf '['; sep=; for x in "$@"; do printf '%s"%s"' "$sep" "$x"; sep=,; done; printf ']\n'; }
 
@@ -37,6 +38,8 @@ plan() {
   set --
   has ios-main && set -- "$@" a
   has ios-b && set -- "$@" b
+  has ios-onerror && set -- "$@" onerror
+  has ios-onerror-27 && set -- "$@" onerror27
   has ios-chat && set -- "$@" chat
   has ios27-chat && set -- "$@" chat27
   echo "ios=$(json "$@")"
@@ -55,7 +58,9 @@ if [ "${1:-}" = --self-test ]; then
     got=$(plan "$@" 2>&1 | tr '\n' ' ')
     case "$got" in *"$want"*) ;; *) echo "FAIL: groups.sh self-test: for \"$*\" it gave: $got (wanted: $want)"; fail=1 ;; esac
   }
-  check 'ios=["a","b"] android=["main","panes","tunnel","notify","progress","picture"] update=true remote=true user_path=true' "" 0 0
+  check 'ios=["a","b","onerror"] android=["main","panes","tunnel","notify","progress","picture"] update=true remote=true user_path=true' "" 0 0
+  check 'ios=["onerror","onerror27"] android=[] update=false remote=false user_path=false' "ios-onerror ios-onerror-27" 0 0
+  check 'ios=["onerror27"] android=[]' ios-onerror-27 0 0
   check 'ios=["b"] android=[] update=false remote=false user_path=false' ios-b 0 0
   check 'ios=["chat","chat27"] android=["chat"] update=false remote=false user_path=false' "ios-chat ios27-chat android-chat" 0 0
   check 'ios=["chat27"] android=[]' ios27-chat 0 0

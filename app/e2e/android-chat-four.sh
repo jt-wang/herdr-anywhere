@@ -116,7 +116,8 @@ tap_last() { # resource-id prefix, and a part of it
   "$adb" shell input tap $xy
 }
 type_text() { rest=$1; while [ -n "$rest" ]; do "$adb" shell input text "'$(printf %s "$rest" | cut -c1-80 | sed 's/ /%s/g')'" < /dev/null; rest=$(printf %s "$rest" | cut -c81-); sleep 0.5; done; }
-keys_down() { for _ in 1 2; do "$adb" shell dumpsys input_method | grep -q 'mInputShown=true' && { "$adb" shell input keyevent KEYCODE_BACK; sleep 1; }; done; }
+# With an if, not an &&: a function whose last command is a failed && returns 1, which ends the script under set -e.
+keys_down() { for _ in 1 2; do if "$adb" shell dumpsys input_method | grep -q 'mInputShown=true'; then "$adb" shell input keyevent KEYCODE_BACK; sleep 1; fi; done; }
 # A prompt sent from the composer; the chat shows it as the newest turn, finished.
 sent() {
   tap_last compose-input; type_text "$1"; tap_last compose-send; keys_down

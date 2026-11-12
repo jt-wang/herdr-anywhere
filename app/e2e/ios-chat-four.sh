@@ -41,12 +41,16 @@ L() { env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin
   LANG=en_US.UTF-8 HC_SESSION="hmchat4-$$" HC_SOCKET="" XDG_STATE_HOME="$work/state" XDG_CONFIG_HOME="$work/config" \
   XDG_DATA_HOME="$work/data" XDG_RUNTIME_DIR="$run" CLAUDE_CONFIG_DIR="$work/claude" CODEX_HOME="$work/codex" \
   PI_CODING_AGENT_DIR="$work/pi" "$@"; }
-serve_pid=; ctl_pid=; booted=
+serve_pid=; ctl_pid=; log_pid=; booted=
 cleanup() {
   status=$?
   trap - EXIT INT TERM HUP
   set +e
   [ -n "$ctl_pid" ] && kill "$ctl_pid" 2>/dev/null
+  [ -n "$log_pid" ] && kill "$log_pid" 2>/dev/null
+  # What the app logged as errors (nsh writes the errors it reports there): printed when the run failed, kept always.
+  [ "$status" != 0 ] && [ -s "$work/app.log" ] && { echo "  the app's errors (last 20):"; grep -vE '^(Filtering the log data|Timestamp )' "$work/app.log" | tail -20 | cut -c1-300 | sed 's/^/    /'; }
+  [ -n "$shots" ] && [ -s "$work/app.log" ] && cp "$work/app.log" "$shots/app.log"
   [ -n "$serve_pid" ] && { pkill -P "$serve_pid" 2>/dev/null; kill "$serve_pid" 2>/dev/null; }
   pkill -f -- "--state $state" 2>/dev/null
   L "$hc" server stop >/dev/null 2>&1
@@ -105,6 +109,10 @@ ctl_pid=$!
 xcrun simctl list devices booted | grep -q "$SIM_UDID" || booted=1
 xcrun simctl boot "$SIM_UDID" 2>/dev/null || true
 xcrun simctl bootstatus "$SIM_UDID" -b >/dev/null
+xcrun simctl spawn "$SIM_UDID" log stream --style compact \
+  --predicate 'process == "Herdr" AND (messageType == error OR messageType == fault OR composedMessage CONTAINS[c] "nsh")' \
+  > "$work/app.log" 2>&1 &
+log_pid=$!
 xcrun simctl ui "$SIM_UDID" appearance light
 xcrun simctl uninstall "$SIM_UDID" "$id" 2>/dev/null || true
 xcrun simctl install "$SIM_UDID" "$app/ios/build/Herdr.app"
@@ -113,7 +121,30 @@ launched=$(xcrun simctl launch "$SIM_UDID" "$id" 2>&1) || { echo "FAIL: the app 
 before=${launched##*: }
 case $before in ''|*[!0-9]*) echo "FAIL: the app did not start: simctl launch said '$launched'"; exit 1 ;; esac
 pid() { xcrun simctl spawn "$SIM_UDID" launchctl list 2>/dev/null | awk -v id="UIKitApplication:$id" 'index($3, id) == 1 {print $1}'; }
-i=0; until grep -q "device .* connected (binary," "$work/serve.log"; do i=$((i + 1)); [ $i -gt 60 ] && { echo "FAIL: the app never connected"; exit 1; }; sleep 1; done
+# The app's crash reports since the launch, each with its type, kept with the screenshots.
+crash_reports() {
+  reports=""
+  for _ in $(seq 1 "$1"); do
+    reports=$(find "$HOME/Library/Logs/DiagnosticReports" -maxdepth 1 -name 'Herdr-*.ips' -newer "$work/started" 2>/dev/null)
+    [ -n "$reports" ] && break
+    sleep 5
+  done
+  for f in $reports; do echo "  crash report: $f"; grep -o '"type" *: *"[A-Z_]*"' "$f" | sort -u | sed 's/^/    /'; [ -n "$shots" ] && cp "$f" "$shots/"; done
+  [ -n "$reports" ] || echo "  no crash report from the app within $(($1 * 5)) s"
+}
+# A simulator just booted can be slow to start the app the first time: 120 s.
+i=0; until grep -q "device .* connected (binary," "$work/serve.log"; do
+  i=$((i + 1))
+  if [ $i -gt 120 ]; then
+    now=$(pid)
+    echo "FAIL: the app never connected (pid $before at launch, '${now}' now)"
+    [ -n "$shots" ] && { xcrun simctl io "$SIM_UDID" screenshot "$shots/never-connected.png" >/dev/null 2>&1 || true; cp "$work/serve.log" "$shots/serve.log"; }
+    tail -20 "$work/serve.log" | sed 's/^/  serve: /'
+    [ "$now" = "$before" ] || crash_reports 6
+    exit 1
+  fi
+  sleep 1
+done
 cp -R "$app/e2e/ios-uitest" "$work/uitest"
 (cd "$work/uitest" && xcodegen generate --quiet)
 [ -n "$shots" ] && mkdir -p "$shots"
@@ -127,14 +158,7 @@ sed 's/^/  /' "${shots:-$work}/chat-four.txt" 2>/dev/null || true
 now=$(pid); [ "$now" = "$before" ] || { sleep 2; now=$(pid); }
 if [ "$now" != "$before" ]; then
   echo "FAIL: the app is not the process launched (pid $before at launch, '${now}' now)"
-  reports=""
-  for _ in $(seq 1 24); do
-    reports=$(find "$HOME/Library/Logs/DiagnosticReports" -maxdepth 1 -name 'Herdr-*.ips' -newer "$work/started" 2>/dev/null)
-    [ -n "$reports" ] && break
-    sleep 5
-  done
-  for f in $reports; do echo "  crash report: $f"; grep -o '"type" *: *"[A-Z_]*"' "$f" | sort -u | sed 's/^/    /'; [ -n "$shots" ] && cp "$f" "$shots/"; done
-  [ -n "$reports" ] || echo "  no crash report from the app within 120 s"
+  crash_reports 24
   [ -n "$shots" ] && cp "$work/serve.log" "$shots/serve.log"
   exit 1
 fi

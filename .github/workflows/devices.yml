@@ -6,7 +6,8 @@ name: Devices
 # screenshots and logs after app/e2e/ci-shots-check.sh has painted over every QR code and found no pairing secret;
 # the check first proves on a real pairing link that it finds one.
 # Android: API 35 emulators on Linux runners (app/e2e/ci/android-up.sh). iOS: iOS 26.5 simulators on macOS runners
-# (app/e2e/ci/ios-up.sh); the app is built for the simulator, unsigned.
+# (app/e2e/ci/ios-up.sh); the app is built for the simulator, unsigned. Group ios-onerror-27 runs the onError suite
+# again with Xcode 27.0 on iOS 27.0, the SDK the TestFlight builds use; only when a dispatch names it.
 # It runs on main, on release tags, on the public branch ci, where each release's commit must pass before main, and
 # on ci-* branches, where a change is tried on its own beside the others. Each branch has its own concurrency group.
 on:
@@ -68,7 +69,7 @@ on:
         default: false
       # Some of the suite groups and not the others (app/e2e/ci/groups.sh has the names and what each runs).
       groups:
-        description: "Only these groups, by commas or spaces (empty: all but ios-chat, ios27-chat, android-chat): ios-main ios-b ios-chat ios27-chat android-main android-panes android-tunnel android-notify android-progress android-picture android-chat android-update remote-picture user-path"
+        description: "Only these groups, by commas or spaces (empty: all but ios-onerror-27, ios-chat, ios27-chat, android-chat): ios-main ios-b ios-onerror ios-onerror-27 ios-chat ios27-chat android-main android-panes android-tunnel android-notify android-progress android-picture android-chat android-update remote-picture user-path"
         type: string
         default: ""
 
@@ -428,16 +429,17 @@ jobs:
           retention-days: 7
 
   ios:
-    name: iOS ${{ fromJSON('{"a":"main, keyboard, letters, languages, scrolling","b":"Tailcat, pictures","chat":"chat view, four agents","chat27":"chat view, four agents (iOS 27)"}')[matrix.key] }}${{ matrix.copy != 0 && format(' (copy {0})', matrix.copy) || '' }}
+    name: iOS ${{ fromJSON('{"a":"main, keyboard, letters, languages, scrolling","b":"Tailcat, pictures","onerror":"an error the JS does not catch","onerror27":"an error the JS does not catch (iOS 27)","chat":"chat view, four agents","chat27":"chat view, four agents (iOS 27)"}')[matrix.key] }}${{ matrix.copy != 0 && format(' (copy {0})', matrix.copy) || '' }}
     needs: plan
     if: needs.plan.outputs.ios != '[]'
     # xcode-27 is the runner image with Xcode 27 and the iOS 27 simulators (as tests.yml's ios27).
-    runs-on: ${{ matrix.key == 'chat27' && 'xcode-27' || 'macos-26' }}
+    runs-on: ${{ (matrix.key == 'onerror27' || matrix.key == 'chat27') && 'xcode-27' || 'macos-26' }}
     timeout-minutes: 75
     strategy:
       fail-fast: false
       matrix:
-        # a: main, keyboard, letters, languages, scrolling (group ios-main); b: Tailcat, pictures (ios-b); chat: the chat
+        # a: main, keyboard, letters, languages, scrolling (group ios-main); b: Tailcat, pictures (ios-b); onerror: an
+        # error the app's JS doesn't catch (ios-onerror); onerror27: the same on iOS 27 (ios-onerror-27); chat: the chat
         # view of four agents (ios-chat); chat27: the same on iOS 27 (ios27-chat). copy 0 is the
         # usual run; a run of copies (ios_main_repeat or ios_b_repeat) has only that group, numbered from 1.
         key: ${{ fromJSON(needs.plan.outputs.ios) }}
@@ -460,8 +462,8 @@ jobs:
       - run: app/e2e/ci/tools.sh core nsh zsh ios shots
       - run: app/e2e/ci/ios-up.sh
         env:
-          HM_XCODE: ${{ matrix.key == 'chat27' && '/Applications/Xcode_27.0.app' || '' }}
-          HM_IOS: ${{ matrix.key == 'chat27' && 'iOS 27.0' || '' }}
+          HM_XCODE: ${{ (matrix.key == 'onerror27' || matrix.key == 'chat27') && '/Applications/Xcode_27.0.app' || '' }}
+          HM_IOS: ${{ (matrix.key == 'onerror27' || matrix.key == 'chat27') && 'iOS 27.0' || '' }}
       - name: Suites
         working-directory: app
         env:
@@ -486,6 +488,10 @@ jobs:
               mkdir -p "$OUT/picture"
               $s ios-tailcat e2e/ios-tailcat.sh "$OUT/tailcat.png"
               $s ios-picture e2e/ios-picture.sh "$OUT/picture" ;;
+            onerror)
+              $s ios-onerror e2e/ios-onerror.sh "$OUT/onerror.png" ;;
+            onerror27)
+              $s ios-onerror e2e/ios-onerror.sh "$OUT/onerror27.png" ;;
             chat)
               $s ios-chat-four e2e/ios-chat-four.sh "$OUT/chat" ;;
             chat27)
@@ -508,7 +514,11 @@ jobs:
           sh app/e2e/ios-failure-logs.sh --self-test
       - name: Shut the simulator
         if: always()
-        run: '[ -z "${SIM_UDID:-}" ] || { xcrun simctl shutdown "$SIM_UDID"; xcrun simctl delete "$SIM_UDID"; }'
+        # A suite may have shut it already (ios-onerror.sh does, as its last step); shutting a shut one fails.
+        run: |
+          [ -n "${SIM_UDID:-}" ] || exit 0
+          if xcrun simctl list devices booted | grep -q "$SIM_UDID"; then xcrun simctl shutdown "$SIM_UDID"; fi
+          xcrun simctl delete "$SIM_UDID"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always() && steps.check.outcome == 'success'
         with:
