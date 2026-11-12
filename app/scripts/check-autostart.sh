@@ -87,7 +87,7 @@ for f in $gotests; do
   [ -z "$bad" ] || no "$f uses the person's entry, autostart.Default(), on line $bad"
   # A test that puts launchctl and systemctl stand-ins first on PATH (testfake/fakeservice) may use any name.
   bad=
-  grep -q 'testfake/fakeservice' "$root/$f" ||
+  grep -qE 'testfake/fakeservice|FakeServiceManager\(' "$root/$f" ||
     bad=$(grep -nE 'autostart\.Service\{' "$root/$f" | grep -v 'io\.example\.herdranywhere\.test\.' | cut -d: -f1 | tr '\n' ' ')
   [ -z "$bad" ] || no "$f makes an autostart.Service not named io.example.herdranywhere.test.… on line $bad"
   if grep -nE 'exec\.Command(Context)?\(.*"(pair|start|stop)"' "$root/$f" | grep -vqE '"server", "stop"'; then

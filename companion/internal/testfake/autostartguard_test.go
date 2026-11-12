@@ -2,57 +2,11 @@ package testfake
 
 import (
 	"os"
-	"os/exec"
-	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
 	"herdr-anywhere/companion/internal/autostart"
 )
-
-// fakeManager puts launchctl and systemctl stand-ins (fakeservice) first on PATH and the person's home in a folder
-// of the test's, so nothing here reaches the service manager or home of whoever runs it. It returns the account's
-// home, a func that empties what the stand-ins have loaded, and one that lists it.
-func fakeManager(t *testing.T) (string, func(), func() []string) {
-	t.Helper()
-	if runtime.GOOS == "windows" {
-		t.Skip("the Run key has no launchctl or systemctl to stand in for")
-	}
-	bin := t.TempDir()
-	exe := filepath.Join(bin, "launchctl")
-	if b, err := exec.Command("go", "build", "-o", exe, "herdr-anywhere/companion/internal/testfake/fakeservice").CombinedOutput(); err != nil {
-		t.Fatalf("building fakeservice: %v\n%s", err, b)
-	}
-	b, err := os.ReadFile(exe)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(bin, "systemctl"), b, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	account := t.TempDir()
-	t.Setenv("HM_AUTOSTART_HOME", account)
-	t.Setenv("XDG_CONFIG_HOME", "")
-	reset := func() {
-		os.RemoveAll(filepath.Join(bin, "launchctl.d"))
-		os.RemoveAll(filepath.Join(bin, "systemctl.d"))
-		os.RemoveAll(filepath.Join(account, "Library"))
-		os.RemoveAll(filepath.Join(account, ".config"))
-	}
-	loaded := func() []string {
-		var names []string
-		for _, d := range []string{"launchctl.d", "systemctl.d"} {
-			entries, _ := os.ReadDir(filepath.Join(bin, d))
-			for _, e := range entries {
-				names = append(names, e.Name())
-			}
-		}
-		return names
-	}
-	return account, reset, loaded
-}
 
 func installStart(t *testing.T, name, home string) {
 	t.Helper()
@@ -79,7 +33,7 @@ func saysAll(t *testing.T, bad []string, words ...string) {
 }
 
 func TestGuardAutostart(t *testing.T) {
-	account, reset, loaded := fakeManager(t)
+	account, reset, loaded := FakeServiceManager(t)
 	own := "io.example.herdranywhere.test.guard"
 	def := autostart.DefaultName
 
