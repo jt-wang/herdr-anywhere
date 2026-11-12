@@ -81,10 +81,13 @@ port=7781; while nc -z 127.0.0.1 "$port" 2>/dev/null; do port=$((port + 1)); don
 work=$(mktemp -d); run=$(mktemp -d /tmp/hmXXXX); state=$(mktemp -d /tmp/hmtcXXXX)
 mkdir -p "$work/h/src/acme-api" "$work/state" "$work/config" "$work/data" "$work/claude"
 : > "$work/h/.zshrc"
+# A fake home, and an autostart name of the run's own: `pair` that finds no serve sets up autostart, and must not
+# write or start the user's own LaunchAgent.
 L() { env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin HOME="$work/h" SHELL=/bin/zsh TERM=xterm-256color \
   LANG=en_US.UTF-8 HC_SESSION="hmresume-$$" HC_SOCKET="" XDG_STATE_HOME="$work/state" XDG_CONFIG_HOME="$work/config" \
-  XDG_DATA_HOME="$work/data" XDG_RUNTIME_DIR="$run" CLAUDE_CONFIG_DIR="$work/claude" "$@"; }
-serve_pid=; guard_pid=; test_pid=; was_look=
+  XDG_DATA_HOME="$work/data" XDG_RUNTIME_DIR="$run" CLAUDE_CONFIG_DIR="$work/claude" \
+  HERDR_ANYWHERE_AUTOSTART_NAME="hmresume-$$" "$@"; }
+serve_pid=; guard_pid=; test_pid=; was_look=; log_pid=
 # The companion, found by its --state folder (it runs a few processes below the one started): TERM, then it must be gone
 # and its port free within 5 s, or the run fails (AGENTS.md); one still there is killed so none is left behind. On a CI
 # runner (devices.yml, group ios-resume), killing the shell that started it and that shell's children left it serving
@@ -108,6 +111,11 @@ cleanup() {
   set +e
   [ -n "$was_look" ] && xcrun simctl ui "$SIM_UDID" appearance "$was_look" && echo "appearance back to $(xcrun simctl ui "$SIM_UDID" appearance)"
   [ -n "$guard_pid" ] && kill "$guard_pid" 2>/dev/null
+  [ -n "$log_pid" ] && kill "$log_pid" 2>/dev/null
+  # The app's own log (TailPocket's tunnel, the app's errors), masked as the companion's, and on a failure the UI
+  # test's whole output, so a run that stops says where and why.
+  [ -s "$work/app.log" ] && sed -E "$mask" "$work/app.log" > "$out/app.log"
+  [ "$status" = 0 ] || { [ -s "$work/uitest/test.log" ] && sed -E "$mask" "$work/uitest/test.log" > "$out/uitest.log"; }
   [ -n "$test_pid" ] && kill "$test_pid" 2>/dev/null
   if [ -n "$serve_pid" ]; then
     stop_companion || status=1
@@ -184,6 +192,8 @@ fi
 [ -n "$link" ] || { echo "FAIL: no pairing link or invite"; exit 1; }
 mkdir -p "$(dirname "$store")"
 python3 -c 'import json,sys; json.dump({"e2e-pair": sys.argv[2], "e2e-open-settings": "99"}, open(sys.argv[1], "w"))' "$store" "$link"
+xcrun simctl spawn "$SIM_UDID" log stream --style compact --level info --predicate 'process == "Herdr"' > "$work/app.log" 2>&1 &
+log_pid=$!
 xcrun simctl launch "$SIM_UDID" "$id" -AppleLanguages "(${LANG_TAG:-en})" >/dev/null
 i=0; until grep -q "device .* connected (binary," "$work/serve.log"; do
   i=$((i + 1)); [ $i -gt 120 ] && { echo "FAIL: the app never connected"; sed -E "$mask" "$work/serve.log" | tail -8; exit 1; }; sleep 1
@@ -213,7 +223,7 @@ cat "$out/probes.txt" >> "$screen"
 timeline "$screen" "$work/serve.log" > "$out/timeline.txt"
 # The screen's lines, and the companion's about the phone's line (not each request of the chat page).
 grep -vE ' (GET|POST) ' "$out/timeline.txt" | sed 's/^/  /' | tail -80
-[ "$rc" = 0 ] || { echo "FAIL: the UITest's own checks failed (exit $rc)"; grep -E "error:|XCTAssert|failed" "$work/uitest/test.log" | head -8; exit 1; }
+[ "$rc" = 0 ] || { echo "FAIL: the UITest's own checks failed (exit $rc)"; grep -E " failed: " "$screen" | head -8; exit 1; }
 if [ "${HM_RESUME_EXPECT:-}" = calm ]; then
   [ "${LANG_TAG:-en}" = en ] || { echo "FAIL: HM_RESUME_EXPECT=calm reads the English banner; LANG_TAG is ${LANG_TAG}"; exit 1; }
   words=$(lost_words); [ -n "$words" ] || { echo "FAIL: no lostNoAnswer in src/strings/en.ts"; exit 1; }

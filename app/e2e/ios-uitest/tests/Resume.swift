@@ -10,19 +10,30 @@ import XCTest
 // when the file $OUT.stop appears), which must see the banner.
 // Writes to $OUT: lines "<epoch s> <phase> +<s since the phase began> <seen|gone> <text>", and "usable +<s>".
 final class Resume: XCTestCase {
+  let env = ProcessInfo.processInfo.environment
+  lazy var out = env["OUT"] ?? "/tmp/resume.txt"
+  lazy var shots = env["SHOTS"] ?? "/tmp/resume"
+  var lines: [String] = []
+  var failures = 0
+  func note(_ s: String) {
+    lines.append(String(format: "%.3f ", Date().timeIntervalSince1970) + s)
+    try? (lines.joined(separator: "\n") + "\n").write(toFile: out, atomically: true, encoding: .utf8)
+  }
+  func shot(_ name: String) {
+    try? XCUIScreen.main.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: "\(shots)-\(name).png"))
+  }
+  // A failed check, or an error of the UI test itself, goes in the record with what the screen showed then.
+  override func record(_ issue: XCTIssue) {
+    failures += 1
+    note("failed: " + issue.compactDescription)
+    shot("failed-\(failures)")
+    super.record(issue)
+  }
+
   func test() {
-    let env = ProcessInfo.processInfo.environment
-    let out = env["OUT"] ?? "/tmp/resume.txt", shots = env["SHOTS"] ?? "/tmp/resume", space = env["SPACE"] ?? "spresume"
+    let space = env["SPACE"] ?? "spresume"
     let aways = (env["AWAY"] ?? "5,30,90").split(separator: ",").compactMap { Double($0) }
     let steady = Double(env["STEADY"] ?? "20") ?? 20
-    var lines: [String] = []
-    func note(_ s: String) {
-      lines.append(String(format: "%.3f ", Date().timeIntervalSince1970) + s)
-      try? (lines.joined(separator: "\n") + "\n").write(toFile: out, atomically: true, encoding: .utf8)
-    }
-    func shot(_ name: String) {
-      try? XCUIScreen.main.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: "\(shots)-\(name).png"))
-    }
     let app = XCUIApplication(bundleIdentifier: "io.jingtao.herdranywhere")
     let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
     let settings = XCUIApplication(bundleIdentifier: "com.apple.Preferences")
@@ -87,7 +98,7 @@ final class Resume: XCTestCase {
       let began = Date()
       var done = false, last = Date()
       send(text)
-      return {
+      return { [self] in
         if done { return }
         if showing(text).exists {
           done = true
@@ -120,7 +131,7 @@ final class Resume: XCTestCase {
     }
 
     // How long a prompt takes to show on a line that works, then the reading's check: nothing new with nothing changed.
-    _ = watch("warm", 30, each: usable("warm", "PING warm"), until: { lines.last?.contains("warm usable") ?? false })
+    _ = watch("warm", 30, each: usable("warm", "PING warm"), until: { self.lines.last?.contains("warm usable") ?? false })
     sleep(5)
     base.formUnion(onScreen())
     let calm = watch("steady", steady)
@@ -138,6 +149,7 @@ final class Resume: XCTestCase {
       note("\(phase) back")
       // Back on the chat page? Note where it landed, then watch.
       note("\(phase) on chat page: \(el("chat-view").exists)")
+      shot("\(phase)-back")
       _ = watch(phase, 60, each: usable(phase, "PING \(phase)"))
     }
 
