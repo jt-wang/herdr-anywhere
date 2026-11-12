@@ -3,14 +3,16 @@
 # space spsk, and two sub-agents of it: one for the light run, one for the dark. Fake data only.
 # Usage: . e2e/subkeep-core.sh
 #        sk_start WORK RUN       builds the agent into WORK/bin, starts the core and the three; sets sk_kid1, sk_kid2
-#        sk COMMAND…             runs COMMAND against that core (as e2e/ios-picture.sh's L)
+#        sk COMMAND…             runs COMMAND against that core (as e2e/ios-picture.sh's L), with the fake HOME and
+#                                the suite's own autostart name
 #        sk_tabs KID             how many tabs of the shared layout (the herdr-app doc) show KID
 #        sk_state KID            KID's state in herdr-core (live while it runs)
 #        sk_stop                 stops the core
 #        sh e2e/subkeep-core.sh --self-test     the above on this computer, no phone: two sub-agents of the agent,
 #                                live, and no tab for either in a layout no phone wrote
-sk() {
-  HC_SESSION="hmsk-$$" HC_SOCKET="" HOME="$sk_work/fakehome" SHELL=/bin/sh XDG_STATE_HOME="$sk_work/state" \
+sk() { # a fake HOME, and the suite's own autostart name: a pair that finds no serve must not write the computer's own
+  # LaunchAgent or systemd unit (companion/internal/autostart, HERDR_ANYWHERE_AUTOSTART_NAME)
+  HERDR_ANYWHERE_AUTOSTART_NAME="hm-subkeep-test" HC_SESSION="hmsk-$$" HC_SOCKET="" HOME="$sk_work/fakehome" SHELL=/bin/sh XDG_STATE_HOME="$sk_work/state" \
     XDG_CONFIG_HOME="$sk_work/config" XDG_DATA_HOME="$sk_work/data" XDG_RUNTIME_DIR="$sk_run" "$@"
 }
 sk_hc=${HM_TEST_HC:-$(command -v hc || echo "$HOME/.local/bin/hc")}

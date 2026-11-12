@@ -1124,9 +1124,19 @@ export class Store {
     const space = (parentPane && this.model.spaceOf(parentPane)) || this.model.activeSpace()
     if (!space) throw new HcError(tr('noSpaceToKeep'))
     const tab = this.model.freshId('tb', space.machine)
-    await this.call('terminal.label', { terminal: addr, labels: { 'herdr.space': local(space.id, space.machine), 'herdr.tab': local(tab, space.machine) } })
-    await this.call('terminal.keep', { terminal: addr, keep: true })
-    this.model.addTab(space.id, newTab(tab, '', this.model.freshId('p', space.machine), addr))
+    // Its new labels come back as an event before these answers, and the store places a labeled terminal that no pane
+    // shows (reconcile): unguarded, that made a second tab with the same id (e2e/run.sh with herdr-core 0.1.21). As
+    // spawnInto, nothing is adopted into this tab meanwhile.
+    const key = `${space.id} ${tab}`
+    this.placing.add(key)
+    try {
+      await this.call('terminal.label', { terminal: addr, labels: { 'herdr.space': local(space.id, space.machine), 'herdr.tab': local(tab, space.machine) } })
+      await this.call('terminal.keep', { terminal: addr, keep: true })
+      if (!this.model.paneOf(addr)) this.model.addTab(space.id, newTab(tab, '', this.model.freshId('p', space.machine), addr))
+    } finally {
+      this.placing.delete(key)
+    }
+    this.focusTerminal(addr)
     this.model.active = space.id
     this.changed()
   }

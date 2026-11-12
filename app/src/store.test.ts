@@ -341,6 +341,32 @@ test('keeping a sub-agent that already has a tab goes to that tab and makes no o
   expect(store.model.focusedPane()).toBe(pane)
 })
 
+// herdr-core sends the labels event before its answer to terminal.label (measured with e2e/run.sh, hc 0.1.21: keeping a
+// sub-agent gave two tabs with one id, the copy placed from its new labels while the phone waited for the answer).
+test('keeping two sub-agents of one agent gives each one tab, with ids of their own and no empty tab', async () => {
+  const { core, store } = setup()
+  await store.connect()
+  const r = await store.newSpace({ argv: ['claude'] })
+  // keep already on, as herdr-core had it when the store's terminal.get came (it handled the phone's terminal.keep first).
+  const kids = [core.run({ argv: ['codex'], parent: r.terminal, keep: true }), core.run({ argv: ['pi'], parent: r.terminal, keep: true })]
+  await settle()
+  const tabs = (s: any) => s.tabs.map((c: any) => `${c.id}:${panes(c.root).map((n: any) => terminalOf(n) ?? 'none').join('+')}`)
+  // terminal.keep answered only after the new labels' event has been handled (the store places the terminal by them).
+  core.holding.add('terminal.keep')
+  for (const k of kids) {
+    const kept = store.keepTerminal(k.address)
+    await settle()
+    core.release()
+    await kept
+    await settle()
+  }
+  const mine = tabs(store.model.space(r.space)!)
+  expect(mine.length).toBe(3)
+  expect(new Set(mine.map((t: string) => t.split(':')[0])).size).toBe(3)
+  expect(mine.map((t: string) => t.split(':')[1])).toEqual([r.terminal, kids[0].address, kids[1].address])
+  expect(core.doc().spaces[0].tabs.length).toBe(3)
+})
+
 test('a sub-agent kept as a tab more than once before keeps its first tab; the copies go from the shared layout and it keeps running', async () => {
   const core = new FakeCore()
   const doc = { spaces: [] as any[] }
