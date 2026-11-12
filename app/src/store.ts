@@ -64,17 +64,6 @@ const ENV = { TERM: 'xterm-256color', COLORTERM: 'truecolor', TERM_PROGRAM: 'her
 const BORN_GRACE_MS = 5000
 /** How many left terminals the phone keeps its width on (Store.hold). */
 const HELD_MAX = 6
-/** Whether bytes from a terminal draw on its screen: not only titles. Codex 0.167.1, waiting on a question, blinks its
- *  title about once a second (`[ ! ] Action Required`, then `[ . ]`) and draws nothing else. */
-function drawsScreen(b: Uint8Array): boolean {
-  const s = new TextDecoder().decode(b).replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '')
-  return s.length > 0
-}
-
-/** How long an agent's screen stays still after it drew before its menu is read again (store.drawn), and the most
- *  it waits while the screen keeps drawing. */
-const SETTLE_MS = 200
-const SETTLE_MAX_MS = 1000
 /** The pipe's close reasons (src/hc/ws.ts), as the status line says them. A socket that never opened is told apart by
  *  how soon it closed: a refused connection (the computer is up, nothing listens: the companion stopped) closes at once,
  *  one to a computer that is asleep or away only when the connect times out. */
@@ -805,13 +794,9 @@ export class Store {
 
   /** Answers a blocked agent's prompt (its keys off its screen, model/menu.ts): presses them, then types `text` and Enter for a reply.
    * herdr-core sends both once nobody has typed for a moment; `force` lets the text reach a blocked program. */
-  /** A choice tapped (the terminal view's row, the home page's): its keys, then the screen read again as after a
-   *  card's tap (follow), so the row shows the next question even where no terminal is attached to say it changed. */
   async answer(addr: string, a: { keys: string[] }, text?: string) {
-    const before = JSON.stringify(this.menus.get(addr) ?? null)
     await this.call('terminal.keys', { terminal: addr, keys: a.keys })
     if (text !== undefined) await this.call('terminal.send', { terminal: addr, text, force: true })
-    void this.follow(addr, before)
   }
 
   /** A decision card's tap (model/ask.ts): its keys and text in order, then the screen read again until it shows
@@ -823,13 +808,6 @@ export class Store {
       if ('keys' in st) await this.call('terminal.keys', { terminal: addr, keys: st.keys })
       else await this.call('terminal.send', { terminal: addr, text: st.text, force: true })
     }
-    return this.follow(addr, before)
-  }
-
-  /** After the phone's own keys: the screen read again until it shows something else than `before`, 5 times 400 ms
-   *  apart at most, and only then. */
-  private async follow(addr: string, before: string): Promise<'moved' | 'same'> {
-    if (!this.menus.has(addr)) return 'moved'
     for (let i = 0; i < 5; i++) {
       await new Promise((r) => this.io.setTimeout(r, 400))
       if (!this.menus.has(addr)) return 'moved'
@@ -1239,43 +1217,7 @@ export class Store {
 
   async attach(addr: string, size: { cols: number; rows: number }, on: StreamHandlers, opts: { observe?: boolean; resumed?: boolean; display?: any } = {}): Promise<Stream> {
     if (!this.hc) throw new HcError(tr('disconnected'), 'disconnected')
-    return this.hc.attach({ terminal: addr, cols: size.cols, rows: size.rows, history: 2000, ...opts }, { ...on, data: (b) => { on.data(b); if (drawsScreen(b)) this.drawn(addr) } })
-  }
-
-  /** When each attached terminal waiting on a choice last drew, and since when it has been drawing. */
-  private drawing = new Map<string, { first: number; last: number }>()
-
-  /** An agent waiting on a choice drew on its screen (its next question, or the cursor moved, whoever pressed the
-   *  keys: a button here, its keyboard, someone at the computer): its menu is read again once the screen has been
-   *  still for SETTLE_MS, or after SETTLE_MAX_MS of drawing. Only while it waits (blocked: `menus` has it), so an
-   *  agent at work, drawing all the time, is never read for it. No bytes, no reads: herdr-core's events don't say a
-   *  screen changed, and only an attached terminal's bytes do. */
-  private drawn(addr: string) {
-    if (!this.menus.has(addr)) return
-    const now = this.io.now()
-    const d = this.drawing.get(addr)
-    if (d) { d.last = now; return }
-    this.drawing.set(addr, { first: now, last: now })
-    const check = () => {
-      const d = this.drawing.get(addr)
-      if (!d) return
-      const t = this.io.now()
-      if (t - d.last < SETTLE_MS && t - d.first < SETTLE_MAX_MS) { this.io.setTimeout(check, SETTLE_MS - (t - d.last)); return }
-      this.drawing.delete(addr)
-      void this.reread(addr)
-    }
-    this.io.setTimeout(check, SETTLE_MS)
-  }
-
-  /** The menu read again off the screen; set (and shown) only when it says something else. */
-  private async reread(addr: string) {
-    if (!this.menus.has(addr)) return
-    let menu: Menu | undefined
-    try { menu = readMenu(this.terms.get(addr)?.status?.app, (await this.call<{ text: string }>('terminal.read', { terminal: addr, lines: 0 })).text ?? '') } catch { return }
-    if (!this.menus.has(addr) || JSON.stringify(menu ?? null) === JSON.stringify(this.menus.get(addr) ?? null)) return
-    this.menus.set(addr, menu)
-    if (!menu) void this.readChoices(addr, 3)
-    this.bump()
+    return this.hc.attach({ terminal: addr, cols: size.cols, rows: size.rows, history: 2000, ...opts }, on)
   }
 
   async exec(line: string, o: { on?: string; cwd?: string; timeout?: number } = {}) {
