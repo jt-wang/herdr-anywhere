@@ -4,7 +4,7 @@
 # it too; adb root and unroot, which the quiet suite runs, lose it for about 2 s and are left out) a note in
 # FOLDER/lost-N.txt (the first 3 times): what adb said, the runner's free memory and disk, whether the emulator's qemu
 # process is still there and how big, the kernel's last lines (an out-of-memory kill shows there), the emulator's own
-# output (EMULATOR_LOG) and the phone's log before it went. Lines shaped like a pairing secret are left out of the
+# output (EMULATOR_LOG), its crash reports' names and sizes, and the phone's log before it went. Lines shaped like a pairing secret are left out of the
 # copies, so the upload check can let the note through. The job uploads FOLDER with the rest.
 # Usage: app/e2e/ci/android-watch.sh ADB FOLDER EMULATOR_LOG LOGCAT    (android-up.sh starts it in the background)
 #        app/e2e/ci/android-watch.sh --self-test
@@ -23,6 +23,12 @@ note() { # file, what adb said, emulator log, logcat
     echo "== qemu"; pgrep -af qemu-system | cut -c1-160 || echo "no qemu-system process"
     ps -o pid,rss,vsz,etime,stat,comm -C qemu-system-x86_64 2>/dev/null
     echo "== kernel (last 40 lines)"; sudo -n dmesg -T 2>/dev/null | tail -40 || echo "(no dmesg)"
+    # The emulator's crash reports, where it said it keeps them: names and sizes only (a dump holds the phone's memory).
+    echo "== emulator crash reports"
+    local db; db=$(sed -n 's/.*Storing crashdata in: \([^,]*\),.*/\1/p' "$3" 2>/dev/null | tail -1)
+    if [ -n "$db" ] && [ -d "$db" ]; then
+      (cd "$db" && find . -type f | sed 's|^\./||' | sort | while IFS= read -r f; do printf '%10s %s\n' "$(wc -c < "$f" | tr -d ' ')" "$f"; done)
+    else echo "(none: ${db:-the emulator did not say where})"; fi
     echo "== emulator output (last 200 lines)"; tail -200 "$3" 2>/dev/null | grep -vE "$secret"
     echo "== phone log (last 400 lines)"; tail -400 "$4" 2>/dev/null | grep -vE "$secret"
   } > "$f" 2>&1
@@ -53,6 +59,9 @@ self_test() {
   # A made-up secret, made here each run (a fixed one in this file reads as a real key to a secret scanner).
   local fake; fake=$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')
   printf 'emulator: INFO: boot completed\nemulator: link http://192.0.2.1:1/#pair=%s\n' "$fake" > "$t/emulator.log"
+  # Where the emulator keeps its crash reports, as it says at start; one report there, whose bytes stay out.
+  printf 'INFO         | Storing crashdata in: %s, detection is enabled for process: 1\n' "$t/emu-crash-1.db" >> "$t/emulator.log"
+  mkdir -p "$t/emu-crash-1.db/completed"; printf 'dump-bytes-%s' "$fake" > "$t/emu-crash-1.db/completed/a1b2.dmp"
   # A stand-in adb: the state in $t/state, and a phone log of a few lines a call.
   fake_adb() {
     case $1 in
@@ -75,6 +84,8 @@ self_test() {
     grep -qF "$want" "$one" 2>/dev/null || { echo "FAIL: self-test: the first note has no \"$want\""; fail=1; }
   done
   grep -qF "not found" "$two" 2>/dev/null || { echo "FAIL: self-test: no second note when the phone went again"; fail=1; }
+  grep -qE "^ *[0-9]+ completed/a1b2.dmp$" "$one" 2>/dev/null || { echo "FAIL: self-test: the emulator's crash report is not listed with its size"; fail=1; }
+  grep -q "dump-bytes" "$t/out"/* 2>/dev/null && { echo "FAIL: self-test: a note holds a crash report's bytes"; fail=1; }
   grep -qE "$secret" "$t/out"/* 2>/dev/null && { echo "FAIL: self-test: a note holds something shaped like a pairing secret"; fail=1; }
   rm -rf "$t"
   [ "$fail" = 0 ] && echo "PASS: android-watch self-test" || { echo "FAIL: android-watch self-test"; return 1; }
