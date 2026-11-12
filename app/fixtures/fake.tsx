@@ -14,7 +14,7 @@ import { Linker, type Route, type Tunnel } from '../src/link.ts'
 import { PrefStore } from '../src/prefs.ts'
 import { Store } from '../src/store.ts'
 import { rowKeys } from '../src/ui/pane-bar.tsx'
-import { keptCount } from '../src/ui/kept.ts'
+import { setDiag } from '../src/diag.ts'
 import { Root } from '../src/ui/root.tsx'
 import { CLAUDE_EDIT_MENU, FakeCore, type FakeTab } from '../src/testing/fakecore.ts'
 import { FakeFolders } from '../src/testing/fake-folders.ts'
@@ -177,12 +177,13 @@ core.onKeys = (addr, keys) => {
 // A test moves an agent to another state: `app.host.send('fake.status', { address, state })`.
 host.on('fake.status', (d: any) => {
   if (typeof d.screen === 'string') core.screens.set(d.address, d.screen)
-  core.setStatus(d.address, d.state, core.terms.get(d.address)?.status?.app, { kind: d.kind, msg: d.msg })
+  core.setStatus(d.address, d.state, 'app' in d ? d.app : core.terms.get(d.address)?.status?.app, { kind: d.kind, msg: d.msg })
 })
 // The computer's chat answer for every terminal (GET /api/chat/…): `params.chat` (JSON), else none; a test changes it
 // with `app.host.send('fake.chat', answer)`, or makes the computer unreachable with `{ offline: true }`. Each ask is
 // recorded in `fake-chat-asks`; a step's details are "input of <id>" and "output of <id>" (with an image when the id
-// ends in "img"), unless the answer's `details` has the id; and "gone" is gone. Every image is a one-pixel PNG.
+// ends in "img"), unless the answer's `details` has the id; and "gone" is gone. Every image is a one-pixel PNG. An
+// answer with `slow` is replied that many ms after the ask.
 const PIXEL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
 let chatAnswer: any = params.chat ? JSON.parse(params.chat) : { chat: false }
 const chatAsks: string[] = []
@@ -195,7 +196,12 @@ async function chat(url: string) {
   if (chatAnswer.offline) throw new Error('unreachable')
   if (/\/images\/[^/?]+$/.test(path)) return answer(200, { url: PIXEL })
   const step = /\/steps\/([^/?]+)$/.exec(path)
-  if (!step) return answer(200, chatAnswer)
+  if (!step) {
+    // An answer with `slow` (ms) is the one current when asked, replied that much later, as a busy computer does.
+    const now = chatAnswer
+    if (now.slow) await new Promise((r) => setTimeout(r, now.slow))
+    return answer(200, now)
+  }
   const id = decodeURIComponent(step[1])
   if (chatAnswer.details?.[id]) return answer(200, chatAnswer.details[id])
   return id === 'gone' ? answer(404, { error: 'no such step' })
@@ -229,9 +235,9 @@ function chatSetups(url: string, init: any) {
 host.on('fake.label', (d: any) => core.label(d.address, d.labels))
 // A test drops the line: `app.host.send('fake.drop', {})`; the computer then stops answering.
 host.on('fake.drop', () => core.drop('network'))
-// How many computed values the app keeps alive now (src/ui/kept.ts): `app.host.send('fake.kept', {})`, then
-// `app.storage()['fake-kept']`.
-host.on('fake.kept', () => void Storage.setItem('fake-kept', String(keptCount())))
+// What the app told setDiag (src/diag.ts), in order: `fake-diag`.
+const diags: string[] = []
+setDiag((what, fields) => { diags.push(`${what} ${Object.entries(fields).map(([k, v]) => `${k}=${v}`).join(' ')}`); void Storage.setItem('fake-diag', JSON.stringify(diags)) })
 // herdr-core holds a method's answers until released, as it holds terminal.send for a half-typed line:
 // `app.host.send('fake.hold', { method })`, then `app.host.send('fake.release', {})`.
 host.on('fake.hold', (d: any) => core.holding.add(d.method))

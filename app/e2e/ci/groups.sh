@@ -12,12 +12,13 @@
 # Run only when a dispatch names them: ios-onerror-27 (ios, key onerror27: the same built with Xcode 27.0 on iOS 27.0),
 # as the main suite has not yet passed on that runner image; and, until they have passed on the runners a few times,
 # ios-chat (ios, key chat: the chat view of four agents, e2e/ios-chat-four.sh), ios27-chat (ios, key chat27: the same
-# with Xcode 27.0 on iOS 27.0), android-chat (android, key chat: e2e/android-chat-four.sh).
+# with Xcode 27.0 on iOS 27.0), android-chat (android, key chat: e2e/android-chat-four.sh); and ios-chatfold (ios, key
+# chatfold: screenshots of the chat view, e2e/ios-chat-four.sh with UITEST=ChatFold), for a change's before/after.
 android_keys="main panes tunnel notify progress picture"
 android_named="chat"
-ios_keys="a b onerror onerror27 chat chat27"
+ios_keys="a b onerror onerror27 chat chat27 chatfold"
 all="ios-main ios-b ios-onerror $(for k in $android_keys; do printf 'android-%s ' "$k"; done)android-update remote-picture user-path"
-named_only="ios-onerror-27 ios-chat ios27-chat android-chat"
+named_only="ios-onerror-27 ios-chat ios27-chat android-chat ios-chatfold"
 
 json() { printf '['; sep=; for x in "$@"; do printf '%s"%s"' "$sep" "$x"; sep=,; done; printf ']\n'; }
 
@@ -42,6 +43,7 @@ plan() {
   has ios-onerror-27 && set -- "$@" onerror27
   has ios-chat && set -- "$@" chat
   has ios27-chat && set -- "$@" chat27
+  has ios-chatfold && set -- "$@" chatfold
   echo "ios=$(json "$@")"
   set --
   for k in $android_keys $android_named; do has "android-$k" && set -- "$@" "$k"; done
@@ -64,6 +66,7 @@ if [ "${1:-}" = --self-test ]; then
   check 'ios=["b"] android=[] update=false remote=false user_path=false' ios-b 0 0
   check 'ios=["chat","chat27"] android=["chat"] update=false remote=false user_path=false' "ios-chat ios27-chat android-chat" 0 0
   check 'ios=["chat27"] android=[]' ios27-chat 0 0
+  check 'ios=["chatfold"] android=[] update=false remote=false user_path=false' ios-chatfold 0 0
   check 'ios=["a"] android=["tunnel","picture"] update=false remote=false user_path=true' "android-picture, ios-main,android-tunnel user-path" 0 0
   check 'ios=[] android=[] update=true remote=true user_path=false' "android-update remote-picture" 0 0
   check 'no group named ios-mian' ios-mian 0 0

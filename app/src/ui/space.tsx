@@ -2,8 +2,7 @@
 // defaults/mods/tabs, mods/pane, mods/workspace-status). A phone gives the screen to the focused pane: a two-line
 // header (the agent, where it is, Needs you), its terminal edge to edge, and one row under it (ui/pane-bar.tsx); the
 // title opens the switcher, and a flick across the terminal goes to the next or previous tab.
-import { cleanup, effect, fontScale, keyboardFrame, safeAreaInsets, Scroll, signal, Text, untracked, View, windowSize } from 'nsh'
-import { kept } from './kept.ts'
+import { cleanup, computed, effect, fontScale, keyboardFrame, safeAreaInsets, Scroll, signal, Text, untracked, View, windowSize } from 'nsh'
 import { AlertDialog, Sheet } from 'nsh/base'
 import { keyboardGone } from './keyboard.ts'
 import type { Store } from '../store.ts'
@@ -21,6 +20,7 @@ import { ChatView } from './chat.tsx'
 import { startable } from '../model/programs.ts'
 import type { TerminalSession } from './terminal-session.ts'
 import type { TypeIn } from '../prefs.ts'
+import { diag } from '../diag.ts'
 
 export type SpaceActions = {
   back: () => void
@@ -151,9 +151,17 @@ function PhoneSpace(props: { store: Store; spaceId: string; tab: Tab; actions: S
     if (key === asked) return
     const moved = key.split(' ')[0] !== asked.split(' ')[0]
     asked = key
-    if (moved) untracked(() => { chat.on.set(s.chatFirst.get()); chat.avail.set(false) })
+    if (moved) untracked(() => {
+      // An open view closed with no tap: what the pane was then (src/diag.ts).
+      if (!key && chat.on() && chat.avail()) diag('chat-closed', { addr: a ?? '', agent: String(!!a && s.isAgent(a)), program: a ? s.program(a).key : '', chat: String(!!s.chat) })
+      chat.on.set(s.chatFirst.get()); chat.avail.set(false)
+    })
     if (!key) return
-    void s.chat!.get(a!).then((r) => { if (asked === key) chat.avail.set(r.chat) }, () => {})
+    void s.chat!.get(a!).then((r) => {
+      if (asked !== key) return
+      if (!r.chat && untracked(() => chat.on() && chat.avail())) diag('chat-gone', { addr: a!, agent: String(s.isAgent(a)), program: s.program(a).key })
+      chat.avail.set(r.chat)
+    }, () => {})
   })
   return (
     <View class="flex-1 bg-background">
@@ -393,12 +401,12 @@ function WidePanes(props: { store: Store; spaceId: string; tab: Tab; actions: Sp
   const rev = useRev(s)
   const box = signal({ w: 0, h: 0 })
   const sessions = props.sessions
-  const rects = kept(() => { rev(); const b = box(); return [...layoutRects(shownNode(props.tab), 0, 0, b.w, b.h)] })
+  const rects = computed(() => { rev(); const b = box(); return [...layoutRects(shownNode(props.tab), 0, 0, b.w, b.h)] })
   const focused = () => { rev(); return focusedPaneOf(props.tab) }
   const focusedSession = () => { rev(); const f = focused(); const a = f ? props.store.model.addressOf(f) : undefined; return a ? sessions.get(a) : undefined }
   const GAP = 8
   // A split or a close changes a pane's height for good; on a phone its rows hold still otherwise (terminal-page.ts).
-  const count = kept(() => { rev(); return panes(props.tab.root).length })
+  const count = computed(() => { rev(); return panes(props.tab.root).length })
   effect(() => { count(); for (const t of sessions.values()) t.refit() })
   return (
     <View class="flex-1 bg-sidebar-primary">
