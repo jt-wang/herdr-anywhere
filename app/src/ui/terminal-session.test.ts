@@ -2,7 +2,7 @@
 import { expect, test } from 'nsh/test'
 import { Store } from '../store.ts'
 import { FakeCore, settle } from '../testing/fakecore.ts'
-import { PAGE_READY_MS, TerminalSession } from './terminal-session.ts'
+import { PAGE_READY_MS, TerminalSession, terminalNote } from './terminal-session.ts'
 import { t } from '../strings/index.ts'
 import { sinceLabel } from '../model/seen.ts'
 
@@ -324,25 +324,59 @@ async function pageSetup() {
   return { s, late, reloads: () => reloads, fire: () => late.shift()!.f() }
 }
 
-test('a page that never says ready is loaded again once, then the terminal says so and offers to try again', async () => {
+test('a page that never says ready is loaded again once, then the terminal says it is still loading and offers to try again', async () => {
   const { s, late, reloads, fire } = await pageSetup()
   expect(late.map((l) => l.ms)).toEqual([PAGE_READY_MS])
   fire()
-  expect([reloads(), s.state.get()]).toEqual([1, 'waiting'])
+  expect([reloads(), s.state.get(), s.slow.get()]).toEqual([1, 'waiting', false])
   s.pageLost() // the reloaded page starts loading: its wait starts again
   expect(late.length).toBe(2)
   late.shift()
   fire()
-  expect([reloads(), s.state.get(), s.why.get()]).toEqual([1, 'failed', t('terminalPageFailed')])
+  // Slow or its web process gone: the WebView tells the app neither, so the terminal is loading, with Try again.
+  expect([reloads(), s.state.get(), s.why.get(), s.slow.get()]).toEqual([1, 'waiting', '', true])
   s.retry()
-  expect([reloads(), s.state.get(), s.why.get()]).toEqual([2, 'waiting', ''])
+  expect([reloads(), s.state.get(), s.slow.get()]).toEqual([2, 'waiting', false])
   fire()
-  expect([reloads(), s.state.get()]).toEqual([2, 'failed'])
+  expect([reloads(), s.state.get(), s.slow.get()]).toEqual([2, 'waiting', true])
   s.retry()
   s.page(JSON.stringify({ t: 'ready', cols: 80, rows: 24 }))
   await settle()
   fire()
-  expect([reloads(), s.state.get()]).toEqual([3, 'live'])
+  expect([reloads(), s.state.get(), s.slow.get()]).toEqual([3, 'live', false])
+})
+
+// A slow phone: the page says ready 12 s after it opened, after both waits ran out (the iOS keyboard test on CI saw
+// "The terminal didn't load." and then the terminal working). Until then the terminal is loading, not failed.
+test('a page that says ready only after 12 s is still loading until then, never failed', async () => {
+  const { s, late, fire } = await pageSetup()
+  fire() // 6 s
+  s.pageLost()
+  late.shift()
+  fire() // 12 s
+  expect([s.state.get(), s.why.get()]).toEqual(['waiting', ''])
+  s.page(JSON.stringify({ t: 'ready', cols: 80, rows: 24 }))
+  await settle()
+  expect([s.state.get(), s.slow.get()]).toEqual(['live', false])
+})
+
+// Try again tapped as the slow page says ready (the button was on screen): the page that loaded is kept.
+test('try again once the page has said ready leaves the page alone', async () => {
+  const { s, late, reloads, fire } = await pageSetup()
+  fire(); s.pageLost(); late.shift(); fire()
+  s.page(JSON.stringify({ t: 'ready', cols: 80, rows: 24 }))
+  await settle()
+  s.retry()
+  await settle()
+  expect([reloads(), s.state.get(), late.length]).toEqual([1, 'live', 0])
+})
+
+test('the line under a slow terminal: loading once the computer is connected, connecting before, and Try again', () => {
+  expect(terminalNote('waiting', false, 'ready', '')).toEqual({ text: t('connecting'), retry: false })
+  expect(terminalNote('waiting', true, 'ready', '')).toEqual({ text: t('terminalLoading'), retry: true })
+  expect(terminalNote('waiting', true, 'reconnecting', '')).toEqual({ text: t('connecting'), retry: true })
+  expect(terminalNote('lost', false, 'reconnecting', '')).toEqual({ text: t('reconnecting'), retry: false })
+  expect(terminalNote('ended', false, 'ready', 'gone')).toEqual({ text: 'gone', retry: false })
 })
 
 test('a page that says ready in time is left alone', async () => {
