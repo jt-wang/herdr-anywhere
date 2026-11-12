@@ -60,9 +60,9 @@ jobs:
           cp app/android/build/Herdr.apk "$RUNNER_TEMP/build/"
           (cd companion && CGO_ENABLED=0 go build -buildvcs=false -trimpath -ldflags="-s -w" -o "$RUNNER_TEMP/build/herdr-anywhere-linux-amd64" ./cmd/herdr-anywhere)
           "$RUNNER_TEMP/build/herdr-anywhere-linux-amd64" --version
+      - run: app/e2e/ci/tools.sh shots
       - name: Check what is uploaded
         run: |
-          app/e2e/ci/tools.sh shots
           app/e2e/ci-shots-check.sh --self-test "$RUNNER_TEMP/build/herdr-anywhere-linux-amd64"
           app/e2e/ci-shots-check.sh "$RUNNER_TEMP/build"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -101,9 +101,9 @@ jobs:
           (cd "$RUNNER_TEMP/prev/app" && android/build.sh)
           cp "$RUNNER_TEMP/prev/app/android/build/Herdr.apk" "$RUNNER_TEMP/update/prev.apk"
           echo "$prev" > "$RUNNER_TEMP/update/prev-tag"
+      - run: app/e2e/ci/tools.sh shots
       - name: Check what is uploaded
         run: |
-          app/e2e/ci/tools.sh shots
           app/e2e/ci-shots-check.sh --self-test "$RUNNER_TEMP/update/new-companion"
           app/e2e/ci-shots-check.sh "$RUNNER_TEMP/update"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -344,11 +344,12 @@ jobs:
           (cd companion && CGO_ENABLED=0 go build -buildvcs=false -trimpath -ldflags="-s -w" -o "$RUNNER_TEMP/release/herdr-anywhere-macos-arm64" ./cmd/herdr-anywhere)
           app/e2e/ci/suite.sh user-path app/e2e/user-path.sh "$RUNNER_TEMP/release"
           app/e2e/ci/suite.sh --finish
+      - run: app/e2e/ci/tools.sh shots
+        if: always()
       - name: Check what is uploaded
         id: check
         if: always()
         run: |
-          app/e2e/ci/tools.sh shots
           mkdir -p "$OUT"
           app/e2e/ci-shots-check.sh --self-test "$RUNNER_TEMP/release/herdr-anywhere-macos-arm64"
           app/e2e/ci-shots-check.sh "$OUT"

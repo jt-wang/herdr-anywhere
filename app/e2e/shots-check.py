@@ -77,6 +77,7 @@ def words(folder):
     tesseract = shutil.which("tesseract")
     if not tesseract and sys.platform != "darwin":
         sys.exit("FAIL: no tesseract to read the pictures' words")
+    print(f"words read by {'tesseract' if tesseract else 'Vision'}", file=sys.stderr)
     for path in files(folder, PICTURES):
         if tesseract:
             out = subprocess.run([tesseract, path, "-", "--psm", "11"], capture_output=True, text=True, check=True).stdout
