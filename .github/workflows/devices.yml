@@ -179,7 +179,7 @@ jobs:
             key: notify
           - name: progress page
             key: progress
-          - name: pictures and letters
+          - name: pictures, letters, new-tab title
             key: picture
           # android-typing.sh stays on a Mac: it needs Gboard with pinyin added as its second language, which is set by
           # hand in Gboard's settings.
@@ -245,7 +245,10 @@ jobs:
             picture)
               mkdir -p "$OUT/picture" "$OUT/glyphs"
               fresh; $s picture e2e/android-picture.sh "$APK" "$COMPANION" "$OUT/picture"
-              fresh; $s glyphs e2e/android-glyphs.sh "$APK" "$OUT/glyphs/shot.png" ;;
+              fresh; $s glyphs e2e/android-glyphs.sh "$APK" "$OUT/glyphs/shot.png"
+              # The new-tab title at this emulator's 411 dp, where the title once broke after "Add an".
+              mkdir -p "$OUT/sheet-title"
+              fresh; $s sheet-title e2e/android-sheet-title.sh "$APK" "$COMPANION" "$OUT/sheet-title" ;;
           esac
           $s --finish
       - name: Check what is uploaded
