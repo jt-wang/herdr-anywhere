@@ -4,6 +4,7 @@
 # through Tailcat, and gets a pairing code. Pairing a phone with that companion: HERDR_ANYWHERE_BIN=<file> e2e/android-tailcat.sh
 # Usage: e2e/user-path.sh <folder with the release files>   Needs hc, curl and python3, and the internet.
 set -eu
+. "$(dirname "$0")/autostart-guard.sh"; autostart_guard user-path # a login entry of its own, never the person's
 files=$(cd "${1:?give the folder with the release files}" && pwd)
 app=$(cd "$(dirname "$0")/.." && pwd)
 hc=${HM_TEST_HC:-$(command -v hc || echo "$HOME/.local/bin/hc")}
@@ -18,8 +19,9 @@ cleanup() {
   "$hc" server stop >/dev/null 2>&1 || true
   kill "$web" 2>/dev/null
   chmod -R u+w "$work" 2>/dev/null; rm -rf "$work"
+  autostart_guard_end || exit 1
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT; trap 'exit 130' INT; trap 'exit 143' TERM
 for _ in 1 2 3 4 5 6 7 8 9 10; do curl -fsS -o /dev/null "http://127.0.0.1:$port/" 2>/dev/null && break; python3 -c 'import time; time.sleep(0.3)'; done
 
 # What a Mac with Herdr has: hc and herdr-core in ~/.local/bin, and Herdr's keys.json from opening it once. No Go.

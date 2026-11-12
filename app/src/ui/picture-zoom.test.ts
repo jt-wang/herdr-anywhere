@@ -48,3 +48,25 @@ test('a double tap zooms in on the tapped point, the next one back out; a pinch 
   z.reset()
   expect(z.zoomed()).toBe(false)
 })
+
+test("what the scroll view reports while a double tap's own zoom runs doesn't turn the next double tap around", () => {
+  // On a slow phone (a CI runner's emulator) the last report of an animated zoom can be one from part way: zoomed out,
+  // it said 1.3, and the next double tap zoomed "out" again, so it took two to zoom in.
+  const asked: { scale: number }[] = []
+  const z = pictureZoom((to) => asked.push(to))
+  const size = { natural: { width: 960, height: 640 }, box: { width: 326, height: 217 } }
+  const dbl = (at: number) => { z.tap({ at, x: 10, y: 10 }, size); z.tap({ at: at + 100, x: 10, y: 10 }, size) }
+  dbl(0)
+  z.scrolled(1.7, 300) // part way in
+  expect(z.zoomed()).toBe(true)
+  dbl(2000)
+  expect(asked[1].scale).toBe(1)
+  z.scrolled(1.3, 2300) // part way out, its last report
+  expect(z.zoomed()).toBe(false)
+  dbl(4000)
+  expect(asked[2].scale).toBe(2.5)
+  // A pinch once the zoom is over still counts.
+  z.scrolled(1, 5000)
+  dbl(6000)
+  expect(asked[3].scale).toBe(2.5)
+})
