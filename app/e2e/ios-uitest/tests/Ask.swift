@@ -15,16 +15,29 @@ final class Ask: XCTestCase {
     app.activate()
     let el = { (id: String) in app.descendants(matching: .any)[id].firstMatch }
     let saying = { (text: String) in app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", text)).firstMatch }
-    func must(_ e: XCUIElement, _ why: String, _ t: Double = 30) { XCTAssertTrue(e.waitForExistence(timeout: t), why); note("\(why.isEmpty ? "" : "ok: ")\(why)") }
+    func must(_ e: XCUIElement, _ why: String, _ t: Double = 30) {
+      if e.waitForExistence(timeout: t) { note("\(why.isEmpty ? "" : "ok: ")\(why)"); return }
+      // What the screen held instead: a picture and its texts, for the failure folder.
+      note("FAIL: \(why)"); shot("fail")
+      note("on screen: " + app.staticTexts.allElementsBoundByIndex.prefix(40).map { $0.label }.joined(separator: " | "))
+      XCTFail(why)
+    }
     func tap(_ id: String) { must(el(id), "\(id) on screen", 30); el(id).tap() }
     func gone(_ e: XCUIElement, _ why: String) {
       for _ in 0..<30 where e.exists { sleep(1) }
       XCTAssertFalse(e.exists, why); note("ok: \(why)")
     }
+    // The app opens a pane the way the last one was shown (the chat, after the light pass ended in it): the terminal first.
+    func open(_ id: String) {
+      tap(id)
+      let row = el("choice-1"), toTerminal = el("show-terminal")
+      for _ in 0..<30 where !row.exists && !toTerminal.exists { sleep(1) }
+      if toTerminal.exists && !row.exists { note("opened in the chat: back to the terminal"); toTerminal.tap() }
+    }
     func back() { tap("show-terminal"); must(el("back"), "back to the terminal"); el("back").tap() }
 
     must(el("space-" + spaceQ), "home lists the asking space", 40)
-    el("space-" + spaceQ).tap()
+    open("space-" + spaceQ)
     must(el("choice-1"), "the terminal view has its row of choices for the question")
     shot("1-terminal-question")
     tap("show-chat")
@@ -35,7 +48,7 @@ final class Ask: XCTestCase {
       note(q ? "before: the chat shows the question" : "before: the chat does not show the question")
       shot("2-chat-question")
       back()
-      tap("space-" + spaceP)
+      open("space-" + spaceP)
       must(el("choice-1"), "the terminal view has its row of choices for the permission")
       shot("6-terminal-permission")
       tap("show-chat"); sleep(3)
@@ -61,7 +74,7 @@ final class Ask: XCTestCase {
     must(saying("Noted your answers."), "the reply after the answers")
     shot("5-answered")
     back()
-    tap("space-" + spaceP)
+    open("space-" + spaceP)
     must(el("choice-1"), "the terminal view has its row of choices for the permission")
     shot("6-terminal-permission")
     tap("show-chat")
