@@ -10,11 +10,12 @@
 #   ios-main (ios, key a), ios-b (ios, key b), ios-onerror (ios, key onerror: an error the app's JS doesn't catch),
 #   android-<key> (android: main, panes, tunnel, notify, progress, picture), android-update, remote-picture, user-path.
 # ios-onerror-27 (ios, key onerror27: the same built with Xcode 27.0 on iOS 27.0) runs only when named: the main suite
-# has not yet passed on that runner image.
+# has not yet passed on that runner image. ios-kitty (ios, key kitty: Oh My Pi's pictures, e2e/ios-kitty.sh) runs only
+# when named too, so a push starts no more macOS jobs.
 android_keys="main panes tunnel notify progress picture"
-ios_keys="a b onerror onerror27"
+ios_keys="a b onerror onerror27 kitty"
 all="ios-main ios-b ios-onerror $(for k in $android_keys; do printf 'android-%s ' "$k"; done)android-update remote-picture user-path"
-named_only="ios-onerror-27"
+named_only="ios-onerror-27 ios-kitty"
 
 json() { printf '['; sep=; for x in "$@"; do printf '%s"%s"' "$sep" "$x"; sep=,; done; printf ']\n'; }
 
@@ -37,6 +38,7 @@ plan() {
   has ios-b && set -- "$@" b
   has ios-onerror && set -- "$@" onerror
   has ios-onerror-27 && set -- "$@" onerror27
+  has ios-kitty && set -- "$@" kitty
   echo "ios=$(json "$@")"
   set --
   for k in $android_keys; do has "android-$k" && set -- "$@" "$k"; done
@@ -56,6 +58,7 @@ if [ "${1:-}" = --self-test ]; then
   check 'ios=["a","b","onerror"] android=["main","panes","tunnel","notify","progress","picture"] update=true remote=true user_path=true' "" 0 0
   check 'ios=["onerror","onerror27"] android=[] update=false remote=false user_path=false' "ios-onerror ios-onerror-27" 0 0
   check 'ios=["onerror27"] android=[]' ios-onerror-27 0 0
+  check 'ios=["kitty"] android=["picture"] update=false' "ios-kitty android-picture" 0 0
   check 'ios=["b"] android=[] update=false remote=false user_path=false' ios-b 0 0
   check 'ios=["a"] android=["tunnel","picture"] update=false remote=false user_path=true' "android-picture, ios-main,android-tunnel user-path" 0 0
   check 'ios=[] android=[] update=true remote=true user_path=false' "android-update remote-picture" 0 0

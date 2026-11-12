@@ -2,7 +2,8 @@
 # Is the made-up bar chart (e2e/fake-model -png: four bars, blue, orange, green, purple, 60, 110, 85 and 135 px high on
 # a 240 by 160 ground) drawn in this screenshot? Finds the chart's light ground (rows and columns mostly of its colour),
 # then each bar's colour on it, and checks the bars stand left to right in that order, as wide as each other, and as
-# high as each other as in the chart. Prints what it found; exits 1 if the chart is not there.
+# high as each other as in the chart, and that right of it is only the terminal's background. Prints what it found;
+# exits 1 if the chart is not there or something is drawn beside it.
 # Usage: e2e/kitty-chart.py SCREENSHOT.png
 import struct
 import sys
@@ -101,6 +102,20 @@ def main(path):
     for (n, _, _, bw, bh) in boxes:
         if n < bw * bh / 4 * 0.8:
             bad.append(f'a bar fills {n} of {bw * bh // 4} points in its box')
+    # Beside the picture, out to the screen's edge, only the terminal's background: no letters drawn too large behind
+    # it, no marks of its last cells. The edge itself is left out (a scroll bar or ruler may sit there).
+    strip = [(y * w + x) * k for y in range(top, bottom + 1, 2) for x in range(right + 6, w - 12, 2)]
+    if strip:
+        counts = {}
+        for i in strip:
+            c = (px[i] >> 3, px[i + 1] >> 3, px[i + 2] >> 3)
+            counts[c] = counts.get(c, 0) + 1
+        bg = max(counts, key=counts.get)
+        bg = (bg[0] * 8 + 4, bg[1] * 8 + 4, bg[2] * 8 + 4)
+        off = sum(not near(i, bg, 24) for i in strip)
+        print(f'right of the chart: {off} of {len(strip)} points not its background')
+        if off > len(strip) // 500:
+            bad.append(f'{off} points right of the chart are not the background')
     if bad:
         print('FAIL: ' + '; '.join(bad))
         return 1

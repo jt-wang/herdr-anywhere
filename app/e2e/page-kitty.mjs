@@ -148,6 +148,32 @@ for (const dark of [true, false]) {
   await t.close()
 }
 
+// The same output cut where a network read may cut it: in each row of the picture, between one cell's placeholder and its
+// marks (a different cell in each row). The rows stay where they are: the picture as wide as before, nothing beside it.
+{
+  const all = [...read.open, ...read.live].join(''), writes = []
+  let n = 0, from = 0
+  for (let i = 0; i < all.length; i++) {
+    if (all.codePointAt(i) !== 0x10eeee) continue
+    const row = Math.floor(n / 48), col = n % 48
+    if (col === (row * 3 + 1) % 48) { writes.push(all.slice(from, i + 2)); from = i + 2 }
+    n++
+  }
+  writes.push(all.slice(from))
+  const t = await open(terminalPage, { images: new KittyImages() })
+  await t.feed(writes)
+  const r = await block(t.page)
+  check(`cut between a cell and its marks in each of its rows (${writes.length - 1} cuts): still 48 by 16 cells`, r && r.cols === 48 && r.rows === 16, r)
+  const same = r ? await looksLike(t.page, r, pngOf(read)) : 0
+  check('and drawn as before', same >= 44, same)
+  const right = r ? await pixels(t.page, { x: r.x + r.width, y: r.y, width: r.width / r.cols, height: r.height }) : null
+  let off = 0
+  for (let y = 0; right && y < right.h; y++) for (let x = 0; x < right.w; x++) { const p = right.at(x, y); if (Math.abs(p[0] - 0x17) + Math.abs(p[1] - 0x19) + Math.abs(p[2] - 0x1d) > 6) off++ }
+  check('with only the background right of it', right && off === 0, off)
+  await t.page.screenshot({ path: `${shots}after-read-cut-dark.png` })
+  await t.close()
+}
+
 // Left and opened again: a new page, the terminal's pictures kept by the app, and the one screen herdr-core sends.
 {
   const images = new KittyImages()
