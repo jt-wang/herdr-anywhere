@@ -9,6 +9,9 @@
 //	launchctl print DOMAIN/LABEL        its "path = PLIST" (exit 113 when it is not loaded)
 //	systemctl --user enable|start UNIT  loads UNIT without .service; disable [--now] UNIT unloads it
 //	systemctl --user list-units ...     one "UNIT loaded active running" line per loaded unit
+//	systemctl --user show ... UNIT      its ActiveState (active when loaded)
+//
+// With FAKESERVICE_RUNTIME set, systemctl reaches the manager only when XDG_RUNTIME_DIR is that folder.
 //
 // Anything else exits 0. Run as herdr-anywhere it is a Companion's serve that runs until it is ended.
 package main
@@ -130,6 +133,11 @@ func launchctl(dir string, args []string) int {
 }
 
 func systemctl(dir string, args []string) int {
+	// systemctl --user finds the user's manager through XDG_RUNTIME_DIR: a suite that changed it reaches none.
+	if want := os.Getenv("FAKESERVICE_RUNTIME"); want != "" && os.Getenv("XDG_RUNTIME_DIR") != want {
+		fmt.Fprintln(os.Stderr, "Failed to connect to user scope bus via local transport: No such file or directory")
+		return 1
+	}
 	var words []string
 	for _, a := range args {
 		if !strings.HasPrefix(a, "--") {
@@ -154,6 +162,12 @@ func systemctl(dir string, args []string) int {
 			return 64
 		}
 		unload(dir, unit())
+	case "show":
+		state := "inactive"
+		if _, err := os.Stat(filepath.Join(dir, unit())); err == nil {
+			state = "active"
+		}
+		fmt.Printf("ActiveState=%s\nFragmentPath=\nMainPID=0\n", state)
 	case "list-units":
 		for _, n := range loaded(dir) {
 			fmt.Printf("%s.service loaded active running\n", n)
