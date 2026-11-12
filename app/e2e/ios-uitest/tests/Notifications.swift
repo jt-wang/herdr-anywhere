@@ -8,6 +8,8 @@ import XCTest
 // it writes those files where the suite reads them. The first one found is tapped: the app opens home
 // with the notice. Writes "round wait version posted" lines to $OUT, and screenshots to $SHOTS.
 // MODE=deny: the question answered Don't Allow; the app goes on, and asks nothing when it opens again.
+// testSettings: Settings scrolled to its alerts, shot as settings.png (the suite runs it light, then dark). With AFTER=1
+// the iPhone line under System notifications must show.
 final class Notifications: XCTestCase {
   let env = ProcessInfo.processInfo.environment
   lazy var app = XCUIApplication(bundleIdentifier: "io.jingtao.herdranywhere")
@@ -135,5 +137,20 @@ final class Notifications: XCTestCase {
     XCTAssertFalse(question.exists, "asked again after Don't Allow")
     shot("deny-again")
     say("deny: works, not asked again")
+  }
+
+  func testSettings() {
+    app.activate()
+    let open = el("settings")
+    XCTAssertTrue(open.waitForExistence(timeout: 60), "no Settings button")
+    open.tap()
+    XCTAssertTrue(el("alert-done").waitForExistence(timeout: 30), "Settings shows no alerts")
+    let line = el("ios-notify-limit")
+    let last = env["AFTER"] == "1" ? line : el("alert-done")
+    for _ in 0..<8 where !(last.exists && last.isHittable) { app.swipeUp(velocity: .slow) }
+    if env["AFTER"] == "1" { XCTAssertTrue(line.exists && line.isHittable, "no iPhone line under System notifications") }
+    sleep(1)
+    shot("settings")
+    say("settings: iPhone line \(line.exists ? "shown: \(line.label)" : "none")")
   }
 }

@@ -29,7 +29,7 @@ mkdir -p "$work/h/src/acme-api" "$work/state" "$work/config" "$work/data"
 : > "$work/h/.zshrc"
 placeholder=$(cat "$app/e2e/pair.ts")
 L() { env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin HOME="$work/h" SHELL=/bin/zsh TERM=xterm-256color \
-  LANG=en_US.UTF-8 HC_SESSION="hmiosnote-$$" HC_SOCKET="" XDG_STATE_HOME="$work/state" XDG_CONFIG_HOME="$work/config" \
+  LANG=en_US.UTF-8 HC_SESSION="hmiosnote-$$" HC_SOCKET="" HERDR_ANYWHERE_AUTOSTART_NAME=hm-e2e-iosnotify XDG_STATE_HOME="$work/state" XDG_CONFIG_HOME="$work/config" \
   XDG_DATA_HOME="$work/data" XDG_RUNTIME_DIR="$run" "$@"; }
 . "$app/e2e/companion.sh"  # companion_start, companion_stop
 cleanup() {
@@ -78,12 +78,22 @@ fresh() {
 }
 uitest() { # NAME: runs testNAME, its words to $out/NAME.txt
   rc=0
-  TEST_RUNNER_OUT="$out/$1.txt" TEST_RUNNER_SHOTS="$out/$1" TEST_RUNNER_UPDATE_JSON="$state/update.json" TEST_RUNNER_ASK="$work/ask" TEST_RUNNER_BEFORE="$before" \
+  TEST_RUNNER_OUT="$out/$1.txt" TEST_RUNNER_SHOTS="$out/$1" TEST_RUNNER_UPDATE_JSON="$state/update.json" TEST_RUNNER_ASK="$work/ask" TEST_RUNNER_BEFORE="$before" TEST_RUNNER_AFTER="${AFTER:-}" \
     TEST_RUNNER_WAITS="${WAITS:-0 5 10 20 30 60}" TEST_RUNNER_ROUNDS="${ROUNDS:-3}" \
     perl -e 'alarm 3000; exec @ARGV' xcodebuild test -quiet -project "$work/uitest/KeyboardCheck.xcodeproj" -scheme UITests \
     -only-testing:"UITests/Notifications/test$2" -destination "id=$SIM_UDID" -derivedDataPath "$work/uitest/derived" > "$work/uitest-$1.log" 2>&1 || rc=$?
   sed 's/^/  /' "$out/$1.txt" 2>/dev/null || true
-  [ "$rc" = 0 ] || { echo "FAIL: $1: xcodebuild test exit $rc"; grep -E "error:|XCTAssert|failed" "$work/uitest-$1.log" | head -8; exit 1; }
+  cp "$work/uitest-$1.log" "$out/$1-xcodebuild.log" 2>/dev/null || true
+  [ "$rc" = 0 ] || { echo "FAIL: $1: xcodebuild test exit $rc; the test log ends:"; tail -25 "$work/uitest-$1.log" | cut -c1-240; exit 1; }
+}
+
+# Settings at its alerts, light then dark: the iPhone line under System notifications (after) or not (before).
+settings() {
+  for look in light dark; do
+    xcrun simctl ui "$SIM_UDID" appearance "$look"
+    uitest "settings-$look" Settings
+  done
+  xcrun simctl ui "$SIM_UDID" appearance light
 }
 
 fresh
@@ -91,6 +101,7 @@ L "$hc" send "$term" "sh hm-ask.sh" >/dev/null
 if [ -n "$before" ]; then
   echo "--- before: no question, and nothing posted while away"
   WAITS=0 ROUNDS=1 uitest before Before
+  settings
   echo PASS
   exit 0
 fi
@@ -120,6 +131,9 @@ cat "$out/measured.txt"
 grep -q '^agent alert: ' "$out/allow.txt" && ! grep -q '^agent alert: none' "$out/allow.txt" || { echo "FAIL: no agent alert in Notification Center"; exit 1; }
 [ -f "$out/allow/update-home.png" ] || { echo "FAIL: no new-version notification was posted at any wait"; exit 1; }
 echo "ok: Allow; an agent's question and a new version were posted while the app ran; a tap opened home with the notice"
+
+AFTER=1; settings
+echo "ok: Settings on iPhone says how long it can post"
 
 echo "--- Don't Allow"
 fresh
