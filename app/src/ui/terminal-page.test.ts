@@ -1,6 +1,8 @@
 // The terminal's web page and the app's side of it.
 import { expect, test } from 'nsh/test'
 import { PageChannel, TERMINAL_FONTS, ctrlKey, readPageMessage, terminalPage, webViewScrollable, xtermTheme } from './terminal-page.ts'
+import { KittyImages } from '../model/kitty.ts'
+import debug from '../../fixtures/kitty/omp-18.18.3-debug.json'
 
 test('page messages are read strictly', () => {
   expect(readPageMessage('{"t":"ready","cols":80,"rows":24}')).toEqual({ t: 'ready', cols: 80, rows: 24 })
@@ -110,4 +112,55 @@ test("on Android the WebView is left scrollable, so the page gets finger moves: 
   // NSH's Android WebView swallows every move while it is not scrollable; the page saw touchstart and touchend only.
   expect(webViewScrollable('android')).toBe(true)
   expect(webViewScrollable('ios')).toBe(false)
+})
+
+// Oh My Pi's pictures (fixtures/kitty): the page gets each picture as a message of its own, before the text whose
+// placeholder cells show it, and the terminal's pictures again whenever the page starts over.
+test('a picture reaches the page before the placeholders that show it, and no graphics command reaches xterm', () => {
+  const posted: any[] = []
+  const timers: (() => void)[] = []
+  const flush = () => { for (const f of timers.splice(0)) f() }
+  const ch = new PageChannel((m) => posted.push(JSON.parse(m)), (f) => { timers.push(f); return 0 }, new KittyImages())
+  ch.ready()
+  for (const w of [...debug.open, ...debug.live]) { ch.write(new TextEncoder().encode(w)); flush() }
+  const pic = posted.findIndex((m) => m.t === 'kitty')
+  const shown = posted.findIndex((m) => m.t === 'write' && m.data.includes('\u{10EEEE}'))
+  expect([posted[pic].t, posted[pic].id, posted[pic].cols, posted[pic].rows]).toEqual(['kitty', 13180035, 20, 7])
+  expect(posted[pic].png.startsWith('iVBORw0KGgo')).toBe(true)
+  expect(pic >= 0 && pic < shown).toBe(true)
+  expect(posted.some((m) => m.t === 'write' && m.data.includes('\x1b_G'))).toBe(false)
+})
+
+test('a pane opened again gets its pictures after the reset, before the one screen herdr-core sends', () => {
+  const posted: any[] = []
+  const timers: (() => void)[] = []
+  const flush = () => { for (const f of timers.splice(0)) f() }
+  const ch = new PageChannel((m) => posted.push(JSON.parse(m)), (f) => { timers.push(f); return 0 }, new KittyImages())
+  ch.ready()
+  for (const w of [...debug.open, ...debug.live]) ch.write(new TextEncoder().encode(w))
+  flush()
+  posted.length = 0
+  ch.reset()
+  for (const w of debug.back) ch.write(new TextEncoder().encode(w))
+  flush()
+  expect(posted.map((m) => m.t)).toEqual(['reset', 'kitty', 'write'])
+  expect(posted[1].id).toBe(13180035)
+  // A page loaded again starts with the pictures too.
+  posted.length = 0
+  ch.lost()
+  ch.ready()
+  flush()
+  expect(posted.map((m) => [m.t, m.id])).toEqual([['kitty', 13180035]])
+})
+
+test('a deleted picture is deleted on the page too', () => {
+  const posted: any[] = []
+  const timers: (() => void)[] = []
+  const ch = new PageChannel((m) => posted.push(JSON.parse(m)), (f) => { timers.push(f); return 0 }, new KittyImages())
+  ch.ready()
+  for (const w of [...debug.open, ...debug.live]) ch.write(new TextEncoder().encode(w))
+  ch.write(new TextEncoder().encode('\x1b_Ga=d,d=A,q=2\x1b\\'))
+  for (const f of timers.splice(0)) f()
+  expect(posted.filter((m) => m.t.startsWith('kitty')).map((m) => m.t)).toEqual(['kitty-drop', 'kitty', 'kitty-drop']) // omp starts by deleting all
+  expect(posted.at(-1)).toEqual({ t: 'kitty-drop' })
 })

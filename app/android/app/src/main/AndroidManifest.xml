@@ -32,8 +32,6 @@
         <!-- The picture this app copied, for the app that pastes it (Copied.java). -->
         <provider android:name=".Copied" android:authorities="${applicationId}.copied"
             android:exported="false" android:grantUriPermissions="true" />
-        <provider android:name=".Opened" android:authorities="${applicationId}.opened"
-            android:exported="false" android:grantUriPermissions="true" />
         <!-- Swiping the app away ends it, as it ended the app before. -->
         <service android:name=".KeepAlive" android:exported="false" android:stopWithTask="true"
             android:foregroundServiceType="specialUse">

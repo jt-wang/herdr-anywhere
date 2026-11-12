@@ -99,8 +99,6 @@ public class MainActivity extends Activity {
     view.handle("page.pickFiles", (data, reply) -> runOnUiThread(() -> pickFiles(data, reply)));
     view.handle("page.uploadFile", this::uploadFile);
     view.handle("page.copyImage", this::copyImage);
-    view.handle("page.videoFrame", this::videoFrame);
-    view.handle("page.openFile", this::openFile);
     view.handle("page.installUpdate", this::installUpdate);
     listenForInstall();
     view.handle("page.keepAlive", (data, reply) -> runOnUiThread(() -> {
@@ -365,87 +363,6 @@ public class MainActivity extends Activity {
         reply.resolve(false);
       }
     }).start();
-  }
-
-  /** A frame of the video at a link (the Companion's /api/file link for it), as a JPEG data URL, and its length in ms;
-   *  null when the phone can't read it. The player reads only the parts it needs, in ranges. */
-  private void videoFrame(Object data, NshHostReply reply) {
-    Object url = data instanceof Map ? ((Map<?, ?>) data).get("url") : null;
-    if (!(url instanceof String) || !((String) url).matches("^https?://.*")) { reply.resolve(null); return; }
-    new Thread(() -> {
-      android.media.MediaMetadataRetriever r = new android.media.MediaMetadataRetriever();
-      try {
-        r.setDataSource((String) url, new HashMap<>());
-        String d = r.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION);
-        long ms = d == null ? 0 : Long.parseLong(d);
-        long at = Math.min(1_000_000L, ms * 1000 / 3); // a second in, or a third of a shorter one: past a black start
-        android.graphics.Bitmap b = r.getScaledFrameAtTime(at, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC, 960, 540);
-        if (b == null) { reply.resolve(null); return; }
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        b.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, out);
-        b.recycle();
-        Map<String, Object> f = new HashMap<>();
-        f.put("image", "data:image/jpeg;base64," + android.util.Base64.encodeToString(out.toByteArray(), android.util.Base64.NO_WRAP));
-        f.put("duration", ms);
-        reply.resolve(f);
-      } catch (Exception e) {
-        Log.w("herdr", "a video's frame: " + e);
-        reply.resolve(null);
-      } finally {
-        try { r.release(); } catch (Exception ignored) {}
-      }
-    }).start();
-  }
-
-  /** The largest file the phone fetches to hand to another app. */
-  private static final long OPEN_MAX = 512L << 20;
-
-  /** Fetches the file at a link (the Companion's /api/file link for it) into the cache and hands it to an app that
-   *  opens its type; when none does, to the share sheet, to send or save it. "opened", "no_app" or "failed". */
-  private void openFile(Object data, NshHostReply reply) {
-    Map<?, ?> d = data instanceof Map ? (Map<?, ?>) data : Collections.emptyMap();
-    Object url = d.get("url"), name = d.get("name");
-    if (!(url instanceof String) || !((String) url).matches("^https?://.*")) { reply.resolve("failed"); return; }
-    String file = Opened.safeName(name instanceof String ? (String) name : null);
-    new Thread(() -> {
-      HttpURLConnection c = null;
-      try {
-        c = (HttpURLConnection) new URL((String) url).openConnection();
-        c.setConnectTimeout(15_000);
-        c.setReadTimeout(30_000);
-        if (c.getResponseCode() != 200) throw new java.io.IOException("HTTP " + c.getResponseCode());
-        long size = c.getContentLengthLong();
-        if (size > OPEN_MAX || (size > 0 && getCacheDir().getUsableSpace() < size + (200L << 20))) throw new java.io.IOException("too big: " + size);
-        String sent = c.getContentType() == null ? "" : c.getContentType().split(";")[0].trim();
-        String type = sent.isEmpty() || sent.equals("application/octet-stream") || sent.startsWith("text/") ? Opened.typeOfName(file) : sent;
-        Uri uri;
-        try (InputStream in = c.getInputStream()) { uri = Opened.put(this, in, file, OPEN_MAX); }
-        runOnUiThread(() -> reply.resolve(handOver(uri, type, file)));
-      } catch (Exception e) {
-        Log.w("herdr", "opening a file: " + e);
-        reply.resolve("failed");
-      } finally {
-        if (c != null) c.disconnect();
-      }
-    }).start();
-  }
-
-  private String handOver(Uri uri, String type, String name) {
-    Intent view = new Intent(Intent.ACTION_VIEW).setDataAndType(uri, type).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-    try {
-      startActivity(view);
-      return "opened";
-    } catch (android.content.ActivityNotFoundException e) {
-      // Nothing opens this type: the share sheet, to send it or save it to Files.
-    }
-    Intent send = new Intent(Intent.ACTION_SEND).setType(type).putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-    send.setClipData(ClipData.newRawUri(name, uri));
-    try {
-      startActivity(Intent.createChooser(send, name));
-      return "opened";
-    } catch (android.content.ActivityNotFoundException e) {
-      return "no_app";
-    }
   }
 
   private static String terminalOf(Intent intent) {
