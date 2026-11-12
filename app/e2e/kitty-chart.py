@@ -49,14 +49,26 @@ def pixels(path):
 def main(path):
     w, h, k, px = pixels(path)
     near = lambda i, c, t: abs(px[i] - c[0]) + abs(px[i + 1] - c[1]) + abs(px[i + 2] - c[2]) <= t
-    # The ground: rows where a quarter of the points are its colour, and in those, columns where a quarter are.
-    rows = [y for y in range(0, h, 2) if sum(near((y * w + x) * k, GROUND, 15) for x in range(0, w, 2)) * 2 >= w / 4]
-    if not rows:
+    # The ground: the longest run of rows where a quarter of the points are its colour (the light theme's bars above and
+    # below the terminal are near that colour too).
+    def longest(ok):
+        best, start = (0, -1, -1), None
+        for i, v in enumerate(ok + [False]):
+            if v and start is None:
+                start = i
+            elif not v and start is not None:
+                best, start = max(best, (i - start, start, i - 1)), None
+        return best
+    ys = list(range(0, h, 2))
+    n, a, b = longest([sum(near((y * w + x) * k, GROUND, 15) for x in range(0, w, 2)) * 2 >= w / 4 for y in ys])
+    if not n:
         print('FAIL: no chart ground on screen')
         return 1
-    top, bottom = rows[0], rows[-1]
-    cols = [x for x in range(0, w, 2) if sum(near((y * w + x) * k, GROUND, 15) for y in range(top, bottom + 1, 2)) * 2 >= (bottom - top) / 4]
-    left, right = cols[0], cols[-1]
+    top, bottom = ys[a], ys[b]
+    # Its width: the longest run of ground in its top rows, above the bars.
+    xs_ = list(range(0, w, 2))
+    _, a, b = max(longest([near((y * w + x) * k, GROUND, 15) for x in xs_]) for y in range(top, min(top + 12, bottom + 1), 2))
+    left, right = xs_[a], xs_[b]
     print(f'ground: x {left}..{right}, y {top}..{bottom}')
     boxes = []
     for colour, _ in BARS:
