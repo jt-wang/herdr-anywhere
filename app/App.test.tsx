@@ -782,6 +782,48 @@ test('pinning from an agent\'s menu pins it on the computer; Unpin from the Pinn
   expect(app.count('text:Pinned')).toBe(0)
 })
 
+// The texts under Pinned, top to bottom (between its header and the spaces).
+const pinnedTexts = (app: any) => { const t: string[] = app.texts(); return t.slice(t.indexOf('Pinned') + 1, t.indexOf('Spaces')) }
+
+test('Pinned lists agents in the order they were pinned, and a status change only changes the row\'s status, not its place', async () => {
+  const app = await busy()
+  await app.waitFor('id:space-agent-t2')
+  // t2 was pinned first (its place sorts first), then t1, which needs you: it stays second.
+  await app.host.send('fake.label', { address: 't2', labels: { 'herdr.pinned': '1', 'herdr-anywhere.pin-order': 'i' } })
+  await app.host.send('fake.label', { address: 't1', labels: { 'herdr.pinned': '1', 'herdr-anywhere.pin-order': 'r' } })
+  await app.waitFor('id:pinned-agent-t1')
+  const order = () => pinnedTexts(app).filter((x) => x === 'Codex' || x === 'fix login')
+  expect(order()).toEqual(['Codex', 'fix login'])
+  await app.host.send('fake.status', { address: 't2', state: 'blocked', kind: 'permission', msg: 'approve Bash: npm test' })
+  await app.waitFor('id:needs-t2')
+  await app.host.send('fake.status', { address: 't1', state: 'working' })
+  await app.wait(300)
+  expect(order()).toEqual(['Codex', 'fix login'])
+  // Pinned in Herdr Desktop App (herdr.pinned alone), an agent goes below the ones pinned before it.
+  await app.host.send('fake.label', { address: 't2', labels: { 'herdr.pinned': '', 'herdr-anywhere.pin-order': '' } })
+  await app.waitFor('id:space-agent-t2')
+  await app.host.send('fake.label', { address: 't2', labels: { 'herdr.pinned': '1' } })
+  await app.waitFor('id:pinned-agent-t2')
+  await app.wait(300)
+  expect(order()).toEqual(['fix login', 'Codex'])
+})
+
+test('a tap on a Pinned row opens its agent; held still and let go, the row opens its menu, and a hold opens nothing else', async () => {
+  const app = await busy()
+  await app.waitFor('id:space-agent-t2')
+  await app.host.send('fake.label', { address: 't2', labels: { 'herdr.pinned': '1', 'herdr-anywhere.pin-order': 'i' } })
+  await app.waitFor('id:pinned-agent-t2')
+  const menus: string[] = []
+  app.onDialog((d) => { menus.push(d.title ?? ''); return 'Cancel' })
+  await app.longPress('id:pinned-agent-t2')
+  await app.waitUntil(() => menus.length === 1)
+  await app.wait(300)
+  expect(app.count('id:pane-header')).toBe(0)
+  await app.press('id:pinned-agent-t2')
+  await app.waitFor('id:pane-header')
+  expect(menus.length).toBe(1)
+})
+
 test("an agent's menu is titled with its row's main text, its space and program under it", async () => {
   const shown: { title?: string | null; message?: string | null }[] = []
   const menuOf = async (app: any, row: string) => {

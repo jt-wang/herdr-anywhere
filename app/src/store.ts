@@ -7,6 +7,7 @@ import { Model, type FolderInfo, type Space, type Tab, newTab, local, machineOfA
 import { captureDoc, replaceDoc, captureView, applyView, type View } from './model/doc.ts'
 import { Terminals, cleanTitle, type Term } from './model/terminals.ts'
 import { AgentList, type AgentInfo } from './model/agents.ts'
+import { PIN_ORDER, missingPlaces, moveWrites, pinOrder, placeAfterLast, type Write } from './model/pin-order.ts'
 import { programOf, agentArgv, INSTALLED_PROBE, parseInstalled, startable, type Program } from './model/programs.ts'
 const AGENT_KEYS = new Set(startable().map((p) => p.key))
 import { addresses, find, modBlock, panes, terminalOf, type Axis, type Node } from './model/layout.ts'
@@ -146,6 +147,11 @@ export class Store {
    *  (`created`) before terminal.run answers, and adopting it then put the space or tab in twice (seen on Android). */
   private placing = new Set<string>()
   private firstSync = true
+  /** Places a move is writing (pin-order.ts), shown until herdr-core's `labels` event for the terminal comes back. */
+  private moving = new Map<string, string>()
+  /** Place writes on their way (address → place), and the ones herdr-core refused: each goes out once a connection. */
+  private placeWrites = new Map<string, string>()
+  private placeRefused = new Set<string>()
   private savedView?: View
   private toastId = 0
   private wantConnected = false
@@ -211,6 +217,9 @@ export class Store {
       await Promise.all(this.machineNames().map((m) => this.readDoc(m)))
       this.retry = 0
       this.firstSync = true
+      this.moving.clear()
+      this.placeWrites.clear()
+      this.placeRefused.clear()
       this.sync()
       this.conn.set('ready')
       this.error.set('')
@@ -359,6 +368,7 @@ export class Store {
 
   private event(msg: any) {
     const r = this.terms.apply(msg)
+    if (r.type === 'labels' && r.terminal && this.moving.delete(r.terminal)) r.changed = true
     if (r.rereadDocs) for (const m of this.machineNames()) void this.readDoc(m)
     if (r.doc && r.doc.name === 'herdr-app') {
       const slot = this.slots.get(r.doc.machine ?? '')
@@ -471,6 +481,7 @@ export class Store {
       }
     }
     this.firstSync = false
+    this.keepPlaces()
     void this.flushPending()
     if (this.reconcile(live)) changed = true
     void this.flush()
@@ -687,7 +698,7 @@ export class Store {
       out.push({
         address: a, pane: n.id, space: s.id, space_name: this.spaceName(s), tab: c.id, tab_name: c.name || String(ti + 1), named: !!c.name,
         status: st, app: t.status?.app ?? null, title: cleanTitle(t.title), seq: this.model.agents.get(a)?.seq ?? 0,
-        focused: n.id === focusedPane, pinned: !!t.labels?.[PIN_LABEL], programName: p.name, programKey: p.key,
+        focused: n.id === focusedPane, pinned: !!t.labels?.[PIN_LABEL], place: this.moving.get(a) ?? t.labels?.[PIN_ORDER], programName: p.name, programKey: p.key,
         kind: t.status?.state === 'blocked' ? t.status?.kind ?? null : null, msg: t.status?.state === 'blocked' ? t.status?.msg ?? '' : '',
       })
     }
@@ -696,9 +707,48 @@ export class Store {
 
   /** Pins or unpins an agent on the computer, as the desktop's `terminal.pin` does: the label shows on every screen
    *  when herdr-core's `labels` event comes back. An empty value removes the label (herdr-core 0.1.18).
-   *  Herdr 0.1.13 writes the same values, "1" or "". */
+   *  Herdr 0.1.13 writes the same values, "1" or "". In the same call, its place in Pinned: last, or none. */
   async pin(addr: string, pinned: boolean) {
-    await this.call('terminal.label', { terminal: addr, labels: { [PIN_LABEL]: pinned ? '1' : '' } })
+    const place = pinned ? placeAfterLast(this.pinnedRows().filter((a) => a.address !== addr)) : ''
+    await this.call('terminal.label', { terminal: addr, labels: { [PIN_LABEL]: pinned ? '1' : '', [PIN_ORDER]: place } })
+  }
+
+  /** Pinned's rows in their order (pin-order.ts). */
+  pinnedRows(): AgentInfo[] {
+    return this.shown().view.groups.find((g) => g.id === 'pinned')?.members ?? []
+  }
+
+  /** Moves a pinned agent to index `to` of Pinned: writes its place (and its neighbours' when they have none to go
+   *  between), showing the new order at once; a refused write puts it back and rejects. */
+  async movePin(addr: string, to: number) {
+    if (!this.hc) throw new HcError(tr('disconnected'), 'disconnected')
+    const writes = moveWrites(this.pinnedRows(), addr, to)
+    if (!writes.length) return
+    for (const w of writes) this.moving.set(w.address, w.place)
+    this.bump()
+    try {
+      await Promise.all(writes.map((w) => this.call('terminal.label', { terminal: w.address, labels: { [PIN_ORDER]: w.place } })))
+    } catch (e) {
+      for (const w of writes) if (this.moving.get(w.address) === w.place) this.moving.delete(w.address)
+      this.bump()
+      throw e
+    }
+  }
+
+  /** Each sync: a place for every pinned agent without one (pinned in Herdr Desktop App, which writes herdr.pinned
+   *  alone: last, the first time a phone sees it), and no place left on an agent unpinned there. herdr.pinned is
+   *  never written here. Works over agents(), not the view, so a sync works the list out no more often. */
+  private keepPlaces() {
+    const writes: Write[] = missingPlaces(pinOrder(this.agents().filter((a) => a.pinned)))
+    for (const t of this.terms.list()) if (t.state === 'live' && !t.labels?.[PIN_LABEL] && t.labels?.[PIN_ORDER] !== undefined) writes.push({ address: t.address, place: '' })
+    for (const w of writes) {
+      const key = `${w.address}=${w.place}`
+      if (this.placeWrites.has(w.address) || this.placeRefused.has(key)) continue
+      this.placeWrites.set(w.address, w.place)
+      this.call('terminal.label', { terminal: w.address, labels: { [PIN_ORDER]: w.place } })
+        .catch(() => this.placeRefused.add(key))
+        .finally(() => this.placeWrites.delete(w.address))
+    }
   }
 
   agentsView() {

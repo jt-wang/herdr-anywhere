@@ -2,7 +2,7 @@
 import type { Table } from './index.ts'
 
 export const es: Table = {
-  needsYou: 'Te necesita', done: 'Listo', working: 'Trabajando', idle: 'Inactivo', unknown: 'Desconocido', pinned: 'Fijados', pinToTop: 'Fijar arriba', unpin: 'Dejar de fijar',
+  needsYou: 'Te necesita', done: 'Listo', working: 'Trabajando', idle: 'Inactivo', unknown: 'Desconocido', pinned: 'Fijados', pinToTop: 'Fijar arriba', unpin: 'Dejar de fijar', dragHint: 'Arrastra hasta donde quieras y suelta', moveUp: 'Subir', moveDown: 'Bajar',
   notConnected: 'Sin conexión', notConnectedLower: 'sin conexión', connecting: 'Conectando…', reconnecting: 'Reconectando…',
   lastUpdatedNow: 'Actualizado hace un momento', lastUpdated: 'Actualizado hace {age}',
   lostNoCore: 'herdr-core no está instalado en la computadora. Instálalo allí; esto se reconecta solo.',
@@ -107,7 +107,7 @@ export const es: Table = {
   programExited: 'El programa terminó.', terminalClosed: 'La terminal se cerró.',
   terminalLost: 'La computadora se reinició y esta terminal ya no existe.', terminalFinished: 'Esta terminal terminó.',
   terminalEnded: 'La terminal terminó ({reason}).',
-  terminalPageFailed: 'La terminal no se cargó.', tryAgain: 'Reintentar',
+  terminalLoading: 'La terminal todavía se está cargando…', tryAgain: 'Reintentar',
   nameNeedsYou: '{name} te necesita', nameFinished: '{name} terminó',
   titleNeedsYou: '«{name}» te necesita', titleFinished: '«{name}» terminó',
   layoutChanged: 'La disposición cambió en otro lugar', layoutChangedBody: 'Se muestra la disposición de la otra pantalla.',

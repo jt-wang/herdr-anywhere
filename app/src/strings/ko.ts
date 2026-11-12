@@ -2,7 +2,7 @@
 import type { Table } from './index.ts'
 
 export const ko: Table = {
-  needsYou: '응답 필요', done: '완료', working: '작업 중', idle: '대기 중', unknown: '알 수 없음', pinned: '고정됨', pinToTop: '맨 위에 고정', unpin: '고정 해제',
+  needsYou: '응답 필요', done: '완료', working: '작업 중', idle: '대기 중', unknown: '알 수 없음', pinned: '고정됨', pinToTop: '맨 위에 고정', unpin: '고정 해제', dragHint: '원하는 위치로 끌어다 놓으세요', moveUp: '위로 이동', moveDown: '아래로 이동',
   notConnected: '연결 안 됨', notConnectedLower: '연결 안 됨', connecting: '연결 중…', reconnecting: '다시 연결 중…',
   lastUpdatedNow: '방금 업데이트됨', lastUpdated: '{age} 전에 업데이트됨',
   lostNoCore: '컴퓨터에 herdr-core가 설치되어 있지 않아요. 설치하면 자동으로 다시 연결돼요.',
@@ -107,7 +107,7 @@ export const ko: Table = {
   programExited: '프로그램이 종료되었어요.', terminalClosed: '터미널이 닫혔어요.',
   terminalLost: '컴퓨터가 다시 시작되어 이 터미널이 사라졌어요.', terminalFinished: '이 터미널은 종료되었어요.',
   terminalEnded: '터미널이 종료되었어요({reason}).',
-  terminalPageFailed: '터미널을 불러오지 못했어요.', tryAgain: '다시 시도',
+  terminalLoading: '터미널을 아직 불러오는 중이에요…', tryAgain: '다시 시도',
   nameNeedsYou: '{name} 응답 필요', nameFinished: '{name} 완료',
   titleNeedsYou: '‘{name}’ 응답 필요', titleFinished: '‘{name}’ 완료',
   layoutChanged: '다른 곳에서 레이아웃이 바뀌었어요', layoutChangedBody: '다른 화면의 레이아웃을 표시해요.',

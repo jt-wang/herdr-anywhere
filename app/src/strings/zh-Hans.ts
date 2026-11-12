@@ -2,7 +2,7 @@
 import type { Table } from './index.ts'
 
 export const zhHans: Table = {
-  needsYou: '等你处理', done: '已完成', working: '工作中', idle: '空闲', unknown: '未知', pinned: '已置顶', pinToTop: '置顶', unpin: '取消置顶',
+  needsYou: '等你处理', done: '已完成', working: '工作中', idle: '空闲', unknown: '未知', pinned: '已置顶', pinToTop: '置顶', unpin: '取消置顶', dragHint: '拖到想放的位置后松手', moveUp: '上移', moveDown: '下移',
   notConnected: '未连接', notConnectedLower: '未连接', connecting: '正在连接…', reconnecting: '正在重新连接…',
   lastUpdatedNow: '刚刚更新', lastUpdated: '{age}前更新',
   lostNoCore: '这台电脑没有安装 herdr-core。装好后会自动重新连接。',
@@ -107,7 +107,7 @@ export const zhHans: Table = {
   programExited: '程序已退出。', terminalClosed: '终端已关闭。',
   terminalLost: '电脑重启过，这个终端已经没有了。', terminalFinished: '这个终端已结束。',
   terminalEnded: '终端已结束（{reason}）。',
-  terminalPageFailed: '终端没有加载出来。', tryAgain: '重试',
+  terminalLoading: '终端还在加载…', tryAgain: '重试',
   nameNeedsYou: '{name} 在等你', nameFinished: '{name} 已完成',
   titleNeedsYou: '“{name}”在等你', titleFinished: '“{name}”已完成',
   layoutChanged: '布局在别处改动了', layoutChangedBody: '现在显示的是另一块屏幕的布局。',

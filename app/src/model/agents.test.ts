@@ -34,14 +34,27 @@ test('a done agent you open stays under Done until you leave it', () => {
   expect(after.groups.map((g) => g.label)).toEqual(['Idle'])
 })
 
-test('agents pinned on the computer (label herdr.pinned) stay on top in their own group, in list order, as on the desktop', () => {
+test('agents pinned on the computer (label herdr.pinned) stay on top in their own group, in the order they were pinned', () => {
   const l = new AgentList()
-  const v = l.view([a('t1', 'blocked'), a('t2', 'idle', { pinned: true }), a('t3', 'working', { pinned: true })], [], 1)
+  const v = l.view([a('t1', 'blocked'), a('t2', 'working', { pinned: true, place: 'r' }), a('t3', 'idle', { pinned: true, place: 'i' })], [], 1)
   expect(v.groups.map((g) => [g.label, g.members.map((m) => m.address)])).toEqual([['Pinned', ['t3', 't2']], ['Needs you', ['t1']]])
   expect(v.order).toEqual(['t3', 't2', 't1'])
   l.sort = 'grouped'
   const g = l.view([a('t1', 'blocked'), a('t2', 'idle', { pinned: true })], [], 2)
   expect(g.groups.map((x) => [x.id, x.members.map((m) => m.address)])).toEqual([['pinned', ['t2']], ['sp-s1', ['t1']]])
+})
+
+test('a pinned agent keeps its row when its status changes: only its dot changes, nothing moves', () => {
+  // The user: Pinned jumping about with every change was tiring to watch.
+  const l = new AgentList()
+  const pins = (s1: AgentInfo['status'], s2: AgentInfo['status'], s3: AgentInfo['status']) =>
+    [a('t1', s1, { pinned: true, place: 'i' }), a('t2', s2, { pinned: true, place: 'r' }), a('t3', s3, { pinned: true, place: 'v' })]
+  const order = (now: number, list: AgentInfo[]) => l.view(list, [], now).groups[0].members.map((m) => m.address)
+  expect(order(1, pins('idle', 'working', 'idle'))).toEqual(['t1', 't2', 't3'])
+  expect(order(2, pins('idle', 'working', 'blocked'))).toEqual(['t1', 't2', 't3'])
+  expect(order(3, pins('done', 'idle', 'blocked'))).toEqual(['t1', 't2', 't3'])
+  // In the order agents() lists them (space, tab, pane) when none has a place yet, never by status.
+  expect(order(4, [a('t1', 'idle', { pinned: true }), a('t2', 'blocked', { pinned: true })])).toEqual(['t1', 't2'])
 })
 
 test('with no pins on the computer there is no Pinned group', () => {

@@ -2,7 +2,7 @@
 import type { Table } from './index.ts'
 
 export const ja: Table = {
-  needsYou: '対応待ち', done: '完了', working: '実行中', idle: '待機中', unknown: '不明', pinned: 'ピン留め', pinToTop: '先頭にピン留め', unpin: 'ピン留めを外す',
+  needsYou: '対応待ち', done: '完了', working: '実行中', idle: '待機中', unknown: '不明', pinned: 'ピン留め', pinToTop: '先頭にピン留め', unpin: 'ピン留めを外す', dragHint: '置きたい位置までドラッグして指を離す', moveUp: '上へ移動', moveDown: '下へ移動',
   notConnected: '未接続', notConnectedLower: '未接続', connecting: '接続中…', reconnecting: '再接続中…',
   lastUpdatedNow: 'たった今更新', lastUpdated: '{age}前に更新',
   lostNoCore: 'パソコンに herdr-core がインストールされていません。インストールすると自動で再接続します。',
@@ -107,7 +107,7 @@ export const ja: Table = {
   programExited: 'プログラムが終了しました。', terminalClosed: 'ターミナルが閉じられました。',
   terminalLost: 'パソコンが再起動し、このターミナルはなくなりました。', terminalFinished: 'このターミナルは終了しました。',
   terminalEnded: 'ターミナルが終了しました（{reason}）。',
-  terminalPageFailed: 'ターミナルを読み込めませんでした。', tryAgain: '再試行',
+  terminalLoading: 'ターミナルはまだ読み込み中です…', tryAgain: '再試行',
   nameNeedsYou: '{name} が対応待ちです', nameFinished: '{name} が完了しました',
   titleNeedsYou: '「{name}」が対応待ちです', titleFinished: '「{name}」が完了しました',
   layoutChanged: '別の場所でレイアウトが変更されました', layoutChangedBody: 'もう一方の画面のレイアウトを表示しています。',

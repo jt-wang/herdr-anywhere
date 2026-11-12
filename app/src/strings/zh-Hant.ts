@@ -2,7 +2,7 @@
 import type { Table } from './index.ts'
 
 export const zhHant: Table = {
-  needsYou: '等你處理', done: '已完成', working: '工作中', idle: '閒置', unknown: '未知', pinned: '已釘選', pinToTop: '釘選到頂端', unpin: '取消釘選',
+  needsYou: '等你處理', done: '已完成', working: '工作中', idle: '閒置', unknown: '未知', pinned: '已釘選', pinToTop: '釘選到頂端', unpin: '取消釘選', dragHint: '拖到想放的位置後放開', moveUp: '上移', moveDown: '下移',
   notConnected: '未連線', notConnectedLower: '未連線', connecting: '正在連線…', reconnecting: '正在重新連線…',
   lastUpdatedNow: '剛剛更新', lastUpdated: '{age}前更新',
   lostNoCore: '這台電腦沒有安裝 herdr-core。安裝後會自動重新連線。',
@@ -107,7 +107,7 @@ export const zhHant: Table = {
   programExited: '程式已結束。', terminalClosed: '終端機已關閉。',
   terminalLost: '電腦重新啟動過，這個終端機已經不在了。', terminalFinished: '這個終端機已結束。',
   terminalEnded: '終端機已結束（{reason}）。',
-  terminalPageFailed: '終端機沒有載入。', tryAgain: '重試',
+  terminalLoading: '終端機還在載入…', tryAgain: '重試',
   nameNeedsYou: '{name} 在等你', nameFinished: '{name} 已完成',
   titleNeedsYou: '「{name}」在等你', titleFinished: '「{name}」已完成',
   layoutChanged: '版面在別處變更了', layoutChangedBody: '現在顯示的是另一個畫面的版面。',
