@@ -37,8 +37,9 @@ type Service struct {
 	followFn   func(context.Context) // tests replace Follow
 	followOnce sync.Once
 
-	get    func(addr string) ([]byte, error) // tests replace `hc get`
-	logged sync.Map
+	get       func(addr string) ([]byte, error) // tests replace `hc get`
+	hcTimeout time.Duration                     // how long `hc get` may take (0: 5 s); tests shorten it
+	logged    sync.Map
 
 	mu       sync.Mutex
 	sessions map[string]seen // by terminal address: the session id an agent last reported (Follow)
@@ -68,13 +69,24 @@ type terminal struct {
 	} `json:"foreground"`
 }
 
+// errSlow: hc get didn't answer within the Service's time (hcTimeout, 5 s): hc can't say now what runs there.
+var errSlow = errors.New("hc get: no answer in time")
+
 func (s *Service) hcGet(addr string) ([]byte, error) {
 	if s.get != nil {
 		return s.get(addr)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	limit := s.hcTimeout
+	if limit == 0 {
+		limit = 5 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), limit)
 	defer cancel()
-	return exec.CommandContext(ctx, s.HC, "get", addr, "--json").Output()
+	out, err := exec.CommandContext(ctx, s.HC, "get", addr, "--json").Output()
+	if err != nil && ctx.Err() == context.DeadlineExceeded {
+		return nil, errSlow
+	}
+	return out, err
 }
 
 // find runs the steps up to the session file. reader is nil when this terminal gets no chat button.
@@ -88,6 +100,9 @@ func (s *Service) findMsg(addr string) (app string, r Reader, path, version stri
 		return "", nil, "", "", "", "", nil
 	}
 	out, err := s.hcGet(addr)
+	if errors.Is(err, errSlow) {
+		return "", nil, "", "", "", "", err
+	}
 	if err != nil {
 		return "", nil, "", "", "", "", nil
 	}
@@ -144,6 +159,10 @@ func (s *Service) named(t terminal) (string, Reader) {
 
 func (s *Service) Chat(addr string) Answer {
 	app, r, path, version, state, msg, err := s.findMsg(addr)
+	// A slow hc can't say now what runs there: unsure, not "no chat here", which closes an open chat view.
+	if errors.Is(err, errSlow) {
+		return Answer{Chat: true, Unknown: NoTerminal}
+	}
 	if r == nil {
 		return Answer{}
 	}
