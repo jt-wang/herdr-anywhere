@@ -22,6 +22,11 @@ export function pngSize(b64: string): { width: number; height: number } {
 
 const START = '\x1b_G'
 const END = '\x1b\\'
+// Placeholder cells with their marks. xterm draws a cell's combining marks past its right edge, over the next cell,
+// where the page's picture does not reach, so the app sends them hidden (SGR 8, ended by SGR 28): xterm draws only
+// their background, and the page still reads their colour and marks from the buffer.
+const PLACEHOLDERS = /(?:\u{10EEEE}\p{M}*)+/gu
+const hide = (text: string) => (text.includes('\u{10EEEE}') ? text.replace(PLACEHOLDERS, '\x1b[8m$&\x1b[28m') : text)
 
 type Stored = KittyImage & { used: number; placed: boolean }
 type Incoming = { id: number; png: boolean; parts: string[]; place?: { cols: number; rows: number } }
@@ -58,6 +63,7 @@ export class KittyImages {
       from = end + END.length
     }
     for (const img of changed.values()) if (this.images.get(img.id) === img) out.put.push(img)
+    out.text = hide(out.text)
     return out
   }
 
