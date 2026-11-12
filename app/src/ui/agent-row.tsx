@@ -2,7 +2,8 @@
 // (its tab's name or its title) as the main text, the program's name small and grey before it (Settings can hide it:
 // the icon says it too), its status in words, what it is doing or did a step under the title (smaller, regular, the title's colour at 80 %),
 // and its sub-agents. An idle row is a step dimmer as a whole.
-import { colorScheme, computed, Text, View } from 'nsh'
+import { colorScheme, Text, View } from 'nsh'
+import { kept } from './kept.ts'
 import type { Store } from '../store.ts'
 import type { AgentInfo } from '../model/agents.ts'
 import { listOf } from '../strings/index.ts'
@@ -18,7 +19,7 @@ export const statusText = (st: string | undefined) => (st === 'idle' && colorSch
 /** What a row says about an agent besides its program: the same words on every screen that lists it. */
 export function agentWords(s: Store) {
   const rev = useRev(s)
-  const view = computed(() => { rev(); return s.shown().view })
+  const view = kept(() => { rev(); return s.shown().view })
   // The tab's name or the agent's title, when it says more than the program's name.
   const title = (a: AgentInfo) => { const d = view().detail.get(a.address); return d && d !== a.programName ? d : null }
   // What it is doing or did. "Needs you" already shows what a blocked one asks.

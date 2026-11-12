@@ -85,7 +85,9 @@ if [ "${HM_CHAT4_DRY:-}" = 1 ]; then
   done
   echo PASS; exit 0
 fi
-link=$(L "$work/herdr-anywhere" pair --url "http://127.0.0.1:$port" --state "$state" 2>/dev/null | grep -o 'http://[^ ]*#pair=[A-Za-z0-9_-]*' | head -1)
+# The link goes into the app's build, which comes after it: an hour (pair's default is 10 minutes), as a build with
+# Xcode 27.0 on CI took 15 and the app was shown an expired code (POST /api/pair 410), as e2e/ios-onerror.sh found.
+link=$(L "$work/herdr-anywhere" pair --ttl 60m --url "http://127.0.0.1:$port" --state "$state" 2>/dev/null | grep -o 'http://[^ ]*#pair=[A-Za-z0-9_-]*' | head -1)
 [ -n "$link" ] || { echo "FAIL: no pairing link"; exit 1; }
 printf "export const COMPANION: number = 0\nexport const PAIR: string = '%s'\n" "$link" > "$app/e2e/pair.ts"
 "$app/ios/build.sh" ios-e2e.tsx simulator > "$work/build.log" 2>&1 || { tail -20 "$work/build.log"; echo "FAIL: ios/build.sh"; exit 1; }

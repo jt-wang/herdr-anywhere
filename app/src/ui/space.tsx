@@ -2,7 +2,8 @@
 // defaults/mods/tabs, mods/pane, mods/workspace-status). A phone gives the screen to the focused pane: a two-line
 // header (the agent, where it is, Needs you), its terminal edge to edge, and one row under it (ui/pane-bar.tsx); the
 // title opens the switcher, and a flick across the terminal goes to the next or previous tab.
-import { cleanup, computed, effect, fontScale, keyboardFrame, safeAreaInsets, Scroll, signal, Text, untracked, View, windowSize } from 'nsh'
+import { cleanup, effect, fontScale, keyboardFrame, safeAreaInsets, Scroll, signal, Text, untracked, View, windowSize } from 'nsh'
+import { kept } from './kept.ts'
 import { AlertDialog, Sheet } from 'nsh/base'
 import { keyboardGone } from './keyboard.ts'
 import type { Store } from '../store.ts'
@@ -392,12 +393,12 @@ function WidePanes(props: { store: Store; spaceId: string; tab: Tab; actions: Sp
   const rev = useRev(s)
   const box = signal({ w: 0, h: 0 })
   const sessions = props.sessions
-  const rects = computed(() => { rev(); const b = box(); return [...layoutRects(shownNode(props.tab), 0, 0, b.w, b.h)] })
+  const rects = kept(() => { rev(); const b = box(); return [...layoutRects(shownNode(props.tab), 0, 0, b.w, b.h)] })
   const focused = () => { rev(); return focusedPaneOf(props.tab) }
   const focusedSession = () => { rev(); const f = focused(); const a = f ? props.store.model.addressOf(f) : undefined; return a ? sessions.get(a) : undefined }
   const GAP = 8
   // A split or a close changes a pane's height for good; on a phone its rows hold still otherwise (terminal-page.ts).
-  const count = computed(() => { rev(); return panes(props.tab.root).length })
+  const count = kept(() => { rev(); return panes(props.tab.root).length })
   effect(() => { count(); for (const t of sessions.values()) t.refit() })
   return (
     <View class="flex-1 bg-sidebar-primary">

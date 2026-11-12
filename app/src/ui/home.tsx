@@ -1,7 +1,8 @@
 // The first screen: every agent that waits on you, across the spaces, the longest wait first, with its own choices;
 // then the desktop sidebar's spaces with their git and their agents, and the status bar (herdr-app defaults/mods/spaces,
 // mods/agents, mods/workspace-status).
-import { colorScheme, computed, Image, Scroll, signal, Text, View } from 'nsh'
+import { colorScheme, Image, Scroll, signal, Text, View } from 'nsh'
+import { kept } from './kept.ts'
 import { AlertDialog } from 'nsh/base'
 import { ViewSwitch, type ViewSwitchProps } from './view-switch.tsx'
 import type { Store } from '../store.ts'
@@ -131,7 +132,7 @@ function WaitingRow(props: { store: Store; a: AgentInfo; now: number; actions: H
 
 function NeedsYouSection(props: { store: Store; actions: HomeActions }) {
   const rev = useRev(props.store)
-  const queue = computed(() => { rev(); return props.store.queue() })
+  const queue = kept(() => { rev(); return props.store.queue() })
   const now = () => { rev(); return Date.now() }
   return (
     <If when={queue().length}>
@@ -188,7 +189,7 @@ function SpaceAgents(props: { store: Store; space: Space; actions: HomeActions }
 /** The agents pinned on the computer (herdr-core's `herdr.pinned` label), on top, as the desktop's Pinned group. */
 function PinnedSection(props: { store: Store; actions: HomeActions }) {
   const rev = useRev(props.store)
-  const pinned = computed(() => { rev(); return props.store.shown().view.groups.find((g) => g.id === 'pinned')?.members ?? [] })
+  const pinned = kept(() => { rev(); return props.store.shown().view.groups.find((g) => g.id === 'pinned')?.members ?? [] })
   return (
     <If when={pinned().length}>
       <View>
@@ -242,7 +243,7 @@ function SpaceRow(props: { store: Store; space: Space; color: string; actions: H
 
 function SpacesSection(props: { store: Store; actions: HomeActions }) {
   const rev = useRev(props.store)
-  const groups = computed(() => {
+  const groups = kept(() => {
     rev()
     const by = new Map<string, Space[]>()
     for (const sp of props.store.model.spaces) {
@@ -251,7 +252,7 @@ function SpacesSection(props: { store: Store; actions: HomeActions }) {
     }
     return [...by.entries()].map(([machine, spaces]) => ({ machine, spaces }))
   })
-  const marks = computed(() => { rev(); return props.store.spaceMarks() })
+  const marks = kept(() => { rev(); return props.store.spaceMarks() })
   const here = () => { rev(); return props.store.hello?.core?.name ?? t('thisComputer') }
   const add = (
     <View role="button" testID="space-new" accessibilityLabel={t('newSpace')} onPress={props.actions.newMenu} class="w-9 h-8 items-center justify-center rounded-[6px] active:bg-sidebar-accent">
