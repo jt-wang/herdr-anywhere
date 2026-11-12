@@ -20,7 +20,7 @@ out=${2:?output dir}
 mkdir -p "$out"
 expect_new=1; [ "${HM_E2E_EXPECT:-new}" = old ] && expect_new=""
 adb="${ANDROID_HOME:-$HOME/Library/Android/sdk}/platform-tools/adb"
-hc=$(command -v hc || echo "$HOME/.local/bin/hc")
+hc=${HM_TEST_HC:-$(command -v hc || echo "$HOME/.local/bin/hc")}
 id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$app/nsh.json")
 
 port=7691
@@ -77,13 +77,7 @@ wait_for() { # text, seconds
   return 1
 }
 type_invite() {
-  tap pair-link
-  rest=$1
-  while [ -n "$rest" ]; do
-    piece=$(printf %s "$rest" | cut -c1-80); rest=$(printf %s "$rest" | cut -c81-)
-    "$adb" shell input text "'$piece'" < /dev/null
-    sleep 0.5
-  done
+  "$(dirname "$0")/android-type-link.sh" "$1"
   tap pair
 }
 # shot <name>: the screen in the light and the dark theme, and every text on it.

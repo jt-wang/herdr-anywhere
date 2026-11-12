@@ -12,7 +12,7 @@ set -eu
 bin=$1; shift
 [ $# -gt 0 ] || set -- alpine:latest
 app=$(cd "$(dirname "$0")/.." && pwd)
-hc=$(command -v hc || echo "$HOME/.local/bin/hc")
+hc=${HM_TEST_HC:-$(command -v hc || echo "$HOME/.local/bin/hc")}
 docker=$(command -v docker)
 port=7795; while nc -z 127.0.0.1 "$port" 2>/dev/null; do port=$((port + 1)); done
 work=$(mktemp -d); run=$(mktemp -d /tmp/hmXXXX); state=$(mktemp -d /tmp/hmtcXXXX)
