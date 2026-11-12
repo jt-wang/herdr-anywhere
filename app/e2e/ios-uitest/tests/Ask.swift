@@ -27,12 +27,18 @@ final class Ask: XCTestCase {
       for _ in 0..<30 where e.exists { sleep(1) }
       XCTAssertFalse(e.exists, why); note("ok: \(why)")
     }
-    // The app opens a pane the way the last one was shown (the chat, after the light pass ended in it): the terminal first.
+    // The app opens a pane the way the last one was shown (the chat, after the light pass ended in it): the terminal
+    // first. The chat can come up a few seconds after the terminal's row (once the pane's record is read), so a row seen
+    // is watched a while before it counts.
     func open(_ id: String) {
       tap(id)
       let row = el("choice-1"), toTerminal = el("show-terminal")
-      for _ in 0..<30 where !row.exists && !toTerminal.exists { sleep(1) }
-      if toTerminal.exists && !row.exists { note("opened in the chat: back to the terminal"); toTerminal.tap() }
+      for _ in 0..<30 {
+        if toTerminal.exists { break }
+        if row.exists { sleep(5); if !toTerminal.exists { return }; break }
+        sleep(1)
+      }
+      if toTerminal.exists { note("opened in the chat: back to the terminal"); toTerminal.tap() }
     }
     func back() { tap("show-terminal"); must(el("back"), "back to the terminal"); el("back").tap() }
 
