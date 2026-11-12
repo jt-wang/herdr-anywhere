@@ -1,13 +1,12 @@
 // The first screen: every agent that waits on you, across the spaces, the longest wait first, with its own choices;
 // then the desktop sidebar's spaces with their git and their agents, and the status bar (herdr-app defaults/mods/spaces,
 // mods/agents, mods/workspace-status).
-import { colorScheme, computed, Image, Scroll, signal, Text, View } from 'nsh'
-import { AlertDialog } from 'nsh/base'
+import { colorScheme, computed, Image, Scroll, signal, Text, View, type YNode } from 'nsh'
+import { confirmClose, pickFrom } from './menu-sheet.tsx'
 import { ViewSwitch, type ViewSwitchProps } from './view-switch.tsx'
 import type { Store } from '../store.ts'
 import type { AgentInfo, SubRow } from '../model/agents.ts'
 import { duration } from '../model/agents.ts'
-import { asks } from '../model/answers.ts'
 import { shownOrder, type Option } from '../model/menu.ts'
 import type { Space } from '../model/model.ts'
 import { addresses } from '../model/layout.ts'
@@ -17,13 +16,15 @@ import type { Updates } from '../updates.ts'
 import type { PrefStore } from '../prefs.ts'
 import { ChoiceRow, ConnBanner, Glyph, IconButton, ProgramIcon, SpaceBadge, StatusMark, useRev } from './kit.tsx'
 import { AgentName, AgentRow, agentWords } from './agent-row.tsx'
+import { EdgeScroll, Hold, shifts, targetIndex, type RowBox } from './pin-drag.ts'
 import { t } from '../strings/index.ts'
 import icon from '../../assets/brand/herdr-anywhere.png'
 
 export type HomeActions = {
   openSpace: (spaceId: string) => void
   openAgent: (a: AgentInfo) => void
-  peek: (address: string) => void
+  /** A sub-agent's row: its tab if it was kept as one, else a peek at it. */
+  openSub: (address: string) => void
   newMenu: () => void
   /** A new tab in this space, in its folder (sheets.tsx); starting it opens the space. */
   addAgent: (spaceId: string) => void
@@ -44,8 +45,8 @@ const tone = () => (colorScheme() === 'dark' ? 'dark' : 'light')
 
 function Header(props: { label: string; right?: any }) {
   return (
-    <View class="flex-row items-center justify-between h-9 pl-4 pr-2 mt-1">
-      <Text class="text-[11.5px] font-medium text-sidebar-foreground">{props.label}</Text>
+    <View class="flex-row items-center justify-between gap-3 h-9 pl-4 pr-2 mt-1">
+      <Text class="shrink-0 text-[11.5px] font-medium text-sidebar-foreground">{props.label}</Text>
       {props.right}
     </View>
   )
@@ -84,8 +85,8 @@ function WaitingRow(props: { store: Store; a: AgentInfo; now: number; actions: H
   const rev = useRev(s)
   const addr = props.a.address
   const words = agentWords(s)
-  const status = () => { rev(); return s.term(addr)?.status }
   const menu = () => { rev(); return s.menuFor(addr) }
+  const asked = () => { rev(); return s.asksOf(addr) }
   const since = () => s.agentList.since(props.a)
   const wait = () => (since() ? duration(Math.max(0, props.now - since())) : '')
   const sending = signal(false)
@@ -107,17 +108,19 @@ function WaitingRow(props: { store: Store; a: AgentInfo; now: number; actions: H
             <If when={wait()}><Text class="text-[11px] text-sidebar-foreground">{wait()}</Text></If>
           </View>
           <Text class="text-[12px] text-sidebar-foreground" numberOfLines={1}>{(rev(), words.where(props.a))}</Text>
-          <If when={asks(status())}><Text testID={`asks-${addr}`} class="text-[12.5px] text-muted-foreground" numberOfLines={2}>{asks(status())}</Text></If>
+          <If when={asked()}><Text testID={`asks-${addr}`} class="text-[12.5px] text-muted-foreground" numberOfLines={2}>{asked()}</Text></If>
         </View>
         <View class="flex-row items-center gap-1.5 mt-1.5">
           <ChoiceRow testID={`needs-${addr}-choices`}>
-            <If when={menu()}>{(m) => shownOrder(m()).map((o) => (
-              <View role="button" testID={`needs-${addr}-choice-${o.n}`} accessibilityLabel={`${o.n}. ${o.full}`} disabled={sending()} onPress={() => void pick(o)}
-                onLongPress={() => s.toast({ title: `${o.n}. ${o.full}`, level: 'info' })}
-                class={`h-8 max-w-[200px] px-3 justify-center rounded-[7px] ${o.selected ? 'bg-primary active:opacity-80' : 'bg-secondary border border-border active:bg-accent'} ${sending() ? 'opacity-50' : ''}`}>
-                <Text class={`text-[13px] font-medium ${o.selected ? 'text-primary-foreground' : 'text-foreground'}`} numberOfLines={1}>{`${o.n}. ${o.label}`}</Text>
-              </View>
-            ))}</If>
+            <If when={menu()}>{(m) => (
+              <Each of={shownOrder(m())} key={(o) => `${o.n}. ${o.full}`}>{(o) => (
+                <View role="button" testID={`needs-${addr}-choice-${o().n}`} accessibilityLabel={`${o().n}. ${o().full}`} disabled={sending()} onPress={() => void pick(o())}
+                  onLongPress={() => s.toast({ title: `${o().n}. ${o().full}`, level: 'info' })}
+                  class={`h-8 max-w-[200px] px-3 justify-center rounded-[7px] ${o().selected ? 'bg-primary active:opacity-80' : 'bg-secondary border border-border active:bg-accent'} ${sending() ? 'opacity-50' : ''}`}>
+                  <Text class={`text-[13px] font-medium ${o().selected ? 'text-primary-foreground' : 'text-foreground'}`} numberOfLines={1}>{`${o().n}. ${o().label}`}</Text>
+                </View>
+              )}</Each>
+            )}</If>
           </ChoiceRow>
           <View role="button" testID={`needs-${addr}-open`} accessibilityLabel={t('open')} onPress={open}
             class="h-8 px-3 justify-center rounded-[7px] bg-secondary border border-border active:bg-accent">
@@ -149,25 +152,31 @@ function NeedsYouSection(props: { store: Store; actions: HomeActions }) {
   )
 }
 
+/** An agent row's menu: pin or unpin it on the computer, or close it. */
+function agentMenu(s: Store) {
+  const words = agentWords(s)
+  return async (a: AgentInfo) => {
+    const w = words.menu(a)
+    const r = await pickFrom({ title: w.title, message: w.description || undefined, items: [
+      { id: 'pin', label: a.pinned ? t('unpin') : t('pinToTop'), icon: a.pinned ? 'pin-off' : 'pin' },
+      { id: 'close', label: t('close'), icon: 'x', role: 'destructive' }] })
+    if (r === 'close' && await confirmClose(w.title, 'closePaneDetail')) s.closePane(a.pane)
+    if (r === 'pin') s.pin(a.address, !a.pinned).catch((e) => s.toast({ title: String(e?.message ?? e), level: 'error' }))
+  }
+}
+
 /** Agent rows with their status words and sub-agents (ui/agent-row.tsx). Long-press: pin or unpin it on the computer,
  *  or close it. `full`: no space header above (Pinned), so the row names its space, as the desktop's Pinned rows do. */
 function AgentRows(props: { store: Store; agents: () => AgentInfo[]; full?: boolean; idPrefix: string; actions: HomeActions }) {
   const s = props.store
-  const words = agentWords(s)
-  const menu = async (a: AgentInfo) => {
-    const r = await AlertDialog.show({ ...words.menu(a), presentation: 'actionSheet', actions: [
-      { id: 'pin', label: a.pinned ? t('unpin') : t('pinToTop') },
-      { id: 'close', label: t('close'), role: 'destructive' }, { id: 'cancel', label: t('cancel'), role: 'cancel' }] })
-    if (r === 'close') s.closePane(a.pane)
-    if (r === 'pin') s.pin(a.address, !a.pinned).catch((e) => s.toast({ title: String(e?.message ?? e), level: 'error' }))
-  }
+  const menu = agentMenu(s)
   return (
     <Each of={props.agents()} key={(a) => a.address}>{(a) => (
       <View>
         <AgentRow store={s} a={a()} full={props.full} testID={`${props.idPrefix}-${a().address}`}
           class={`mx-2 ${props.full ? 'pl-2' : 'pl-9'} pr-2 min-h-9 py-1.5 justify-center rounded-[8px] active:bg-sidebar-accent`}
           subPrefix="sub" subClass={`mx-2 ${props.full ? 'pl-7' : 'pl-14'} pr-2`}
-          onPress={() => props.actions.openAgent(a())} onLongPress={() => void menu(a())} onSub={props.actions.peek} />
+          onPress={() => props.actions.openAgent(a())} onLongPress={() => void menu(a())} onSub={props.actions.openSub} />
         <If when={props.actions.doing?.(a().address)}>{(d) => (
           <View testID={`doing-${a().address}`} class={`mx-2 ${props.full ? 'pl-[30px]' : 'pl-[58px]'} pr-2 pb-1.5 -mt-1`}>
             <Text class="text-[12px] text-chart-1" numberOfLines={1}>{t('doingLine', { task: d().outcome })}</Text>
@@ -185,15 +194,116 @@ function SpaceAgents(props: { store: Store; space: Space; actions: HomeActions }
   return <AgentRows store={props.store} agents={agents} idPrefix="space-agent" actions={props.actions} />
 }
 
-/** The agents pinned on the computer (herdr-core's `herdr.pinned` label), on top, as the desktop's Pinned group. */
-function PinnedSection(props: { store: Store; actions: HomeActions }) {
-  const rev = useRev(props.store)
-  const pinned = computed(() => { rev(); return props.store.shown().view.groups.find((g) => g.id === 'pinned')?.members ?? [] })
+/** The list around Pinned, which a drag scrolls when the finger nears its top or bottom edge (HomeScreen). */
+const AT_REST = {}
+
+export type ListEdge = {
+  /** At the lift: where the list is on screen. */
+  begin: () => void
+  /** The finger is at `pageY`: scrolls while it is near an edge, telling `scrolled` how far the list has gone since begin. */
+  follow: (pageY: number, scrolled: (by: number) => void) => void
+  end: () => void
+}
+
+/** The agents pinned on the computer (herdr-core's `herdr.pinned` label), on top, as the desktop's Pinned group, in the
+ *  order they were pinned (model/pin-order.ts). Held still, a row lifts and follows the finger while the list stands
+ *  still; let go, it stays where it is, on every phone. Held still and let go, its menu (ui/pin-drag.ts). */
+function PinnedSection(props: { store: Store; actions: HomeActions; holding?: (on: boolean) => void; edge?: ListEdge }) {
+  const s = props.store
+  const rev = useRev(s)
+  const words = agentWords(s)
+  const menu = agentMenu(s)
+  const pinned = computed(() => { rev(); return s.pinnedRows() })
+  const drag = signal<{ addr: string; from: number; finger: number; scrolled: number } | null>(null)
+  const dropped = signal('')
+  const boxes = new Map<string, RowBox>()
+  const boxList = () => pinned().map((a) => boxes.get(a.address) ?? { y: 0, h: 0 })
+  const dyOf = (d: { finger: number; scrolled: number }) => d.finger + d.scrolled
+  const to = () => { const d = drag(); return d ? targetIndex(boxList(), d.from, dyOf(d)) : -1 }
+  const offset = (addr: string) => {
+    const d = drag()
+    if (!d) return 0
+    if (d.addr === addr) return dyOf(d)
+    return shifts(boxList(), d.from, to())[pinned().findIndex((a) => a.address === addr)] ?? 0
+  }
+  const end = () => { drag.set(null); props.edge?.end(); props.holding?.(false) }
+  let flash: ReturnType<typeof setTimeout> | undefined
+  const fail = (e: any) => s.toast({ title: String(e?.message ?? e), level: 'error' })
+  const move = (a: AgentInfo, to: number) => {
+    clearTimeout(flash)
+    dropped.set(a.address)
+    flash = setTimeout(() => dropped.set(''), 1200)
+    s.movePin(a.address, to).catch(fail)
+  }
+  const Row = (p: { a: () => AgentInfo }) => {
+    const addr = () => p.a().address
+    const index = () => pinned().findIndex((x) => x.address === addr())
+    const hold = new Hold({
+      setTimeout: (f, ms) => setTimeout(f, ms), clearTimeout: (id) => clearTimeout(id as ReturnType<typeof setTimeout>),
+      lift: () => {
+        if (index() < 0) return
+        dropped.set('')
+        drag.set({ addr: addr(), from: index(), finger: 0, scrolled: 0 })
+        props.holding?.(true)
+        props.edge?.begin()
+      },
+      move: (dy) => { const d = drag(); if (d) drag.set({ ...d, finger: dy }) },
+      drop: () => {
+        const d = drag(), target = to()
+        // Moved first, then let go: the row's new place shows at once (store.movePin), with no frame at the old one.
+        if (d && target >= 0 && target !== d.from) move(p.a(), target)
+        end()
+      },
+      menu: () => { end(); void menu(p.a()) },
+      cancel: end,
+    })
+    const lifted = () => drag()?.addr === addr()
+    const both = [{ name: 'unpin', label: t('unpin') }, { name: 'close', label: t('close') }]
+    const up = { name: 'up', label: t('moveUp') }, down = { name: 'down', label: t('moveDown') }
+    const lists = [both, [down, ...both], [up, ...both], [up, down, ...both]]
+    const actions = computed(() => lists[(index() > 0 ? 2 : 0) + (index() < pinned().length - 1 ? 1 : 0)])
+    const act = (e: { actionName: string }) => {
+      if (e.actionName === 'up') move(p.a(), index() - 1)
+      else if (e.actionName === 'down') move(p.a(), index() + 1)
+      else if (e.actionName === 'unpin') s.pin(addr(), false).catch(fail)
+      else if (e.actionName === 'close') s.closePane(p.a().pane)
+    }
+    const touch = {
+            onStartShouldSetResponder: () => true,
+            onResponderGrant: (e: { pageY: number }) => { hold.grant(e.pageY); return false },
+            onResponderMove: (e: { pageY: number }) => {
+              hold.move(e.pageY)
+              if (lifted()) props.edge?.follow(e.pageY, (by) => { const d = drag(); if (d) drag.set({ ...d, scrolled: by }) })
+            },
+            onResponderRelease: () => hold.release(),
+            onResponderTerminate: () => hold.terminate(),
+            onResponderTerminationRequest: () => !hold.wantsToKeep(),
+            onAccessibilityAction: act,
+    }
+    return (
+      <View onLayout={(b) => boxes.set(addr(), { y: b.origin.y, h: b.size.height })}
+        style={drag() ? { transform: lifted() ? [{ translateY: offset(addr()) }, { scale: 1.03 }] : [{ translateY: offset(addr()) }], zIndex: lifted() ? 1 : 0 } : AT_REST}
+        class={lifted() ? 'mx-2 rounded-[10px] bg-background border border-border shadow-lg' : dropped() === addr() ? 'mx-2 rounded-[8px] bg-sidebar-accent' : ''}>
+        <AgentRow store={s} a={p.a()} full testID={`pinned-agent-${addr()}`}
+          class="mx-2 pl-2 pr-2 min-h-9 py-1.5 justify-center rounded-[8px] active:bg-sidebar-accent"
+          subPrefix="sub" subClass="mx-2 pl-7 pr-2"
+          onPress={() => { if (hold.pressed()) props.actions.openAgent(p.a()) }} onSub={props.actions.openSub}
+          touch={touch} actions={actions()} />
+        <If when={props.actions.doing?.(addr())}>{(dd) => (
+          <View testID={`doing-${addr()}`} class="mx-2 pl-[30px] pr-2 pb-1.5 -mt-1">
+            <Text class="text-[12px] text-chart-1" numberOfLines={1}>{t('doingLine', { task: dd().outcome })}</Text>
+          </View>
+        )}</If>
+      </View>
+    )
+  }
   return (
     <If when={pinned().length}>
       <View>
-        <Header label={t('pinned')} />
-        <AgentRows store={props.store} agents={pinned} full idPrefix="pinned-agent" actions={props.actions} />
+        <Header label={t('pinned')} right={drag() ? <Text testID="pinned-hint" class="shrink pr-2 text-[11px] text-sidebar-foreground" numberOfLines={1}>{t('dragHint')}</Text> : undefined} />
+        <View>
+          <Each of={pinned()} key={(a) => a.address}>{(a) => <Row a={a} />}</Each>
+        </View>
       </View>
     </If>
   )
@@ -211,13 +321,11 @@ function SpaceRow(props: { store: Store; space: Space; color: string; actions: H
   }
   const active = () => { rev(); return s.model.activeSpace()?.id === props.space.id }
   const menu = async () => {
-    const r = await AlertDialog.show({ title: name(), presentation: 'actionSheet', actions: [
-      { id: 'rename', label: t('rename') }, { id: 'close', label: t('closeSpace'), role: 'destructive' }, { id: 'cancel', label: t('cancel'), role: 'cancel' }] })
+    const r = await pickFrom({ title: name(), items: [
+      { id: 'rename', label: t('rename'), icon: 'square-pen' }, { id: 'close', label: t('closeSpace'), icon: 'x', role: 'destructive' }] })
     if (r === 'rename') props.actions.rename('space', props.space.id, props.space.name)
     else if (r === 'close') {
-      const ok = await AlertDialog.show({ title: t('closeTitle', { name: name() }), description: t('closeDetail'), actions: [
-        { id: 'cancel', label: t('cancel'), role: 'cancel' }, { id: 'close', label: t('close'), role: 'destructive' }] })
-      if (ok === 'close') s.closeSpace(props.space.id)
+      if (await confirmClose(name(), 'closeDetail')) s.closeSpace(props.space.id)
     }
   }
   return (
@@ -284,6 +392,23 @@ function SpacesSection(props: { store: Store; actions: HomeActions }) {
 }
 
 export function HomeScreen(props: { store: Store; actions: HomeActions; updates?: Updates; prefs?: PrefStore }) {
+  // While a Pinned row is held the list stands still (ui/pin-drag.ts), and scrolls itself when the finger nears an edge.
+  const holding = signal(false)
+  let list: YNode | undefined
+  let at = 0, viewH = 0, contentH = 0, top = 0
+  // Near an edge the content moves under the held row; the list scrolls there once the finger is up (ui/pin-drag.ts).
+  const shown = signal(0)
+  const scroller = new EdgeScroll({
+    setInterval: (f, ms) => setInterval(f, ms), clearInterval: (id) => clearInterval(id as ReturnType<typeof setInterval>),
+    list: () => ({ at, top, viewH, contentH }),
+    show: (by) => shown.set(by),
+    scrollTo: (y) => { at = y; list?.scrollTo({ y, animated: false }) },
+  })
+  const edge: ListEdge = {
+    begin: () => { scroller.begin(); void list?.measure().then((m) => { if (m) { top = m.pagePosition.y; viewH = m.bounds.size.height } }) },
+    follow: (pageY, scrolled) => scroller.follow(pageY, scrolled),
+    end: () => scroller.end(),
+  }
   return (
     <View class="flex-1 bg-sidebar pt-[env(safe-area-inset-top)]">
       <View class={`flex-row items-center h-12 ${props.actions.view?.() ? 'pl-3' : 'pl-4'} pr-1.5 gap-2`}>
@@ -297,7 +422,9 @@ export function HomeScreen(props: { store: Store; actions: HomeActions; updates?
         <IconButton name="settings" label={t('settings')} testID="settings" onPress={props.actions.settings} />
       </View>
       <ConnBanner store={props.store} />
-      <Scroll class="flex-1" contentClass="pb-6">
+      <Scroll class="flex-1" contentClass="pb-6" scrollable={!holding()} ref={(n: YNode) => { list = n }} scrollEventThrottle={16}
+        onScroll={(e) => { at = e.offset.y; contentH = e.contentSize.height; viewH = e.size.height }} onLayout={(b) => { viewH = b.size.height }}>
+        <View onLayout={(b) => { contentH = b.size.height }} style={shown() ? { transform: [{ translateY: -shown() }] } : AT_REST}>
         <If when={props.updates && props.prefs}><ChecksQuestion updates={props.updates!} prefs={props.prefs!} /><UpdateBanner updates={props.updates!} prefs={props.prefs!} /></If>
         <If when={props.actions.leaveDemo}>
           <View testID="demo-notice" class="mx-3 mt-1 mb-1 flex-row items-center gap-3 rounded-(--radius) bg-muted pl-3 pr-1 py-1">
@@ -308,8 +435,9 @@ export function HomeScreen(props: { store: Store; actions: HomeActions; updates?
           </View>
         </If>
         <NeedsYouSection store={props.store} actions={props.actions} />
-        <PinnedSection store={props.store} actions={props.actions} />
+        <PinnedSection store={props.store} actions={props.actions} holding={(on) => holding.set(on)} edge={edge} />
         <SpacesSection store={props.store} actions={props.actions} />
+        </View>
       </Scroll>
       <View class="pb-[env(safe-area-inset-bottom)] bg-sidebar"><StatusLine store={props.store} /></View>
     </View>
