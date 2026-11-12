@@ -5,7 +5,7 @@
 # Resume). It notes every line that shows on screen after the switch back, with when, beside the companion's log of the
 # phone's connection, both timed to the millisecond on this Mac. Against an isolated herdr-core; fake data only.
 # The reading is checked twice in the same run: STEADY seconds with no switch must see nothing new, and the companion
-# stopped at the end must show the banner. Measures; it does not pass or fail on what the switch shows.
+# stopped at the end, while the app is away, must show the banner when it comes back. Measures; it does not pass or fail on what the switch shows.
 # Usage: SIM_UDID=<udid> [PAIRING=direct|tailcat] [AWAY=10,60] [LANG_TAG=en] [APPEARANCE=light|dark]
 #        [HM_RESUME_APP=<built Herdr.app>] e2e/ios-resume.sh <out folder>
 # HM_RESUME_APP installs that build (from ios-e2e.tsx, e.g. an older commit's, for a before/after) instead of building.

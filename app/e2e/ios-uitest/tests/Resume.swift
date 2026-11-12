@@ -64,7 +64,13 @@ final class Resume: XCTestCase {
     }
 
     XCTAssertTrue(el("space-" + space).waitForExistence(timeout: 60), "home does not list the space")
-    el("space-" + space).tap()
+    // A tap on home can be lost while its list is still drawn (a run stayed on home with the space listed): tap again
+    // while home still shows it.
+    for _ in 0..<3 {
+      el("space-" + space).tap()
+      if el("show-chat").waitForExistence(timeout: 10) || !el("space-" + space).exists { break }
+      note("space tap again")
+    }
     XCTAssertTrue(el("show-chat").waitForExistence(timeout: 20), "no chat button")
     el("show-chat").tap()
     XCTAssertTrue(el("chat-view").waitForExistence(timeout: 20), "the chat view did not open")
@@ -153,12 +159,23 @@ final class Resume: XCTestCase {
       _ = watch(phase, 60, each: usable(phase, "PING \(phase)"))
     }
 
-    // The companion stops: the reading must see the banner say so.
+    // The companion stops while the app is away, and the app comes back to it: what the banner says then, and 50 s
+    // later (after the 30 s it only says it is reconnecting, src/store.ts, and the next retry), each with a screenshot. The reading must
+    // see the banner.
     try? "".write(toFile: out + ".stop", atomically: true, encoding: .utf8)
     note("stop asked")
+    settings.activate()
+    XCTAssertTrue(settings.wait(for: .runningForeground, timeout: 10), "Settings did not come to the front")
+    note("stopped left")
+    Thread.sleep(forTimeInterval: 15)
+    app.activate()
+    XCTAssertTrue(app.wait(for: .runningForeground, timeout: 10), "the app did not come back")
+    note("stopped back")
     let banner = el("conn-banner")
-    let lost = watch("stopped", 40, until: { banner.exists })
-    _ = watch("stopped-after", 3)
+    let lost = watch("stopped", 3)
+    shot("stopped-back-3s")
+    _ = watch("stopped-later", 50)
+    shot("stopped-back-53s")
     note("stopped saw \(lost.count)")
     XCTAssertTrue(banner.exists, "the companion stopped, but no banner showed")
   }
