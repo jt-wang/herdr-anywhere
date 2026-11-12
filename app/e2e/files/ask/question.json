@@ -1,0 +1,13 @@
+{
+  "fixtures": ["ask.jsonl", "ask-answered.jsonl"],
+  "start": "q1",
+  "states": {
+    "q1": {"screen": "q1.txt", "state": "blocked", "kind": "question", "keys": {"2": "q2"}},
+    "q2": {"screen": "q2.txt", "state": "blocked", "kind": "question", "keys": {"1": "q2-home", "tab": "review"}},
+    "q2-home": {"screen": "q2-home.txt", "state": "blocked", "kind": "question", "keys": {"1": "q2", "3": "q2-checked", "tab": "review"}},
+    "q2-checked": {"screen": "q2-checked.txt", "state": "blocked", "kind": "question", "keys": {"3": "q2-home", "tab": "review"}},
+    "review": {"screen": "review.txt", "state": "blocked", "kind": "question", "keys": {"1": "answered", "2": "q1"}},
+    "answered": {"screen": "answered.txt", "state": "done", "record": 1}
+  },
+  "msg": "answer: Which plan should the fake shop use? (Ship the small fix now (Recommended) · Wait for the full rewrite · Only tell the team)"
+}

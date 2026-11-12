@@ -305,6 +305,10 @@ export function SettingsScreen(props: { updates?: Updates; store: Store; prefs: 
               </View>
             </If>
           </Row>
+          {/* No push server: iOS posts the app's own notifications only until it stops the app in the background. */}
+          <If when={platform.os === 'ios'}>
+            <Text testID="ios-notify-limit" class="px-4 pb-2 text-[12px] leading-[17px] text-sidebar-foreground">{t('iosNotifyLimit')}</Text>
+          </If>
         </If>
         <ChatSetupRows store={props.store} />
         {/* Experimental and off by default. */}
