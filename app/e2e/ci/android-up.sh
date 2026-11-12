@@ -1,5 +1,5 @@
 #!/bin/bash
-# An Android emulator on a GitHub Linux runner, the same phone as mac-e2e.yml's and computers.yml's: API 35, Google
+# An Android emulator on a GitHub Linux runner, the same phone as computers.yml's: API 35, Google
 # APIs, x86_64, a Pixel 6 screen, drawn with swangle. Started in the background so it stays up across steps; then
 # animations off, error dialogs hidden (computers.yml says why), and the screen read back as 1080x2400 at 420 dpi,
 # light, font scale 1, before any suite runs: every suite once failed on a phone whose screen another run had changed.
@@ -28,7 +28,15 @@ until booted; do
   [ "$(date +%s)" -lt "$end" ] || { echo "FAIL: the emulator did not boot in 900 s"; "$adb" devices; tail -40 "$RUNNER_TEMP/emulator.log"; exit 1; }
   sleep 5
 done
-# A minute for the phone to settle, as the Mac's release runs wait: without it the first suite after boot failed to
+# From here on (not while it boots, when adb sees it come and go), a note each time adb loses the phone, uploaded
+# with the job's files (android-watch.sh).
+here=$(cd "$(dirname "$0")" && pwd)
+"$here/android-watch.sh" --self-test
+sh "$here/../adb-note.sh" --self-test
+sh "$here/../android-glyphs.sh" --self-test
+nohup "$here/android-watch.sh" "$adb" "${OUT:-$RUNNER_TEMP/out}/emulator-lost" "$RUNNER_TEMP/emulator.log" "$RUNNER_TEMP/logcat.txt" \
+  >/dev/null 2>&1 &
+# A minute for the phone to settle: without it the first suite after boot failed to
 # pair or to show its terminal in three jobs, and the suites after it in the same job passed.
 sleep 60
 for s in window_animation_scale transition_animation_scale animator_duration_scale; do "$adb" shell settings put global $s 0; done
