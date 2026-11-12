@@ -37,13 +37,14 @@ final class Notifications: XCTestCase {
   func stamp() -> Int { Int(Date().timeIntervalSince1970) }
   /** Notification Center, pulled down over the home screen: whether it lists a notification with these words. */
   /** The pull sometimes leaves the home screen as it was (a CI run's shot showed the icons), so it is tried 3 times. */
-  func listed(_ words: String) -> XCUIElement? {
-    for _ in 0..<3 {
+  func listed(_ words: String, missShot: String? = nil) -> XCUIElement? {
+    for i in 0..<3 {
       let top = springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.005))
       top.press(forDuration: 0.1, thenDragTo: springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.7)))
       sleep(2)
       let found = springboard.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", words)).firstMatch
       if found.waitForExistence(timeout: 3) { return found }
+      if i == 2, let missShot { shot(missShot) } // Notification Center as it was, not the home screen after it
       closeCenter()
     }
     return nil
@@ -61,11 +62,15 @@ final class Notifications: XCTestCase {
     XCTAssertTrue(el("space-spnotify").waitForExistence(timeout: 30), "home shows no space after Allow")
     shot("home")
 
-    // An agent asks while the app is away: about 2 s after it leaves (the agent works 2 s first).
-    FileManager.default.createFile(atPath: env["ASK"]!, contents: Data())
+    // An agent asks while the app is away: 5 s after it leaves, then about 2 s of work. Asked as the app left, the
+    // question came while the app still counted as in front, and was not posted in 2 of 3 CI runs.
     XCUIDevice.shared.press(.home)
-    sleep(8)
-    if let n = listed("Which port") { shot("agent-alert"); say("agent alert: \(n.label)") } else { shot("agent-alert-missing"); say("agent alert: none") }
+    sleep(5)
+    FileManager.default.createFile(atPath: env["ASK"]!, contents: Data())
+    sleep(5)
+    var agent: XCUIElement?
+    for _ in 0..<3 where agent == nil { agent = listed("Which port", missShot: "agent-alert-missing") }
+    if let agent { shot("agent-alert"); say("agent alert: \(agent.label)") } else { say("agent alert: none") }
     closeCenter()
 
     let waits = (env["WAITS"] ?? "0 5 10 20 30 60").split(separator: " ").compactMap { Int($0) }
@@ -88,9 +93,16 @@ final class Notifications: XCTestCase {
         if let n, !tapped {
           shot("update-notification")
           n.tap()
-          // Once on CI the app did not come forward after the tap: a second tap, said in the results.
-          if !app.wait(for: .runningForeground, timeout: 10), n.exists { say("tap: the app did not come forward, tapped again"); n.tap() }
-          XCTAssertTrue(el("update-banner").waitForExistence(timeout: 30), "the tap did not open home with the notice (app state \(app.state.rawValue))")
+          // On CI a tap on the notification's middle once slid it aside to show its Open button instead (a shot of
+          // Notification Center). Then Open, as a person would; said in the results.
+          if !app.wait(for: .runningForeground, timeout: 10) {
+            let open = springboard.buttons["Open"]
+            say("tap: the app did not come forward; \(open.exists ? "tapped Open" : "tapped again")")
+            if open.exists { open.tap() } else if n.exists { n.tap() }
+          }
+          // The app in front first: running in the background its home, notice and all, can be read too.
+          XCTAssertTrue(app.wait(for: .runningForeground, timeout: 30), "the tap did not bring the app forward (state \(app.state.rawValue))")
+          XCTAssertTrue(el("update-banner").waitForExistence(timeout: 30) && el("update-banner").isHittable, "the tap did not open home with the notice")
           shot("update-home")
           tapped = true
         } else {
@@ -108,10 +120,13 @@ final class Notifications: XCTestCase {
     sleep(5)
     XCTAssertFalse(question.exists, "an app from before asked about notifications")
     shot("home")
-    FileManager.default.createFile(atPath: env["ASK"]!, contents: Data())
+    // The same timing as testAllow's: asked once the app is away.
     XCUIDevice.shared.press(.home)
-    sleep(8)
-    let agent = listed("Which port")
+    sleep(5)
+    FileManager.default.createFile(atPath: env["ASK"]!, contents: Data())
+    sleep(5)
+    var agent: XCUIElement?
+    for _ in 0..<3 where agent == nil { agent = listed("Which port") }
     shot("agent-alert")
     say("agent alert: \(agent == nil ? "none" : "posted")")
     closeCenter()
@@ -161,7 +176,14 @@ final class Notifications: XCTestCase {
     for _ in 0..<8 where !(last.exists && last.isHittable) { app.swipeUp(velocity: .slow) }
     if env["AFTER"] == "1" { XCTAssertTrue(line.exists && line.isHittable, "no iPhone line under System notifications") }
     sleep(1)
-    shot("settings")
+    // Down to the alerts only: the Computer section below shows the runner's long machine name, the likely match when the
+    // upload's secret check (e2e/ci-shots-check.sh) failed on a dark shot.
+    let screen = XCUIScreen.main.screenshot().image
+    let k = screen.scale, bottom = min(last.frame.maxY + 24, screen.size.height)
+    if let cg = screen.cgImage?.cropping(to: CGRect(x: 0, y: 0, width: screen.size.width * k, height: bottom * k)) {
+      try? FileManager.default.createDirectory(atPath: shots, withIntermediateDirectories: true)
+      try? UIImage(cgImage: cg).pngData()?.write(to: URL(fileURLWithPath: "\(shots)/settings.png"))
+    }
     say("settings: iPhone line \(line.exists ? "shown: \(line.label)" : "none")")
   }
 }
