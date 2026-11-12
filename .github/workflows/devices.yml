@@ -172,6 +172,8 @@ jobs:
           name: build
           path: ${{ runner.temp }}/build
       - run: chmod +x "$COMPANION" && app/e2e/ci/tools.sh core zsh shots
+      - if: matrix.key == 'picture'
+        run: app/e2e/ci/tools.sh omp
       - run: app/e2e/ci/android-up.sh
       - name: Suites
         working-directory: app
@@ -212,9 +214,10 @@ jobs:
               fresh; $s progress-light e2e/android-progress.sh "$APK" "$OUT/progress-light"
               fresh; DARK=1 $s progress-dark e2e/android-progress.sh "$APK" "$OUT/progress-dark" ;;
             picture)
-              mkdir -p "$OUT/picture" "$OUT/glyphs"
+              mkdir -p "$OUT/picture" "$OUT/glyphs" "$OUT/kitty"
               fresh; $s picture e2e/android-picture.sh "$APK" "$COMPANION" "$OUT/picture"
-              fresh; $s glyphs e2e/android-glyphs.sh "$APK" "$OUT/glyphs/shot.png" ;;
+              fresh; $s glyphs e2e/android-glyphs.sh "$APK" "$OUT/glyphs/shot.png"
+              fresh; $s kitty e2e/android-kitty.sh "$APK" "$COMPANION" "$OUT/kitty" ;;
           esac
           $s --finish
       - name: Check what is uploaded
