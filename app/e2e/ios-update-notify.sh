@@ -57,7 +57,7 @@ printf '{"checks":"on","latest":"%s"}' "$version" > "$state/update.json"
 closed=9; while nc -z 127.0.0.1 "$closed" 2>/dev/null; do closed=$((closed + 1)); done
 companion_start "$work/serve.log" L "$work/herdr-anywhere" serve --listen "127.0.0.1:$port" --hc "$hc" --state "$state" \
   --releases "http://127.0.0.1:$closed" || exit 1
-link=$(L "$work/herdr-anywhere" pair --url "http://127.0.0.1:$port" --state "$state" 2>/dev/null | grep -o 'http://[^ ]*#pair=[A-Za-z0-9_-]*' | head -1)
+link=$(L "$work/herdr-anywhere" pair --ttl 60m --url "http://127.0.0.1:$port" --state "$state" 2>/dev/null | grep -o 'http://[^ ]*#pair=[A-Za-z0-9_-]*' | head -1)
 [ -n "$link" ] || { echo "FAIL: no pairing link"; exit 1; }
 printf "export const COMPANION: number = 0\nexport const PAIR: string = '%s'\n" "$link" > "$app/e2e/pair.ts"
 "$app/ios/build.sh" ios-e2e.tsx simulator > "$work/build.log" 2>&1 || { tail -20 "$work/build.log"; echo "FAIL: ios/build.sh"; exit 1; }
@@ -82,7 +82,8 @@ uitest() { # NAME: runs testNAME, its words to $out/NAME.txt
   TEST_RUNNER_OUT="$out/$1.txt" TEST_RUNNER_SHOTS="$out/$1" TEST_RUNNER_UPDATE_JSON="$state/update.json" TEST_RUNNER_ASK="$work/ask" TEST_RUNNER_BEFORE="$before" TEST_RUNNER_AFTER="${AFTER:-}" \
     TEST_RUNNER_WAITS="${WAITS:-0 5 10 20 30 60}" TEST_RUNNER_ROUNDS="${ROUNDS:-3}" \
     perl -e 'alarm 3000; exec @ARGV' xcodebuild test -project "$work/uitest/KeyboardCheck.xcodeproj" -scheme UITests \
-    -only-testing:"UITests/Notifications/test$2" -destination "id=$SIM_UDID" -derivedDataPath "$work/uitest/derived" > "$work/uitest-$1.log" 2>&1 || rc=$?
+    -only-testing:"UITests/Notifications/test$2" -destination "id=$SIM_UDID" -derivedDataPath "$work/uitest/derived" \
+    -resultBundlePath "$work/result-$1.xcresult" > "$work/uitest-$1.log" 2>&1 || rc=$?
   sed 's/^/  /' "$out/$1.txt" 2>/dev/null || true
   cp "$work/uitest-$1.log" "$out/$1-xcodebuild.log" 2>/dev/null || true
   [ "$rc" = 0 ] && return 0
@@ -90,6 +91,9 @@ uitest() { # NAME: runs testNAME, its words to $out/NAME.txt
   grep -E "error: |XCTAssert|Failing tests|^	" "$work/uitest-$1.log" | grep -v "^	*$" | tail -15 | cut -c1-300
   # The test opens the app itself, so whether it ever connected is asked only now: if not, what may explain it.
   HM_CONNECT_WAIT=1 "$app/e2e/ios-connect-wait.sh" "$SIM_UDID" "$id" "$work/serve.log" "$work/started" "$out/connect-failure" || true
+  # XCTest's screenshots and the app's view tree at the failure, the simulator's crash reports, the Companion's log.
+  "$app/e2e/ios-xcresult.sh" "$work/result-$1.xcresult" "$out/$1-failure" all || true
+  sh "$app/e2e/ios-failure-logs.sh" "$work/started" "$work/serve.log" "$out/$1-failure" || true
   exit 1
 }
 
