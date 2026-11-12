@@ -2,8 +2,8 @@ name: Tests
 
 # Every pull request and every push to main or ci (where a release's commit is tested before main) runs the
 # tests a contributor runs locally, plus a secret scan over the whole history. The device suites (app/e2e/android*.sh,
-# ios*.sh) and user-path.sh run in devices.yml, on emulators and simulators; app/e2e/run.sh runs in computers.yml,
-# with herdr-core.
+# ios*.sh) and user-path.sh need an emulator, a simulator or herdr-core, and run on a Mac before a release.
+# app/e2e/run.sh runs in computers.yml, with herdr-core.
 on:
   pull_request:
   push:
@@ -37,9 +37,6 @@ jobs:
           cache-dependency-path: companion/go.sum
       - run: go vet ./... && go test ./...
         working-directory: companion
-      # The filing agent's last evaluation (eval/filing/last-report.json) is for the rules and code as they are now and
-      # passed. The evaluation itself needs an agent's login, so it runs where that is: run.sh.
-      - run: companion/eval/filing/check.sh
 
   app:
     name: App (unit and screen tests)

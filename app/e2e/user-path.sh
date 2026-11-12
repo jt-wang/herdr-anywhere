@@ -6,7 +6,7 @@
 set -eu
 files=$(cd "${1:?give the folder with the release files}" && pwd)
 app=$(cd "$(dirname "$0")/.." && pwd)
-hc=${HM_TEST_HC:-$(command -v hc || echo "$HOME/.local/bin/hc")}
+hc=$(command -v hc || echo "$HOME/.local/bin/hc")
 core=$(command -v herdr-core || echo "$HOME/.local/bin/herdr-core")
 # Short: the companion's control socket path must stay under 104 bytes.
 work=$(mktemp -d /tmp/hmupXXXX)
