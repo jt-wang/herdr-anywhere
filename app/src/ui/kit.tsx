@@ -174,15 +174,12 @@ const FADE = ['bg-sidebar/20', 'bg-sidebar/45', 'bg-sidebar/70', 'bg-sidebar/90'
 
 /** A row of buttons that scrolls sideways: while more lies past its end, the end fades, so a button cut there reads as more to scroll to. */
 export function ChoiceRow(props: { testID?: string; children?: any }) {
-  // Taken once: read in the JSX below, `props.children` would be made again (every button with it) each time what it
-  // reads changes, such as the menu after any agent's report, and a button under a finger would lose its press.
-  const children = props.children
   const shown = signal(0), content = signal(0), offset = signal(0)
   const more = () => content() - offset() - shown() > 1
   return (
     <View class="flex-1 min-w-0">
       <Scroll horizontal scrollEventThrottle={16} scrollbar={false} onLayout={(b) => shown.set(b.size.width)} onScroll={(e) => offset.set(e.offset.x)}>
-        <View class="flex-row gap-1.5" onLayout={(b) => content.set(b.size.width)}>{children}</View>
+        <View class="flex-row gap-1.5" onLayout={(b) => content.set(b.size.width)}>{props.children}</View>
       </Scroll>
       <If when={more()}>
         <View testID={props.testID ? `${props.testID}-more` : undefined} pointerEvents="none" class="absolute right-0 top-0 bottom-0 flex-row">

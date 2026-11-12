@@ -85,7 +85,13 @@ export function PaneBar(props: { store: Store; session: TerminalSession; program
         <View testID="answers" class="flex-row items-center gap-1.5 pl-2 pr-1 py-1">
           <ChoiceRow testID="choices">
             {/* in the terminal's order, as its numbers go */}
-            <Each of={m().options} key={(o) => `${o.n}. ${o.full}`}>{(o) => choiceRow.button(o, pick, (title) => s.toast({ title, level: 'info' }))}</Each>
+            <Each of={m().options} key={(o) => `${o.n}. ${o.full}`}>{(o) => (
+              <View role="button" testID={`choice-${o().n}`} accessibilityLabel={`${o().n}. ${o().full}`} onPress={() => void pick(o())}
+                onLongPress={() => s.toast({ title: `${o().n}. ${o().full}`, level: 'info' })}
+                class={`h-9 max-w-[230px] px-3.5 justify-center rounded-[8px] ${o().selected ? 'bg-primary active:opacity-80' : 'bg-secondary border border-border active:bg-accent'}`}>
+                <Text class={`text-[14px] font-medium ${o().selected ? 'text-primary-foreground' : 'text-foreground'}`} numberOfLines={1}>{`${o().n}. ${o().label}`}</Text>
+              </View>
+            )}</Each>
           </ChoiceRow>
           <BarButton glyph="keyboard" label={t('typeInstead')} testID="show-composer" onPress={() => { typing.set(true); if (here() === 'terminal') props.session.focus() }} />
         </View>
@@ -111,21 +117,6 @@ export function PaneBar(props: { store: Store; session: TerminalSession; program
 
 /** Attach: a photo or a file from the phone, sent to the machine the terminal is on; `land` gets each one's upload
  *  and puts its path where typing goes (the input box, or the terminal). */
-/** One button of the row of choices, made once for each option the row keeps (by its number and words): the cursor
- *  moving on the agent's screen changes only its colour. A button made again under a finger loses the press, so a
- *  test counts how often this runs (fixtures/fake.tsx, `fake-choice-draws`). */
-export const choiceRow = {
-  button(o: () => Option, pick: (o: Option) => void, toast: (title: string) => void) {
-    return (
-      <View role="button" testID={`choice-${o().n}`} accessibilityLabel={`${o().n}. ${o().full}`} onPress={() => void pick(o())}
-        onLongPress={() => toast(`${o().n}. ${o().full}`)}
-        class={`h-9 max-w-[230px] px-3.5 justify-center rounded-[8px] ${o().selected ? 'bg-primary active:opacity-80' : 'bg-secondary border border-border active:bg-accent'}`}>
-        <Text class={`text-[14px] font-medium ${o().selected ? 'text-primary-foreground' : 'text-foreground'}`} numberOfLines={1}>{`${o().n}. ${o().label}`}</Text>
-      </View>
-    )
-  },
-}
-
 export async function attachFiles(store: Store, addr: string, land: (name: string, go: () => Promise<string>) => Promise<void>) {
   const api = store.files
   if (!api) return
