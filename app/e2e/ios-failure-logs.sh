@@ -69,9 +69,16 @@ elif [ "${1:-}" = --self-test ]; then
   mkdir "$t/w"
   HM_LOAD_EVERY=0.05 sh "$0" --sample-load "$t/w/load.txt" >/dev/null 2>&1 & sampler=$!
   sleep 0.5
-  { kill "$sampler"; wait "$sampler"; } 2>/dev/null
+  { kill "$sampler"; wait "$sampler"; } 2>/dev/null || true
   rm -f "${t:?}/w/load.txt"; sleep 0.3
   [ -e "$t/w/load.txt" ] && { echo "FAIL: ios-failure-logs self-test: the sampler wrote after it was stopped"; fail=1; }
+  # A job stopped with kill makes its wait return 143; under set -e that ends the suite there, with 143 and no word of
+  # why (the pictures suite stopped its UIKit log after the light run so). Every kill-then-wait says || true.
+  for f in "$(dirname "$0")"/*.sh "$(dirname "$0")"/ci/*.sh; do
+    grep -nE 'kill "\$[A-Za-z_]+"; wait "\$[A-Za-z_]+"' "$f" | grep -v '|| true' | while IFS= read -r l; do
+      echo "FAIL: ios-failure-logs self-test: $(basename "$f"):${l%%:*} waits on a job it killed with no || true"
+    done | grep . && fail=1
+  done
   for f in "$(dirname "$0")"/*.sh; do
     grep -q -- '--sample-load "\$work' "$f" || continue
     started=$(grep -c -- '--sample-load "\$work.*& sampler=\$!' "$f")

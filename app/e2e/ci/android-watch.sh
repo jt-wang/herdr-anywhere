@@ -101,7 +101,7 @@ self_test() {
   upto "the note that the phone is back" has "$t/out/lost-1.txt" "back after"
   state "error: device 'emulator-5554' not found"
   n_after=; upto "the second note" noted "$t/out/lost-2.txt"
-  kill "$w"; wait "$w" 2>/dev/null
+  kill "$w"; wait "$w" 2>/dev/null || true
   local one="$t/out/lost-1.txt" two="$t/out/lost-2.txt"
   for want in "adb lost the phone: error: device offline" "== free -m" "== qemu" "emulator: INFO: boot completed" "I hm: phone log line" "back after"; do
     grep -qF "$want" "$one" 2>/dev/null || { echo "FAIL: self-test: the first note has no \"$want\""; fail=1; }

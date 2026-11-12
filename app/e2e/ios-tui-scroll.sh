@@ -28,7 +28,7 @@ mkdir -p "$work/sam/src/acme-api" "$work/state" "$work/config" "$work/data"
 cleanup() {
   st=$?; set +e
   # The sampler first: a sample written while rm -rf runs makes load.txt again, and the folder is not deleted.
-  { kill "$sampler"; wait "$sampler"; } 2>/dev/null
+  { kill "$sampler"; wait "$sampler"; } 2>/dev/null || true
   [ -n "${serve_pid:-}" ] && kill "$serve_pid" 2>/dev/null
   # The same session the core was started in below, or `server stop` finds no core and leaves its holder running.
   HC_SESSION="hmios-$$" HC_SOCKET="" HOME="$work/sam" XDG_RUNTIME_DIR="$run" "$hc" server stop >/dev/null 2>&1 || true
