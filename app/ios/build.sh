@@ -35,7 +35,7 @@ case $sdk in
 esac
 # arm64 only, for the packages too: NSH ships no x86_64 simulator slice (project.yml's EXCLUDED_ARCHS covers the app).
 xcodebuild -quiet -project "$ios/Herdr.xcodeproj" -scheme Herdr -configuration Release -destination "$dest" ARCHS=arm64 \
-  -derivedDataPath "$ios/build/derived" ${signing:-} build
+  -derivedDataPath "$ios/build/derived" -clonedSourcePackagesDirPath "$ios/build/spm" -packageCachePath "$ios/build/spm-cache" ${signing:-} build
 rm -rf "$ios/build/Herdr.app"
 cp -R "$ios/build/derived/Build/Products/$products/Herdr.app" "$ios/build/Herdr.app"
 echo "→ ios/build/Herdr.app"
