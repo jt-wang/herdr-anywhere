@@ -1,12 +1,13 @@
 #!/bin/bash
 # What the device suites need on a GitHub runner (Linux x64 or macOS Arm), each at a fixed version checked by its
 # sha256. Tells the later steps where each is through $GITHUB_ENV and $GITHUB_PATH.
-# Usage: app/e2e/ci/tools.sh core|nsh|zsh|shots|ios …
+# Usage: app/e2e/ci/tools.sh core|nsh|zsh|shots|ios|omp …
 #   core   herdr-core, as HM_TEST_HC, and hc beside it on PATH as Herdr's installer puts it (a link to herdr-core)
 #   nsh    nsh in ~/.nsh (ios/build.sh takes NativeShell from there), as NSH_HOME
 #   zsh    zsh (the e2e terminals run zsh, as on a Mac)
 #   shots  what ci-shots-check.sh needs: python with zxing-cpp and Pillow as HM_SHOTS_PYTHON, tesseract and ffmpeg
 #   ios    xcodegen and idb (idb-companion and the fb-idb client)
+#   omp    Oh My Pi's release binary for Linux x64, as HM_TEST_OMP (android-kitty.sh)
 # herdr-core and nsh are the versions computers.yml pins; update both files together.
 set -euo pipefail
 tmp=${RUNNER_TEMP:?run on a GitHub runner}
@@ -88,9 +89,17 @@ ios() {
   echo "$tmp/idb-py/bin" >> "$path_"
 }
 
+omp() {
+  [ $os = linux ] || { echo "omp is fetched only on a Linux runner"; exit 2; }
+  get https://github.com/can1357/oh-my-pi/releases/download/v18.13.3/omp-linux-x64 omp \
+    42d39fa8996fed9f999e26306e60e2fdbea0c0de0d0b2d68feba275f44c41d04
+  chmod +x "$tmp/omp"
+  echo "HM_TEST_OMP=$tmp/omp" >> "$env_"
+}
+
 for what in "$@"; do
   case $what in
-    core) core ;; nsh) nsh ;; zsh) zsh_ ;; shots) shots ;; ios) ios ;;
+    core) core ;; nsh) nsh ;; zsh) zsh_ ;; shots) shots ;; ios) ios ;; omp) omp ;;
     *) echo "unknown: $what"; exit 2 ;;
   esac
 done
