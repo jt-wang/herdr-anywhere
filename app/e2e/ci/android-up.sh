@@ -53,4 +53,4 @@ echo "booted: Android $("$adb" shell getprop ro.build.version.release | tr -d '\
 echo "keyboards: $("$adb" shell ime list -s | tr -d '\r' | tr '\n' ' ')"
 # WiFi off: the suites go out through mobile data alone (android-net.sh says why).
 . "$here/../android-net.sh"
-mobile_only 120
+mobile_only 180
