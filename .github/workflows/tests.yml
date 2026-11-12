@@ -79,6 +79,21 @@ jobs:
           echo "$HOME/.nsh/bin" >> "$GITHUB_PATH"
       - run: nsh --version && nsh check && scripts/test.sh
         working-directory: app
+      - name: Keep nsh crash reports after a failed test
+        if: failure()
+        run: |
+          mkdir -p "$RUNNER_TEMP/nsh-crashes"
+          for reports in "$HOME/Library/Logs/DiagnosticReports" /Library/Logs/DiagnosticReports; do
+            if [ -d "$reports" ]; then
+              find "$reports" -type f -name 'nsh-*.ips' -exec cp {} "$RUNNER_TEMP/nsh-crashes/" \;
+            fi
+          done
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: nsh-crashes
+          path: ${{ runner.temp }}/nsh-crashes/
+          retention-days: 3
 
   ios27:
     name: iPhone app opens on iOS 27 (simulator)
