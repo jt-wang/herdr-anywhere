@@ -10,7 +10,8 @@
 #        [HM_RESUME_APP=<built Herdr.app>] e2e/ios-resume.sh <out folder>
 # HM_RESUME_APP installs that build (from ios-e2e.tsx, e.g. an older commit's, for a before/after) instead of building.
 # APPEARANCE is put back as it was after the run.
-# Writes <out>/timeline.txt, <out>/screen.txt, <out>/companion.log (token and addresses masked), <out>/probes.txt (each
+# Writes <out>/timeline.txt, <out>/screen.txt, <out>/companion.log and <out>/app-output.log (token and addresses masked;
+# on a failure also uitest.log and system.log), <out>/probes.txt (each
 # check of the line when back in the front: ms, answered; none from a build before it) and <out>/shot-*.png.
 # HM_RESUME_EXPECT=calm fails the run when, after a switch back, the screen says the computer doesn't answer (the banner
 # with the command and Pair again, en only), though the computer ran the whole time: the user's report, 0.1.26.
@@ -65,6 +66,7 @@ if [ -n "${HM_RESUME_SELFTEST:-}" ]; then
   check "lost after a switch: none in a calm record" "$(grep -v '^102' "$d/lost" > "$d/calm"; lost_after_switch "$d/calm" "$no")" ''
   check "lost after a switch: the words from en.ts" "$(lost_words)" "$no"
   rm -rf "$d"
+  sh "$(dirname "$0")/ios-connect-wait.sh" --self-test || bad=1
   [ "$bad" = 0 ] && echo "PASS: self-test" || { echo "FAIL: self-test"; exit 1; }
   exit 0
 fi
@@ -79,6 +81,7 @@ fixtures="$app/../companion/internal/chat/claude/testdata/claude-code/2.1.322"
 mkdir -p "$out"; out=$(cd "$out" && pwd)
 port=7781; while nc -z 127.0.0.1 "$port" 2>/dev/null; do port=$((port + 1)); done
 work=$(mktemp -d); run=$(mktemp -d /tmp/hmXXXX); state=$(mktemp -d /tmp/hmtcXXXX)
+: > "$work/started"
 mkdir -p "$work/h/src/acme-api" "$work/state" "$work/config" "$work/data" "$work/claude"
 : > "$work/h/.zshrc"
 # A fake home, and an autostart name of the run's own: `pair` that finds no serve sets up autostart, and must not
@@ -87,7 +90,7 @@ L() { env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin
   LANG=en_US.UTF-8 HC_SESSION="hmresume-$$" HC_SOCKET="" XDG_STATE_HOME="$work/state" XDG_CONFIG_HOME="$work/config" \
   XDG_DATA_HOME="$work/data" XDG_RUNTIME_DIR="$run" CLAUDE_CONFIG_DIR="$work/claude" \
   HERDR_ANYWHERE_AUTOSTART_NAME="hmresume-$$" "$@"; }
-serve_pid=; guard_pid=; test_pid=; was_look=; log_pid=
+serve_pid=; guard_pid=; test_pid=; was_look=
 # The companion, found by its --state folder (it runs a few processes below the one started): TERM, then it must be gone
 # and its port free within 5 s, or the run fails (AGENTS.md); one still there is killed so none is left behind. On a CI
 # runner (devices.yml, group ios-resume), killing the shell that started it and that shell's children left it serving
@@ -111,11 +114,15 @@ cleanup() {
   set +e
   [ -n "$was_look" ] && xcrun simctl ui "$SIM_UDID" appearance "$was_look" && echo "appearance back to $(xcrun simctl ui "$SIM_UDID" appearance)"
   [ -n "$guard_pid" ] && kill "$guard_pid" 2>/dev/null
-  [ -n "$log_pid" ] && kill "$log_pid" 2>/dev/null
-  # The app's own log (TailPocket's tunnel, the app's errors), masked as the companion's, and on a failure the UI
-  # test's whole output, so a run that stops says where and why.
-  [ -s "$work/app.log" ] && sed -E "$mask" "$work/app.log" > "$out/app.log"
-  [ "$status" = 0 ] || { [ -s "$work/uitest/test.log" ] && sed -E "$mask" "$work/uitest/test.log" > "$out/uitest.log"; }
+  # The app's own output (its errors, TailPocket's tunnel), masked as the companion's; on a failure the UI test's whole
+  # output, and what the system said about the app in its last 3 minutes: runningboardd and SpringBoard end apps in the
+  # background, and say why (only their lines naming the app). A run that stops says where and why.
+  cat "$work/app.out" "$work/app.err" 2>/dev/null | sed -E "$mask" > "$out/app-output.log"
+  if [ "$status" != 0 ]; then
+    [ -s "$work/uitest/test.log" ] && sed -E "$mask" "$work/uitest/test.log" > "$out/uitest.log"
+    xcrun simctl spawn "$SIM_UDID" log show --last 3m --style compact \
+      --predicate 'process == "runningboardd" OR process == "SpringBoard"' 2>/dev/null | grep -F "$id" | sed -E "$mask" > "$out/system.log"
+  fi
   [ -n "$test_pid" ] && kill "$test_pid" 2>/dev/null
   if [ -n "$serve_pid" ]; then
     stop_companion || status=1
@@ -192,12 +199,8 @@ fi
 [ -n "$link" ] || { echo "FAIL: no pairing link or invite"; exit 1; }
 mkdir -p "$(dirname "$store")"
 python3 -c 'import json,sys; json.dump({"e2e-pair": sys.argv[2], "e2e-open-settings": "99"}, open(sys.argv[1], "w"))' "$store" "$link"
-xcrun simctl spawn "$SIM_UDID" log stream --style compact --level info --predicate 'process == "Herdr"' > "$work/app.log" 2>&1 &
-log_pid=$!
-xcrun simctl launch "$SIM_UDID" "$id" -AppleLanguages "(${LANG_TAG:-en})" >/dev/null
-i=0; until grep -q "device .* connected (binary," "$work/serve.log"; do
-  i=$((i + 1)); [ $i -gt 120 ] && { echo "FAIL: the app never connected"; sed -E "$mask" "$work/serve.log" | tail -8; exit 1; }; sleep 1
-done
+xcrun simctl launch --stdout="$work/app.out" --stderr="$work/app.err" "$SIM_UDID" "$id" -AppleLanguages "(${LANG_TAG:-en})" >/dev/null
+HM_CONNECT_WAIT=${HM_CONNECT_WAIT:-120} "$app/e2e/ios-connect-wait.sh" "$SIM_UDID" "$id" "$work/serve.log" "$work/started" "$out/connect-failure" || exit 1
 
 screen="$out/screen.txt"; rm -f "$screen" "$screen.stop" "$out"/shot-*.png
 TEST_RUNNER_OUT="$screen" TEST_RUNNER_SHOTS="$out/shot" TEST_RUNNER_SPACE=spresume TEST_RUNNER_AWAY="${AWAY:-10,60}" \
