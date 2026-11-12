@@ -145,19 +145,33 @@ type msg struct {
 	m      message
 }
 
-// branch reads a conversation file's end: its messages along the chain from the last entry back, and its folder.
-func branch(path string) ([]msg, string, error) {
-	ls, _, err := chat.TailLines(path)
+// window is where a conversation file is read from: its last MaxTail bytes, or from the person's last message when that
+// is further back (a turn running commands with large outputs).
+func window(path string) (int64, error) {
+	off, _, err := chat.Start(path, []byte(`"role":"user"`), isUser)
+	return off, err
+}
+
+func isUser(raw []byte) bool {
+	var e entry
+	var m message
+	return json.Unmarshal(raw, &e) == nil && e.Type == "message" && json.Unmarshal(e.Message, &m) == nil && m.Role == "user"
+}
+
+// branch reads a conversation file's end: its messages along the chain from the last entry back, and its folder. cut:
+// the chain goes on before the window.
+func branch(path string) (_ []msg, cwd string, cut bool, _ error) {
+	off, err := window(path)
 	if err != nil {
-		return nil, "", err
+		return nil, "", false, err
 	}
 	byID := map[string]entry{}
 	var last string
-	cwd := ""
-	for _, raw := range ls {
+	var rerr error
+	for raw := range chat.Lines(path, off, &rerr) {
 		var e entry
 		if json.Unmarshal(raw, &e) != nil {
-			return nil, "", chat.Formatf("a line that isn't JSON")
+			return nil, "", false, chat.Formatf("a line that isn't JSON")
 		}
 		if e.Type == "session" {
 			cwd = e.Cwd
@@ -169,11 +183,15 @@ func branch(path string) ([]msg, string, error) {
 		byID[e.ID] = e
 		last = e.ID
 	}
+	if rerr != nil {
+		return nil, "", false, rerr
+	}
 	var chain []entry
 	for id, n := last, 0; id != "" && n <= len(byID); n++ {
 		e, ok := byID[id]
 		if !ok {
-			break // the window starts here
+			cut = true // the window starts here
+			break
 		}
 		chain = append(chain, e)
 		if e.ParentID == nil {
@@ -189,11 +207,11 @@ func branch(path string) ([]msg, string, error) {
 		}
 		var m message
 		if json.Unmarshal(e.Message, &m) != nil {
-			return nil, "", chat.Formatf("message %s", e.ID)
+			return nil, "", false, chat.Formatf("message %s", e.ID)
 		}
 		out = append(out, msg{id: e.ID, at: e.Timestamp, m: m})
 	}
-	return out, cwd, nil
+	return out, cwd, cut, nil
 }
 
 func rel(p, cwd string) string {
@@ -291,7 +309,7 @@ func (r *Reader) Turns(path string) ([]chat.Turn, error) {
 // parse: a person's message opens a turn; the model's texts are notes between its steps, the last one its reply; the
 // turn is over when the model stops without calling a tool (stopReason stop), or stopped (aborted, error).
 func parse(path string) ([]chat.Turn, error) {
-	ms, cwd, err := branch(path)
+	ms, cwd, cut, err := branch(path)
 	if err != nil {
 		return nil, err
 	}
@@ -305,6 +323,12 @@ func parse(path string) ([]chat.Turn, error) {
 	var cur *chat.Turn
 	var started, ended int64
 	var pending []struct{ id, text string }
+	// head: the turn the window starts in, the person's message further back than MaxBack. Shown only when no message
+	// of the person's is in the window, so a long turn is never no turn at all.
+	head := cut
+	if head {
+		cur = &chat.Turn{ID: "earlier", From: "you", Steps: []chat.Step{}, End: "open"}
+	}
 	flush := func() {
 		for _, p := range pending {
 			cur.Steps = append(cur.Steps, chat.Step{ID: p.id, Kind: "note", Title: title(p.text)})
@@ -333,9 +357,24 @@ func parse(path string) ([]chat.Turn, error) {
 		turns = append(turns, *cur)
 		cur = nil
 	}
+	prev := ""
 	for _, x := range ms {
+		after := prev
+		prev = x.m.Role
 		switch x.m.Role {
 		case "user":
+			// Steered in: sent while the agent worked, and taken right after a tool's result, before the turn went on
+			// (the model's last word called a tool, so the turn is open). A step of the turn, where it was taken. A
+			// follow-up comes after the model stopped, and opens a turn of its own.
+			if cur != nil && cur.End == "open" && after == "toolResult" {
+				head = false
+				flush()
+				cur.Steps = append(cur.Steps, chat.Step{ID: x.id, Kind: chat.StepYou, Title: strings.TrimSpace(x.m.text())})
+				continue
+			}
+			if head {
+				cur, pending, head = nil, nil, false
+			}
 			finish()
 			cur = &chat.Turn{ID: x.id, From: "you", Said: x.m.text(), At: x.at, Steps: []chat.Step{}, End: "open"}
 			for i, p := range x.m.parts() {
@@ -387,7 +426,7 @@ var exited = regexp.MustCompile(`\n*Command exited with code (\d+)\s*$`)
 // Detail finds a step again: a command and what it printed, a file's change, a note's or a thought's whole text, a
 // read file's text and images.
 func (r *Reader) Detail(path, step string) (chat.Detail, error) {
-	ms, cwd, err := branch(path)
+	ms, cwd, _, err := branch(path)
 	if err != nil {
 		return chat.Detail{}, err
 	}
@@ -469,7 +508,7 @@ func (r *Reader) Detail(path, step string) (chat.Detail, error) {
 
 // Image finds an image again: one a person sent (entry id:n) or one in a tool's result (call id#n).
 func (r *Reader) Image(path, id string) (string, []byte, error) {
-	ms, _, err := branch(path)
+	ms, _, _, err := branch(path)
 	if err != nil {
 		return "", nil, err
 	}
