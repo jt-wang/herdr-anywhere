@@ -131,7 +131,8 @@ func TestOursWithAnotherHCIsNotChanged(t *testing.T) {
 func TestOursWithCRLFLineEnds(t *testing.T) {
 	was := current
 	t.Cleanup(func() { current, templates = was, map[int]string{version: was} })
-	current = strings.ReplaceAll(was, "\n", "\r\n")
+	// LF first: a Windows checkout already has CRLF, and a second \r would make \r\r\n.
+	current = strings.ReplaceAll(strings.ReplaceAll(was, "\r\n", "\n"), "\n", "\r\n")
 	templates = map[int]string{version: current}
 	s, _ := setup(t)
 	s.Install(false)
