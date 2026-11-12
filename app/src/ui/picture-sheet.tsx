@@ -68,7 +68,7 @@ export function PictureSheet(props: { store: Store }) {
     <View class="rounded-[8px] overflow-hidden border border-border bg-background">
       <Scroll ref={(r: YNode | null) => { zoomer = r }} testID="picture-zoom" style={box()} minimumZoomScale={1}
         maximumZoomScale={maxZoom(natural(), box())} bounces={false} centerContent scrollbar={false}
-        onScroll={(e) => { zoom.scrolled(e.zoomScale); zoomedIn.set(zoom.zoomed()) }}>
+        onScroll={(e) => { zoom.scrolled(e.zoomScale, Date.now()); zoomedIn.set(zoom.zoomed()) }}>
         <View role="button" testID="picture" accessibilityLabel={t('pictureHold')}
           onLongPress={copyImage} onPress={tap}>
           <Image testID="picture-image" src={p().url} resizeMode="contain" onLoad={(e) => natural.set({ width: e.width, height: e.height })} style={box()} />

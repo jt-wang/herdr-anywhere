@@ -71,6 +71,10 @@ tap2() { # x y: two taps about 100 ms apart, each one console command (finger do
     sleep 0.1
   done
 }
+settle() { # until two screenshots 0.4 s apart are the same (at most about 8 s): a zoom's animation, or the sheet's,
+  # has ended. On a CI runner it outlasted a fixed wait, and the next tap only stopped it.
+  sp=""; for _ in $(seq 1 20); do sc=$("$adb" exec-out screencap -p | cksum); [ "$sc" = "$sp" ] && return 0; sp=$sc; sleep 0.4; done
+}
 pinch() { # x y from to: two fingers on a level line through (x, y), from `from` px apart to `to`, in 12 steps
   px=$1 py=$2 p0=$(($3 / 2)) p1=$(($4 / 2)) # names of its own: sh has no locals, and the box is l t r b
   down 0 $((px - p0)) $py; down 1 $((px + p0)) $py
@@ -81,6 +85,7 @@ pinch() { # x y from to: two fingers on a level line through (x, y), from `from`
 for scheme in light dark; do
   "$adb" shell cmd uimode night $([ $scheme = dark ] && echo yes || echo no) >/dev/null
   "$adb" shell am force-stop "$id"
+  "$adb" logcat -c
   "$adb" shell am start -n "$id/com.longbridge.nsh.AppActivity" >/dev/null
   # The box: the zooming scroll view, which stays put while the picture in it zooms (a build from before zoom has
   # only the picture, which is as big as the box until then).
@@ -103,9 +108,17 @@ for scheme in light dark; do
   "$adb" shell input swipe $fx $fy $tx $ty 400; sleep 1.5; shot $scheme-corner-again
   if ! has 'resource-id="picture-image"'; then say "FAIL: the drags closed the sheet"; continue; fi
   say "ok: the sheet stays open under the drags"
-  tap2 $cx $cy; sleep 1.2; shot $scheme-out
-  tap2 $((l + w / 4)) $((t + (b - t) / 4)); sleep 1.2; shot $scheme-doubletap
-  tap2 $cx $cy; sleep 1.2; shot $scheme-out2
+  settle; tap2 $cx $cy; sleep 0.5; settle; shot $scheme-out
+  tap2 $((l + w / 4)) $((t + (b - t) / 4)); sleep 0.5; settle; shot $scheme-doubletap
+  tap2 $cx $cy; sleep 0.5; settle; shot $scheme-out2
+  # What the zoom did (e2e/picture-app.tsx's "hm-zoom" lines): each double tap, and the last report the scroll view
+  # sent after it, before the next.
+  "$adb" logcat -d | tr -d '\r' | grep -o 'hm-zoom .*' > "$work/$scheme-zoom-trace.txt" || true
+  [ -z "$out" ] || cp "$work/$scheme-zoom-trace.txt" "$out/$scheme-zoom-trace.txt"
+  if [ -s "$work/$scheme-zoom-trace.txt" ]; then
+    awk '/double tap to/ { if (d) print "note: " d " -> last report: " (r ? r : "none"); d = $0; r = "" } /report/ { r = $0 }
+      END { if (d) print "note: " d " -> last report: " (r ? r : "none") }' "$work/$scheme-zoom-trace.txt"
+  else echo "note: no hm-zoom lines in the device's log"; fi
   zoom_checks "$work" $scheme "$box" "$bg"
   if [ -n "$rec" ]; then
     "$adb" shell pkill -INT screenrecord >/dev/null 2>&1 || true; wait $rec 2>/dev/null || true; sleep 1
@@ -133,10 +146,10 @@ for scheme in light dark; do
     xml > "$work/back.xml"
     ! grep -qF 'resource-id="picture-sheet"' "$work/back.xml" && grep -qF 'resource-id="image-u1.1"' "$work/back.xml" \
       && say "ok: back closes the picture, back in the chat" || say "FAIL: back did not go back to the chat"
-    tap_id image-u1.1; wait_for picture-image; sleep 1; shot $scheme-before-swipe
+    tap_id image-u1.1; wait_for picture-image; sleep 1; settle; shot $scheme-before-swipe
     "$adb" shell input swipe $cx $cy $cx $((sh * 9 / 10)) 250; sleep 1.5
     has 'resource-id="picture-sheet"' && { shot $scheme-after-swipe; say "FAIL: a swipe down left the picture open"; } || say "ok: a swipe down closes the picture"
-    tap_id image-u1.1; wait_for picture-image; sleep 1
+    tap_id image-u1.1; wait_for picture-image; sleep 1; settle
     pinch $cx $cy $((w / 5)) $((w * 4 / 5)); sleep 1
     "$adb" shell input swipe $cx $((t + (b - t) / 5)) $cx $((b - (b - t) / 5)) 400; sleep 1.5
     has 'resource-id="picture-image"' && say "ok: zoomed in, a drag down moves the picture and leaves it open" || say "FAIL: zoomed in, a drag down closed the picture"
