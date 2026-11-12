@@ -6,10 +6,14 @@
 # project (read from the accessibility tree with idb).
 # Usage: SIM_UDID=<udid> e2e/ios.sh [screenshot.png]
 # SIM_UDID is required, so the run never lands on another simulator. Needs go, nsh, hc, idb, xcodegen and Xcode.
+# The pairing code lives 10 minutes (herdr-anywhere pair --ttl), so it is made after the slow parts: the app is built,
+# installed and opened once without a link first, then built again with it (only the page changes) and opened.
 set -eu
 : "${SIM_UDID:?set SIM_UDID to the simulator to use}"
 app=$(cd "$(dirname "$0")/.." && pwd)
 shot=${1:-}
+t0=$(date +%s)
+mark() { echo "ios.sh +$(($(date +%s) - t0))s $1"; }
 hc=${HM_TEST_HC:-$(command -v hc || echo "$HOME/.local/bin/hc")}
 id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$app/nsh.json")
 
@@ -28,7 +32,7 @@ cleanup() {
   printf "%s\n" "$placeholder" > "$app/e2e/pair.ts"
   chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run"
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT; trap 'exit 130' INT; trap 'exit 143' TERM
 (
   export HC_SESSION="hmios-$$" HC_SOCKET="" HOME="$work/home" SHELL=/bin/zsh
   export XDG_STATE_HOME="$work/state" XDG_CONFIG_HOME="$work/config" XDG_DATA_HOME="$work/data" XDG_RUNTIME_DIR="$run"
@@ -42,22 +46,36 @@ until curl -fsS "http://127.0.0.1:$port/api/info" >/dev/null 2>&1; do
   i=$((i + 1)); [ $i -gt 100 ] && { cat "$work/serve.log" >&2; exit 1; }
   sleep 0.1
 done
+mark "companion up"
+"$app/ios/build.sh" ios-e2e.tsx simulator >/dev/null 2>&1 || { echo "FAIL: ios/build.sh (no link)"; exit 1; }
+mark "built without a link"
+xcrun simctl boot "$SIM_UDID" 2>/dev/null || true
+xcrun simctl bootstatus "$SIM_UDID" -b >/dev/null
+mark "booted"
+xcrun simctl uninstall "$SIM_UDID" "$id" 2>/dev/null || true
+xcrun simctl install "$SIM_UDID" "$app/ios/build/Herdr.app"
+mark "installed without a link"
+xcrun simctl launch "$SIM_UDID" "$id" >/dev/null
+sleep 10
+xcrun simctl terminate "$SIM_UDID" "$id" 2>/dev/null || true
+mark "opened once without a link"
 link=$(HERDR_ANYWHERE_STATE="$work/companion" "$work/herdr-anywhere" pair --url "http://127.0.0.1:$port" 2>/dev/null | grep -o 'http://[^ ]*#pair=[A-Za-z0-9_-]*' | head -1)
 [ -n "$link" ] || { echo "pair printed no link" >&2; exit 1; }
 printf "export const PAIR: string = '%s'\n" "$link" > "$app/e2e/pair.ts"
+mark "pairing code made"
 "$app/ios/build.sh" ios-e2e.tsx simulator >/dev/null 2>&1 || { echo "FAIL: ios/build.sh"; exit 1; }
 printf "%s\n" "$placeholder" > "$app/e2e/pair.ts"
-
-xcrun simctl boot "$SIM_UDID" 2>/dev/null || true
-xcrun simctl bootstatus "$SIM_UDID" -b >/dev/null
+mark "built with the link"
 xcrun simctl uninstall "$SIM_UDID" "$id" 2>/dev/null || true
 xcrun simctl install "$SIM_UDID" "$app/ios/build/Herdr.app"
+mark "installed with the link"
 # Herdr's alert sounds ship with the app, where the app's asset: URIs look (next to its bundle, as nsh build lays out).
 container=$(xcrun simctl get_app_container "$SIM_UDID" "$id")
 for s in request done; do
   [ -f "$container/nsh/assets/assets/sounds/$s.mp3" ] || { echo "FAIL: the app has no sounds/$s.mp3"; exit 1; }
 done
 xcrun simctl launch "$SIM_UDID" "$id" >/dev/null
+mark "opened with the link"
 
 screen() { perl -e 'alarm 60; exec @ARGV' idb ui describe-all --udid "$SIM_UDID" 2>/dev/null; }
 ok=""
@@ -66,6 +84,7 @@ for _ in $(seq 1 40); do
   sleep 1
 done
 [ -n "$shot" ] && perl -e 'alarm 40; exec @ARGV' xcrun simctl io "$SIM_UDID" screenshot "$shot" >/dev/null 2>&1
+mark "waited for the connection"
 if [ -z "$ok" ]; then
   echo "FAIL: not connected over binary, or home does not list acme-api, within 40 s"
   screen | grep -o '"AXLabel":"[^"]*"' | head -20 | sed 's/^/  on screen: /'
