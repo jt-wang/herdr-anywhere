@@ -3,8 +3,8 @@ import XCTest
 // a change's before and after, on the app as built, over the Companion and a fake Claude Code (its turns slowed by
 // the script), through companion/internal/testfake/chatproxy, which this test steers by files in CTL:
 //   fold  while the agent works, the command's step opened; one answer that the computer can't tell (no-status); the
-//         answers after it: is the step still open?
-//   late  an answer from before the agent's edit step is held back until the chat shows that step, then lands: does
+//         answers after it, to the turn's end: its fold opened, is the step still open?
+//   late  an answer from before the agent's write step is held back until the chat shows that step, then lands: does
 //         the step go away? (Held for some 20 s, well within the 60 s a request waits on iOS.)
 // It fails only when it can't get to a screenshot; what the screenshots show is for comparing a before and an after
 // (its notes say it too). Screenshots to $SHOTS-<name>.png, notes to $OUT.
@@ -74,15 +74,14 @@ final class ChatFold: XCTestCase {
     put("no-status")
     guard el("chat-unknown").waitForExistence(timeout: 15) else { failed("fold: the answer that can't tell did not show"); return }
     sleep(1); shot("fold-2-doubt")
-    // Back from the doubt, the turn may have ended and folded its steps away (when is up to the CI's pace): its fold
-    // is opened then, so the step shows either way, open if the view kept what was opened.
+    // Back from the doubt, and then the turn's end, which folds its steps away (when is up to the CI's pace): the
+    // turn's fold is opened, and its step shows open only if the view kept what was opened.
     let folds = all().matching(NSPredicate(format: "identifier BEGINSWITH 'fold-'"))
-    guard until(30, { el(step).exists || (!working() && folds.count > 0) }) else { failed("fold: the turns did not come back"); return }
-    let workingBack = working()
-    if !el(step).exists { folds.element(boundBy: folds.count - 1).tap() }
+    guard until(150, { folds.count > 0 && !el(step).exists }) else { failed("fold: the turn did not come back folded"); return }
+    folds.element(boundBy: folds.count - 1).tap()
     guard el(step).waitForExistence(timeout: 10) else { failed("fold: the turn's fold did not show its step"); return }
-    sleep(2)
-    note("fold: still working when back: \(workingBack); the step open after the doubt: \(more.exists)")
+    sleep(3)
+    note("fold: the step open after the doubt and the turn's end: \(more.exists)")
     shot("fold-3-back")
     guard until(150, { !working() }) else { failed("fold: the turn did not finish"); return }
 
@@ -90,8 +89,8 @@ final class ChatFold: XCTestCase {
     put("hold")
     say("EDIT a file for me")
     guard until(30, { has("held") }) else { failed("late: no answer of the turn working was held"); return }
-    let edits = all().matching(NSPredicate(format: "identifier BEGINSWITH 'step-' AND identifier CONTAINS 'fake_edit'"))
-    guard until(90, { edits.count > 0 }) else { failed("late: the newer answers did not show the edit step"); return }
+    let edits = all().matching(NSPredicate(format: "identifier BEGINSWITH 'step-' AND identifier CONTAINS 'fake_write'"))
+    guard until(90, { edits.count > 0 }) else { failed("late: the newer answers did not show the write step"); return }
     sleep(1); shot("late-1-newer")
     put("release")
     guard until(15, { has("released") }) else { failed("late: the held answer was not sent"); return }
@@ -99,7 +98,7 @@ final class ChatFold: XCTestCase {
     let gone = until(4, { edits.count == 0 })
     shot("late-2-older-landed")
     _ = until(6, { false })
-    note("late: the edit step gone when the older answer landed: \(gone); there 6 s later: \(edits.count > 0)")
+    note("late: the write step gone when the older answer landed: \(gone); there 6 s later: \(edits.count > 0)")
     XCTAssertEqual(app.state, .runningForeground, "the app is not running in front")
   }
 }
