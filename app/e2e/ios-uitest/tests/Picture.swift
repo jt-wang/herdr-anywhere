@@ -9,6 +9,8 @@ import XCTest
 // frame and elements again, then a second tap only to see whether that one opens it; the test fails all the same. For
 // the script's self-test, MISS_FIRST=1 makes the first tap land at the top of the screen, beside the path, and
 // NO_TAP_FIRST=1 makes no first tap at all (only its notes), for the touch log to tell a tap never made from one made.
+// SPACE_MISS_NOTED=1 (the script's loop): a first tap on the space that opened nothing is noted, and the test goes on
+// to the path, which the loop is there to count.
 final class Picture: XCTestCase {
   func test() {
     let env = ProcessInfo.processInfo.environment
@@ -46,7 +48,11 @@ final class Picture: XCTestCase {
     let showed = term.waitForExistence(timeout: 20)
     note("terminal \(showed ? "showed" : "not there")")
     XCTAssertTrue(showed, "no terminal")
-    if let again { opener.finish(again: again, shown: showed) }
+    if let again {
+      if env["SPACE_MISS_NOTED"] == "1" {
+        if again { note("the first tap on the space opened nothing; the second \(showed ? "did" : "did not either") (noted, not failed: SPACE_MISS_NOTED)") }
+      } else { opener.finish(again: again, shown: showed) }
+    }
     var size: [CGFloat] = []
     for _ in 0..<30 {
       size = ((try? String(contentsOfFile: sizeFile, encoding: .utf8)) ?? "").split(separator: " ").compactMap { Double($0.trimmingCharacters(in: .whitespacesAndNewlines)) }.map { CGFloat($0) }

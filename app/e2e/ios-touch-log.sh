@@ -45,6 +45,8 @@ if [ "${1:-}" = --start ]; then
   exec xcrun simctl spawn "$2" log stream --level debug --style compact --predicate "$predicate" > "$3" 2>&1
 elif [ "${1:-}" = --self-test ]; then
   t=$(mktemp -d); fail=0
+  # The suites run this file itself (--start, the report), only the self-test through sh: it must be executable.
+  [ -x "$0" ] || { echo "FAIL: ios-touch-log self-test: $0 is not executable, and the suites run it as a program"; fail=1; }
   # The notes as Picture.swift writes them, and UIKit's lines as log stream --style compact writes them.
   cat > "$t/notes" <<'EOF'
 10:00:04.040 +4.1 s load 75.43 terminal 52 × 32

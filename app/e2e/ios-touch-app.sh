@@ -37,11 +37,14 @@ TS
 }
 # And the copy's window writes where each touch landed to the app's log (e2e/ios-touch-window.swift), which
 # e2e/ios-touch-log.sh shows beside each tap: the view, the gesture recognizers and their states, a picture sheet's views.
+# HM_TOUCH_WINDOW=off leaves the window as shipped, to compare taps with and without it.
 swift="$tree/app/ios/Sources/App.swift"
-[ "$(grep -cE 'UIWindow\((windowScene: scene|frame: UIScreen\.main\.bounds)\)' "$swift")" = 1 ] ||
-  { echo "FAIL: App.swift has changed: no single place the window is made, for e2e/ios-touch-window.swift" >&2; exit 1; }
-sed -E 's/UIWindow\((windowScene: scene|frame: UIScreen\.main\.bounds)\)/HMTouchWindow(\1)/' "$swift" > "$swift.new" && mv "$swift.new" "$swift"
-cat "$app/e2e/ios-touch-window.swift" >> "$swift"
+[ "${HM_TOUCH_WINDOW:-}" = off ] || {
+  [ "$(grep -cE 'UIWindow\((windowScene: scene|frame: UIScreen\.main\.bounds)\)' "$swift")" = 1 ] ||
+    { echo "FAIL: App.swift has changed: no single place the window is made, for e2e/ios-touch-window.swift" >&2; exit 1; }
+  sed -E 's/UIWindow\((windowScene: scene|frame: UIScreen\.main\.bounds)\)/HMTouchWindow(\1)/' "$swift" > "$swift.new" && mv "$swift.new" "$swift"
+  cat "$app/e2e/ios-touch-window.swift" >> "$swift"
+}
 "$tree/app/ios/build.sh" ios-e2e.tsx simulator > "$folder/touch-app-build.log" 2>&1 ||
   { tail -20 "$folder/touch-app-build.log" >&2; echo "FAIL: ios/build.sh (the copy with e2e/touch-times.ts)" >&2; exit 1; }
 echo "$tree/app/ios/build/Herdr.app"

@@ -49,11 +49,12 @@ on:
       # also shows the app's UIKit log with no touch for it and touches for the second tap (e2e/ios-touch-log.sh).
       # loop is no self-test: the pictures suite alone, with no Tailcat suite before it, and after its light run 20 more,
       # dark and light by turns, each counting whether its first tap on the path opened the picture (HM_PICTURE_LOOP).
+      # loop-plain is the same with the test app's window as shipped, without its touch notes (HM_TOUCH_WINDOW=off).
       # Meant with ios_b_repeat; a push never sets it.
       ios_picture_selftest:
-        description: "iOS pictures suite: none, miss-first or no-tap-first (self-tests: must fail, with their record), or loop (20 more runs, counted)"
+        description: "iOS pictures suite: none, miss-first or no-tap-first (self-tests: must fail, with their record), or loop / loop-plain (20 more runs, counted; plain: no touch-noting window)"
         type: choice
-        options: ["none", "miss-first", "no-tap-first", "loop"]
+        options: ["none", "miss-first", "no-tap-first", "loop", "loop-plain"]
         default: "none"
       # The tap that opens a space from home, in the keyboard and pictures suites (OpenSpace.swift): miss-first makes
       # the first one land beside the space, so both must fail with their record of it and a second tap. hold-sweep
@@ -472,7 +473,8 @@ jobs:
           HM_SCROLL_SLOW_TERM: ${{ inputs.ios_scroll_selftest == 'slow-terminal' && '1' || '' }}
           HM_PICTURE_MISS_FIRST: ${{ inputs.ios_picture_selftest == 'miss-first' && '1' || '' }}
           HM_PICTURE_NO_TAP_FIRST: ${{ inputs.ios_picture_selftest == 'no-tap-first' && '1' || '' }}
-          HM_PICTURE_LOOP: ${{ inputs.ios_picture_selftest == 'loop' && '20' || '' }}
+          HM_PICTURE_LOOP: ${{ (inputs.ios_picture_selftest == 'loop' || inputs.ios_picture_selftest == 'loop-plain') && '20' || '' }}
+          HM_TOUCH_WINDOW: ${{ inputs.ios_picture_selftest == 'loop-plain' && 'off' || '' }}
           HM_MISS_SPACE: ${{ inputs.ios_open_space_selftest == 'miss-first' && '1' || '' }}
           HM_HOLD_SWEEP: ${{ inputs.ios_open_space_selftest == 'hold-sweep' && '1' || '' }}
         run: |
