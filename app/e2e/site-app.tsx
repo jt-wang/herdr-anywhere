@@ -2,8 +2,7 @@
 // own, with the app's fonts and theme. The website's shot script packages it under another id, so an installed
 // Herdr Anywhere stays as it is, and takes the pictures in each language and theme.
 import './site-params.ts'
-import '../assets/fonts/Geist.ttf'
-import '../assets/fonts/JetBrainsMono-Variable.ttf'
+import '../src/fonts.ts'
 import { core } from '../fixtures/fake.tsx'
 
 // Claude Code asks too, once the first two pictures are taken (the shot script waits for its menu).
