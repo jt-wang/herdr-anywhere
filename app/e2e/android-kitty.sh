@@ -7,6 +7,8 @@
 # Model. omp (18.13.3) runs only where the suites run, a CI runner (app/e2e/ci/tools.sh omp fetches it), never on a
 # Mac.
 # Usage: ANDROID_SERIAL=emulator-5554 HM_TEST_OMP=<omp binary> e2e/android-kitty.sh APK COMPANION [folder for screenshots]
+#   HM_KITTY_BEFORE=1: an app from before (the previous release) for screenshots of how it was: the same steps, each
+#   check printed as "before:" and none failing the run.
 set -eu
 : "${ANDROID_SERIAL:?set ANDROID_SERIAL to the device to use}"
 : "${HM_TEST_OMP:?set HM_TEST_OMP to Oh My Pi 18.13.3 (app/e2e/ci/tools.sh omp)}"
@@ -99,7 +101,9 @@ chart() { # name, what it shows
   f=$work/$1.png
   "$adb" exec-out screencap -p > "$f"
   [ -z "$shots" ] || { mkdir -p "$shots"; cp "$f" "$shots/$1.png"; }
-  if out=$(python3 "$app/e2e/kitty-chart.py" "$f"); then say "ok: $2"; else say "FAIL: $2"; echo "$out"; fi
+  if out=$(python3 "$app/e2e/kitty-chart.py" "$f"); then r=ok; else r=FAIL; fi
+  if [ "${HM_KITTY_BEFORE:-}" = 1 ]; then echo "before: $2: $( [ $r = ok ] && echo drawn || echo "not drawn")"
+  else say "$r: $2"; [ $r = ok ] || echo "$out"; fi
 }
 open_pane() { tap "space-spacme"; wait_for "terminal-$term"; sleep 4; }
 # The app's and its WebView renderer's memory (PSS), from Android's summary: printed to compare with the page's
