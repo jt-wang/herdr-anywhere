@@ -6,6 +6,7 @@
 # Usage: app/e2e/ci-shots-check.sh FOLDER [SECRET…]    exits 1 and names the file when it finds one
 #        app/e2e/ci-shots-check.sh --self-test COMPANION
 #        app/e2e/ci-shots-check.sh --self-test-words      only what OCR makes of a secret (part of --self-test)
+#        app/e2e/ci-shots-check.sh --probe-grey N         measures, prints, never fails: see probe_grey
 # --self-test makes a real pairing link with COMPANION (a state of its own in a temporary folder) and checks that the
 # check finds it in a log, reads it from a QR code and leaves no code there, and finds it in a picture's words, and
 # that a folder with none of it passes. A job runs it before the real check, so a check that finds nothing fails.
@@ -125,7 +126,34 @@ self_test() {
   [ "$fail" = 0 ] && echo "PASS: self-test, $n cases" || { echo "FAIL: self-test"; return 1; }
 }
 
-if [ "${1:-}" = --self-test-words ]; then
+# The self-test's phone screen with a link in a field's grey, for N new links: how many the check misses, with
+# tesseract's threads as they come and with one, and how often two reads of one picture differ. A Linux runner's
+# check once missed it and read it on the next try; the same Ubuntu, tesseract and Pillow here (arm64 and amd64)
+# missed none of 100 and read each picture the same 20 times out of 20. With
+# what tesseract was built for and the machine's CPU, to compare. The links are made up (port 9, a random token).
+probe_grey() {
+  local n=$1 t i link a b miss=0 miss1=0 differ=0
+  t=$(mktemp -d)
+  tesseract --version 2>&1 | sed 's/^/  /'
+  echo "  cpus: $(nproc 2>/dev/null || sysctl -n hw.ncpu); $(grep -m1 'model name' /proc/cpuinfo 2>/dev/null || sysctl -n machdep.cpu.brand_string 2>/dev/null)"
+  echo "  avx512: $(grep -o -w 'avx512[a-z0-9_]*' /proc/cpuinfo 2>/dev/null | sort -u | tr '\n' ' ')"
+  for i in $(seq 1 "$n"); do
+    link="http://127.0.0.1:9/#pair=$("$py" -c 'import secrets; print(secrets.token_urlsafe(16))')"
+    rm -rf "$t/s" "$t/g"; mkdir -p "$t/g"
+    "$py" "$here/shots-check.py" sample "$t/s" "$link" > /dev/null || return 1
+    cp "$t/s/words-grey.png" "$t/g/"
+    a=$("$py" "$here/shots-check.py" words "$t/g" 2>/dev/null | cksum); b=$("$py" "$here/shots-check.py" words "$t/g" 2>/dev/null | cksum)
+    [ "$a" = "$b" ] || differ=$((differ + 1))
+    check "$t/g" > /dev/null 2>&1 && miss=$((miss + 1))
+    OMP_THREAD_LIMIT=1 check "$t/g" > /dev/null 2>&1 && miss1=$((miss1 + 1))
+  done
+  rm -rf "$t"
+  echo "probe: $n grey-field links: the check missed $miss (threads as they come) and $miss1 (one thread); two reads of one picture differed $differ times"
+}
+
+if [ "${1:-}" = --probe-grey ]; then
+  probe_grey "${2:-20}"
+elif [ "${1:-}" = --self-test-words ]; then
   misread_test
 elif [ "${1:-}" = --self-test ]; then
   [ -x "${2:-}" ] || { echo "usage: $0 --self-test COMPANION"; exit 2; }
