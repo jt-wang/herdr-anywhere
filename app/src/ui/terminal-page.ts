@@ -725,7 +725,7 @@ const BOOT = `(function () {
       stopped = stopGlide();
       if (e.touches.length !== 1) { t0 = null; selecting = null; return; }
       var p = e.touches[0];
-      t0 = { x: p.clientX, y: p.clientY, at: Date.now() }; moved = false; scrolled = 0; selecting = null; dragging = false; trail = []; drag = null;
+      t0 = { x: p.clientX, y: p.clientY, at: e.timeStamp }; moved = false; scrolled = 0; selecting = null; dragging = false; trail = []; drag = null;
       press = setTimeout(function () { if (!t0 || moved) return; selecting = selectWord(cell(t0.x, t0.y)); }, 450);
     }, { passive: true });
     box.addEventListener('contextmenu', function (e) { e.preventDefault(); });
@@ -748,8 +748,11 @@ const BOOT = `(function () {
       clearTimeout(press);
       e.preventDefault();
       if (!t0 || e.touches.length) return;
-      var p = e.changedTouches[0], dx = p.clientX - t0.x, dy = p.clientY - t0.y, ms = Date.now() - t0.at, start = t0;
+      var p = e.changedTouches[0], dx = p.clientX - t0.x, dy = p.clientY - t0.y, ms = e.timeStamp - t0.at, start = t0;
       t0 = null;
+      // How long the finger stayed is the events' own times: a page busy while the finger lifts gets to the lift
+      // late, and its hold timer may have gone first, although the tap was quick.
+      if (selecting && ms < 450 && !moved) { selecting = null; term.clearSelection(); }
       if (selecting) { selecting = null; var text = selectedText(); if (text) post({ t: 'selected', text: text }); return; }
       if (dragging && trail.length > 1 && e.timeStamp - trail[trail.length - 1].at < 60) {
         var a = trail[0], z = trail[trail.length - 1];

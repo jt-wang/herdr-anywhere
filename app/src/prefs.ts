@@ -18,8 +18,12 @@ export type Prefs = { appearance: Appearance; typeIn: TypeIn; fontSize: number; 
   /** The progress page's headings the user folded, by task id. */
   progressFolded: string[]
   /** How many times the app has opened: the question about checking for new versions waits for the second. */
-  opened: number }
-export const DEFAULTS: Prefs = { appearance: 'system', typeIn: 'composer', fontSize: 13, alertBlocked: true, alertDone: true, stayConnected: true, dismissedUpdate: '', askedNotifications: false, showAgentNames: true, progressFirst: false, progressAgent: '', progressLang: '', homeView: 'progress', progressFolded: [], opened: 0 }
+  opened: number
+  /** An agent's pane opens in its chat view (ui/chat.tsx) rather than its terminal: the view picked last. */
+  chatFirst: boolean
+  /** The agents whose chat setup the phone has asked about once by itself (ui/chat.tsx); it doesn't ask them again. */
+  chatSetupAsked: string[] }
+export const DEFAULTS: Prefs = { appearance: 'system', typeIn: 'composer', fontSize: 13, alertBlocked: true, alertDone: true, stayConnected: true, dismissedUpdate: '', askedNotifications: false, showAgentNames: true, progressFirst: false, progressAgent: '', progressLang: '', homeView: 'progress', progressFolded: [], opened: 0, chatFirst: false, chatSetupAsked: [] }
 import { FONT_MAX, FONT_MIN } from './ui/terminal-page.ts'
 export { FONT_MAX, FONT_MIN }
 
@@ -60,5 +64,7 @@ function clean(p: Prefs): Prefs {
     progressFolded: Array.isArray(p.progressFolded) ? p.progressFolded.filter((x): x is string => typeof x === 'string') : [],
     dismissedUpdate: typeof p.dismissedUpdate === 'string' ? p.dismissedUpdate : '',
     opened: Math.max(0, Math.floor(Number(p.opened) || 0)),
+    chatFirst: p.chatFirst === true,
+    chatSetupAsked: Array.isArray(p.chatSetupAsked) ? p.chatSetupAsked.filter((x): x is string => typeof x === 'string') : [],
   }
 }

@@ -1,6 +1,6 @@
 // Pairing with the companion (`herdr-anywhere pair` prints `<url>/#pair=<code>`) and the saved link.
 import { expect, test } from 'nsh/test'
-import { companionVersion, folderApi, imageApi, Linker, pairThrough, parseInvite, parsePairLink, pairWith, type Tunnel } from './link.ts'
+import { chatApi, companionVersion, folderApi, imageApi, Linker, pairThrough, parseInvite, parsePairLink, pairWith, type Tunnel } from './link.ts'
 
 test('a pairing link names the computer and the code; anything else is not one', () => {
   expect(parsePairLink(' http://192.168.1.20:7681/#pair=K7QD-M2XP ')).toEqual({ url: 'http://192.168.1.20:7681', code: 'K7QD-M2XP' })
@@ -304,6 +304,36 @@ test('through TailPocket, the folder calls go to the tunnel the pipes use', asyn
   l.pipe()
   await folderApi(l, fetch).list('~')
   expect(urls).toEqual(['http://127.0.0.1:40001/api/folders?path=~', 'http://127.0.0.1:40001/api/folders?path=~'])
+})
+
+test('the chat calls send the token and the address; an older companion without them has no chat', async () => {
+  const linker = new Linker({ load: async () => null, save: () => {}, remove: () => {} })
+  linker.set({ url: 'http://192.0.2.10:7681', token: 'tk', device: 'd', name: 'studio', enc: 'bin' })
+  const asked: { url: string; auth: string }[] = []
+  const answer = (status: number, body: unknown) => (async (u: string, init: any) => { asked.push({ url: u, auth: init.headers.authorization }); return { ok: status < 300, status, json: async () => body } }) as any
+  const turns = [{ id: 'u1', from: 'you', said: 'hi', steps: [], reply: 'hello', end: 'done' }]
+  expect(await chatApi(linker, answer(200, { chat: true, turns })).get('t1')).toEqual({ chat: true, turns })
+  expect(asked[0]).toEqual({ url: 'http://192.0.2.10:7681/api/chat/t1', auth: 'Bearer tk' })
+  expect(await chatApi(linker, answer(404, 'not found')).get('t1')).toEqual({ chat: false })
+  expect(await chatApi(linker, answer(200, { chat: true, unknown: 'behind' })).get('t1')).toEqual({ chat: true, unknown: 'behind' })
+  await chatApi(linker, answer(200, { chat: false })).get('rohan/t7')
+  expect(asked.at(-1)!.url).toBe('http://192.0.2.10:7681/api/chat/rohan%2Ft7')
+  expect(await chatApi(linker, answer(200, { input: 'ls', output: 'a' })).step('t1', 'toolu_1')).toEqual({ input: 'ls', output: 'a' })
+  expect(asked.at(-1)!.url).toBe('http://192.0.2.10:7681/api/chat/t1/steps/toolu_1')
+  expect(await chatApi(linker, answer(404, { error: 'no such step' })).step('t1', 'toolu_9')).toBe(null)
+  expect(await chatApi(linker, answer(200, { input: 'a.png', output: '', images: [{ id: 'toolu_1.0', source: '/w/a.png' }, { id: 7 }, 'x'] })).step('t1', 'toolu_1'))
+    .toEqual({ input: 'a.png', output: '', images: [{ id: 'toolu_1.0', source: '/w/a.png' }, { id: 'x' }] })
+  // A Companion from before images had sources sends their ids alone.
+  expect(await chatApi(linker, answer(200, { input: 'a.png', output: '', images: ['toolu_1.0'] })).step('t1', 'toolu_1')).toEqual({ input: 'a.png', output: '', images: [{ id: 'toolu_1.0' }] })
+  expect((await chatApi(linker, answer(200, { chat: true, turns: [{ id: 'u1', from: 'you', said: '', images: ['u1.0', { id: 'u1.1', source: '/s.png' }], steps: [], reply: '', end: 'done' }] })).get('t1')).turns![0].images)
+    .toEqual([{ id: 'u1.0' }, { id: 'u1.1', source: '/s.png' }])
+  expect(await chatApi(linker, answer(200, { url: 'data:image/png;base64,iVBO' })).image('t1', 'u1.1')).toBe('data:image/png;base64,iVBO')
+  expect(asked.at(-1)!.url).toBe('http://192.0.2.10:7681/api/chat/t1/images/u1.1')
+  expect(await chatApi(linker, answer(200, { url: 'https://example.com/x.png' })).image('t1', 'u1.1')).toBe(null)
+  expect(await chatApi(linker, answer(404, { error: 'no such image' })).image('t1', 'u1.9')).toBe(null)
+  let threw = false
+  await chatApi(linker, (async () => { throw new Error('down') }) as any).get('t1').catch(() => { threw = true })
+  expect(threw).toBe(true)
 })
 
 // The tap and the underline go only to what is a picture on that computer: it says so for many paths at once

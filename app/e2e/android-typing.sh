@@ -12,7 +12,8 @@ set -eu
 apk=$1; shot=${2:-}
 app=$(cd "$(dirname "$0")/.." && pwd)
 adb="${ANDROID_HOME:-$HOME/Library/Android/sdk}/platform-tools/adb"
-hc=$(command -v hc || echo "$HOME/.local/bin/hc")
+. "$(dirname "$0")/adb-note.sh"; adb_note "$adb"  # a failed adb call is written down and shown if the suite fails
+hc=${HM_TEST_HC:-$(command -v hc || echo "$HOME/.local/bin/hc")}
 id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$app/nsh.json")
 [ "$("$adb" shell wm size | tail -1 | awk '{print $NF}')" = 1080x2400 ] && [ "$("$adb" shell wm density | tail -1 | awk '{print $NF}')" = 420 ] \
   || { echo "FAIL: the screen is not 1080x2400 at 420 dpi, where this script knows Gboard's keys"; exit 1; }
@@ -21,6 +22,8 @@ work=$(mktemp -d); run=$(mktemp -d /tmp/hmXXXX); state=$(mktemp -d /tmp/hmtyXXXX
 (cd "$app/../companion" && go build -o "$work/herdr-anywhere" ./cmd/herdr-anywhere)
 mkdir -p "$work/home/src/acme-api" "$work/state" "$work/config" "$work/data"
 : > "$work/home/.zshrc"
+# Ubuntu's /etc/zsh/zshrc runs compinit, which can stop at a y/n question and eat what is typed first.
+echo skip_global_compinit=1 > "$work/home/.zshenv"
 export HC_SESSION="hmty-$$" HC_SOCKET="" HOME="$work/home" SHELL=/bin/zsh
 export XDG_STATE_HOME="$work/state" XDG_CONFIG_HOME="$work/config" XDG_DATA_HOME="$work/data" XDG_RUNTIME_DIR="$run" GIT_CONFIG_GLOBAL="$work/home/.gitconfig"
 raw="$work/home/src/acme-api/hm-raw"
@@ -29,7 +32,9 @@ cp "$app/e2e/typing-raw.py" "$work/home/src/acme-api/raw.py"
 "$work/herdr-anywhere" serve --listen "127.0.0.1:$port" --hc "$hc" --state "$state" > "$work/serve.log" 2>&1 &
 serve_pid=$!
 cleanup() { kill "$serve_pid" 2>/dev/null; "$hc" server stop >/dev/null 2>&1 || true; chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run" "$state"; }
-trap cleanup EXIT INT TERM
+trap 'adb_exit $? cleanup' EXIT
+# INT and TERM end the suite; the EXIT trap cleans up (a handler that only cleans up lets the script go on).
+trap 'exit 130' INT; trap 'exit 143' TERM
 sleep 1
 invite=$("$work/herdr-anywhere" pair --url "http://10.0.2.2:$port" --state "$state" 2>/dev/null | grep -o 'http://[^ ]*#pair=[A-Za-z0-9_-]*' | head -1)
 [ -n "$invite" ] || { echo "FAIL: no invite"; exit 1; }
@@ -63,9 +68,7 @@ fails=0
 check() { if [ "$2" = "$3" ]; then echo "ok: $1"; else echo "FAIL: $1: got $2, wanted $3"; fails=$((fails + 1)); fi; }
 
 "$adb" shell am start -W -n "$id/.MainActivity" >/dev/null
-tap pair-link
-rest=$invite
-while [ -n "$rest" ]; do "$adb" shell input text "'$(printf %s "$rest" | cut -c1-80)'" < /dev/null; rest=$(printf %s "$rest" | cut -c81-); sleep 0.5; done
+"$(dirname "$0")/android-type-link.sh" "$invite"
 tap pair
 tap space-spty
 for _ in $(seq 1 30); do [ -e "$raw" ] && break; sleep 1; done

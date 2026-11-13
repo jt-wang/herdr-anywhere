@@ -11,7 +11,8 @@ set -eu
 old_apk=$1; new_apk=$2; other_apk=$3; old_bin=$4; new_bin=$5; new_version=$6; shot=${7:-}
 app=$(cd "$(dirname "$0")/.." && pwd)
 adb="${ANDROID_HOME:-$HOME/Library/Android/sdk}/platform-tools/adb"
-hc=$(command -v hc || echo "$HOME/.local/bin/hc")
+. "$(dirname "$0")/adb-note.sh"; adb_note "$adb"  # a failed adb call is written down and shown if the suite fails
+hc=${HM_TEST_HC:-$(command -v hc || echo "$HOME/.local/bin/hc")}
 id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$app/nsh.json")
 
 free_port() { p=$1; while nc -z 127.0.0.1 "$p" 2>/dev/null; do p=$((p + 1)); done; echo "$p"; }
@@ -33,18 +34,21 @@ cp "$old_bin" "$work/herdr-anywhere"
 # A release signed with a key made here, as github.com/<repo>/releases serves it: latest/download/ for the newest,
 # download/v<version>/ for its files. $work/scenario picks the app's file and the manifest that goes with it.
 (cd "$app/../companion" && go build -o "$work/release-manifest" ./cmd/release-manifest)
+# This computer's file in a release (update.AssetFor): the companion replaces itself with the one for where it runs.
+os=linux; [ "$(uname -s)" = Darwin ] && os=macos
+asset=herdr-anywhere-$os-$(uname -m | sed -e s/x86_64/amd64/ -e s/aarch64/arm64/)
 release_key=$("$work/release-manifest" keygen "$work/release.key")
 for s in good bad-digest other-key; do
   mkdir -p "$work/rel-$s/files"
-  ln -s "$new_bin" "$work/rel-$s/files/herdr-anywhere-macos-arm64"
+  ln -s "$new_bin" "$work/rel-$s/files/$asset"
   case $s in good) a=$new_apk ;; bad-digest) a=$old_apk ;; other-key) a=$other_apk ;; esac
   ln -s "$a" "$work/rel-$s/files/Herdr-Anywhere.apk"
   "$work/release-manifest" sign -any-key -only -key "$work/release.key" -version "$new_version" -out "$work/rel-$s" \
-    "$work/rel-$s/files/herdr-anywhere-macos-arm64" "$work/rel-$s/files/Herdr-Anywhere.apk" >/dev/null
+    "$work/rel-$s/files/$asset" "$work/rel-$s/files/Herdr-Anywhere.apk" >/dev/null
 done
 cat > "$work/gh.py" <<'EOF'
 import http.server, os, sys
-port, version, mac, good, other, work, asked = sys.argv[1:8]
+port, version, mac, good, other, work, asked, asset = sys.argv[1:9]
 class H(http.server.BaseHTTPRequestHandler):
     def log_message(self, *a): pass
     def file(self, p):
@@ -57,14 +61,14 @@ class H(http.server.BaseHTTPRequestHandler):
             with open(asked, 'a') as f: f.write('asked\n')
             self.file(f'{work}/rel-{s}/latest.json')
         elif self.path == '/latest/download/latest.json.sig': self.file(f'{work}/rel-{s}/latest.json.sig')
-        elif self.path == f'/download/v{version}/herdr-anywhere-macos-arm64': self.file(mac)
+        elif self.path == f'/download/v{version}/{asset}': self.file(mac)
         elif self.path == f'/download/v{version}/Herdr-Anywhere.apk': self.file(other if s == 'other-key' else good)
         else: self.send_error(404)
 http.server.ThreadingHTTPServer(('127.0.0.1', int(port)), H).serve_forever()
 EOF
 echo good > "$work/scenario"
 : > "$work/asked"
-python3 "$work/gh.py" "$gh" "$new_version" "$new_bin" "$new_apk" "$other_apk" "$work" "$work/asked" &
+python3 "$work/gh.py" "$gh" "$new_version" "$new_bin" "$new_apk" "$other_apk" "$work" "$work/asked" "$asset" &
 gh_pid=$!
 
 serve_pid=""
@@ -84,7 +88,9 @@ cleanup() {
   "$hc" server stop >/dev/null 2>&1 || true
   chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run" "$state"
 }
-trap cleanup EXIT INT TERM
+trap 'adb_exit $? cleanup' EXIT
+# INT and TERM end the suite; the EXIT trap cleans up (a handler that only cleans up lets the script go on).
+trap 'exit 130' INT; trap 'exit 143' TERM
 
 "$adb" uninstall "$id" >/dev/null 2>&1 || true
 "$adb" install "$old_apk" >/dev/null
@@ -115,13 +121,7 @@ installed_before=$(version)
 pid_before=$serve_pid
 
 "$adb" shell am start -W -n "$id/.MainActivity" >/dev/null
-tap pair-link
-rest=$invite
-while [ -n "$rest" ]; do
-  piece=$(printf %s "$rest" | cut -c1-80); rest=$(printf %s "$rest" | cut -c81-)
-  "$adb" shell input text "'$piece'" < /dev/null
-  sleep 0.5
-done
+"$(dirname "$0")/android-type-link.sh" "$invite"
 tap pair
 
 echo "--- nothing goes to GitHub until the person says yes"

@@ -14,7 +14,8 @@ if [ $# -ge 3 ]; then bin=$2; out=$3; else bin=""; out=$2; fi
 mkdir -p "$out"
 app=$(cd "$(dirname "$0")/.." && pwd)
 adb="${ANDROID_HOME:-$HOME/Library/Android/sdk}/platform-tools/adb"
-hc=$(command -v hc || echo "$HOME/.local/bin/hc")
+. "$(dirname "$0")/adb-note.sh"; adb_note "$adb"  # a failed adb call is written down and shown if the suite fails
+hc=${HM_TEST_HC:-$(command -v hc || echo "$HOME/.local/bin/hc")}
 id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$app/nsh.json")
 
 port=7781
@@ -24,6 +25,8 @@ if [ -n "$bin" ]; then cp "$bin" "$work/herdr-anywhere"; else (cd "$app/../compa
 run=$(mktemp -d /tmp/hmXXXX)
 mkdir -p "$work/home/src/acme-api" "$work/state" "$work/config" "$work/data"
 : > "$work/home/.zshrc"
+# Ubuntu's /etc/zsh/zshrc runs compinit, which can stop at a y/n question and eat what is typed first.
+echo skip_global_compinit=1 > "$work/home/.zshenv"
 export HC_SESSION="hmnotify-$$" HC_SOCKET="" HOME="$work/home" SHELL=/bin/zsh
 export XDG_STATE_HOME="$work/state" XDG_CONFIG_HOME="$work/config" XDG_DATA_HOME="$work/data" XDG_RUNTIME_DIR="$run"
 export HERDR_ANYWHERE_STATE="$work/companion" GIT_CONFIG_GLOBAL="$work/home/.gitconfig"
@@ -33,7 +36,9 @@ cleanup() {
   "$hc" server stop >/dev/null 2>&1 || true
   chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run"
 }
-trap cleanup EXIT INT TERM
+trap 'adb_exit $? cleanup' EXIT
+# INT and TERM end the suite; the EXIT trap cleans up (a handler that only cleans up lets the script go on).
+trap 'exit 130' INT; trap 'exit 143' TERM
 "$work/herdr-anywhere" serve --listen "127.0.0.1:$port" --hc "$hc" > "$work/serve.log" 2>&1 &
 serve_pid=$!
 sleep 1
@@ -58,8 +63,7 @@ notes() { "$adb" shell dumpsys notification --noredact; }
 "$adb" install "$apk" >/dev/null
 "$adb" shell pm grant "$id" android.permission.POST_NOTIFICATIONS
 "$adb" shell am start -W -n "$id/.MainActivity" >/dev/null
-tap pair-link
-"$adb" shell input text "'$link'"
+"$(dirname "$0")/android-type-link.sh" "$link"
 tap pair
 ok=""
 for _ in $(seq 1 30); do grep -q "device .* connected" "$work/serve.log" && screen_has acme-api && { ok=1; break; }; sleep 1; done
