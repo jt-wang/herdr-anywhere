@@ -25,6 +25,11 @@ import (
 
 	"github.com/mdp/qrterminal/v3"
 
+	"herdr-anywhere/companion/internal/chat"
+	"herdr-anywhere/companion/internal/chat/claude"
+	"herdr-anywhere/companion/internal/chat/codex"
+	"herdr-anywhere/companion/internal/chat/opencode"
+	"herdr-anywhere/companion/internal/chat/pi"
 	"herdr-anywhere/companion/internal/hcbin"
 	"herdr-anywhere/companion/internal/lan"
 	"herdr-anywhere/companion/internal/server"
@@ -33,7 +38,7 @@ import (
 )
 
 // A var so a test can build two versions of this program.
-var version = "0.1.24"
+var version = "0.1.25"
 
 const defaultPort = "7681"
 
@@ -51,6 +56,7 @@ usage:
   herdr-anywhere update [--check]
   herdr-anywhere track tree|status|add|set|move|file|queue|place|scan|watch|report   (track help for more)
   herdr-anywhere progress on|off|status|agents   the experimental progress page, off by default
+  herdr-anywhere chat-setup status|install|remove [agent] [--force]   small files some agents' chats need (Pi)
 
 The state dir defaults to ~/.config/herdr-anywhere ($HERDR_ANYWHERE_STATE overrides).
 With serve --tailcat running, pair shows a Tailcat invite the Herdr app scans.
@@ -101,6 +107,8 @@ func runContext(ctx context.Context, args []string, stdout, stderr io.Writer) in
 		err = trackCommand(rest, stdout, stderr)
 	case "progress":
 		err = progressCommand(rest, stdout, stderr)
+	case "chat-setup":
+		err = chatSetupCommand(rest, stdout, stderr)
 	case "-h", "--help", "help":
 		fmt.Fprint(stdout, usage)
 		return 0
@@ -300,10 +308,16 @@ func serve(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		default:
 		}
 	})
+	setups := chatSetups(hcPath)
 	srv := server.New(server.Config{
 		Store: st, HC: hcPath, HCVersion: hcVersion,
 		Name: computerName(), Version: version, WebDir: *web, Logger: logger,
 		Updates: updates,
+		// The chat view's readers, by the app name each agent reports to herdr-core.
+		// Ctx: OpenCode 2 says which session it shows only while it works; from its first chat the Service keeps
+		// what it said, until serve ends.
+		Chat:       &chat.Service{HC: hcPath, Log: logger, Readers: chatReaders(setups), Ctx: ctx},
+		ChatSetups: setups,
 	})
 	defer srv.Close()
 	httpSrv := &http.Server{Handler: srv.Handler(), ReadHeaderTimeout: 10 * time.Second, ErrorLog: logger}
@@ -643,4 +657,16 @@ func revoke(args []string, stdout, stderr io.Writer) error {
 	// serve --tailcat drops the phone from Tailcat when it notices (tailcat.Service.Watch).
 	fmt.Fprintf(stdout, "revoked %s; a running serve closes its connections within a second\n", id)
 	return nil
+}
+
+// chatReaders: the chat view's readers, by the app name each agent reports to herdr-core in OSC 7501.
+// chatReaders: setups are chatSetups' (Pi's reader asks its setup whether the file is there).
+func chatReaders(setups map[string]chat.Setup) map[string]chat.Reader {
+	piSetup, _ := setups["pi"].(*pi.Setup)
+	return map[string]chat.Reader{
+		"claude-code": &claude.Reader{Dir: chat.ClaudeDir()},
+		"codex":       &codex.Reader{Dir: codex.Dir()},
+		"pi":          &pi.Reader{Setup: piSetup},
+		"opencode":    &opencode.Reader{},
+	}
 }

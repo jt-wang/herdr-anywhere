@@ -1,0 +1,825 @@
+{
+ "sessions": [
+  {
+   "id": "ses_4869228edffefQT2h5x7wJZkcv",
+   "directory": "/work/acme",
+   "title": "New session - 2026-01-01T12:00:00.274Z",
+   "version": "1.19.0",
+   "time_created": 1767268800274,
+   "time_updated": 1767268804342
+  }
+ ],
+ "messages": [
+  {
+   "id": "msg_b796dd71c001CckExyHSejNpV7",
+   "session_id": "ses_4869228edffefQT2h5x7wJZkcv",
+   "time_created": 1767268800284,
+   "time_updated": 1767268800793,
+   "data": {
+    "role": "user",
+    "time": {
+     "created": 1767268800284
+    },
+    "agent": "build",
+    "model": {
+     "providerID": "fake",
+     "modelID": "gpt-5.5"
+    },
+    "summary": {
+     "diffs": []
+    }
+   }
+  },
+  {
+   "id": "msg_b796dd725001Nr5XlOyhHzQnEk",
+   "session_id": "ses_4869228edffefQT2h5x7wJZkcv",
+   "time_created": 1767268800293,
+   "time_updated": 1767268800760,
+   "data": {
+    "parentID": "msg_b796dd71c001CckExyHSejNpV7",
+    "role": "assistant",
+    "mode": "build",
+    "agent": "build",
+    "path": {
+     "cwd": "/work/acme",
+     "root": "/"
+    },
+    "cost": 0,
+    "tokens": {
+     "total": 15,
+     "input": 10,
+     "output": 5,
+     "reasoning": 0,
+     "cache": {
+      "write": 0,
+      "read": 0
+     }
+    },
+    "modelID": "gpt-5.5",
+    "providerID": "fake",
+    "time": {
+     "created": 1767268800293,
+     "completed": 1767268800759
+    },
+    "finish": "tool-calls"
+   }
+  },
+  {
+   "id": "msg_b796dd8fa001sfry3mTFuqQfxQ",
+   "session_id": "ses_4869228edffefQT2h5x7wJZkcv",
+   "time_created": 1767268800762,
+   "time_updated": 1767268800788,
+   "data": {
+    "parentID": "msg_b796dd71c001CckExyHSejNpV7",
+    "role": "assistant",
+    "mode": "build",
+    "agent": "build",
+    "path": {
+     "cwd": "/work/acme",
+     "root": "/"
+    },
+    "cost": 0,
+    "tokens": {
+     "total": 15,
+     "input": 10,
+     "output": 5,
+     "reasoning": 0,
+     "cache": {
+      "write": 0,
+      "read": 0
+     }
+    },
+    "modelID": "gpt-5.5",
+    "providerID": "fake",
+    "time": {
+     "created": 1767268800762,
+     "completed": 1767268800788
+    },
+    "finish": "stop"
+   }
+  },
+  {
+   "id": "msg_b796ddd44001mOXwN5gd8Do3Sz",
+   "session_id": "ses_4869228edffefQT2h5x7wJZkcv",
+   "time_created": 1767268801860,
+   "time_updated": 1767268801977,
+   "data": {
+    "role": "user",
+    "time": {
+     "created": 1767268801860
+    },
+    "agent": "build",
+    "model": {
+     "providerID": "fake",
+     "modelID": "gpt-5.5"
+    },
+    "summary": {
+     "diffs": []
+    }
+   }
+  },
+  {
+   "id": "msg_b796ddd49001iQRtPwWffjHEXM",
+   "session_id": "ses_4869228edffefQT2h5x7wJZkcv",
+   "time_created": 1767268801865,
+   "time_updated": 1767268801951,
+   "data": {
+    "parentID": "msg_b796ddd44001mOXwN5gd8Do3Sz",
+    "role": "assistant",
+    "mode": "build",
+    "agent": "build",
+    "path": {
+     "cwd": "/work/acme",
+     "root": "/"
+    },
+    "cost": 0,
+    "tokens": {
+     "total": 15,
+     "input": 10,
+     "output": 5,
+     "reasoning": 0,
+     "cache": {
+      "write": 0,
+      "read": 0
+     }
+    },
+    "modelID": "gpt-5.5",
+    "providerID": "fake",
+    "time": {
+     "created": 1767268801865,
+     "completed": 1767268801951
+    },
+    "finish": "tool-calls"
+   }
+  },
+  {
+   "id": "msg_b796ddda0001bM256tjT2ht7zl",
+   "session_id": "ses_4869228edffefQT2h5x7wJZkcv",
+   "time_created": 1767268801952,
+   "time_updated": 1767268801974,
+   "data": {
+    "parentID": "msg_b796ddd44001mOXwN5gd8Do3Sz",
+    "role": "assistant",
+    "mode": "build",
+    "agent": "build",
+    "path": {
+     "cwd": "/work/acme",
+     "root": "/"
+    },
+    "cost": 0,
+    "tokens": {
+     "total": 15,
+     "input": 10,
+     "output": 5,
+     "reasoning": 0,
+     "cache": {
+      "write": 0,
+      "read": 0
+     }
+    },
+    "modelID": "gpt-5.5",
+    "providerID": "fake",
+    "time": {
+     "created": 1767268801952,
+     "completed": 1767268801973
+    },
+    "finish": "stop"
+   }
+  },
+  {
+   "id": "msg_b796de1e4001bU03zI5vd0fVZx",
+   "session_id": "ses_4869228edffefQT2h5x7wJZkcv",
+   "time_created": 1767268803044,
+   "time_updated": 1767268803073,
+   "data": {
+    "role": "user",
+    "time": {
+     "created": 1767268803044
+    },
+    "agent": "build",
+    "model": {
+     "providerID": "fake",
+     "modelID": "gpt-5.5"
+    },
+    "summary": {
+     "diffs": []
+    }
+   }
+  },
+  {
+   "id": "msg_b796de1e9001s1536SOdvW5qfC",
+   "session_id": "ses_4869228edffefQT2h5x7wJZkcv",
+   "time_created": 1767268803049,
+   "time_updated": 1767268803068,
+   "data": {
+    "parentID": "msg_b796de1e4001bU03zI5vd0fVZx",
+    "role": "assistant",
+    "mode": "build",
+    "agent": "build",
+    "path": {
+     "cwd": "/work/acme",
+     "root": "/"
+    },
+    "cost": 0,
+    "tokens": {
+     "total": 15,
+     "input": 10,
+     "output": 5,
+     "reasoning": 0,
+     "cache": {
+      "write": 0,
+      "read": 0
+     }
+    },
+    "modelID": "gpt-5.5",
+    "providerID": "fake",
+    "time": {
+     "created": 1767268803049,
+     "completed": 1767268803068
+    },
+    "finish": "stop"
+   }
+  },
+  {
+   "id": "msg_b796de687001AG5LkeJUROMQil",
+   "session_id": "ses_4869228edffefQT2h5x7wJZkcv",
+   "time_created": 1767268804231,
+   "time_updated": 1767268804343,
+   "data": {
+    "role": "user",
+    "time": {
+     "created": 1767268804231
+    },
+    "agent": "build",
+    "model": {
+     "providerID": "fake",
+     "modelID": "gpt-5.5"
+    },
+    "summary": {
+     "diffs": []
+    }
+   }
+  },
+  {
+   "id": "msg_b796de68a001IL4koUyvxBqZC0",
+   "session_id": "ses_4869228edffefQT2h5x7wJZkcv",
+   "time_created": 1767268804234,
+   "time_updated": 1767268804324,
+   "data": {
+    "parentID": "msg_b796de687001AG5LkeJUROMQil",
+    "role": "assistant",
+    "mode": "build",
+    "agent": "build",
+    "path": {
+     "cwd": "/work/acme",
+     "root": "/"
+    },
+    "cost": 0,
+    "tokens": {
+     "total": 15,
+     "input": 10,
+     "output": 5,
+     "reasoning": 0,
+     "cache": {
+      "write": 0,
+      "read": 0
+     }
+    },
+    "modelID": "gpt-5.5",
+    "providerID": "fake",
+    "time": {
+     "created": 1767268804234,
+     "completed": 1767268804324
+    },
+    "finish": "tool-calls"
+   }
+  },
+  {
+   "id": "msg_b796de6e50011Fn31mdQWZwwZX",
+   "session_id": "ses_4869228edffefQT2h5x7wJZkcv",
+   "time_created": 1767268804325,
+   "time_updated": 1767268804341,
+   "data": {
+    "parentID": "msg_b796de687001AG5LkeJUROMQil",
+    "role": "assistant",
+    "mode": "build",
+    "agent": "build",
+    "path": {
+     "cwd": "/work/acme",
+     "root": "/"
+    },
+    "cost": 0,
+    "tokens": {
+     "total": 15,
+     "input": 10,
+     "output": 5,
+     "reasoning": 0,
+     "cache": {
+      "write": 0,
+      "read": 0
+     }
+    },
+    "modelID": "gpt-5.5",
+    "providerID": "fake",
+    "time": {
+     "created": 1767268804325,
+     "completed": 1767268804341
+    },
+    "finish": "stop"
+   }
+  }
+ ],
+ "parts": [
+  {
+   "id": "prt_b796dd71d0017YutxJDTCOXQH0",
+   "message_id": "msg_b796dd71c001CckExyHSejNpV7",
+   "session_id": "ses_4869228edffefQT2h5x7wJZkcv",
+   "time_created": 1767268800287,
+   "time_updated": 1767268800287,
+   "data": {
+    "type": "text",
+    "text": "CHANGE the notes"
+   }
+  },
+  {
+   "id": "prt_b796dd8e5001PeKhJQHa7C9Xxi",
+   "message_id": "msg_b796dd725001Nr5XlOyhHzQnEk",
+   "session_id": "ses_4869228edffefQT2h5x7wJZkcv",
+   "time_created": 1767268800741,
+   "time_updated": 1767268800741,
+   "data": {
+    "type": "step-start"
+   }
+  },
+  {
+   "id": "prt_b796dd8e600193c5sRHSNNKPm5",
+   "message_id": "msg_b796dd725001Nr5XlOyhHzQnEk",
+   "session_id": "ses_4869228edffefQT2h5x7wJZkcv",
+   "time_created": 1767268800742,
+   "time_updated": 1767268800756,
+   "data": {
+    "type": "tool",
+    "tool": "apply_patch",
+    "callID": "call_fake_change",
+    "state": {
+     "status": "completed",
+     "input": {
+      "patchText": "*** Begin Patch\n*** Update File: notes.txt\n@@\n a\n+b\n+c\n*** End Patch\n"
+     },
+     "output": "Success. Updated the following files:\nM work/acme/notes.txt",
+     "metadata": {
+      "diff": "Index: /work/acme/notes.txt\n===================================================================\n--- /work/acme/notes.txt\n+++ /work/acme/notes.txt\n@@ -1,1 +1,3 @@\n a\n+b\n+c\n\n",
+      "files": [
+       {
+        "filePath": "/work/acme/notes.txt",
+        "relativePath": "work/acme/notes.txt",
+        "type": "update",
+        "patch": "Index: /work/acme/notes.txt\n===================================================================\n--- /work/acme/notes.txt\n+++ /work/acme/notes.txt\n@@ -1,1 +1,3 @@\n a\n+b\n+c\n",
+        "additions": 2,
+        "deletions": 0
+       }
+      ],
+      "diagnostics": {},
+      "truncated": false
+     },
+     "title": "Success. Updated the following files:\nM work/acme/notes.txt",
+     "time": {
+      "start": 1767268800746,
+      "end": 1767268800756
+     }
+    },
+    "metadata": {
+     "openai": {
+      "itemId": "item_fake_2_0"
+     }
+    }
+   }
+  },
+  {
+   "id": "prt_b796dd8f5001nBiX210nLuicii",
+   "message_id": "msg_b796dd725001Nr5XlOyhHzQnEk",
+   "session_id": "ses_4869228edffefQT2h5x7wJZkcv",
+   "time_created": 1767268800757,
+   "time_updated": 1767268800758,
+   "data": {
+    "reason": "tool-calls",
+    "type": "step-finish",
+    "tokens": {
+     "total": 15,
+     "input": 10,
+     "output": 5,
+     "reasoning": 0,
+     "cache": {
+      "write": 0,
+      "read": 0
+     }
+    },
+    "cost": 0
+   }
+  },
+  {
+   "id": "prt_b796dd90e0012GZw54OokxkFSd",
+   "message_id": "msg_b796dd8fa001sfry3mTFuqQfxQ",
+   "session_id": "ses_4869228edffefQT2h5x7wJZkcv",
+   "time_created": 1767268800783,
+   "time_updated": 1767268800783,
+   "data": {
+    "type": "step-start"
+   }
+  },
+  {
+   "id": "prt_b796dd91000150ZL42E5vLWSmK",
+   "message_id": "msg_b796dd8fa001sfry3mTFuqQfxQ",
+   "session_id": "ses_4869228edffefQT2h5x7wJZkcv",
+   "time_created": 1767268800784,
+   "time_updated": 1767268800785,
+   "data": {
+    "type": "text",
+    "text": "Added two lines to notes.txt.",
+    "time": {
+     "start": 1767268800784,
+     "end": 1767268800785
+    },
+    "metadata": {
+     "openai": {
+      "itemId": "item_fake_3_0"
+     }
+    }
+   }
+  },
+  {
+   "id": "prt_b796dd912001kqz2Mm8gb43EuC",
+   "message_id": "msg_b796dd8fa001sfry3mTFuqQfxQ",
+   "session_id": "ses_4869228edffefQT2h5x7wJZkcv",
+   "time_created": 1767268800786,
+   "time_updated": 1767268800786,
+   "data": {
+    "reason": "stop",
+    "type": "step-finish",
+    "tokens": {
+     "total": 15,
+     "input": 10,
+     "output": 5,
+     "reasoning": 0,
+     "cache": {
+      "write": 0,
+      "read": 0
+     }
+    },
+    "cost": 0
+   }
+  },
+  {
+   "id": "prt_b796ddd44002uATpNKiULtxdRE",
+   "message_id": "msg_b796ddd44001mOXwN5gd8Do3Sz",
+   "session_id": "ses_4869228edffefQT2h5x7wJZkcv",
+   "time_created": 1767268801861,
+   "time_updated": 1767268801861,
+   "data": {
+    "type": "text",
+    "text": "BREAK the build"
+   }
+  },
+  {
+   "id": "prt_b796ddd5c001FOh1ml7gyV94Gc",
+   "message_id": "msg_b796ddd49001iQRtPwWffjHEXM",
+   "session_id": "ses_4869228edffefQT2h5x7wJZkcv",
+   "time_created": 1767268801884,
+   "time_updated": 1767268801885,
+   "data": {
+    "type": "step-start"
+   }
+  },
+  {
+   "id": "prt_b796ddd5e001DOQD7NFaG14eBn",
+   "message_id": "msg_b796ddd49001iQRtPwWffjHEXM",
+   "session_id": "ses_4869228edffefQT2h5x7wJZkcv",
+   "time_created": 1767268801886,
+   "time_updated": 1767268801947,
+   "data": {
+    "type": "tool",
+    "tool": "bash",
+    "callID": "call_fake_break",
+    "state": {
+     "status": "completed",
+     "input": {
+      "command": "echo checking; echo 'one test failed' \u003e\u00262; exit 3"
+     },
+     "output": "checking\none test failed\n",
+     "metadata": {
+      "output": "checking\none test failed\n",
+      "exit": 3,
+      "truncated": false
+     },
+     "title": "echo checking; echo 'one test failed' \u003e\u00262; exit 3",
+     "time": {
+      "start": 1767268801890,
+      "end": 1767268801947
+     }
+    },
+    "metadata": {
+     "openai": {
+      "itemId": "item_fake_4_0"
+     }
+    }
+   }
+  },
+  {
+   "id": "prt_b796ddd9c001YBNwW6zbyRwZID",
+   "message_id": "msg_b796ddd49001iQRtPwWffjHEXM",
+   "session_id": "ses_4869228edffefQT2h5x7wJZkcv",
+   "time_created": 1767268801948,
+   "time_updated": 1767268801949,
+   "data": {
+    "reason": "tool-calls",
+    "type": "step-finish",
+    "tokens": {
+     "total": 15,
+     "input": 10,
+     "output": 5,
+     "reasoning": 0,
+     "cache": {
+      "write": 0,
+      "read": 0
+     }
+    },
+    "cost": 0
+   }
+  },
+  {
+   "id": "prt_b796dddaf001m3t5s6oJTxQcf1",
+   "message_id": "msg_b796ddda0001bM256tjT2ht7zl",
+   "session_id": "ses_4869228edffefQT2h5x7wJZkcv",
+   "time_created": 1767268801968,
+   "time_updated": 1767268801968,
+   "data": {
+    "type": "step-start"
+   }
+  },
+  {
+   "id": "prt_b796dddb1001TBLyrHF2qlUMkw",
+   "message_id": "msg_b796ddda0001bM256tjT2ht7zl",
+   "session_id": "ses_4869228edffefQT2h5x7wJZkcv",
+   "time_created": 1767268801969,
+   "time_updated": 1767268801970,
+   "data": {
+    "type": "text",
+    "text": "The check failed with code 3.",
+    "time": {
+     "start": 1767268801969,
+     "end": 1767268801970
+    },
+    "metadata": {
+     "openai": {
+      "itemId": "item_fake_5_0"
+     }
+    }
+   }
+  },
+  {
+   "id": "prt_b796dddb3001MCWIqX8L0b4SSk",
+   "message_id": "msg_b796ddda0001bM256tjT2ht7zl",
+   "session_id": "ses_4869228edffefQT2h5x7wJZkcv",
+   "time_created": 1767268801971,
+   "time_updated": 1767268801971,
+   "data": {
+    "reason": "stop",
+    "type": "step-finish",
+    "tokens": {
+     "total": 15,
+     "input": 10,
+     "output": 5,
+     "reasoning": 0,
+     "cache": {
+      "write": 0,
+      "read": 0
+     }
+    },
+    "cost": 0
+   }
+  },
+  {
+   "id": "prt_b796de1e5001siiqWHlLBcUlmx",
+   "message_id": "msg_b796de1e4001bU03zI5vd0fVZx",
+   "session_id": "ses_4869228edffefQT2h5x7wJZkcv",
+   "time_created": 1767268803046,
+   "time_updated": 1767268803046,
+   "data": {
+    "type": "text",
+    "text": "THINK about a plan"
+   }
+  },
+  {
+   "id": "prt_b796de1f6001xI0kgW4Tzn8hNw",
+   "message_id": "msg_b796de1e9001s1536SOdvW5qfC",
+   "session_id": "ses_4869228edffefQT2h5x7wJZkcv",
+   "time_created": 1767268803062,
+   "time_updated": 1767268803063,
+   "data": {
+    "type": "step-start"
+   }
+  },
+  {
+   "id": "prt_b796de1f7001XG8hYBETOYvPWR",
+   "message_id": "msg_b796de1e9001s1536SOdvW5qfC",
+   "session_id": "ses_4869228edffefQT2h5x7wJZkcv",
+   "time_created": 1767268803064,
+   "time_updated": 1767268803065,
+   "data": {
+    "type": "reasoning",
+    "text": "",
+    "time": {
+     "start": 1767268803063,
+     "end": 1767268803065
+    },
+    "metadata": {
+     "openai": {
+      "itemId": "item_fake_6_0",
+      "reasoningEncryptedContent": null
+     }
+    }
+   }
+  },
+  {
+   "id": "prt_b796de1f9001TGRbBh67CRlp5b",
+   "message_id": "msg_b796de1e9001s1536SOdvW5qfC",
+   "session_id": "ses_4869228edffefQT2h5x7wJZkcv",
+   "time_created": 1767268803065,
+   "time_updated": 1767268803066,
+   "data": {
+    "type": "text",
+    "text": "The short plan is better.",
+    "time": {
+     "start": 1767268803065,
+     "end": 1767268803066
+    },
+    "metadata": {
+     "openai": {
+      "itemId": "item_fake_6_1"
+     }
+    }
+   }
+  },
+  {
+   "id": "prt_b796de1fb001pYbeJho6zP2Ma7",
+   "message_id": "msg_b796de1e9001s1536SOdvW5qfC",
+   "session_id": "ses_4869228edffefQT2h5x7wJZkcv",
+   "time_created": 1767268803067,
+   "time_updated": 1767268803067,
+   "data": {
+    "reason": "stop",
+    "type": "step-finish",
+    "tokens": {
+     "total": 15,
+     "input": 10,
+     "output": 5,
+     "reasoning": 0,
+     "cache": {
+      "write": 0,
+      "read": 0
+     }
+    },
+    "cost": 0
+   }
+  },
+  {
+   "id": "prt_b796de6870025RrjmGz1uZey0p",
+   "message_id": "msg_b796de687001AG5LkeJUROMQil",
+   "session_id": "ses_4869228edffefQT2h5x7wJZkcv",
+   "time_created": 1767268804232,
+   "time_updated": 1767268804232,
+   "data": {
+    "type": "text",
+    "text": "LOOK at shot.png"
+   }
+  },
+  {
+   "id": "prt_b796de6cb0013WzJkLZjSkaupA",
+   "message_id": "msg_b796de68a001IL4koUyvxBqZC0",
+   "session_id": "ses_4869228edffefQT2h5x7wJZkcv",
+   "time_created": 1767268804299,
+   "time_updated": 1767268804299,
+   "data": {
+    "type": "step-start"
+   }
+  },
+  {
+   "id": "prt_b796de6cc001ljiOiaZommcW42",
+   "message_id": "msg_b796de68a001IL4koUyvxBqZC0",
+   "session_id": "ses_4869228edffefQT2h5x7wJZkcv",
+   "time_created": 1767268804300,
+   "time_updated": 1767268804322,
+   "data": {
+    "type": "tool",
+    "tool": "read",
+    "callID": "call_fake_look",
+    "state": {
+     "status": "completed",
+     "input": {
+      "filePath": "shot.png"
+     },
+     "output": "Image read successfully",
+     "metadata": {
+      "preview": "Image read successfully",
+      "truncated": false,
+      "loaded": []
+     },
+     "title": "work/acme/shot.png",
+     "time": {
+      "start": 1767268804302,
+      "end": 1767268804321
+     },
+     "attachments": [
+      {
+       "type": "file",
+       "mime": "image/png",
+       "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAAALklEQVR4nGJRTX7NQEvABGOMWjBqwagFoxaMWjBqwagFoxaMWjBqwagFg90CwABEUQG2ep5RQgAAAABJRU5ErkJggg==",
+       "id": "prt_b796de6d6001HpoLNsSkejurAs",
+       "sessionID": "ses_4869228edffefQT2h5x7wJZkcv",
+       "messageID": "msg_b796de68a001IL4koUyvxBqZC0"
+      }
+     ]
+    },
+    "metadata": {
+     "openai": {
+      "itemId": "item_fake_7_0"
+     }
+    }
+   }
+  },
+  {
+   "id": "prt_b796de6e2001iY3Zo66orHzYzE",
+   "message_id": "msg_b796de68a001IL4koUyvxBqZC0",
+   "session_id": "ses_4869228edffefQT2h5x7wJZkcv",
+   "time_created": 1767268804322,
+   "time_updated": 1767268804323,
+   "data": {
+    "reason": "tool-calls",
+    "type": "step-finish",
+    "tokens": {
+     "total": 15,
+     "input": 10,
+     "output": 5,
+     "reasoning": 0,
+     "cache": {
+      "write": 0,
+      "read": 0
+     }
+    },
+    "cost": 0
+   }
+  },
+  {
+   "id": "prt_b796de6f1001L2HhyO1Gcx7gVH",
+   "message_id": "msg_b796de6e50011Fn31mdQWZwwZX",
+   "session_id": "ses_4869228edffefQT2h5x7wJZkcv",
+   "time_created": 1767268804337,
+   "time_updated": 1767268804337,
+   "data": {
+    "type": "step-start"
+   }
+  },
+  {
+   "id": "prt_b796de6f2001p9vfM0G1bT2dVT",
+   "message_id": "msg_b796de6e50011Fn31mdQWZwwZX",
+   "session_id": "ses_4869228edffefQT2h5x7wJZkcv",
+   "time_created": 1767268804338,
+   "time_updated": 1767268804339,
+   "data": {
+    "type": "text",
+    "text": "It is a blue square.",
+    "time": {
+     "start": 1767268804338,
+     "end": 1767268804339
+    },
+    "metadata": {
+     "openai": {
+      "itemId": "item_fake_8_0"
+     }
+    }
+   }
+  },
+  {
+   "id": "prt_b796de6f3001z8hu1o74jynF68",
+   "message_id": "msg_b796de6e50011Fn31mdQWZwwZX",
+   "session_id": "ses_4869228edffefQT2h5x7wJZkcv",
+   "time_created": 1767268804339,
+   "time_updated": 1767268804340,
+   "data": {
+    "reason": "stop",
+    "type": "step-finish",
+    "tokens": {
+     "total": 15,
+     "input": 10,
+     "output": 5,
+     "reasoning": 0,
+     "cache": {
+      "write": 0,
+      "read": 0
+     }
+    },
+    "cost": 0
+   }
+  }
+ ]
+}

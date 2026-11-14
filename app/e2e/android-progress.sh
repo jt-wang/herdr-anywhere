@@ -17,7 +17,8 @@ app=$(cd "$(dirname "$0")/.." && pwd)
 apk=${1:-$app/android/build/Herdr.apk}
 out=${2:-}
 adb="${ANDROID_HOME:-$HOME/Library/Android/sdk}/platform-tools/adb"
-hc=$(command -v hc || echo "$HOME/.local/bin/hc")
+. "$(dirname "$0")/adb-note.sh"; adb_note "$adb"  # a failed adb call is written down and shown if the suite fails
+hc=${HM_TEST_HC:-$(command -v hc || echo "$HOME/.local/bin/hc")}
 id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$app/nsh.json")
 
 port=7701
@@ -28,6 +29,8 @@ mkdir -p "$work/home/src/acme-shop" "$work/home/src/acme-app" "$work/home/.local
 (cd "$app/../companion" && go build -o "$work/herdr-anywhere" ./cmd/herdr-anywhere)
 (cd "$app/e2e/fake-claude" && GO111MODULE=off go build -o "$work/bin/claude" main.go)
 : > "$work/home/.zshrc"
+# Ubuntu's /etc/zsh/zshrc runs compinit, which can stop at a y/n question and eat what is typed first.
+echo skip_global_compinit=1 > "$work/home/.zshenv"
 # The app runs $HOME/.local/bin/herdr-anywhere on the computer, where the README installs it.
 cp "$work/herdr-anywhere" "$work/home/.local/bin/herdr-anywhere"
 export HC_SESSION="hpandroid-$$" HC_SOCKET="" HOME="$work/home" SHELL=/bin/zsh
@@ -42,7 +45,9 @@ cleanup() {
   [ -n "${night:-}" ] && "$adb" shell cmd uimode night "$night" >/dev/null 2>&1
   chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run"
 }
-trap cleanup EXIT INT TERM
+trap 'adb_exit $? cleanup' EXIT
+# INT and TERM end the suite; the EXIT trap cleans up (a handler that only cleans up lets the script go on).
+trap 'exit 130' INT; trap 'exit 143' TERM
 
 pane() { # name dir env…
   n=$1 d=$2; shift 2
@@ -143,8 +148,18 @@ tap() {
 screen_has() { "$adb" shell uiautomator dump /sdcard/hp.xml >/dev/null 2>&1; "$adb" shell cat /sdcard/hp.xml | grep -q "$1"; }
 wait_screen() { for _ in $(seq 1 "${2:-15}"); do screen_has "$1" && return 0; sleep 1; done; return 1; }
 shot() { [ -n "$out" ] && "$adb" exec-out screencap -p > "$out/$1.png" || true; }
-# On a failure: the screen, its view tree and the companion's log, then the reason.
-failed() { shot "fail-$1"; [ -n "$out" ] && { "$adb" exec-out uiautomator dump /dev/tty > "$out/fail-$1.xml" 2>/dev/null; cp "$work/serve.log" "$out/serve.log"; }; echo "FAIL: $2"; exit 1; }
+# On a failure: the screen, its view tree and the companion's log, then the reason. Pairing secrets are cut out of the
+# files so a failed run can still upload them; the pairing screen's picture is left out, as its field shows the link.
+secretless='s/(#pair=|token=|herdr[0-9]:)[A-Za-z0-9_-]+/\1…/g'
+failed() {
+  [ "$1" = pair ] || shot "fail-$1"
+  if [ -n "$out" ]; then
+    "$adb" exec-out uiautomator dump /dev/tty 2>/dev/null | sed -E "$secretless" > "$out/fail-$1.xml"
+    sed -E "$secretless" "$work/serve.log" > "$out/serve.log"
+  fi
+  "$adb" exec-out uiautomator dump /dev/tty 2>/dev/null | tr '>' '\n' | grep 'resource-id="pair-error"' | sed -E 's/.*text="([^"]*)".*/  phone says: \1/' || true
+  echo "FAIL: $2"; exit 1
+}
 pair_failed() { failed pair "$1"; }
 in_file() { python3 -c "import json,sys; d=json.load(open('$file')); t={x['id']:x for x in d.get('things',[])}; sys.exit(0 if $1 else 1)"; }
 wait_file() { for _ in $(seq 1 15); do in_file "$1" && return 0; sleep 1; done; echo "FAIL: $2"; exit 1; }
@@ -169,8 +184,7 @@ activity=$("$adb" shell cmd package resolve-activity --brief "$id" | tail -1 | t
 "$adb" shell am start -W -n "$activity" >/dev/null
 # On a failure here: what the phone showed, its screen as text, and the companion's log.
 wait_screen pair-link 20 || pair_failed "no pairing screen within 20 s"
-tap pair-link
-"$adb" shell input text "'$link'"
+"$(dirname "$0")/android-type-link.sh" "$link"
 tap pair
 # Paired: the home page lists the panes (by program and message: herdr-core panes started with --name have no tab name).
 wait_screen "The comparison is ready for you to read" 30 || pair_failed "not paired within 30 s"

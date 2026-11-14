@@ -126,7 +126,8 @@ export class FakeCore implements Pipe {
       // What herdr-core answers for each (hc get): Codex is its node launcher in the foreground.
       if (t.foreground) term.foreground = t.argv[0] === 'codex' ? { name: 'node', argv: ['node', '/usr/local/bin/codex'], cwd: folder } : { name: t.argv[0], argv: t.argv, cwd: folder }
       if (t.screen) this.screens.set(term.address, t.screen)
-      if (t.status) this.setStatus(term.address, t.status, t.argv[0] === 'codex' ? 'codex' : 'claude-code', { kind: t.kind, msg: t.msg })
+      // What each program reports as its status.app in OSC 7501; anything else here stands for Claude Code.
+      if (t.status) this.setStatus(term.address, t.status, ['codex', 'pi', 'opencode'].includes(t.argv[0]) ? t.argv[0] : 'claude-code', { kind: t.kind, msg: t.msg })
       if (t.title) term.title = t.title
       s.tabs.push({ id: t.id, name: t.name ?? '', root: { id: t.id, type: 'row', children: [{ id: `p-${t.id}`, type: 'block', content: { terminal: term.address } }] } })
     }

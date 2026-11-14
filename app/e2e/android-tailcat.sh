@@ -17,7 +17,8 @@ shot=${2:-}
 # a request from this computer reads as local.
 mask='s/token=[^ &]+/token=…/; s/ (127\.0\.0\.1|::1) (GET|POST)/ @loopback:\1@ \2/; s/[0-9a-f:.]{7,} (GET|POST)/<addr> \1/; s/@loopback:([^@]*)@/\1/'
 adb="${ANDROID_HOME:-$HOME/Library/Android/sdk}/platform-tools/adb"
-hc=$(command -v hc || echo "$HOME/.local/bin/hc")
+. "$(dirname "$0")/adb-note.sh"; adb_note "$adb"  # a failed adb call is written down and shown if the suite fails
+hc=${HM_TEST_HC:-$(command -v hc || echo "$HOME/.local/bin/hc")}
 id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$app/nsh.json")
 
 port=7691
@@ -48,7 +49,9 @@ cleanup() {
   "$hc" server stop >/dev/null 2>&1 || true
   chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run" "$state"
 }
-trap cleanup EXIT INT TERM
+trap 'adb_exit $? cleanup' EXIT
+# INT and TERM end the suite; the EXIT trap cleans up (a handler that only cleans up lets the script go on).
+trap 'exit 130' INT; trap 'exit 143' TERM
 
 # Install first: Tailcat's pairing window lasts 2 minutes.
 "$adb" install -r "$apk" >/dev/null
@@ -81,20 +84,8 @@ tap() {
 screen_has() { "$adb" shell uiautomator dump /sdcard/hm.xml >/dev/null 2>&1; "$adb" shell cat /sdcard/hm.xml | grep -q "$1"; }
 
 "$adb" shell am start -W -n "$id/.MainActivity" >/dev/null
+"$(dirname "$0")/android-type-link.sh" "$invite"
 started=$(date +%s)
-tap pair-link
-# One long `adb shell input text` keeps only its first ~200 characters (208 of 529 in this field, 204 in
-# Chrome's URL bar); in 80-character pieces the field holds all 529.
-rest=$invite
-while [ -n "$rest" ]; do
-  piece=$(printf %s "$rest" | cut -c1-80); rest=$(printf %s "$rest" | cut -c81-)
-  "$adb" shell input text "'$piece'" < /dev/null
-  sleep 0.5
-done
-"$adb" shell uiautomator dump /sdcard/hm.xml >/dev/null 2>&1
-typed=$("$adb" shell cat /sdcard/hm.xml | tr '>' '\n' | grep -A3 -F 'resource-id="pair-link"' | grep -F 'class="android.widget.EditText"' |
-  sed -E 's/.* text="([^"]*)".*/\1/' | head -1)
-[ "$typed" = "$invite" ] || { echo "FAIL: the field holds ${#typed} of the invite's ${#invite} characters"; exit 1; }
 tap pair
 
 ok=""
