@@ -62,11 +62,20 @@ L() { env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin
   XDG_DATA_HOME="$work/data" XDG_RUNTIME_DIR="$run" CLAUDE_CONFIG_DIR="$work/claude" CODEX_HOME="$work/codex" \
   PI_CODING_AGENT_DIR="$work/pi" "$@"; }
 serve_pid=; ctl_pid=; log_pid=; system_log_pid=; proxy_pid=; booted=; remove_app=0
+debug_log_pid=; expiry_pid=; expiry_raw=
 cleanup() {
   status=$?
   trap - EXIT INT TERM HUP
   set +e
   [ -n "$ctl_pid" ] && kill "$ctl_pid" 2>/dev/null
+  if [ -n "${expiry_pid:-}" ]; then
+    kill "$expiry_pid" 2>/dev/null
+    wait "$expiry_pid" || status=1
+  fi
+  if [ -n "${debug_log_pid:-}" ]; then
+    kill "$debug_log_pid" 2>/dev/null
+    wait "$debug_log_pid"
+  fi
   [ -n "$log_pid" ] && { kill "$log_pid" 2>/dev/null; wait "$log_pid"; }
   if [ -n "${system_log_pid:-}" ]; then
     # This stops our collector, not the app. Keep its status separate from app exit evidence.
@@ -82,6 +91,10 @@ cleanup() {
   [ "$status" != 0 ] && [ -s "$work/app.log" ] && { echo "  the app's errors (last 20):"; grep -vE '^(Filtering the log data|Timestamp )' "$work/app.log" | tail -20 | cut -c1-300 | sed 's/^/    /'; }
   [ -n "$shots" ] && [ -s "$work/app.log" ] && cp "$work/app.log" "$shots/app.log"
   if [ -n "$shots" ]; then
+    if [ -n "${expiry_raw:-}" ] && [ -d "$expiry_raw" ]; then
+      python3 "$app/e2e/ios-background-expiry.py" publish "$expiry_raw" "$shots/background-expiry" \
+        "$work/expiry-pair" || status=1
+    fi
     [ ! -f "$work/serve.log" ] || cp "$work/serve.log" "$shots/serve.log" || status=1
     [ ! -f "$work/uitest/test.log" ] || cp "$work/uitest/test.log" "$shots/test.log" || status=1
     for file in app-system.log app-system-status.txt; do
@@ -170,6 +183,10 @@ fi
 link=$(L "$work/herdr-anywhere" pair --ttl 60m --url "$url" --state "$state" 2>/dev/null | grep -o 'http://[^ ]*#pair=[A-Za-z0-9_-]*' | head -1)
 [ -n "$link" ] || { echo "FAIL: no pairing link"; exit 1; }
 printf "export const COMPANION: number = 0\nexport const PAIR: string = '%s'\n" "$link" > "$app/e2e/pair.ts"
+if [ "$cycles" -gt 0 ]; then
+  expiry_raw="$work/background-expiry"
+  (umask 077; mkdir -p "$expiry_raw"; printf '%s' "$link" > "$work/expiry-pair")
+fi
 source_evidence=
 if [ "$cycles" -gt 0 ] && [ -n "$shots" ]; then
   source_evidence="$work/subscriber-source-raw"
@@ -232,6 +249,11 @@ xcrun simctl spawn "$SIM_UDID" log stream --style compact \
   --predicate 'process == "Herdr" AND (messageType == error OR messageType == fault OR composedMessage CONTAINS[c] "nsh") AND NOT composedMessage CONTAINS "XC_kAX" AND NOT composedMessage CONTAINS "nsh_platform_ios::"' \
   > "$work/app.log" 2>&1 &
 log_pid=$!
+if [ -n "$expiry_raw" ]; then
+  xcrun simctl spawn "$SIM_UDID" log stream --style compact --level debug --predicate 'process == "Herdr"' \
+    > "$expiry_raw/app-debug.log" 2>&1 &
+  debug_log_pid=$!
+fi
 xcrun simctl ui "$SIM_UDID" appearance light
 xcrun simctl uninstall "$SIM_UDID" "$id" 2>/dev/null || true
 if [ -n "$source_evidence" ]; then
@@ -280,6 +302,14 @@ i=0; until grep -q "device .* connected (binary," "$work/serve.log"; do
   fi
   sleep 1
 done
+if [ -n "$expiry_raw" ]; then
+  kill -0 "$debug_log_pid" 2>/dev/null || { echo "FAIL: app debug collector exited"; exit 1; }
+  python3 "$app/e2e/ios-background-expiry.py" calibrate "$before" "$expiry_raw" || {
+    echo "FAIL: background sample calibration"; exit 1;
+  }
+  python3 "$app/e2e/ios-background-expiry.py" watch "$before" "$id" "$work/app-system.log" "$expiry_raw" &
+  expiry_pid=$!
+fi
 cp -R "$app/e2e/ios-uitest" "$work/uitest"
 (cd "$work/uitest" && xcodegen generate --quiet)
 rc=0
