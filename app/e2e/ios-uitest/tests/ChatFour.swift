@@ -20,6 +20,7 @@ final class ChatFour: XCTestCase {
     let agents = (env["AGENTS"] ?? "claude-code codex pi opencode").split(separator: " ").map(String.init)
     let away = (env["AWAY"] ?? "10 60").split(separator: " ").compactMap { UInt32($0) }
     let cycles = Int(env["CHAT_AWAY_CYCLES"] ?? "0") ?? -1
+    let awayOnly = env["CHAT_AWAY_ONLY"] == "1"
     let stopOnResume = env["CHAT_AWAY_SELFTEST"] == "stop-companion"
     guard (0...30).contains(cycles) else { XCTFail("CHAT_AWAY_CYCLES must be 0...30"); return }
     if cycles > 0 { continueAfterFailure = false }
@@ -44,6 +45,11 @@ final class ChatFour: XCTestCase {
         pending.append(contentsOf: element.children)
       }
       return (found, labels)
+    }
+    func completedReply(_ current: (ids: Set<String>, labels: Set<String>), _ oldReplies: Set<String>, _ prompt: String) -> Bool {
+      let fresh = Set(current.ids.filter { $0.hasPrefix("reply-") }).subtracting(oldReplies)
+      return current.labels.contains(prompt) && !current.ids.contains("chat-offline") && !current.labels.contains("Working…") &&
+        fresh.contains { current.ids.contains("fold-" + String($0.dropFirst("reply-".count))) }
     }
     // The app is still up and in front; a crash or a hang shows here first.
     func alive(_ step: String) {
@@ -112,6 +118,31 @@ final class ChatFour: XCTestCase {
       note("\(agent) open: turn 040 shown: \(long)")
       XCTAssertTrue(long, "\(agent): the long conversation did not show")
       shot("\(agent)-open"); alive("\(agent) open")
+      if awayOnly {
+        var oldReplies: Set<String> = []
+        guard until(10, {
+          guard let beforeReply = chatSnapshot() else { return false }
+          oldReplies = Set(beforeReply.ids.filter { $0.hasPrefix("reply-") })
+          return !oldReplies.isEmpty
+        }) else {
+          shot("\(agent)-preflight-failed")
+          XCTFail("background preflight: cannot read existing replies")
+          return
+        }
+        let prompt = "EDIT before background check"
+        say(prompt)
+        let completed = until(60) {
+          guard let current = chatSnapshot() else { return false }
+          return completedReply(current, oldReplies, prompt)
+        }
+        note("background preflight: new completed reply: \(completed)")
+        guard completed else {
+          shot("\(agent)-preflight-failed")
+          XCTFail("background preflight: no new completed reply")
+          return
+        }
+        shot("\(agent)-preflight")
+      } else {
       // long
       sent("LIST the files here", "\(agent) long")
       XCTAssertTrue(openLast(), "\(agent) long: no fold")
@@ -149,6 +180,7 @@ final class ChatFour: XCTestCase {
       for _ in 0..<40 { if saying("LOOK at shot.png").isHittable || saying("HELLO, what is in this picture?").isHittable { bottom = true; break }; el("chat-view").swipeUp() }
       note("\(agent) scroll: back to the newest: \(bottom)")
       XCTAssertTrue(bottom, "\(agent) scroll: did not get back to the newest turn")
+      }
       // away
       let stress = cycles > 0 && n == 0
       let waits = stress ? Array(repeating: UInt32(60), count: cycles) : (n == 0 ? away : Array(away.prefix(1)))
@@ -205,9 +237,7 @@ final class ChatFour: XCTestCase {
           say(prompt)
           let completed = until(60) {
             guard let current = chatSnapshot() else { return false }
-            let fresh = Set(current.ids.filter { $0.hasPrefix("reply-") }).subtracting(oldReplies)
-            return current.labels.contains(prompt) && !current.ids.contains("chat-offline") && !current.labels.contains("Working…") &&
-              fresh.contains { current.ids.contains("fold-" + String($0.dropFirst("reply-".count))) }
+            return completedReply(current, oldReplies, prompt)
           }
           guard completed else {
             shot("\(agent)-away60-cycle\(cycle)-failed")
@@ -222,6 +252,7 @@ final class ChatFour: XCTestCase {
           sent("EDIT after \(secs) s away", "\(agent) away \(secs) s", 60)
         }
       }
+      if awayOnly { return }
       // cut
       if ctlDo("stop", "stopped") {
         let off = el("chat-offline").waitForExistence(timeout: 45)

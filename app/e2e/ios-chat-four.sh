@@ -315,7 +315,7 @@ cp -R "$app/e2e/ios-uitest" "$work/uitest"
 (cd "$work/uitest" && xcodegen generate --quiet)
 rc=0
 TEST_RUNNER_OUT="${shots:-$work}/$tag.txt" TEST_RUNNER_SHOTS="${shots:-$work}/$tag" TEST_RUNNER_CTL="$ctl" \
-  TEST_RUNNER_AGENTS="$agents" TEST_RUNNER_AWAY="$away" TEST_RUNNER_CHAT_AWAY_CYCLES="$cycles" TEST_RUNNER_CHAT_AWAY_SELFTEST="$control" \
+  TEST_RUNNER_CHAT_AWAY_ONLY="${CHAT_AWAY_ONLY:-0}" TEST_RUNNER_AGENTS="$agents" TEST_RUNNER_AWAY="$away" TEST_RUNNER_CHAT_AWAY_CYCLES="$cycles" TEST_RUNNER_CHAT_AWAY_SELFTEST="$control" \
   perl -e 'alarm shift; exec @ARGV' "$test_timeout" xcodebuild test -quiet -project "$work/uitest/KeyboardCheck.xcodeproj" -scheme UITests \
   -only-testing:"UITests/$uitest" -destination "id=$SIM_UDID" -derivedDataPath "$work/uitest/derived" \
   -resultBundlePath "$work/uitest/result.xcresult" > "$work/uitest/test.log" 2>&1 || rc=$?
