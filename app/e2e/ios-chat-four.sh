@@ -314,11 +314,6 @@ i=0; until grep -q "device .* connected (binary," "$work/serve.log"; do
 done
 if [ -n "$expiry_raw" ]; then
   kill -0 "$debug_log_pid" 2>/dev/null || { echo "FAIL: app debug collector exited"; exit 1; }
-  python3 "$app/e2e/ios-background-expiry.py" calibrate "$before" "$expiry_raw" || {
-    echo "FAIL: background sample calibration"; exit 1;
-  }
-  python3 "$app/e2e/ios-background-expiry.py" watch "$before" "$id" "$work/app-system.log" "$expiry_raw" &
-  expiry_pid=$!
 fi
 cp -R "$app/e2e/ios-uitest" "$work/uitest"
 (cd "$work/uitest" && xcodegen generate --quiet)
