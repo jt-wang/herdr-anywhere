@@ -83,4 +83,30 @@ autostart_guard_end() { return 0; }
     def test_failure(self): self.check_path(1)
 
 
+class EvidenceLaunchExportTest(unittest.TestCase):
+    def test_legacy_single_key_still_exports_unchanged(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder); store = root / 'storage.json'; output = root / 'trace.json'
+            old = [{'seq': 1, 'time': 100, 'what': 'connection-lost', 'fields': {}}]
+            store.write_text(json.dumps({'e2e-connection-diag': json.dumps(old)}))
+            result = subprocess.run(['python3', str(APP / 'e2e/ios-chat-evidence.py'), str(store), str(output)],
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(json.loads(output.read_text()), old)
+
+    def test_exports_both_launches_with_distinct_launch_numbers(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder); store = root / 'storage.json'; output = root / 'trace.json'
+            old = {'seq': 1, 'time': 100, 'what': 'connection-lost', 'fields': {}}
+            new = {'seq': 1, 'time': 200, 'what': 'connection-connect', 'fields': {}}
+            store.write_text(json.dumps({'e2e-connection-diag-2': json.dumps([new]),
+                                         'e2e-connection-diag-1': json.dumps([old]),
+                                         'e2e-pair': 'synthetic pairing'}))
+            result = subprocess.run(['python3', str(APP / 'e2e/ios-chat-evidence.py'), str(store), str(output)],
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue(output.exists(), 'launch traces were not exported')
+            self.assertEqual(json.loads(output.read_text()), [{**old, 'launch': 1}, {**new, 'launch': 2}])
+
+
 if __name__ == '__main__': unittest.main()

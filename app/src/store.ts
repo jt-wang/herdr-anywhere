@@ -96,13 +96,17 @@ export const LOST_TEXT: Record<string, Key> = {
   'binary-unsupported': 'lostSlower',
 }
 
+// Read only by the test connection hook; Signal ignores this registration metadata.
+export type ConnSubscriberSite = 'Updates.follow' | 'Root.unpaired' | 'kit.useSignal' | 'kit.useRev'
+  | 'TerminalSession' | 'Store.whenConnected' | 'Settings.ask'
+
 /** Tiny observable so views can follow the store without knowing NSH (and tests can run without a screen). */
 export class Signal<T> {
   private subs = new Set<(v: T) => void>()
   constructor(private v: T) {}
   get() { return this.v }
   set(v: T) { this.v = v; for (const s of [...this.subs]) if (this.subs.has(s)) s(v) }
-  sub(f: (v: T) => void) { this.subs.add(f); return () => this.subs.delete(f) }
+  sub(f: (v: T) => void, _site?: ConnSubscriberSite) { this.subs.add(f); return () => this.subs.delete(f) }
 }
 
 /** Silence that means the line is dead, though the socket says it is open: the phone asks for the machines every 2.5 s
@@ -380,7 +384,7 @@ export class Store {
     return new Promise<void>((resolve) => {
       let off = () => {}
       const done = () => { off(); resolve() }
-      off = this.conn.sub((c) => { if (this.connected || c === 'unpaired' || c === 'idle') done() }) as () => void
+      off = this.conn.sub((c) => { if (this.connected || c === 'unpaired' || c === 'idle') done() }, 'Store.whenConnected') as () => void
       this.io.setTimeout(done, COMEBACK_MS)
       this.reconnectNow()
     })

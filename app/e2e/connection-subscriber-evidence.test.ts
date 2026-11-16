@@ -1,6 +1,7 @@
 import { expect, test } from 'nsh/test'
 import { Signal } from '../src/store.ts'
-import { connectionEvidence, subscriberSite } from './connection-evidence.ts'
+import { Updates } from '../src/updates.ts'
+import { connectionEvidence } from './connection-evidence.ts'
 
 function setup() {
   let saved = '', sends = 0
@@ -56,25 +57,43 @@ test('subscription identities still deduplicate and unsubscribe during delivery'
   expect(rows().filter((e: any) => e.phase === 'enter').map((e: any) => e.id)).toEqual(['1', '2'])
 })
 
-test('two real registration sites differ after excluding the collector frame', async () => {
+test('static registration sites identify callbacks without stack coordinates', async () => {
   const { conn, trace, registrations } = setup()
-  const first = () => conn.sub(() => {})
-  const second = () => conn.sub(() => {})
-  first(); second()
-  conn.set('reconnecting')
+  const sub = conn.sub as (f: () => void, site: string) => unknown
+  sub(() => {}, 'Root.unpaired')
+  sub(() => {}, 'kit.useSignal')
   await trace.flush()
-  const rows = registrations()
-  expect(rows.length).toBe(2)
-  expect(rows.map((r: any) => r.id)).toEqual(['1', '2'])
-  for (const row of rows) expect(/^bundle\.js:\d+:\d+$/.test(row.site)).toBe(true)
-  expect(rows[0].site === rows[1].site).toBe(false)
+  expect(registrations()).toEqual([
+    { phase: 'registered', id: '1', site: 'Root.unpaired' },
+    { phase: 'registered', id: '2', site: 'kit.useSignal' },
+  ])
 })
 
-test('actual bundle coordinates skip the collector and retain the next two frames', () => {
-  expect(subscriberSite('    at <anonymous> (bundle.js:1311:64)\n    at register (bundle.js:1458:30)\n    at <anonymous> (bundle.js:1459:2)\n')).toEqual({ site: 'bundle.js:1458:30', caller: 'bundle.js:1459:2' })
+test('the real Updates subscription records its fixed registration site', async () => {
+  const { conn, trace, registrations } = setup()
+  conn.set('idle')
+  const updates = new Updates({ conn: conn as any, baseUrl: async () => 'https://example.com',
+    token: () => '', fetcher: (() => { throw new Error('unexpected fetch') }) as any,
+    os: 'ios', appVersion: '0.0.0', toast: () => {}, install: async () => 'installing',
+  })
+  updates.start(); updates.stop()
+  await trace.flush()
+  expect(registrations()).toEqual([{ phase: 'registered', id: '1', site: 'Updates.follow' }])
 })
 
-test('missing coordinates and private paths do not become a source location', () => {
-  expect(subscriberSite('Error: synthetic message\n    at native')).toEqual({ site: 'unmapped', caller: '' })
-  expect(subscriberSite('    at private (/private/synthetic/bundle.js:4:5)\n    at capture (bundle.js:10:2)\n    at register (bundle.js:20:3)')).toEqual({ site: 'bundle.js:20:3', caller: '' })
+test('an unlabelled callback records no generated stack location', async () => {
+  const { conn, trace, registrations } = setup()
+  conn.sub(() => {})
+  await trace.flush()
+  expect(registrations()).toEqual([{ phase: 'registered', id: '1', site: 'unlabelled' }])
+})
+
+test('ordinary Signal ignores registration labels and preserves subscription identity', () => {
+  const conn = new Signal('ready'), seen: string[] = []
+  const sub = conn.sub.bind(conn) as (f: (v: string) => void, site: string) => () => unknown
+  const f = (v: string) => { seen.push(v) }
+  const off = sub(f, 'Root.unpaired')
+  sub(f, 'kit.useSignal')
+  conn.set('reconnecting'); off(); conn.set('ready')
+  expect(seen).toEqual(['reconnecting'])
 })

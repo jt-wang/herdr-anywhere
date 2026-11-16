@@ -5,7 +5,7 @@ import { cleanup, effect, Image, Keyboard, Scroll, signal, Text, untracked, Vide
 import { Sheet, TextView } from 'nsh/base'
 import type { Store } from '../store.ts'
 import { changeRows, clockText, pathsIn, sizeText, foldLine, outsideFold, refreshEvery, shows, unknownText, type ChatAnswer, type ChatSetup, type ChatChange, type ChatDetail, type ChatFile, type ChatPicture, type ChatRun, type ChatStep, type ChatTurn } from '../model/chat.ts'
-import { Glyph, IconButton, useRev } from './kit.tsx'
+import { Glyph, IconButton } from './kit.tsx'
 import { AskCard } from './ask-card.tsx'
 import { askCard } from '../model/ask.ts'
 import { t } from '../strings/index.ts'
@@ -78,7 +78,9 @@ export function ChatView(props: { store: Store; address: string; status: () => s
   cleanup(() => clearTimeout(behindTimer))
   const unknown = () => { const a = answer(); return a && (!a.chat ? 'gone' : behind() ? undefined : a.unknown) }
   // The decision card: the agent is blocked and its screen's menu was read; the last turn's question, if it is open.
-  const rev = useRev(s)
+  const rev = signal(s.rev.get())
+  const revOffs = [s.rev.sub((v) => rev.set(v)), s.machines.sub(() => rev.update((n) => n + 1))]
+  cleanup(() => revOffs.forEach((off) => off()))
   const card = () => {
     rev()
     const last = turns()?.at(-1)
