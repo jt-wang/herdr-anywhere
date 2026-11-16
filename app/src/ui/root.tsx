@@ -143,7 +143,7 @@ function Connected(props: { deps: RootDeps; store: Store; link: Link; unpaired: 
     alerts.ring(a.kind === 'wait' ? 'blocked' : 'done', { id: 0, title: a.title, body: a.body, level: 'info', action: terminal ? { terminal } : undefined }, store.appActive)
   }
   const offPage = followPage({ front: (f) => { store.appActive = f; if (f) void updates.inFront() }, open: (a) => openTerminal(a), home: () => nav.popToRoot() })
-  const offConn = store.conn.sub((c) => { if (c === 'unpaired') props.unpaired() })
+  const offConn = store.conn.sub((c) => { if (c === 'unpaired') props.unpaired() }, 'Root.unpaired')
   const conn = useSignal(store.conn)
   effect(() => keepAlive(wantsKeepAlive(conn(), prefs().stayConnected)))
   // A program started from the phone asks the terminal's colours as it starts (OpenCode picks light or dark from them).

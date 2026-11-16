@@ -20,6 +20,7 @@ import { CLAUDE_EDIT_MENU, FakeCore, type FakeTab } from '../src/testing/fakecor
 import { FakeFolders } from '../src/testing/fake-folders.ts'
 import { AGENTS, progressTree, saidOn, waitOn } from './progress-tree.ts'
 import { SAMPLE_PICTURE } from './picture.ts'
+import { LayoutRace } from './layout-race.tsx'
 
 // Recorded where a test can read it, as pairLinkUsed below: the test's own Keyboard is another bundle's.
 const putAway = Keyboard.dismiss
@@ -43,6 +44,7 @@ const io = { load: async (k: string) => memory.get(k) ?? null, save: (k: string,
 
 export const core = new FakeCore()
 core.echo = true
+const layoutRace = scene === 'layout-race' ? new LayoutRace(core) : undefined
 ;(globalThis as any).__core = core
 const EDIT_MENU = CLAUDE_EDIT_MENU
 if (scene === 'busy' || scene === 'single') {
@@ -405,6 +407,7 @@ choiceRow.button = (...a) => { void Storage.setItem('fake-choice-draws', String(
 // should share one per change, however many rows show it.
 const stores: Store[] = []
 function counted(store: Store) {
+  layoutRace?.attach(store)
   traceConnSubscribers(store)
   stores.push(store)
   let views = 0
@@ -413,7 +416,7 @@ function counted(store: Store) {
   return store
 }
 
-mount(() => (
+const fixture = () => (
   <Root deps={{
     linker: new Linker(params.via === 'tailpocket' ? { ...io, tunnel: fakeTunnel } : io),
     opensSettings: params.open === 'settings',
@@ -460,4 +463,5 @@ mount(() => (
       return { ok, status: ok ? 200 : 401, json: async () => (ok ? { token: 'new-token', device: 'd2', name: 'studio' } : { error: 'unknown pairing code' }) }
     }) as any,
   }} />
-))
+)
+mount(() => layoutRace ? layoutRace.view(fixture()) : fixture())

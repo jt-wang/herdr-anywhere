@@ -105,7 +105,7 @@ export class Updates {
   private loop?: ReturnType<typeof setInterval>
 
   start() {
-    this.off = this.d.conn.sub((c) => this.follow(c))
+    this.off = this.d.conn.sub((c) => this.follow(c), 'Updates.follow')
     this.follow(this.d.conn.get())
   }
 

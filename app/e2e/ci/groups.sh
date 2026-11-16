@@ -29,10 +29,10 @@
 # Pi's pictures, e2e/ios-kitty.sh); and ios-pinorder and android-pinorder (key pinorder: Pinned order on an iPhone SE, 375 pt,
 # and at 360 dp, light and dark, with screenshots; pin_order_before takes those of the build before).
 android_keys="main panes tunnel notify progress picture"
-android_named="ask stuck chat subkeep title zoom updnotify pinorder"
+android_named="ask stuck chat subkeep title zoom updnotify pinorder layout"
 ios_keys="a b onerror zoom title onerror27 edge edge27 menus menus27 ask chat chat27 chatfold subkeep notify kitty pinorder"
 all="ios-main ios-b ios-onerror $(for k in $android_keys; do printf 'android-%s ' "$k"; done)android-update remote-picture user-path"
-named_only="ios-onerror-27 ios-edge ios-edge-27 ios-ask android-ask android-stuck ios-chat ios27-chat android-chat ios-chatfold ios-subkeep android-subkeep ios-title android-title ios-menus ios-menus-27 ios-zoom android-zoom android-updnotify ios-notify ios-kitty ios-pinorder android-pinorder"
+named_only="ios-onerror-27 ios-edge ios-edge-27 ios-ask android-ask android-stuck ios-chat ios27-chat android-chat ios-chatfold ios-subkeep android-subkeep ios-title android-title ios-menus ios-menus-27 ios-zoom android-zoom android-updnotify ios-notify ios-kitty ios-pinorder android-pinorder android-layout"
 
 json() { printf '['; sep=; for x in "$@"; do printf '%s"%s"' "$sep" "$x"; sep=,; done; printf ']\n'; }
 
@@ -93,6 +93,7 @@ if [ "${1:-}" = --self-test ]; then
   check 'ios=["ask"] android=["ask"] update=false remote=false user_path=false' "ios-ask android-ask" 0 0
   check 'ios=["a"] android=["main","ask"]' "ios-main android-main android-ask" 0 0
   check 'ios=[] android=["stuck"] update=false remote=false user_path=false' android-stuck 0 0
+  check 'ios=[] android=["layout"] update=false remote=false user_path=false' android-layout 0 0
   check 'ios=[] android=["ask","stuck"]' "android-ask android-stuck" 0 0
   check 'ios=["menus","menus27"] android=[] update=false remote=false user_path=false' "ios-menus,ios-menus-27" 0 0
   check 'ios=["edge","edge27"] android=[] update=false remote=false user_path=false' "ios-edge-27 ios-edge" 0 0

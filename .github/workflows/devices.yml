@@ -85,7 +85,7 @@ on:
         default: false
       # Some of the suite groups and not the others (app/e2e/ci/groups.sh has the names and what each runs).
       groups:
-        description: "Only these groups, by commas or spaces (empty: all but ios-onerror-27, ios-edge, ios-edge-27, ios-zoom, android-zoom, ios-menus, ios-menus-27, ios-title, android-title, ios-ask, ios-chat, ios27-chat, ios-chatfold, ios-kitty, android-ask, android-stuck, android-chat, ios-subkeep, android-subkeep, ios-notify, android-updnotify, ios-pinorder and android-pinorder): ios-main ios-b ios-onerror ios-zoom ios-title ios-onerror-27 ios-edge ios-edge-27 ios-menus ios-menus-27 ios-ask ios-chat ios27-chat ios-chatfold ios-kitty android-main android-panes android-tunnel android-notify android-progress android-picture android-zoom android-title android-ask android-stuck android-chat android-update remote-picture user-path ios-subkeep android-subkeep ios-notify android-updnotify ios-pinorder android-pinorder"
+        description: "Only these groups, by commas or spaces (empty: all but ios-onerror-27, ios-edge, ios-edge-27, ios-zoom, android-zoom, ios-menus, ios-menus-27, ios-title, android-title, ios-ask, ios-chat, ios27-chat, ios-chatfold, ios-kitty, android-ask, android-stuck, android-chat, ios-subkeep, android-subkeep, ios-notify, android-updnotify, ios-pinorder, android-pinorder and android-layout): ios-main ios-b ios-onerror ios-zoom ios-title ios-onerror-27 ios-edge ios-edge-27 ios-menus ios-menus-27 ios-ask ios-chat ios27-chat ios-chatfold ios-kitty android-main android-panes android-tunnel android-notify android-progress android-picture android-zoom android-title android-ask android-stuck android-chat android-update remote-picture user-path ios-subkeep android-subkeep ios-notify android-updnotify ios-pinorder android-pinorder android-layout"
         type: string
         default: ""
       # The pinorder groups on the commit before Pinned order (the app as it was, with this commit's suites): only the
@@ -185,6 +185,9 @@ jobs:
         run: |
           cp "$(app/e2e/zoom-package.sh android "$RUNNER_TEMP/zoom-term")" "$RUNNER_TEMP/build/zoom-term.apk"
           cp "$(CHAT=1 app/e2e/zoom-package.sh android "$RUNNER_TEMP/zoom-chat")" "$RUNNER_TEMP/build/zoom-chat.apk"
+      - name: The layout suite old and new fixture APKs
+        if: contains(fromJSON(needs.plan.outputs.android), 'layout')
+        run: bash app/e2e/android-layout-race.sh --package "$RUNNER_TEMP/build/layout"
       - name: The suites' start and stop of their Companion (e2e/companion.sh)
         run: sh app/e2e/companion.sh --self-test "$RUNNER_TEMP/build/herdr-anywhere-linux-amd64"
       - name: The suites leave the person's Companion entry at login alone (e2e/autostart-guard.sh)
@@ -245,7 +248,7 @@ jobs:
   # android.sh in the light theme runs in computers.yml's android-linux. android-typing.sh stays on a Mac: it needs
   # Gboard with pinyin added as its second language, which is set by hand in Gboard's settings.
   android:
-    name: Android ${{ fromJSON('{"main":"main (dark)","panes":"switcher, width, mouse, scrolling","tunnel":"Tailcat, background, reconnect","notify":"languages and notifications","progress":"progress page, pinned order","picture":"pictures and letters","ask":"the decision card in the chat","stuck":"choices that follow the next question","chat":"chat view, four agents","subkeep":"a sub-agent kept as a tab, 360 dp","title":"new-tab title (411 dp)","zoom":"a picture zoomed, from a terminal and a chat","updnotify":"a new version while away","pinorder":"pinned order at 360 dp, light and dark"}')[matrix.key] }}
+    name: Android ${{ fromJSON('{"main":"main (dark)","panes":"switcher, width, mouse, scrolling","tunnel":"Tailcat, background, reconnect","notify":"languages and notifications","progress":"progress page, pinned order","picture":"pictures and letters","ask":"the decision card in the chat","stuck":"choices that follow the next question","chat":"chat view, four agents","subkeep":"a sub-agent kept as a tab, 360 dp","title":"new-tab title (411 dp)","zoom":"a picture zoomed, from a terminal and a chat","updnotify":"a new version while away","pinorder":"pinned order at 360 dp, light and dark","layout":"new terminal across a layout conflict"}')[matrix.key] }}
     needs: [plan, build]
     if: needs.plan.outputs.android != '[]'
     runs-on: ubuntu-latest
@@ -362,6 +365,10 @@ jobs:
               mkdir -p "$OUT/zoom" "$OUT/zoom-chat"
               $s zoom e2e/android-zoom.sh "$RUNNER_TEMP/build/zoom-term.apk" "$OUT/zoom"
               CHAT=1 $s zoom-chat e2e/android-zoom.sh "$RUNNER_TEMP/build/zoom-chat.apk" "$OUT/zoom-chat" ;;
+            layout)
+              mkdir -p "$OUT/layout"
+              cp -R "$RUNNER_TEMP/build/layout" "$OUT/layout/packages"
+              $s layout bash e2e/android-layout-race.sh "$OUT/layout/packages/before.apk" "$OUT/layout/packages/after.apk" "$OUT/layout" ;;
             updnotify)
               mkdir -p "$OUT/updnotify"
               fresh; $s update-notify e2e/android-update-notify.sh "$APK" "$COMPANION" "$OUT/updnotify" ;;
