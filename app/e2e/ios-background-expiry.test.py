@@ -191,13 +191,44 @@ class ExpiryTest(unittest.TestCase):
             root = Path(folder); raw = root / 'raw'; raw.mkdir()
             secret = root / 'secret'; secret.write_text('http://127.0.0.1:9/#pair=aaaaaaaaaaaaaaaa')
             text = 'token=bbbbbbbbbbbbbbbb\n'
-            (raw / 'app-debug.log').write_text(text)
+            (raw / 'other.log').write_text(text)
             expiry.publish(raw, root / 'public', secret)
-            out = root / 'public/app-debug.log'
+            out = root / 'public/other.log'
             self.assertTrue(out.is_file())
             self.assertEqual(out.read_text(), text)
             shapes = re.search(r"^shapes='([^']+)'", (HERE / 'ci-shots-check.sh').read_text(), re.M)[1]
             self.assertIsNotNone(re.search(shapes, out.read_text()))
+
+    def test_debug_copy_masks_original_shapes_and_keeps_ordinary_events(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder); raw = root / 'raw'; raw.mkdir()
+            secret = root / 'secret'; secret.write_text('http://127.0.0.1:9/#pair=aaaaaaaaaaaaaaaa')
+            normal = marker() + 'UIKit task 12 began\nUIKit task 12 ended\n'
+            original = (normal + 'token=bbbbbbbbbbbbbbbb\n#pair=bbbbbbbbbbbbbbbb\n'
+                        'herdr1:bbbbbbbbbbbbbbbb\n')
+            source = raw / 'app-debug.log'; source.write_text(original)
+            shapes = re.search(r"^shapes='([^']+)'", (HERE / 'ci-shots-check.sh').read_text(), re.M)[1]
+            # The CI byte scanner's exact expression must reject the unmasked copy first.
+            self.assertEqual(subprocess.run(['grep', '-qE', shapes, str(source)]).returncode, 0)
+            expiry.publish(raw, root / 'public', secret)
+            clean = root / 'public/app-debug.log'
+            self.assertEqual(subprocess.run(['grep', '-qE', shapes, str(clean)]).returncode, 1)
+            self.assertEqual(source.read_text(), original)
+            self.assertTrue(clean.read_text().startswith(normal))
+            self.assertEqual(len(clean.read_bytes()), len(source.read_bytes()))
+            self.assertEqual(clean.read_text().count('\n'), original.count('\n'))
+            manifest = json.loads((root / 'public/manifest.json').read_text())
+            self.assertEqual(manifest['files']['app-debug.log']['replacements']['shapes'], 3)
+
+    def test_targeted_ci_passes_existing_agent_parameter(self):
+        workflow = (HERE.parents[1] / '.github/workflows/devices.yml').read_text()
+        chat = workflow.split('            chat27)\n', 1)[1].split(';;', 1)[0]
+        self.assertIn('AGENTS=claude-code', chat)
+        shell = (HERE / 'ios-chat-four.sh').read_text()
+        swift = (HERE / 'ios-uitest/tests/ChatFour.swift').read_text()
+        self.assertIn('agents=${AGENTS:-claude-code codex pi opencode}', shell)
+        self.assertIn('TEST_RUNNER_AGENTS="$agents"', shell)
+        self.assertIn('env["AGENTS"]', swift)
 
     def test_calibration_requires_actual_herdr_marker_and_stack(self):
         with tempfile.TemporaryDirectory() as folder:

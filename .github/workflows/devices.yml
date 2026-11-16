@@ -624,7 +624,7 @@ jobs:
             chat)
               $s ios-chat-four e2e/ios-chat-four.sh "$OUT/chat" ;;
             chat27)
-              CHAT_AWAY_CYCLES='${{ inputs.chat_away_cycles || '0' }}' CHAT_AWAY_SELFTEST='${{ inputs.chat_away_selftest || 'none' }}' \
+              AGENTS=claude-code CHAT_AWAY_CYCLES='${{ inputs.chat_away_cycles || '0' }}' CHAT_AWAY_SELFTEST='${{ inputs.chat_away_selftest || 'none' }}' \
                 $s ios-chat-four e2e/ios-chat-four.sh "$OUT/chat27" ;;
             chatfold)
               # The app as built, over the Companion and a fake Claude Code, through a proxy that makes one answer
