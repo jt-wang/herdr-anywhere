@@ -8,6 +8,7 @@
 # Usage: SIM_UDID=<udid> e2e/ios-tui-scroll.sh [screenshot.png]
 # SIM_UDID is required, so the run never lands on another simulator. Needs go, nsh, hc, idb, xcodegen and Xcode.
 set -eu
+. "$(dirname "$0")/autostart-guard.sh"; autostart_guard ios-tui-scroll # a login entry of its own, never the person's
 : "${SIM_UDID:?set SIM_UDID to the simulator to use}"
 app=$(cd "$(dirname "$0")/.." && pwd)
 shot=${1:-}
@@ -35,6 +36,7 @@ cleanup() {
   HC_SESSION="hmios-$$" HC_SOCKET="" HOME="$work/sam" XDG_RUNTIME_DIR="$run" "$hc" server stop >/dev/null 2>&1 || true
   chmod -R u+w "$work" 2>/dev/null; rm -rf "${work:?}" "${run:?}" || echo "NOTE: left after the cleanup: $(ls -A "$work" 2>/dev/null | head -5 | tr '\n' ' ')"
   xcrun simctl shutdown "$SIM_UDID" 2>/dev/null || true
+  autostart_guard_end || exit 1
   exit "$st"
 }
 # INT and TERM end the suite (a trap that only cleans up let it run on, against a deleted folder); EXIT cleans up.
@@ -55,7 +57,8 @@ until curl -fsS "http://127.0.0.1:$port/api/info" >/dev/null 2>&1; do
   i=$((i + 1)); [ $i -gt 100 ] && { echo "FAIL: the Companion did not answer on port $port within 10 s; its log:"; cat "$work/serve.log" 2>&1; exit 1; }
   sleep 0.1
 done
-link=$(HERDR_ANYWHERE_STATE="$work/companion" "$work/herdr-anywhere" pair --url "http://127.0.0.1:$port" 2>/dev/null | grep -o 'http://[^ ]*#pair=[A-Za-z0-9_-]*' | head -1)
+# The link is built into the app, and the build can take longer than the default 10 minutes (the Companion then says 410).
+link=$(HERDR_ANYWHERE_STATE="$work/companion" "$work/herdr-anywhere" pair --ttl 60m --url "http://127.0.0.1:$port" 2>/dev/null | grep -o 'http://[^ ]*#pair=[A-Za-z0-9_-]*' | head -1)
 [ -n "$link" ] || { echo "pair printed no link" >&2; exit 1; }
 # The app is built from a copy of app/ whose terminal page also tells the program when the page got each touch (a
 # "touch" line in the program's file, e2e/touch-times.ts); app/ itself is not changed.

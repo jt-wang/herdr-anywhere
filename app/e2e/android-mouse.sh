@@ -5,6 +5,7 @@
 # OpenCode turns on, and a dialog with Skip and Update buttons three rows tall. It writes down every mouse report it gets.
 # Usage: ANDROID_SERIAL=emulator-5554 e2e/android-mouse.sh APK COMPANION [screenshot.png]
 set -eu
+. "$(dirname "$0")/autostart-guard.sh"; autostart_guard android-mouse # a login entry of its own, never the person's
 : "${ANDROID_SERIAL:?set ANDROID_SERIAL to the device to use}"
 apk=$1; bin=$2; shot=${3:-}
 app=$(cd "$(dirname "$0")/.." && pwd)
@@ -67,7 +68,7 @@ events="$work/mouse"; : > "$events"
   python3 -I "$work/dialog.py" "$events" >/dev/null
 "$bin" serve --listen "127.0.0.1:$port" --hc "$hc" --state "$state" > "$work/serve.log" 2>&1 &
 serve_pid=$!
-cleanup() { kill "$serve_pid" 2>/dev/null; "$hc" server stop >/dev/null 2>&1 || true; chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run" "$state"; }
+cleanup() { kill "$serve_pid" 2>/dev/null; "$hc" server stop >/dev/null 2>&1 || true; chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run" "$state"; autostart_guard_end || exit 1; }
 trap 'adb_exit $? cleanup' EXIT
 # INT and TERM end the suite; the EXIT trap cleans up (a handler that only cleans up lets the script go on).
 trap 'exit 130' INT; trap 'exit 143' TERM

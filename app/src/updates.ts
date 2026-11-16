@@ -18,10 +18,23 @@ export type Checked = { latest: string } | { error: string }
 /** What the person can do now: one at a time, the computer first, so the app keeps its connection while that happens. */
 export type Notice = { kind: 'computer' | 'computerByHand' | 'app' | 'rebuild'; version: string }
 export type InstallResult = 'installing' | 'needsPermission'
+/** A notification's second line: where its tap leads. */
+const NOTIFY_BODY = { computer: 'updateNotifyComputer', computerByHand: 'updateNotifyByHand', app: 'updateNotifyApp', rebuild: 'updateNotifyRebuild' } as const
 
 const parts = (v: string): number[] | null => {
   const m = /^v?(\d+)\.(\d+)\.(\d+)$/.exec(v ?? '')
   return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null
+}
+
+/** What a notification told of, or Not now put off: whose update (the computer's, or this app's) and its version. To
+ *  the person, a computer updated by hand is the same update as one the phone starts; an app downloaded or rebuilt too. */
+export function updateKey(n: Notice) {
+  return `${n.kind === 'computer' || n.kind === 'computerByHand' ? 'computer' : 'app'} ${n.version}`
+}
+
+/** `saved` is this notice's update. An app before 0.2.0 kept the version alone, which stands for both. */
+export function sameUpdate(saved: string, n: Notice) {
+  return saved === updateKey(n) || saved === n.version
 }
 
 /** Version a comes after b. Anything that isn't numbers, such as a developer's build, is never newer or older. */
@@ -75,24 +88,63 @@ export class Updates {
     install: (app: AppFile, progress: (done: number) => void, ask?: boolean) => Promise<InstallResult>
     /** How long the computer gets to come back as the new version. */
     waitMs?: number
+    /** Whether the app is in front, where the notice on home says it. */
+    front?: () => boolean
+    /** The last update a notification told of (updateKey), kept across starts. */
+    told?: { get: () => string; set: (v: string) => void }
+    /** The update the person put off with Not now (updateKey). */
+    dismissed?: () => string
+    /** Posts the system's notification. */
+    notify?: (n: { title: string; body: string }) => void
+    /** How often a connected phone reads the computer's answer again, which changes when its daily check finds one. */
+    everyMs?: number
+    setInterval?: typeof setInterval
+    clearInterval?: typeof clearInterval
   }) {}
 
+  private loop?: ReturnType<typeof setInterval>
+
   start() {
-    this.off = this.d.conn.sub((c) => { if (c === 'ready') void this.refresh() })
-    if (this.d.conn.get() === 'ready') void this.refresh()
+    this.off = this.d.conn.sub((c) => this.follow(c))
+    this.follow(this.d.conn.get())
   }
 
   stop() {
     this.off?.()
     this.off = undefined
+    this.follow('idle')
+  }
+
+  /** Asks when the connection comes, then each hour while it lasts and the person said yes to daily checks: Android
+   *  keeps it for days, and the computer's daily check reaches the phone only through this answer. Only the computer
+   *  is asked, never GitHub. */
+  private follow(c: Conn) {
+    if (this.loop) (this.d.clearInterval ?? globalThis.clearInterval)(this.loop)
+    this.loop = undefined
+    if (c !== 'ready') return
+    void this.refresh()
+    this.loop = (this.d.setInterval ?? globalThis.setInterval)(() => { if (this.info.get()?.checks === 'on') void this.refresh() }, this.d.everyMs ?? 60 * 60_000)
   }
 
   async refresh() {
     try {
       const r = await this.d.fetcher(`${await this.d.baseUrl()}/api/info`)
       const info = r.ok ? readInfo(await r.json()) : null
-      if (info) this.info.set(info)
+      if (info) { this.info.set(info); this.tell() }
     } catch {}
+  }
+
+  /** A new version the person said the computer may look for, while the app is not in front: the system's
+   *  notification, once per update (the computer's and the app's of one version are two). In front, the notice on
+   *  home says it, and that counts as told. */
+  private tell() {
+    const n = this.notice()
+    const told = this.d.told
+    if (!n || !told || this.info.get()?.checks !== 'on') return
+    if (sameUpdate(told.get(), n) || sameUpdate(this.d.dismissed?.() ?? '', n)) return
+    told.set(updateKey(n))
+    if (this.d.front?.() !== false) return
+    this.d.notify?.({ title: t('updateNotifyTitle', { version: n.version }), body: t(NOTIFY_BODY[n.kind]) })
   }
 
   notice(): Notice | null {

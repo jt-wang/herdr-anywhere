@@ -1,0 +1,310 @@
+nsh pull request #835 (https://github.com/longbridge/nsh/pull/835), upstream commit
+9fd5700a992320054632a74380142d7591213296 in https://github.com/longbridge/nsh.
+Pins QuickJS to 0.14.2, whose interrupted array-find fix prevents a double free.
+The upstream regression test is unchanged. Dependency features and unrelated lockfile entries stay as in v0.3.0.
+
+nsh is Copyright Longbridge, licensed under the Apache License 2.0
+(https://github.com/longbridge/nsh/blob/v0.3.0/LICENSE-APACHE); this patch is under the same license.
+
+diff --git a/Cargo.lock b/Cargo.lock
+index e06c7ef..457613e 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -4517,9 +4517,9 @@ dependencies = [
+ 
+ [[package]]
+ name = "quickjs-jit"
+-version = "0.14.1"
++version = "0.14.2"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "70d41722208581628761f6e7c3ada5c357cc4df244c238c880e64a541bb32d0e"
++checksum = "f5f4423709e8709eb3ee02d23b30fba4cc6f3ab0ee90c3fc08edfb968b3c8b73"
+ dependencies = [
+  "quickjs-jit-core",
+  "quickjs-jit-macro",
+@@ -4527,9 +4527,9 @@ dependencies = [
+ 
+ [[package]]
+ name = "quickjs-jit-core"
+-version = "0.14.1"
++version = "0.14.2"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "d05311dece4caaf4f49a170d95ba34f82de26910128ad1d302ce607da81407b5"
++checksum = "c3dbd3a4da98e06d0bbc0f65a4719155b7923461194c3b26860b87e1568aff09"
+ dependencies = [
+  "async-lock",
+  "half",
+@@ -4540,9 +4540,9 @@ dependencies = [
+ 
+ [[package]]
+ name = "quickjs-jit-macro"
+-version = "0.14.1"
++version = "0.14.2"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "95d84c7d9ea1fbd6682660cc6d1357537d014ed1d14c87a57b5f8bb04f5f0685"
++checksum = "0e8f4ad21cdeaceb5e65e5b8ae8a3695a4a1b4e368a5dc65709da27d03110bbb"
+ dependencies = [
+  "convert_case",
+  "indexmap",
+@@ -4555,9 +4555,9 @@ dependencies = [
+ 
+ [[package]]
+ name = "quickjs-jit-stdlib"
+-version = "0.14.1"
++version = "0.14.2"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "b0599ae2a818de29d5e7618df383deb38a7c827dbe2dd57dcebf1694bc766d90"
++checksum = "a3ad9800d6824112e3d1032078c8e8bcabc47870bbedc858ef6b6fae12de3070"
+ dependencies = [
+  "aes",
+  "aes-gcm",
+@@ -4614,9 +4614,9 @@ dependencies = [
+ 
+ [[package]]
+ name = "quickjs-jit-sys"
+-version = "0.14.1"
++version = "0.14.2"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "de70d3b7f215521a57a1da2843ef54e0cdfcae1fadf2cfc712cb92d965931f77"
++checksum = "44983d24261238e3db9f543729c1ec806dc199f7dd360560699498608ff7cfb8"
+ dependencies = [
+  "bindgen",
+  "cc",
+diff --git a/Cargo.toml b/Cargo.toml
+index a12ad30..6a65d90 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -163,11 +163,11 @@ tokio = { version = "1", default-features = false }
+ # The same QuickJS binding and standard modules run on every platform; the JIT
+ # stays disabled on wasm, preserving the native compiler's bytecode format.
+ # `full` is avoided on purpose: it enables `dyn-load` (dlopen2), which does not build for iOS / Catalyst.
+-rquickjs = { package = "quickjs-jit", version = "=0.14.1", default-features = false, features = ["std", "futures", "loader", "macro"] }
++rquickjs = { package = "quickjs-jit", version = "=0.14.2", default-features = false, features = ["std", "futures", "loader", "macro"] }
+ 
+ # The standard modules `buffer`, `crypto`, `path`, `url` and `zlib` (all targets): LLRT d9fd873e,
+ # vendored by quickjs-jit-stdlib, on NSH's exact QuickJS VM. Privileged I/O stays behind NSH grants.
+-quickjs-jit-stdlib = { version = "=0.14.1", default-features = false, features = ["buffer", "crypto", "path", "zlib", "zlib-zstd"] }
++quickjs-jit-stdlib = { version = "=0.14.2", default-features = false, features = ["buffer", "crypto", "path", "zlib", "zlib-zstd"] }
+ getrandom-stdlib = { package = "getrandom", version = "0.4", default-features = false }
+ cap-std = "4.0.3"
+ futures-util = { version = "0.3", features = ["sink"] }
+diff --git a/crates/gpui/Cargo.lock b/crates/gpui/Cargo.lock
+index 287930c..84d12b7 100644
+--- a/crates/gpui/Cargo.lock
++++ b/crates/gpui/Cargo.lock
+@@ -7027,9 +7027,9 @@ dependencies = [
+ 
+ [[package]]
+ name = "quickjs-jit"
+-version = "0.14.1"
++version = "0.14.2"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "70d41722208581628761f6e7c3ada5c357cc4df244c238c880e64a541bb32d0e"
++checksum = "f5f4423709e8709eb3ee02d23b30fba4cc6f3ab0ee90c3fc08edfb968b3c8b73"
+ dependencies = [
+  "quickjs-jit-core",
+  "quickjs-jit-macro",
+@@ -7037,9 +7037,9 @@ dependencies = [
+ 
+ [[package]]
+ name = "quickjs-jit-core"
+-version = "0.14.1"
++version = "0.14.2"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "d05311dece4caaf4f49a170d95ba34f82de26910128ad1d302ce607da81407b5"
++checksum = "c3dbd3a4da98e06d0bbc0f65a4719155b7923461194c3b26860b87e1568aff09"
+ dependencies = [
+  "async-lock",
+  "half",
+@@ -7050,9 +7050,9 @@ dependencies = [
+ 
+ [[package]]
+ name = "quickjs-jit-macro"
+-version = "0.14.1"
++version = "0.14.2"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "95d84c7d9ea1fbd6682660cc6d1357537d014ed1d14c87a57b5f8bb04f5f0685"
++checksum = "0e8f4ad21cdeaceb5e65e5b8ae8a3695a4a1b4e368a5dc65709da27d03110bbb"
+ dependencies = [
+  "convert_case 0.12.0",
+  "indexmap",
+@@ -7065,9 +7065,9 @@ dependencies = [
+ 
+ [[package]]
+ name = "quickjs-jit-stdlib"
+-version = "0.14.1"
++version = "0.14.2"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "b0599ae2a818de29d5e7618df383deb38a7c827dbe2dd57dcebf1694bc766d90"
++checksum = "a3ad9800d6824112e3d1032078c8e8bcabc47870bbedc858ef6b6fae12de3070"
+ dependencies = [
+  "aes 0.9.3",
+  "aes-gcm",
+@@ -7124,9 +7124,9 @@ dependencies = [
+ 
+ [[package]]
+ name = "quickjs-jit-sys"
+-version = "0.14.1"
++version = "0.14.2"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "de70d3b7f215521a57a1da2843ef54e0cdfcae1fadf2cfc712cb92d965931f77"
++checksum = "44983d24261238e3db9f543729c1ec806dc199f7dd360560699498608ff7cfb8"
+ dependencies = [
+  "bindgen",
+  "cc",
+diff --git a/crates/nsh-js/src/bytecode.rs b/crates/nsh-js/src/bytecode.rs
+index 21d32ad..a1bbbb9 100644
+--- a/crates/nsh-js/src/bytecode.rs
++++ b/crates/nsh-js/src/bytecode.rs
+@@ -20,7 +20,7 @@ pub const BYTECODE_VERSION: &str = "quickjs-ng-0.16.2+0fdea21/bc28/le";
+ /// version). The test `engines_build_the_named_quickjs` holds them to the
+ /// lockfile.
+ #[cfg(test)]
+-const ENGINES: &[(&str, &str)] = &[("quickjs-jit-sys", "0.14.1")];
++const ENGINES: &[(&str, &str)] = &[("quickjs-jit-sys", "0.14.2")];
+ 
+ /// Module name every bundle is evaluated under; JS stack frames reference
+ /// it as `bundle.js:LINE:COL`.
+diff --git a/crates/nsh-js/src/host.rs b/crates/nsh-js/src/host.rs
+index 02d91b3..bc5bf21 100644
+--- a/crates/nsh-js/src/host.rs
++++ b/crates/nsh-js/src/host.rs
+@@ -2425,6 +2425,61 @@ const report = (v) => text(String(v));
+         assert!(host.fatal().is_none());
+     }
+ 
++    #[test]
++    fn an_interrupt_inside_find_keeps_the_elements_alive() {
++        // An interrupt inside QuickJS's `find` family must not free the
++        // arrays' elements (quickjs-ng #1826), or a later call crashes the
++        // VM. `views[0]` and the second, offset run of each method make the
++        // interrupt land in the method itself.
++        let mut host = sandboxed(Limits {
++            call_budget: Duration::ZERO,
++            ..Limits::default()
++        });
++        let errors = Rc::new(RefCell::new(Vec::new()));
++        let seen = errors.clone();
++        host.set_error_handler(Box::new(move |e| seen.borrow_mut().push(e.message.clone())));
++        host.eval_source(
++            r#"import { element, prop } from "nsh:rt";
++            const methods = ["find", "findIndex", "findLast", "findLastIndex"];
++            globalThis.kept = methods.map(() => ({}));
++            globalThis.weak = kept.map((element) => new WeakRef(element));
++            globalThis.items = kept.map((element) => new Array(100000).fill(element));
++            const press = (handler) => {
++                const view = element("view");
++                prop(view, "onPress", handler);
++                return view;
++            };
++            const nothing = () => {};
++            globalThis.views = [press(() => { for (;;) {} })];
++            methods.forEach((method, i) => {
++                views.push(press(() => items[i][method](() => false)));
++                views.push(press(() => (nothing(), items[i][method](() => false))));
++            });"#,
++        )
++        .unwrap();
++        ops(&host);
++        // Views 2 (the loop), then 4 to 18: two per method.
++        for view in (4..=18).step_by(2) {
++            host.dispatch_event(2, EventKind::Press, &EventPayload::None);
++            host.dispatch_event(view, EventKind::Press, &EventPayload::None);
++        }
++        let errors = errors.borrow().clone();
++        assert_eq!(errors.len(), 16, "{errors:?}");
++        assert!(
++            errors.iter().all(|e| e.contains("budget of 0 ms")),
++            "{errors:?}"
++        );
++        // The arrays let their elements go; `kept` still holds them.
++        host.eval_source("items = null;").unwrap();
++        host.collect_garbage();
++        host.eval_source(&format!(
++            "{REPORT}report(weak.map((w, i) => w.deref() === kept[i]).join());"
++        ))
++        .unwrap();
++        assert_eq!(reported(&host), ["true,true,true,true"]);
++        assert!(host.fatal().is_none());
++    }
++
+     #[test]
+     fn running_out_of_memory_stops_the_vm() {
+         let host = sandboxed(Limits {
+diff --git a/docs/dev/js-modules.md b/docs/dev/js-modules.md
+index 2dfcac4..2173046 100644
+--- a/docs/dev/js-modules.md
++++ b/docs/dev/js-modules.md
+@@ -146,7 +146,7 @@ and grant no file access. On WebAssembly, `os.homedir()` returns a typed error a
+ both avoid `std::env`, whose accessors panic on `wasm32-unknown-unknown`.
+ 
+ QuickJS and the LLRT modules come through `quickjs-jit` and `quickjs-jit-stdlib` on native and WebAssembly targets. The WebAssembly build uses the interpreter and pregenerated bindings; the portable standard-library implementation supplies `buffer`, `crypto`, `path`, `url`, `zlib` and `zlib-zstd`, including synchronous hashing and compression. Browser entropy reaches Rust through the player's `crypto.getRandomValues` import (`standard/random.rs`); wasm builds select getrandom's custom backend. All eleven catalog modules load on both targets, with `Buffer` and `crypto` globals. On WebAssembly, `path` uses POSIX separators and a virtual `/` working directory. The crates are
+-published together at one version and pinned exactly (`=0.14.1`), with no git dependency or patch. `standard/declarations.rs` projects their actual exports from checksummed upstream assets in
++published together at one version and pinned exactly (`=0.14.2`), with no git dependency or patch. `standard/declarations.rs` projects their actual exports from checksummed upstream assets in
+ `crates/nsh-js/third_party/llrt-types`. `zlib` bounds each decompression (64 MiB, or the heap limit when smaller). NSH's WHATWG constructors (URL, Blob, streams, events)
+ keep their identity. `console` declares the global `console`'s type next to its implementation. The
+ declared interfaces define the API: Node-shaped subsets compatible with gpui-shell's, not Node.js itself; where
+diff --git a/examples/embed-gpui/Cargo.lock b/examples/embed-gpui/Cargo.lock
+index 0475839..1dc4293 100644
+--- a/examples/embed-gpui/Cargo.lock
++++ b/examples/embed-gpui/Cargo.lock
+@@ -8042,9 +8042,9 @@ dependencies = [
+ 
+ [[package]]
+ name = "quickjs-jit"
+-version = "0.14.1"
++version = "0.14.2"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "70d41722208581628761f6e7c3ada5c357cc4df244c238c880e64a541bb32d0e"
++checksum = "f5f4423709e8709eb3ee02d23b30fba4cc6f3ab0ee90c3fc08edfb968b3c8b73"
+ dependencies = [
+  "quickjs-jit-core",
+  "quickjs-jit-macro",
+@@ -8052,9 +8052,9 @@ dependencies = [
+ 
+ [[package]]
+ name = "quickjs-jit-core"
+-version = "0.14.1"
++version = "0.14.2"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "d05311dece4caaf4f49a170d95ba34f82de26910128ad1d302ce607da81407b5"
++checksum = "c3dbd3a4da98e06d0bbc0f65a4719155b7923461194c3b26860b87e1568aff09"
+ dependencies = [
+  "async-lock",
+  "half",
+@@ -8065,9 +8065,9 @@ dependencies = [
+ 
+ [[package]]
+ name = "quickjs-jit-macro"
+-version = "0.14.1"
++version = "0.14.2"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "95d84c7d9ea1fbd6682660cc6d1357537d014ed1d14c87a57b5f8bb04f5f0685"
++checksum = "0e8f4ad21cdeaceb5e65e5b8ae8a3695a4a1b4e368a5dc65709da27d03110bbb"
+ dependencies = [
+  "convert_case 0.12.0",
+  "indexmap",
+@@ -8080,9 +8080,9 @@ dependencies = [
+ 
+ [[package]]
+ name = "quickjs-jit-stdlib"
+-version = "0.14.1"
++version = "0.14.2"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "b0599ae2a818de29d5e7618df383deb38a7c827dbe2dd57dcebf1694bc766d90"
++checksum = "a3ad9800d6824112e3d1032078c8e8bcabc47870bbedc858ef6b6fae12de3070"
+ dependencies = [
+  "aes 0.9.3",
+  "aes-gcm",
+@@ -8139,9 +8139,9 @@ dependencies = [
+ 
+ [[package]]
+ name = "quickjs-jit-sys"
+-version = "0.14.1"
++version = "0.14.2"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "de70d3b7f215521a57a1da2843ef54e0cdfcae1fadf2cfc712cb92d965931f77"
++checksum = "44983d24261238e3db9f543729c1ec806dc199f7dd360560699498608ff7cfb8"
+ dependencies = [
+  "bindgen",
+  "cc",

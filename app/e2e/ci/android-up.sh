@@ -34,6 +34,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 "$here/android-watch.sh" --self-test
 sh "$here/../adb-note.sh" --self-test
 sh "$here/../android-glyphs.sh" --self-test
+sh "$here/../android-net.sh" --self-test
 nohup "$here/android-watch.sh" "$adb" "${OUT:-$RUNNER_TEMP/out}/emulator-lost" "$RUNNER_TEMP/emulator.log" "$RUNNER_TEMP/logcat.txt" \
   >/dev/null 2>&1 &
 # A minute for the phone to settle: without it the first suite after boot failed to
@@ -50,3 +51,6 @@ echo "booted: Android $("$adb" shell getprop ro.build.version.release | tr -d '\
   { echo "FAIL: the screen is not 1080x2400 at 420 dpi, light, font scale 1"; exit 1; }
 # What keyboard this image has: android-typing.sh needs Gboard.
 echo "keyboards: $("$adb" shell ime list -s | tr -d '\r' | tr '\n' ' ')"
+# WiFi off: the suites go out through mobile data alone (android-net.sh says why).
+. "$here/../android-net.sh"
+mobile_only 180
