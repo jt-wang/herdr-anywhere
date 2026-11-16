@@ -1,0 +1,154 @@
+nsh pull request #1991 (https://github.com/longbridge/nsh/pull/1991), upstream commit
+f0ab67cf85ef3616bf9f68e16315b36a0446b32d in https://github.com/longbridge/nsh.
+The upstream implementation is unchanged. The regression test is appended after the v0.3.0 tests; the unrelated compaction test in its original context is not needed.
+
+nsh is Copyright Longbridge, licensed under the Apache License 2.0
+(https://github.com/longbridge/nsh/blob/v0.3.0/LICENSE-APACHE); this patch is under the same license.
+
+diff --git a/crates/nsh-core/src/reactive.rs b/crates/nsh-core/src/reactive.rs
+index 75379705..bb1eb130 100644
+--- a/crates/nsh-core/src/reactive.rs
++++ b/crates/nsh-core/src/reactive.rs
+@@ -160,6 +160,11 @@ struct Node<H: Host> {
+     /// The owner (for a root, the one it was made under: context and
+     /// `runTop` look through it, but it does not own the root).
+     owner: u32,
++    /// The owner's generation when the node was made under it. A root
++    /// outlives the owner it was made under (that owner does not own it):
++    /// once the owner is freed its slot may name another node, which the
++    /// root must not take for its owner in `runTop` ([`Graph::owner_of`]).
++    owner_generation: u32,
+     owned: Vec<u32>,
+     cleanups: Vec<H::Cleanup>,
+     context: Option<Rc<Frame<H>>>,
+@@ -186,6 +191,7 @@ impl<H: Host> Node<H> {
+             sources: Vec::new(),
+             observers: Vec::new(),
+             owner: NONE,
++            owner_generation: 0,
+             owned: Vec::new(),
+             cleanups: Vec::new(),
+             context: None,
+@@ -332,6 +338,7 @@ impl<H: Host> Graph<H> {
+         n.owner = if is_node(owner) { owner } else { NONE };
+         drop(old);
+         if is_node(owner) {
++            self.nodes[id as usize].owner_generation = self.nodes[owner as usize].generation;
+             self.nodes[owner as usize].owned.push(id);
+         }
+         id
+@@ -351,6 +358,7 @@ impl<H: Host> Graph<H> {
+         n.owner = if is_node(owner) { owner } else { NONE };
+         n.context = context;
+         if is_node(owner) {
++            self.nodes[id as usize].owner_generation = self.nodes[owner as usize].generation;
+             self.nodes[owner as usize].owned.push(id);
+         }
+         id
+@@ -365,6 +373,9 @@ impl<H: Host> Graph<H> {
+         let n = &mut self.nodes[id as usize];
+         n.owner = if current == DISPOSED { NONE } else { current };
+         n.context = context;
++        if is_node(current) {
++            self.nodes[id as usize].owner_generation = self.nodes[current as usize].generation;
++        }
+         id
+     }
+ 
+@@ -414,11 +425,31 @@ impl<H: Host> Graph<H> {
+         self.nodes[id as usize].generation
+     }
+ 
+-    /// The owner of node `id` (for a root, the one it was made under).
++    /// The owner of node `id` (for a root, the slot it was made under: an
++    /// owner that re-makes its root in place, as a region does, is found
++    /// through it again).
+     pub fn parent(&self, id: u32) -> u32 {
+         self.nodes[id as usize].owner
+     }
+ 
++    /// Node `id`'s owner for `runTop`, or [`NONE`] once the slot it named
++    /// was freed (a root whose owner went: the slot may name another node
++    /// now, maybe one under the root itself, which would close the walk up
++    /// the owners into a loop).
++    fn owner_of(&self, id: u32) -> u32 {
++        let n = &self.nodes[id as usize];
++        let owner = n.owner;
++        if !is_node(owner) {
++            return owner;
++        }
++        let o = &self.nodes[owner as usize];
++        if o.kind == Kind::Free || o.generation != n.owner_generation {
++            NONE
++        } else {
++            owner
++        }
++    }
++
+     /// Node `id`'s kind.
+     pub fn kind(&self, id: u32) -> Kind {
+         self.nodes[id as usize].kind
+@@ -854,7 +885,7 @@ fn run_top<H: Host>(h: H, id: u32) {
+     }
+     let exec = graph.exec;
+     let mut ancestors = vec![id];
+-    let mut at = node.owner;
++    let mut at = graph.owner_of(id);
+     while is_node(at) {
+         let n = &graph.nodes[at as usize];
+         if n.updated_at.is_some_and(|t| t >= exec) {
+@@ -863,7 +894,7 @@ fn run_top<H: Host>(h: H, id: u32) {
+         if n.state != CLEAN && n.is_computation() {
+             ancestors.push(at);
+         }
+-        at = n.owner;
++        at = graph.owner_of(at);
+     }
+     for &node in ancestors.iter().rev() {
+         let n = &g(h).nodes[node as usize];
+--- a/crates/nsh-core/src/reactive/tests.rs
++++ b/crates/nsh-core/src/reactive/tests.rs
+@@ -494,3 +494,43 @@
+     });
+     check_links();
+ }
++/// A root made under an owner that is disposed before it keeps naming the
++/// owner's slot; once the slot is reused by a node made under the root, the
++/// root's `owner` link closes a loop. A write then must not hang `runTop`.
++#[test]
++fn a_root_whose_owner_went_does_not_loop_through_its_reused_slot() {
++    let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
++    let flag = done.clone();
++    std::thread::spawn(move || {
++        let tick = signal(0);
++        let mut root = NONE;
++        // The owner: a computation the root is made under (not owned by it).
++        let owner = render_effect(|| {});
++        with_owner(Test, owner, || {
++            root = with_root(Test, || ()).0;
++        });
++        // The owner goes; the root does not.
++        dispose(Test, owner);
++        // A computation made under the root takes the owner's freed slot.
++        let effect = with_owner(Test, root, || {
++            render_effect(move || {
++                get(tick);
++            })
++        });
++        assert_eq!(effect, owner, "the freed slot is reused");
++        assert_eq!(
++            graph().parent(effect),
++            root,
++            "the slot's new node is under the root"
++        );
++        set(tick, 1);
++        flag.store(true, std::sync::atomic::Ordering::SeqCst);
++    });
++    for _ in 0..50 {
++        if done.load(std::sync::atomic::Ordering::SeqCst) {
++            return;
++        }
++        std::thread::sleep(std::time::Duration::from_millis(100));
++    }
++    panic!("runTop looped through the root's stale owner");
++}

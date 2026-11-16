@@ -6,6 +6,7 @@
 # Usage: ANDROID_SERIAL=emulator-5554 e2e/android-quiet.sh [apk] [folder for screenshots]
 # Needs the internet, go, hc and the Android SDK.
 set -eu
+. "$(dirname "$0")/autostart-guard.sh"; autostart_guard android-quiet # a login entry of its own, never the person's
 : "${ANDROID_SERIAL:?set ANDROID_SERIAL to the device to use}"
 app=$(cd "$(dirname "$0")/.." && pwd)
 apk=${1:-$app/android/build/Herdr.apk}
@@ -42,6 +43,7 @@ cleanup() {
   fi
   "$hc" server stop >/dev/null 2>&1 || true
   chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run" "$state"
+  autostart_guard_end || exit 1
 }
 trap 'adb_exit $? cleanup' EXIT
 # INT and TERM end the suite; the EXIT trap cleans up (a handler that only cleans up lets the script go on).
@@ -186,7 +188,9 @@ away() {
 during=away
 case_ background '"$adb" shell input keyevent 3' '"$adb" shell am start -W -n "$id/.MainActivity" >/dev/null' 50
 during=
-case_ offline '"$adb" shell svc wifi disable; "$adb" shell svc data disable' '"$adb" shell svc wifi enable; "$adb" shell svc data enable' 50
+# Back online as it was: on CI the phone has WiFi off (android-net.sh mobile_only), and it stays off.
+wifi_was=$("$adb" shell settings get global wifi_on | tr -d '\r')
+case_ offline '"$adb" shell svc wifi disable; "$adb" shell svc data disable' '[ "$wifi_was" = 0 ] || "$adb" shell svc wifi enable; "$adb" shell svc data enable' 50
 "$adb" root >/dev/null 2>&1; sleep 2
 "$adb" wait-for-device
 case_ frozen '"$adb" shell kill -STOP $(pid)' '"$adb" shell kill -CONT $(pid)' 50

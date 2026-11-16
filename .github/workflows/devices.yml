@@ -6,7 +6,9 @@ name: Devices
 # screenshots and logs after app/e2e/ci-shots-check.sh has painted over every QR code and found no pairing secret;
 # the check first proves on a real pairing link that it finds one.
 # Android: API 35 emulators on Linux runners (app/e2e/ci/android-up.sh). iOS: iOS 26.5 simulators on macOS runners
-# (app/e2e/ci/ios-up.sh); the app is built for the simulator, unsigned.
+# (app/e2e/ci/ios-up.sh); the app is built for the simulator, unsigned. Group ios-onerror-27 runs the onError suite
+# again with Xcode 27.0 on iOS 27.0, the SDK the TestFlight builds use; only when a dispatch names it. Groups ios-menus
+# and ios-menus-27 take pictures of the menus and the toast (app/e2e/ios-menus.sh), also only when named.
 # It runs on main, on release tags, on the public branch ci, where each release's commit must pass before main, and
 # on ci-* branches, where a change is tried on its own beside the others. Each branch has its own concurrency group.
 on:
@@ -23,7 +25,7 @@ on:
         default: false
       # A suite that passes one run and fails the next needs more runs to show why: this many copies of one iOS group
       # at once, on the commit asked for, and no other suite. Each uploads its own folder, checked as always. With both
-      # set, the main group's. 5 at most: GitHub runs 5 macOS jobs at a time for an account on the Free, Pro or Team
+      # set, the first of main, b, iOS 27 chat. 5 at most: GitHub runs 5 macOS jobs at a time for an account on the Free, Pro or Team
       # plan, across all its repositories (docs.github.com/en/actions/reference/limits); more would only wait.
       ios_main_repeat:
         description: "Run only the iOS main group, this many copies at once (0: the usual run)"
@@ -35,6 +37,21 @@ on:
         type: choice
         options: ["0", "1", "2", "3", "4", "5"]
         default: "0"
+      ios27_chat_repeat:
+        description: "Run only the iOS 27 chat view group (ios27-chat), this many copies at once (0: the usual run)"
+        type: choice
+        options: ["0", "1", "2", "3", "4", "5"]
+        default: "0"
+      chat_away_cycles:
+        description: "ios27-chat: 60-second background cycles in its first agent (0: usual suite)"
+        type: choice
+        options: ["0", "1", "30"]
+        default: "0"
+      chat_away_selftest:
+        description: "ios27-chat detector control: stop-companion must fail after resuming (needs cycles)"
+        type: choice
+        options: ["none", "stop-companion"]
+        default: "none"
       # The iOS scroll suite's own self-test (e2e/ios-tui-scroll.sh): miss-first taps beside the space first, so the
       # suite must fail with its record of the screen and a second tap; slow-terminal looks for the terminal only from
       # 5 s after the tap, so it must pass with no second tap. Meant with ios_main_repeat; a push never sets it.
@@ -68,22 +85,35 @@ on:
         default: false
       # Some of the suite groups and not the others (app/e2e/ci/groups.sh has the names and what each runs).
       groups:
-        description: "Only these groups, by commas or spaces (empty: all): ios-main ios-b android-main android-panes android-tunnel android-notify android-progress android-picture android-update remote-picture user-path"
+        description: "Only these groups, by commas or spaces (empty: all but ios-onerror-27, ios-edge, ios-edge-27, ios-zoom, android-zoom, ios-menus, ios-menus-27, ios-title, android-title, ios-ask, ios-chat, ios27-chat, ios-chatfold, ios-kitty, android-ask, android-stuck, android-chat, ios-subkeep, android-subkeep, ios-notify, android-updnotify, ios-pinorder and android-pinorder): ios-main ios-b ios-onerror ios-zoom ios-title ios-onerror-27 ios-edge ios-edge-27 ios-menus ios-menus-27 ios-ask ios-chat ios27-chat ios-chatfold ios-kitty android-main android-panes android-tunnel android-notify android-progress android-picture android-zoom android-title android-ask android-stuck android-chat android-update remote-picture user-path ios-subkeep android-subkeep ios-notify android-updnotify ios-pinorder android-pinorder"
         type: string
         default: ""
+      # The pinorder groups on the commit before Pinned order (the app as it was, with this commit's suites): only the
+      # screenshots at rest, light and dark, to set beside the ones after.
+      pin_order_before:
+        description: "The pinorder groups take only the screenshots of a build before Pinned order"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 concurrency:
   # A run of copies has a group of its own, so it doesn't cancel the branch's usual run, nor that run it; copies of
-  # the main group and of the b group apart, as a run has only one of them (ios_main_repeat wins over ios_b_repeat).
+  # the main, b and iOS 27 chat groups apart, as a run has only one of them (ios_main_repeat, then ios_b_repeat).
   # So does each scroll self-test, the pictures self-test, the open-the-space one, the OCR probe and a run of some groups.
-  group: devices-${{ github.ref }}${{ (inputs.ios_main_repeat || '0') != '0' && '-repeat-a' || (inputs.ios_b_repeat || '0') != '0' && '-repeat-b' || '' }}${{ (inputs.ios_scroll_selftest || 'none') != 'none' && format('-{0}', inputs.ios_scroll_selftest) || '' }}${{ (inputs.ios_picture_selftest || 'none') != 'none' && '-picture-selftest' || '' }}${{ (inputs.ios_open_space_selftest || 'none') != 'none' && '-open-space-selftest' || '' }}${{ inputs.ocr_probe && '-ocr-probe' || '' }}${{ inputs.groups && '-groups' || '' }}
+  group: devices-${{ github.ref }}${{ (inputs.ios_main_repeat || '0') != '0' && '-repeat-a' || (inputs.ios_b_repeat || '0') != '0' && '-repeat-b' || (inputs.ios27_chat_repeat || '0') != '0' && '-repeat-chat27' || '' }}${{ (inputs.ios_scroll_selftest || 'none') != 'none' && format('-{0}', inputs.ios_scroll_selftest) || '' }}${{ (inputs.ios_picture_selftest || 'none') != 'none' && '-picture-selftest' || '' }}${{ (inputs.ios_open_space_selftest || 'none') != 'none' && '-open-space-selftest' || '' }}${{ inputs.ocr_probe && '-ocr-probe' || '' }}${{ inputs.groups && '-groups' || '' }}
   cancel-in-progress: true
 
 env:
   ANDROID_SERIAL: emulator-5554
+
+# Every run step is `bash --noprofile --norc -eo pipefail {0}` (pwsh where a step says so). A step with no shell given
+# runs `bash -e {0}`, with no pipefail, and `go test … | tee log` took tee's exit 0 over a failed test.
+# app/scripts/check-pipefail.sh fails on a pipe in a step without pipefail.
+defaults:
+  run:
+    shell: bash
 
 jobs:
   # Which groups this run takes: all on a push; a dispatch may name some (groups) or run copies of one iOS group.
@@ -107,12 +137,13 @@ jobs:
           HM_GROUPS: ${{ inputs.groups }}
           MAIN_REPEAT: ${{ inputs.ios_main_repeat || '0' }}
           B_REPEAT: ${{ inputs.ios_b_repeat || '0' }}
+          CHAT27_REPEAT: ${{ inputs.ios27_chat_repeat || '0' }}
         run: |
           # Every script's trap on INT or TERM ends it (a cancelled or timed-out job sends one), and the check finds one that doesn't.
           sh app/e2e/ci/traps.sh --self-test
           sh app/e2e/ci/traps.sh
           sh app/e2e/ci/groups.sh --self-test
-          sh app/e2e/ci/groups.sh "$HM_GROUPS" "$MAIN_REPEAT" "$B_REPEAT" > "$RUNNER_TEMP/groups"
+          sh app/e2e/ci/groups.sh "$HM_GROUPS" "$MAIN_REPEAT" "$B_REPEAT" "$CHAT27_REPEAT" > "$RUNNER_TEMP/groups"
           cat "$RUNNER_TEMP/groups"
           cat "$RUNNER_TEMP/groups" >> "$GITHUB_OUTPUT"
 
@@ -130,7 +161,9 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
       - id: prev
-        run: echo "tag=$(app/e2e/ci/prev-tag.sh)" >> "$GITHUB_OUTPUT"
+        run: |
+          tag=$(app/e2e/ci/prev-tag.sh)
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: companion/go.mod
@@ -147,6 +180,15 @@ jobs:
           cp app/android/build/Herdr.apk "$RUNNER_TEMP/build/"
           (cd companion && CGO_ENABLED=0 go build -buildvcs=false -trimpath -ldflags="-s -w" -o "$RUNNER_TEMP/build/herdr-anywhere-linux-amd64" ./cmd/herdr-anywhere)
           "$RUNNER_TEMP/build/herdr-anywhere-linux-amd64" --version
+      # The zoom suites' app (e2e/picture-app.tsx, fake data, its own id): the sunset opened from a terminal, and from a chat.
+      - name: The zoom suites' APKs
+        run: |
+          cp "$(app/e2e/zoom-package.sh android "$RUNNER_TEMP/zoom-term")" "$RUNNER_TEMP/build/zoom-term.apk"
+          cp "$(CHAT=1 app/e2e/zoom-package.sh android "$RUNNER_TEMP/zoom-chat")" "$RUNNER_TEMP/build/zoom-chat.apk"
+      - name: The suites' start and stop of their Companion (e2e/companion.sh)
+        run: sh app/e2e/companion.sh --self-test "$RUNNER_TEMP/build/herdr-anywhere-linux-amd64"
+      - name: The suites leave the person's Companion entry at login alone (e2e/autostart-guard.sh)
+        run: sh app/e2e/autostart-guard.sh --self-test "$RUNNER_TEMP/build/herdr-anywhere-linux-amd64"
       - run: app/e2e/ci/tools.sh shots
       - name: Check what is uploaded
         run: |
@@ -203,7 +245,7 @@ jobs:
   # android.sh in the light theme runs in computers.yml's android-linux. android-typing.sh stays on a Mac: it needs
   # Gboard with pinyin added as its second language, which is set by hand in Gboard's settings.
   android:
-    name: Android ${{ fromJSON('{"main":"main (dark)","panes":"switcher, width, mouse, scrolling","tunnel":"Tailcat, background, reconnect","notify":"languages and notifications","progress":"progress page","picture":"pictures and letters"}')[matrix.key] }}
+    name: Android ${{ fromJSON('{"main":"main (dark)","panes":"switcher, width, mouse, scrolling","tunnel":"Tailcat, background, reconnect","notify":"languages and notifications","progress":"progress page, pinned order","picture":"pictures and letters","ask":"the decision card in the chat","stuck":"choices that follow the next question","chat":"chat view, four agents","subkeep":"a sub-agent kept as a tab, 360 dp","title":"new-tab title (411 dp)","zoom":"a picture zoomed, from a terminal and a chat","updnotify":"a new version while away","pinorder":"pinned order at 360 dp, light and dark"}')[matrix.key] }}
     needs: [plan, build]
     if: needs.plan.outputs.android != '[]'
     runs-on: ubuntu-latest
@@ -211,7 +253,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # The groups' keys (app/e2e/ci/groups.sh): main, panes, tunnel, notify, progress, picture.
+        # The groups' keys (app/e2e/ci/groups.sh): main, panes, tunnel, notify, progress, picture; ask, stuck, chat, subkeep, title, zoom, updnotify and pinorder only when named.
         key: ${{ fromJSON(needs.plan.outputs.android) }}
     env:
       GH_TOKEN: ${{ github.token }}
@@ -233,6 +275,8 @@ jobs:
           name: build
           path: ${{ runner.temp }}/build
       - run: chmod +x "$COMPANION" && app/e2e/ci/tools.sh core zsh shots
+      - if: matrix.key == 'picture'
+        run: app/e2e/ci/tools.sh omp
       - run: app/e2e/ci/android-up.sh
       - name: Suites
         working-directory: app
@@ -271,11 +315,56 @@ jobs:
             progress)
               mkdir -p "$OUT/progress-light" "$OUT/progress-dark"
               fresh; $s progress-light e2e/android-progress.sh "$APK" "$OUT/progress-light"
-              fresh; DARK=1 $s progress-dark e2e/android-progress.sh "$APK" "$OUT/progress-dark" ;;
+              fresh; DARK=1 $s progress-dark e2e/android-progress.sh "$APK" "$OUT/progress-dark"
+              fresh; $s pin-order e2e/android-pin-order.sh "$APK" ;;
+            pinorder)
+              # 360 dp wide, as the narrowest phones: the 1080 px screen at density 480.
+              adb="$ANDROID_HOME/platform-tools/adb"; $adb shell wm density 480; mkdir -p "$OUT/pin-order"
+              for mode in light dark; do
+                [ $mode = dark ] && $adb shell cmd uimode night yes || $adb shell cmd uimode night no; sleep 2
+                if [ "${{ inputs.pin_order_before }}" = true ]; then
+                  fresh; BEFORE=1 SHOT_TAG=before-android360-$mode $s pin-order-before-$mode e2e/android-pin-order.sh "$APK" "$OUT/pin-order"
+                else
+                  fresh; SHOT_TAG=after-android360-$mode $s pin-order-$mode e2e/android-pin-order.sh "$APK" "$OUT/pin-order"
+                fi
+              done
+              $adb shell cmd uimode night no; $adb shell wm density reset ;;
             picture)
-              mkdir -p "$OUT/picture" "$OUT/glyphs"
+              mkdir -p "$OUT/picture" "$OUT/glyphs" "$OUT/kitty"
               fresh; $s picture e2e/android-picture.sh "$APK" "$COMPANION" "$OUT/picture"
-              fresh; $s glyphs e2e/android-glyphs.sh "$APK" "$OUT/glyphs/shot.png" ;;
+              fresh; $s glyphs e2e/android-glyphs.sh "$APK" "$OUT/glyphs/shot.png"
+              fresh; $s kitty e2e/android-kitty.sh "$APK" "$COMPANION" "$OUT/kitty"
+              # The same with the previous release's app, for screenshots of how it was; it does not fail the job.
+              prev="${{ needs.build.outputs.prev }}"
+              mkdir -p "$RUNNER_TEMP/prev" "$OUT/kitty-before"
+              (cd "$RUNNER_TEMP/prev" && gh release download "$prev" --repo "$GITHUB_REPOSITORY" -p SHA256 -p Herdr-Anywhere.apk &&
+                grep '  Herdr-Anywhere.apk$' SHA256 | sha256sum -c -)
+              fresh; HM_KITTY_BEFORE=1 $s kitty-before e2e/android-kitty.sh "$RUNNER_TEMP/prev/Herdr-Anywhere.apk" "$COMPANION" "$OUT/kitty-before" ;;
+            ask)
+              mkdir -p "$OUT/ask-light" "$OUT/ask-dark"
+              fresh; $s ask-light e2e/android-ask.sh "$APK" "$COMPANION" "$OUT/ask-light"
+              fresh; DARK=1 $s ask-dark e2e/android-ask.sh "$APK" "$COMPANION" "$OUT/ask-dark" ;;
+            stuck)
+              mkdir -p "$OUT/stuck-light" "$OUT/stuck-dark"
+              fresh; $s stuck-light e2e/android-stuck.sh "$APK" "$COMPANION" "$OUT/stuck-light"
+              fresh; DARK=1 $s stuck-dark e2e/android-stuck.sh "$APK" "$COMPANION" "$OUT/stuck-dark" ;;
+            chat)
+              mkdir -p "$OUT/chat"
+              fresh; $s chat-four e2e/android-chat-four.sh "$APK" "$COMPANION" "$OUT/chat" ;;
+            subkeep)
+              # Only when named (groups.sh): its screenshots, light and dark, for a change's before and after.
+              fresh; $s subkeep e2e/android-subkeep.sh "$APK" "$COMPANION" "$OUT/subkeep" ;;
+            title)
+              # The new-tab title at this emulator's 411 dp, where the phone's own bold once cut it to "Add an".
+              mkdir -p "$OUT/sheet-title"
+              fresh; $s sheet-title e2e/android-sheet-title.sh "$APK" "$COMPANION" "$OUT/sheet-title" ;;
+            zoom)
+              mkdir -p "$OUT/zoom" "$OUT/zoom-chat"
+              $s zoom e2e/android-zoom.sh "$RUNNER_TEMP/build/zoom-term.apk" "$OUT/zoom"
+              CHAT=1 $s zoom-chat e2e/android-zoom.sh "$RUNNER_TEMP/build/zoom-chat.apk" "$OUT/zoom-chat" ;;
+            updnotify)
+              mkdir -p "$OUT/updnotify"
+              fresh; $s update-notify e2e/android-update-notify.sh "$APK" "$COMPANION" "$OUT/updnotify" ;;
           esac
           $s --finish
       - name: Check what is uploaded
@@ -425,18 +514,34 @@ jobs:
           retention-days: 7
 
   ios:
-    name: iOS ${{ matrix.key == 'a' && 'main, keyboard, letters, languages, scrolling' || 'Tailcat, pictures' }}${{ matrix.copy != 0 && format(' (copy {0})', matrix.copy) || '' }}
+    name: iOS ${{ fromJSON('{"a":"main, keyboard, letters, languages, scrolling","b":"Tailcat, pictures, pinned order","onerror":"an error the JS does not catch","zoom":"a picture zoomed, from a terminal and a chat","title":"new-tab title (iPhone SE, 375 pt)","onerror27":"an error the JS does not catch (iOS 27)","edge":"swipe back from the left edge","edge27":"swipe back from the left edge (iOS 27)","menus":"menus and toast pictures","menus27":"menus and toast pictures (iOS 27)","ask":"the decision card in the chat","chat":"chat view, four agents","chat27":"chat view, four agents (iOS 27)","chatfold":"chat view before/after screenshots","subkeep":"a sub-agent kept as a tab, 375 pt","notify":"notifications, time in the background","kitty":"Oh My Pi pictures","pinorder":"pinned order on iPhone SE, light and dark"}')[matrix.key] }}${{ matrix.copy != 0 && format(' (copy {0})', matrix.copy) || '' }}
     needs: plan
     if: needs.plan.outputs.ios != '[]'
-    runs-on: macos-26
-    timeout-minutes: 75
+    # xcode-27 is the runner image with Xcode 27 and the iOS 27 simulators (as tests.yml's ios27).
+    runs-on: ${{ (matrix.key == 'onerror27' || matrix.key == 'chat27' || matrix.key == 'menus27' || matrix.key == 'edge27') && 'xcode-27' || 'macos-26' }}
+    # ask: not timed on a runner yet, so 60 for now (one app build, two passes of the card). subkeep: one app build, the
+    # XCUITest host's, and two runs of a minute or two; 40, as no run has timed it yet.
+    # zoom: about twice a Mac's run of its two suites with the simulator's start (e2e/ios-zoom.sh).
+    # The edge groups: 288 swipes and a recording took 52 minutes on a Mac at a desk (26.5); twice that and the build.
+    # title: about 10 minutes when it ran inside the b group (4.5 for the check itself).
+    timeout-minutes: ${{ matrix.key == 'chat27' && inputs.chat_away_cycles != '0' && inputs.chat_away_cycles && 150 || startsWith(matrix.key, 'edge') && 120 || matrix.key == 'ask' && 60 || matrix.key == 'subkeep' && 40 || matrix.key == 'title' && 25 || matrix.key == 'zoom' && 40 || 75 }}
     strategy:
       fail-fast: false
       matrix:
-        # a: main, keyboard, letters, languages, scrolling (group ios-main); b: Tailcat, pictures (ios-b). copy 0 is the
-        # usual run; a run of copies (ios_main_repeat or ios_b_repeat) has only that group, numbered from 1.
+        # a: main, keyboard, letters, languages, scrolling (group ios-main); b: Tailcat, pictures (ios-b); onerror: an
+        # error the app's JS doesn't catch (ios-onerror); title: the new-tab title on an iPhone SE (ios-title); onerror27: the same on iOS 27 (ios-onerror-27); chat: the chat
+        # view of four agents (ios-chat); chat27: the same on iOS 27 (ios27-chat); chatfold: screenshots of the chat view
+        # for a change's before and after (ios-chatfold). copy 0 is the usual run; a run of copies (ios_main_repeat,
+        # ios_b_repeat or ios27_chat_repeat) has only that group, numbered from 1. ask: the decision card in the chat,
+        # light and dark (ios-ask, only when named).
+        # subkeep: a sub-agent kept as a tab, on an iPhone SE (ios-subkeep, only when named).
+        # menus, menus27: menu and toast pictures on iOS 26.5 and 27.0 (ios-menus, ios-menus-27, only when named).
+        # zoom: a picture zoomed, opened from a terminal and from a chat (ios-zoom, only when named).
+        # edge, edge27: every swipe back from the left edge, on iOS 26.5 and 27 (ios-edge, ios-edge-27, only when named).
+        # kitty: Oh My Pi's pictures (ios-kitty, only when named).
+        # pinorder: Pinned order on an iPhone SE, light and dark, with screenshots (ios-pinorder, only when named).
         key: ${{ fromJSON(needs.plan.outputs.ios) }}
-        copy: ${{ fromJSON('{"0":[0],"1":[1],"2":[1,2],"3":[1,2,3],"4":[1,2,3,4],"5":[1,2,3,4,5]}')[inputs.ios_main_repeat != '0' && inputs.ios_main_repeat || inputs.ios_b_repeat != '0' && inputs.ios_b_repeat || '0'] }}
+        copy: ${{ fromJSON('{"0":[0],"1":[1],"2":[1,2],"3":[1,2,3],"4":[1,2,3,4],"5":[1,2,3,4,5]}')[inputs.ios_main_repeat != '0' && inputs.ios_main_repeat || inputs.ios_b_repeat != '0' && inputs.ios_b_repeat || inputs.ios27_chat_repeat != '0' && inputs.ios27_chat_repeat || '0'] }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -452,8 +557,18 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
-      - run: app/e2e/ci/tools.sh core nsh zsh ios shots
+      - run: app/e2e/ci/tools.sh core nsh zsh ios shots ${{ startsWith(matrix.key, 'edge') && 'video' || '' }}
+      - uses: ./.github/actions/nsh-ios
+        with:
+          xcode: ${{ (matrix.key == 'onerror27' || matrix.key == 'chat27' || matrix.key == 'menus27' || matrix.key == 'edge27') && '/Applications/Xcode_27.0.app' || '/Applications/Xcode_26.6.app' }}
+          artifact_name: ${{ matrix.key == 'chat27' && matrix.copy == 0 && 'nsh-ios-xcode27' || '' }}
+      - if: matrix.key == 'kitty'
+        run: app/e2e/ci/tools.sh omp
       - run: app/e2e/ci/ios-up.sh
+        env:
+          HM_XCODE: ${{ (matrix.key == 'onerror27' || matrix.key == 'chat27' || matrix.key == 'menus27' || matrix.key == 'edge27') && '/Applications/Xcode_27.0.app' || '' }}
+          HM_IOS: ${{ (matrix.key == 'onerror27' || matrix.key == 'chat27' || matrix.key == 'menus27' || matrix.key == 'edge27') && 'iOS 27.0' || '' }}
+          HM_DEVICE: ${{ (matrix.key == 'subkeep' || matrix.key == 'title' || matrix.key == 'pinorder') && 'iPhone SE (3rd generation)' || '' }}
       - name: Suites
         working-directory: app
         env:
@@ -464,6 +579,14 @@ jobs:
           HM_MISS_SPACE: ${{ inputs.ios_open_space_selftest == 'miss-first' && '1' || '' }}
         run: |
           s=e2e/ci/suite.sh
+          # Every swipe back from the left edge, each page, height, speed and distance from the edge 6 times (all must
+          # go back), then two swipes on a space recorded (slow, fast) for a before/after film: the same steps on the
+          # commit before the fix show what it changed.
+          edge() {
+            $s ios-edge-back e2e/ios-edge-back.sh "$OUT/edge-back.txt"
+            $s ios-edge-record env SKIP_BUILD=1 RECORD="$OUT/edge-back.mp4" PAGES=space HEIGHTS=middle SPEEDS=slow,fast STARTS=2 N=2 \
+              MIN_BACK=0 e2e/ios-edge-back.sh "$OUT/edge-record.txt"
+          }
           case "${{ matrix.key }}" in
             a)
               mkdir -p "$OUT/locale" "$RUNNER_TEMP/plain"
@@ -477,7 +600,63 @@ jobs:
             b)
               mkdir -p "$OUT/picture"
               $s ios-tailcat e2e/ios-tailcat.sh "$OUT/tailcat.png"
-              $s ios-picture e2e/ios-picture.sh "$OUT/picture" ;;
+              $s ios-picture e2e/ios-picture.sh "$OUT/picture"
+              $s ios-pin-order e2e/ios-pin-order.sh ;;
+            onerror)
+              $s ios-onerror e2e/ios-onerror.sh "$OUT/onerror.png" ;;
+            title)
+              # ios-sheet-title.sh takes a Companion built for this Mac.
+              mkdir -p "$OUT/sheet-title"
+              (cd ../companion && CGO_ENABLED=0 go build -buildvcs=false -o "$RUNNER_TEMP/herdr-anywhere" ./cmd/herdr-anywhere)
+              $s ios-sheet-title e2e/ios-sheet-title.sh "$RUNNER_TEMP/herdr-anywhere" "$OUT/sheet-title" ;;
+            zoom)
+              mkdir -p "$OUT/zoom" "$OUT/zoom-chat"
+              $s zoom-package sh -c 'e2e/zoom-package.sh ios-simulator "$RUNNER_TEMP/zoom-term" && CHAT=1 e2e/zoom-package.sh ios-simulator "$RUNNER_TEMP/zoom-chat"'
+              # No recording (ZOOM_VIDEO=0): it slowed the recorded light run until a step failed or hung, and a Mac
+              # runner has no ffmpeg for the upload check (ci-shots-check.sh) to read the video with anyway.
+              ZOOM_VIDEO=0 $s zoom e2e/ios-zoom.sh "$RUNNER_TEMP/zoom-term/Herdr zoom check.app" "$OUT/zoom"
+              ZOOM_VIDEO=0 CHAT=1 $s zoom-chat e2e/ios-zoom.sh "$RUNNER_TEMP/zoom-chat/Herdr zoom check.app" "$OUT/zoom-chat" ;;
+            onerror27)
+              $s ios-onerror e2e/ios-onerror.sh "$OUT/onerror27.png" ;;
+            ask)
+              mkdir -p "$OUT/ask"
+              $s ios-ask e2e/ios-ask.sh "$OUT/ask" ;;
+            chat)
+              $s ios-chat-four e2e/ios-chat-four.sh "$OUT/chat" ;;
+            chat27)
+              CHAT_AWAY_CYCLES='${{ inputs.chat_away_cycles || '0' }}' CHAT_AWAY_SELFTEST='${{ inputs.chat_away_selftest || 'none' }}' \
+                $s ios-chat-four e2e/ios-chat-four.sh "$OUT/chat27" ;;
+            chatfold)
+              # The app as built, over the Companion and a fake Claude Code, through a proxy that makes one answer
+              # unsure and holds one back (e2e/ios-uitest ChatFold): the same group run on a change's before and after.
+              UITEST=ChatFold $s ios-chat-fold e2e/ios-chat-four.sh "$OUT/chatfold" ;;
+            subkeep)
+              $s ios-subkeep e2e/ios-subkeep.sh "$OUT/subkeep" ;;
+            menus)
+              $s ios-menus env HM_MENUS_SE=1 e2e/ios-menus.sh "$OUT/menus" ;;
+            menus27)
+              $s ios-menus e2e/ios-menus.sh "$OUT/menus27" ;;
+            edge)
+              edge ;;
+            edge27)
+              edge ;;
+            notify)
+              $s ios-update-notify e2e/ios-update-notify.sh "$OUT/notify" ;;
+            kitty)
+              mkdir -p "$OUT/kitty"
+              # A tree from before the pictures (no model/kitty.ts) takes the same steps for screenshots of how it was.
+              [ -f src/model/kitty.ts ] || export HM_KITTY_BEFORE=1
+              $s ios-kitty e2e/ios-kitty.sh "$OUT/kitty" ;;
+            pinorder)
+              mkdir -p "$OUT/pin-order"
+              for mode in light dark; do
+                xcrun simctl ui "$SIM_UDID" appearance $mode; sleep 2
+                if [ "${{ inputs.pin_order_before }}" = true ]; then
+                  BEFORE=1 SHOT_TAG=before-ios375-$mode $s ios-pin-order-before-$mode e2e/ios-pin-order.sh "$OUT/pin-order"
+                else
+                  SHOT_TAG=after-ios375-$mode $s ios-pin-order-$mode e2e/ios-pin-order.sh "$OUT/pin-order"
+                fi
+              done ;;
           esac
           $s --finish
       - name: Check what is uploaded
@@ -496,7 +675,11 @@ jobs:
           sh app/e2e/ios-failure-logs.sh --self-test
       - name: Shut the simulator
         if: always()
-        run: '[ -z "${SIM_UDID:-}" ] || { xcrun simctl shutdown "$SIM_UDID"; xcrun simctl delete "$SIM_UDID"; }'
+        # A suite may have shut it already (ios-onerror.sh does, as its last step); shutting a shut one fails.
+        run: |
+          [ -n "${SIM_UDID:-}" ] || exit 0
+          if xcrun simctl list devices booted | grep -F "$SIM_UDID" >/dev/null; then xcrun simctl shutdown "$SIM_UDID"; fi
+          xcrun simctl delete "$SIM_UDID"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always() && steps.check.outcome == 'success'
         with:

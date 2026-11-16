@@ -8,19 +8,26 @@ import (
 	"testing"
 )
 
-// fakeHCFiles answers ls from ls.json and get from get-<t>.json, and logs sends.
+// fakeEmptyInputScreenJSON is hc read --json for a pane showing an empty Claude Code input box.
+const fakeEmptyInputScreenJSON = `{"complete":true,"how":"screen","text":"──────────────────────────\n❯ \n──────────────────────────\n  ⏵⏵ auto mode on (shift+tab to cycle)\n"}`
+
+// fakeHCFiles answers ls from ls.json, get from get-<t>.json and read from read-<t>.json;
+// a pane starts with an empty input box, and sends and keys are logged.
 func fakeHCFiles(t *testing.T, ls string, gets map[string]string) (hc, sent string) {
 	t.Helper()
 	d := t.TempDir()
 	os.WriteFile(filepath.Join(d, "ls.json"), []byte(ls), 0o600)
 	for addr, g := range gets {
 		os.WriteFile(filepath.Join(d, "get-"+addr+".json"), []byte(g), 0o600)
+		os.WriteFile(filepath.Join(d, "read-"+addr+".json"), []byte(fakeEmptyInputScreenJSON), 0o600)
 	}
 	sent = filepath.Join(d, "sent.log")
 	hc = testfake.HC(t, d, "hc", testfake.Spec{Version: "hc 0.1.18", On: map[string][]testfake.Reply{
 		"ls":   {{Cat: filepath.Join(d, "ls.json")}},
 		"get":  {{Cat: filepath.Join(d, "get-{2}.json")}},
+		"read": {{Cat: filepath.Join(d, "read-{2}.json")}},
 		"send": {{Append: sent, Print: `{"sent":true}`}},
+		"keys": {{Append: sent, Print: `{"sent":true}`}},
 	}})
 	return hc, sent
 }

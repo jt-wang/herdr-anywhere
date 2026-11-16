@@ -41,11 +41,14 @@ elif [ "${1:-}" = --self-test ]; then
 10:00:27.900 +28.0 s load 70.37 tapped the path again
 EOF
   cat > "$t/log" <<'EOF'
-2000-01-01 10:00:00.001 Db Herdr[100:200] [com.apple.UIKit:EventDispatch] Sending UIEvent type: 0; subtype: 0; to windows: 1
-2000-01-01 10:00:27.410 Db Herdr[100:200] [com.apple.UIKit:EventDispatch] Sending UIEvent type: 0; subtype: 0; to windows: 1
-2000-01-01 10:00:27.420 Db Herdr[100:200] [com.apple.UIKit:EventDispatch] Sending UIEvent type: 4; subtype: 0; to windows: 1
-2000-01-01 10:00:27.480 Db Herdr[100:200] [com.apple.UIKit:EventDispatch] Sending UIEvent type: 0; subtype: 0; to windows: 1
+DAY 10:00:00.001 Db Herdr[100:200] [com.apple.UIKit:EventDispatch] Sending UIEvent type: 0; subtype: 0; to windows: 1
+DAY 10:00:27.410 Db Herdr[100:200] [com.apple.UIKit:EventDispatch] Sending UIEvent type: 0; subtype: 0; to windows: 1
+DAY 10:00:27.420 Db Herdr[100:200] [com.apple.UIKit:EventDispatch] Sending UIEvent type: 4; subtype: 0; to windows: 1
+DAY 10:00:27.480 Db Herdr[100:200] [com.apple.UIKit:EventDispatch] Sending UIEvent type: 0; subtype: 0; to windows: 1
 EOF
+  # Each line starts with its day, as log stream writes it: today's, put in when the test runs, so this file holds no
+  # date (the public files hold none). Only the time of day is read.
+  sed "s/^DAY /$(date +%Y-%m-%d) /" "$t/log" > "$t/log.day" && mv "$t/log.day" "$t/log"
   mkdir "$t/keep"
   sh "$0" "$t/notes" "$t/log" "$t/keep" > "$t/said"
   grep -q "sent the app 0 touch events from 10:00:05.100 to 10:00:05.218" "$t/said" ||

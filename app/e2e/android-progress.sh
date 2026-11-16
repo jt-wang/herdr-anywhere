@@ -13,6 +13,7 @@
 #   device: turn on from the command line, one pass, the stand-in answers, check and print the tree.
 #   DARK=1: the device in dark mode for the run, put back as it was after.
 set -eu
+. "$(dirname "$0")/autostart-guard.sh"; autostart_guard android-progress # a login entry of its own, never the person's
 app=$(cd "$(dirname "$0")/.." && pwd)
 apk=${1:-$app/android/build/Herdr.apk}
 out=${2:-}
@@ -44,6 +45,7 @@ cleanup() {
   "$hc" server stop >/dev/null 2>&1 || true
   [ -n "${night:-}" ] && "$adb" shell cmd uimode night "$night" >/dev/null 2>&1
   chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run"
+  autostart_guard_end || exit 1
 }
 trap 'adb_exit $? cleanup' EXIT
 # INT and TERM end the suite; the EXIT trap cleans up (a handler that only cleans up lets the script go on).
