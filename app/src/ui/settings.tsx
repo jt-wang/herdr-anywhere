@@ -218,7 +218,7 @@ export function SettingsScreen(props: { updates?: Updates; store: Store; prefs: 
   }
   ask()
   const asking = setInterval(ask, ROUTE_EVERY_MS)
-  const offConn = props.store.conn.sub(() => ask())
+  const offConn = props.store.conn.sub(() => ask(), 'Settings.ask')
   cleanup(() => { clearInterval(asking); offConn() })
   const status = () => {
     const c = conn()

@@ -61,13 +61,20 @@ L() { env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin
   LANG=en_US.UTF-8 HC_SESSION="hmchat4-$$" HC_SOCKET="" XDG_STATE_HOME="$work/state" XDG_CONFIG_HOME="$work/config" \
   XDG_DATA_HOME="$work/data" XDG_RUNTIME_DIR="$run" CLAUDE_CONFIG_DIR="$work/claude" CODEX_HOME="$work/codex" \
   PI_CODING_AGENT_DIR="$work/pi" "$@"; }
-serve_pid=; ctl_pid=; log_pid=; proxy_pid=; booted=; remove_app=0
+serve_pid=; ctl_pid=; log_pid=; system_log_pid=; proxy_pid=; booted=; remove_app=0
 cleanup() {
   status=$?
   trap - EXIT INT TERM HUP
   set +e
   [ -n "$ctl_pid" ] && kill "$ctl_pid" 2>/dev/null
-  [ -n "$log_pid" ] && kill "$log_pid" 2>/dev/null
+  [ -n "$log_pid" ] && { kill "$log_pid" 2>/dev/null; wait "$log_pid"; }
+  if [ -n "${system_log_pid:-}" ]; then
+    # This stops our collector, not the app. Keep its status separate from app exit evidence.
+    printf 'collector_stop_requested_utc=%s\n' "$(date -u +%FT%TZ)" >> "$work/app-system-status.txt"
+    kill "$system_log_pid" 2>/dev/null
+    wait "$system_log_pid"
+    printf 'collector_wait_exit=%s\n' "$?" >> "$work/app-system-status.txt"
+  fi
   [ -n "$proxy_pid" ] && kill "$proxy_pid" 2>/dev/null
   # The app's diagnostics (src/diag.ts, sent by ios-e2e.tsx) the Companion logged: printed when the run failed.
   [ "$status" != 0 ] && grep -h ' /hm-e2e/' "$work/serve.log" 2>/dev/null | tail -10 | sed 's/^/  diagnostic: /'
@@ -77,6 +84,36 @@ cleanup() {
   if [ -n "$shots" ]; then
     [ ! -f "$work/serve.log" ] || cp "$work/serve.log" "$shots/serve.log" || status=1
     [ ! -f "$work/uitest/test.log" ] || cp "$work/uitest/test.log" "$shots/test.log" || status=1
+    for file in app-system.log app-system-status.txt; do
+      [ ! -f "$work/$file" ] || cp "$work/$file" "$shots/$file" || status=1
+    done
+    # A pre-test failure or the existing dry cleanup has no result bundle to read.
+    if [ -d "$work/uitest/result.xcresult" ]; then
+    # Read only this test's lifecycle activities; do not export device metadata, UI queries or attachments.
+    python3 - "$work/uitest/result.xcresult" "$uitest/test()" "$id" "$shots/app-activate-activities.json" <<'PY_ACTIVITIES'
+import json, subprocess, sys
+from pathlib import Path
+result, test, bundle, output = sys.argv[1:]
+command = ['xcrun', 'xcresulttool', 'get', 'test-results', 'activities',
+           '--path', result, '--test-id', test, '--compact']
+read = subprocess.run(command, capture_output=True, text=True)
+record = {'test': test, 'bundle': bundle, 'xcresulttool_exit': read.returncode, 'activities': []}
+if read.returncode == 0:
+    data = json.loads(read.stdout)
+    titles = {f'{verb} {bundle}' for verb in ('Activate', 'Launch', 'Terminate')}
+    def walk(nodes, run):
+        for node in nodes:
+            if node.get('title') in titles:
+                record['activities'].append({'run': run, **{
+                    key: node[key] for key in ('title', 'startTime', 'isAssociatedWithFailure') if key in node}})
+            walk(node.get('childActivities', []), run)
+    for run, item in enumerate(data['testRuns'], 1):
+        walk(item['activities'], run)
+record['capture'] = 'captured' if record['activities'] else 'unavailable'
+Path(output).write_text(json.dumps(record, indent=2) + '\n')
+PY_ACTIVITIES
+    [ "$?" = 0 ] || { echo "FAIL: lifecycle activity extraction"; status=1; }
+    fi
     if [ "${HM_CHAT4_DRY:-}" != 1 ]; then
       container=$(xcrun simctl get_app_container "$SIM_UDID" "$id" data 2>/dev/null)
       if [ -n "$container" ]; then
@@ -203,10 +240,21 @@ if [ -n "$source_evidence" ]; then
     "$shots/subscriber-source" "$work/subscriber-pair" "$app"
 fi
 xcrun simctl install "$SIM_UDID" "$app/ios/build/Herdr.app"
+# Keep complete target-app system events (including multiline termination contexts), at every level.
+# The bundle selector follows replacement PIDs; unrelated app events are not selected.
+system_predicate="(process == \"runningboardd\" OR process == \"SpringBoard\" OR process == \"launchd_sim\" OR process == \"launchd\") AND composedMessage CONTAINS \"$id\""
+xcrun simctl spawn "$SIM_UDID" log stream --style compact --level debug --predicate "$system_predicate" \
+  > "$work/app-system.log" 2>&1 &
+system_log_pid=$!
+printf 'collector_pid=%s\ncollector_start_requested_utc=%s\n' "$system_log_pid" "$(date -u +%FT%TZ)" > "$work/app-system-status.txt"
+# The same one-second startup allowance used by the reviewed scene collector, before app launch.
+sleep 1
+kill -0 "$system_log_pid" 2>/dev/null || { echo "FAIL: target-app system log collector exited before launch"; exit 1; }
 # simctl launch prints "<id>: <pid>" once the process is there (as e2e/ios-onerror.sh reads it).
 launched=$(xcrun simctl launch "$SIM_UDID" "$id" 2>&1) || { echo "FAIL: the app did not start: $launched"; exit 1; }
 before=${launched##*: }
 case $before in ''|*[!0-9]*) echo "FAIL: the app did not start: simctl launch said '$launched'"; exit 1 ;; esac
+printf 'app_pid_at_launch=%s\n' "$before" >> "$work/app-system-status.txt"
 pid() { xcrun simctl spawn "$SIM_UDID" launchctl list 2>/dev/null | awk -v id="UIKitApplication:$id" 'index($3, id) == 1 {print $1}'; }
 # The app's crash reports since the launch, each with its type, kept with the screenshots.
 crash_reports() {

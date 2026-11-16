@@ -1,3 +1,4 @@
+import type { ConnSubscriberSite } from '../src/store.ts'
 import type { Diag } from '../src/diag.ts'
 
 export const CONNECTION_EVIDENCE_KEY = 'e2e-connection-diag'
@@ -25,6 +26,7 @@ export function connectionEvidence(options: {
   write: (key: string, value: string) => Promise<void>
   send: (what: string, fields: Record<string, string>) => void | Promise<unknown>
   now: () => number
+  storageKey?: string
 }) {
   const events: { seq: number; time: number; what: string; fields: Record<string, string> }[] = []
   let pending = Promise.resolve()
@@ -32,7 +34,7 @@ export function connectionEvidence(options: {
     events.push({ seq: events.length + 1, time: options.now(), what, fields })
     const snapshot = JSON.stringify(events)
     // Serialize writes: an older snapshot can never finish after a newer one.
-    pending = pending.then(() => options.write(CONNECTION_EVIDENCE_KEY, snapshot)).catch(() => {})
+    pending = pending.then(() => options.write(options.storageKey ?? CONNECTION_EVIDENCE_KEY, snapshot)).catch(() => {})
   }
   const record: Diag = (what, fields) => {
     try {
@@ -58,7 +60,7 @@ export function connectionEvidence(options: {
   // Installed only on the real test app's connection Signal, before Root subscribes.
   const traceSubscribers = (conn: {
     set(value: string): void
-    sub(f: (value: string) => void): () => unknown
+    sub(f: (value: string) => void, site?: ConnSubscriberSite): () => unknown
   }) => {
     const set = conn.set.bind(conn), sub = conn.sub.bind(conn)
     let active = false, next = 0
@@ -66,12 +68,12 @@ export function connectionEvidence(options: {
     const mark = (phase: string, id: number) => {
       try { append('connection-subscriber', { phase, id: String(id) }) } catch {}
     }
-    conn.sub = (f) => {
+    conn.sub = (f, site) => {
       let wrapped = callbacks.get(f)
       if (!wrapped) {
         const id = ++next
         try {
-          append('connection-subscriber', { phase: 'registered', id: String(id), ...subscriberSite(new Error().stack ?? '') })
+          append('connection-subscriber', { phase: 'registered', id: String(id), site: site ?? 'unlabelled' })
         } catch {}
         wrapped = (value) => {
           const recording = active
@@ -81,7 +83,7 @@ export function connectionEvidence(options: {
         }
         callbacks.set(f, wrapped)
       }
-      return sub(wrapped)
+      return sub(wrapped, site)
     }
     conn.set = (value) => {
       const previous = active
@@ -94,9 +96,4 @@ export function connectionEvidence(options: {
     }
   }
   return { record, traceSubscribers, flush: () => pending }
-}
-
-export function subscriberSite(stack: string): { site: string; caller: string } {
-  const sites = [...stack.matchAll(/\(bundle\.js:(\d+):(\d+)\)/g)].map((m) => `bundle.js:${m[1]}:${m[2]}`)
-  return { site: sites[1] ?? 'unmapped', caller: sites[2] ?? '' }
 }

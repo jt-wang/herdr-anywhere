@@ -13,24 +13,24 @@ import { start } from './src/main.tsx'
 import { OPEN_SETTINGS_ON_LAUNCH } from './e2e/open-settings.ts'
 import { PAIR } from './e2e/pair.ts'
 import { setDiag } from './src/diag.ts'
-import { connectionEvidence } from './e2e/connection-evidence.ts'
-
-// Each diagnostic (src/diag.ts) as a request the Companion's log shows: /hm-e2e/<what>/<field>=<value>/…
-const evidence = connectionEvidence({
-  write: (key, value) => Storage.setItem(key, value),
-  now: () => Date.now(),
-  send: (what, fields) => {
-    const path = [what, ...Object.entries(fields).map(([k, v]) => `${k}=${encodeURIComponent(v)}`)].join('/')
-    try { void fetch(`${new URL(PAIR).origin}/hm-e2e/${path}`).catch(() => {}) } catch { /* a placeholder PAIR: no origin */ }
-  },
-})
-setDiag(evidence.record)
+import { connectionEvidence, CONNECTION_EVIDENCE_KEY } from './e2e/connection-evidence.ts'
 
 void Promise.all([Storage.getItem('e2e-launches'), Storage.getItem('e2e-pair'), Storage.getItem('e2e-open-settings'),
   Storage.getItem('e2e-ask-notifications'), Storage.getItem('e2e-update-every'), Storage.getItem('prefs')]).then(
   async ([n, pair, opens, ask, every, prefs]) => {
     const launch = Number(n ?? 0) + 1
-    void Storage.setItem('e2e-launches', String(launch))
+    await Storage.setItem('e2e-launches', String(launch))
+    // Each diagnostic (src/diag.ts) as a request the Companion's log shows: /hm-e2e/<what>/<field>=<value>/…
+    const evidence = connectionEvidence({
+      storageKey: `${CONNECTION_EVIDENCE_KEY}-${launch}`,
+      write: (key, value) => Storage.setItem(key, value),
+      now: () => Date.now(),
+      send: (what, fields) => {
+        const path = [what, ...Object.entries(fields).map(([k, v]) => `${k}=${encodeURIComponent(v)}`)].join('/')
+        try { void fetch(`${new URL(PAIR).origin}/hm-e2e/${path}`).catch(() => {}) } catch { /* a placeholder PAIR: no origin */ }
+      },
+    })
+    setDiag(evidence.record)
     if (ask !== '1' && !prefs) await Storage.setItem('prefs', JSON.stringify({ askedNotifications: true }))
     const settingsOn = opens ? Number(opens) : OPEN_SETTINGS_ON_LAUNCH
     start({ traceConnection: evidence.traceSubscribers, pairLink: pair || PAIR, opensSettings: launch === settingsOn, updateEveryMs: every ? Number(every) : undefined })

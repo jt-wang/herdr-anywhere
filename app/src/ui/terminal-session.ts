@@ -82,7 +82,7 @@ export class TerminalSession {
     this.waitForPage()
     this.off = store.conn.sub((c) => {
       if (c === 'ready' && this.state.get() === 'lost') void this.attach()
-    })
+    }, 'TerminalSession')
   }
 
   /** A message from the page. */
