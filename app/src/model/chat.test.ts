@@ -1,6 +1,6 @@
 // The chat view's words and its refresh rule, apart from any agent: the phone renders the turns the computer sends.
 import { expect, test } from 'nsh/test'
-import { foldLine, refreshEvery, shows, outsideFold, unknownText, type ChatTurn, pathsIn, sizeText, changeRows, clockText } from './chat.ts'
+import { foldLine, refreshEvery, shows, outsideFold, unknownText, type ChatTurn, pathsIn, sizeText, changeRows, clockText, workPreview } from './chat.ts'
 
 const turn = (over: Partial<ChatTurn> = {}): ChatTurn => ({ id: 'u1', from: 'you', said: 'go', steps: [], reply: '', end: 'done', ...over })
 const steps = (n: number) => Array.from({ length: n }, (_, i) => ({ id: `s${i}`, kind: 'run', title: `step ${i}` }))
@@ -11,8 +11,8 @@ test('a finished turn folds its steps behind one line: how long it worked and ho
   expect(foldLine(turn({ steps: steps(3) }))).toBe('3 steps')
 })
 
-test('an open turn shows its steps; a finished one hides them until tapped; a turn with no steps has no line', () => {
-  expect(shows(turn({ end: 'open', steps: steps(2) }), false)).toEqual({ fold: false, steps: true })
+test('open and finished turns fold their work until tapped; a turn with no work has no line', () => {
+  expect(shows(turn({ end: 'open', steps: steps(2) }), false)).toEqual({ fold: true, steps: false })
   expect(shows(turn({ steps: steps(2) }), false)).toEqual({ fold: true, steps: false })
   expect(shows(turn({ steps: steps(2) }), true)).toEqual({ fold: true, steps: true })
   expect(shows(turn({ end: 'stopped', steps: steps(2) }), false)).toEqual({ fold: true, steps: false })
@@ -23,7 +23,7 @@ test('what you said while it worked stays out of the fold; the fold line counts 
   const mixed = [...steps(2), { id: 'y1', kind: 'you', title: 'also this' }, ...steps(1).map((x) => ({ ...x, id: 's9' }))]
   expect(outsideFold(turn({ steps: mixed }), false).map((x) => x.id)).toEqual(['y1'])
   expect(outsideFold(turn({ steps: mixed }), true)).toEqual([])
-  expect(outsideFold(turn({ end: 'open', steps: mixed }), false)).toEqual([])
+  expect(outsideFold(turn({ end: 'open', steps: mixed }), false).map((x) => x.id)).toEqual(['y1'])
   expect(outsideFold(turn({ steps: steps(2) }), false)).toEqual([])
   expect(foldLine(turn({ steps: mixed, secs: 20 }))).toBe('Worked for <1m · 3 steps')
 })
@@ -59,4 +59,21 @@ test('a change\'s lines numbered as in the file: a removed line by its old numbe
 
 test('a video\'s length reads as a player shows it', () => {
   expect([0, 999, 42_000, 61_500, 600_000, 3_723_000].map(clockText)).toEqual(['0:00', '0:00', '0:42', '1:01', '10:00', '1:02:03'])
+})
+
+
+test('a user-only turn has no empty work disclosure and keeps the message visible', () => {
+  const only = turn({ steps: [{ id: 'y', kind: 'you', title: 'Keep this' }] })
+  expect(shows(only, false)).toEqual({ fold: false, steps: false })
+  expect(outsideFold(only, false)).toEqual(only.steps)
+})
+
+test('the preview keeps only the latest note and activity, counts failures, and does not repeat the reply', () => {
+  const work = [{ id: 'n1', kind: 'note', title: 'First' }, ...steps(2),
+    { id: 'n2', kind: 'note', title: 'Latest' }, { id: 's3', kind: 'run', title: 'make', failed: true },
+    { id: 'you', kind: 'you', title: 'More' }]
+  expect(workPreview(turn({ end: 'open', steps: work }))).toEqual({ note: work[3], step: work[4], failures: 1 })
+  expect(workPreview(turn({ end: 'open', steps: work, reply: 'Latest' })).note).toBe(undefined)
+  expect(workPreview(turn({ steps: work }))).toEqual({ failures: 1 })
+  expect(workPreview(turn({ end: 'stopped', steps: work }))).toEqual({ failures: 1 })
 })

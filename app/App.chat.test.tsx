@@ -69,6 +69,7 @@ test('a step whose details are gone says so', async () => {
   const gone = [{ ...turns[0], end: 'open', steps: [{ id: 'gone', kind: 'run', title: 'make' }] }]
   const app = await pane({ status: 'working', chat: JSON.stringify({ chat: true, turns: gone }) })
   await app.press('id:show-chat')
+  await app.press('id:fold-u1')
   await app.press('id:step-gone')
   await app.waitFor("text:This step's details are gone.")
 })
@@ -82,7 +83,8 @@ test("an open question whose screen can't be read: its options numbered, to answ
   expect(app.texts()).toContain('2. Blue')
   expect(app.texts()).toContain('Answer it in the terminal.')
   expect(app.count('id:ask-card')).toBe(0)
-  expect(app.count('id:step-toolu_3')).toBe(1) // an open turn's steps show
+  expect(app.count('id:step-toolu_3')).toBe(0) // the question stays visible above folded work
+  expect(app.count('id:fold-u3')).toBe(1)
   await app.press('id:ask-terminal-u3')
   await app.waitFor('id:show-chat')
 })
@@ -456,7 +458,8 @@ test('the files a reply names are asked about once, not again at each 3 s ask wh
     await app.host.send('fake.chat', { ...done, turns: [...done.turns, { ...open, steps: Array.from({ length: n }, (_, i) => ({ id: `s${i}`, kind: 'run', title: 'make' })) }] })
     await app.clock.runFor(3100)
   }
-  expect(app.texts().filter((x: string) => x === 'make').length).toBe(2)
+  expect(app.texts().filter((x: string) => x === 'make').length).toBe(1) // only the latest activity
+  expect(app.count('id:step-s0')).toBe(0)
   expect(once).toBe(1)
   expect(fileAsks()).toBe(1)
 })
@@ -539,6 +542,8 @@ test('a message the agent took while it worked shows where it was taken, as your
   expect(app.texts()).toContain('Also keep the old colors')
   expect(app.texts()).toContain('Added while it was working')
   expect(app.count('id:step-y1')).toBe(0)
+  expect(app.count('id:step-toolu_5')).toBe(0)
+  await app.press('id:fold-u5')
   expect(app.count('id:step-toolu_5')).toBe(1)
 })
 
