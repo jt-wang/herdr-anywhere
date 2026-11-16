@@ -92,6 +92,7 @@ cleanup() {
   [ -n "$shots" ] && [ -s "$work/app.log" ] && cp "$work/app.log" "$shots/app.log"
   if [ -n "$shots" ]; then
     if [ -n "${expiry_raw:-}" ] && [ -d "$expiry_raw" ]; then
+      python3 "$app/e2e/ios-background-expiry.py" decode "$expiry_raw" || status=1
       python3 "$app/e2e/ios-background-expiry.py" publish "$expiry_raw" "$shots/background-expiry" \
         "$work/expiry-pair" || status=1
     fi
@@ -192,7 +193,7 @@ if [ "$cycles" -gt 0 ] && [ -n "$shots" ]; then
   source_evidence="$work/subscriber-source-raw"
   (umask 077; printf '%s' "$link" > "$work/subscriber-pair")
 fi
-HM_TEST_BUNDLE_EVIDENCE="$source_evidence" "$app/ios/build.sh" ios-e2e.tsx simulator > "$work/build.log" 2>&1 || { tail -20 "$work/build.log"; echo "FAIL: ios/build.sh"; exit 1; }
+HM_TEST_MAIN_THREAD_MARKER="$expiry_raw" HM_TEST_BUNDLE_EVIDENCE="$source_evidence" "$app/ios/build.sh" ios-e2e.tsx simulator > "$work/build.log" 2>&1 || { tail -20 "$work/build.log"; echo "FAIL: ios/build.sh"; exit 1; }
 printf "%s\n" "$placeholder" > "$app/e2e/pair.ts"
 
 # The test stops and starts the Companion through files in $ctl (the simulator writes to this Mac's folders).

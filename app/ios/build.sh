@@ -31,7 +31,13 @@ rm -f "$ios/nsh/bundle.js" "$ios/nsh/bundle.js.map" # the app runs the bytecode
 # A TSX bundle can't import an .mp3, so nsh build doesn't copy the sounds; they go where it puts imported files.
 mkdir -p "$ios/nsh/assets/assets/sounds"
 cp "$root"/assets/sounds/*.mp3 "$ios/nsh/assets/assets/sounds/"
-(cd "$ios" && xcodegen generate --quiet)
+if [ -n "${HM_TEST_MAIN_THREAD_MARKER:-}" ] && [ "$entry" = ios-e2e.tsx ] && [ "$sdk" = simulator ]; then
+  diagnostic="$HM_TEST_MAIN_THREAD_MARKER/project"
+  python3 "$root/e2e/ios-background-expiry.py" prepare "$ios" "$diagnostic"
+  xcodegen generate --quiet --spec "$diagnostic/project.yml" --project "$ios" --project-root "$ios"
+else
+  (cd "$ios" && xcodegen generate --quiet)
+fi
 [ "$sdk" = prepare ] && exit 0
 case $sdk in
   simulator) dest='generic/platform=iOS Simulator'; products=Release-iphonesimulator ;;
