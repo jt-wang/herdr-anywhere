@@ -8,6 +8,7 @@
 # with two languages, English (US) first and Chinese pinyin (拼音) second; the globe key switches between them.
 # Usage: ANDROID_SERIAL=emulator-5554 e2e/android-typing.sh APK [folder for screenshots]
 set -eu
+. "$(dirname "$0")/autostart-guard.sh"; autostart_guard android-typing # a login entry of its own, never the person's
 : "${ANDROID_SERIAL:?set ANDROID_SERIAL to the device to use}"
 apk=$1; shot=${2:-}
 app=$(cd "$(dirname "$0")/.." && pwd)
@@ -31,7 +32,7 @@ cp "$app/e2e/typing-raw.py" "$work/home/src/acme-api/raw.py"
 "$hc" run --bg --keep --cwd "$work/home/src/acme-api" --label herdr.space=spty --label herdr.tab=tbty python3 raw.py >/dev/null
 "$work/herdr-anywhere" serve --listen "127.0.0.1:$port" --hc "$hc" --state "$state" > "$work/serve.log" 2>&1 &
 serve_pid=$!
-cleanup() { kill "$serve_pid" 2>/dev/null; "$hc" server stop >/dev/null 2>&1 || true; chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run" "$state"; }
+cleanup() { kill "$serve_pid" 2>/dev/null; "$hc" server stop >/dev/null 2>&1 || true; chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run" "$state"; autostart_guard_end || exit 1; }
 trap 'adb_exit $? cleanup' EXIT
 # INT and TERM end the suite; the EXIT trap cleans up (a handler that only cleans up lets the script go on).
 trap 'exit 130' INT; trap 'exit 143' TERM

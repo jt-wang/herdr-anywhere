@@ -13,6 +13,7 @@
 # Usage: ANDROID_SERIAL=emulator-5554 e2e/android-reconnect.sh <apk> <output dir>
 # Needs the internet, go, hc and the Android SDK.
 set -eu
+. "$(dirname "$0")/autostart-guard.sh"; autostart_guard android-reconnect # a login entry of its own, never the person's
 : "${ANDROID_SERIAL:?set ANDROID_SERIAL to the device to use}"
 app=$(cd "$(dirname "$0")/.." && pwd)
 apk=${1:?apk}
@@ -45,6 +46,7 @@ cleanup() {
   "$adb" shell cmd uimode night "$night" >/dev/null 2>&1 || true
   "$hc" server stop >/dev/null 2>&1 || true
   chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run" "$state"
+  autostart_guard_end || exit 1
 }
 trap 'adb_exit $? cleanup' EXIT
 # INT and TERM end the suite; the EXIT trap cleans up (a handler that only cleans up lets the script go on).

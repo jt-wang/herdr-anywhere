@@ -90,8 +90,10 @@ readonly id
 # The centre of the view with this resource-id; an id ending in "-" is a prefix (as in android.sh).
 at() {
   case $1 in *-) q="resource-id=\"$1" ;; *) q="resource-id=\"$1\"" ;; esac
-  "$adb" shell uiautomator dump /sdcard/hm.xml >/dev/null 2>&1
-  "$adb" shell cat /sdcard/hm.xml | tr '>' '\n' | grep -F "$q" | head -1 |
+  # A dump can fail, as when it is killed (137) while a spinner turns; tap() then tries again, a failed dump is no
+  # reason to stop the suite (set -e did, after 12 s, once on CI).
+  "$adb" shell uiautomator dump /sdcard/hm.xml >/dev/null 2>&1 || true
+  "$adb" shell cat /sdcard/hm.xml 2>/dev/null | tr '>' '\n' | grep -F "$q" | head -1 |
     sed -E 's/.*bounds="\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\]".*/\1 \2 \3 \4/' | awk '{print int(($1+$3)/2), int(($2+$4)/2)}'
 }
 tap() {

@@ -13,6 +13,7 @@
 #   device: turn on from the command line, one pass, the stand-in answers, check and print the tree.
 #   DARK=1: the device in dark mode for the run, put back as it was after.
 set -eu
+. "$(dirname "$0")/autostart-guard.sh"; autostart_guard android-progress # a login entry of its own, never the person's
 app=$(cd "$(dirname "$0")/.." && pwd)
 apk=${1:-$app/android/build/Herdr.apk}
 out=${2:-}
@@ -44,6 +45,7 @@ cleanup() {
   "$hc" server stop >/dev/null 2>&1 || true
   [ -n "${night:-}" ] && "$adb" shell cmd uimode night "$night" >/dev/null 2>&1
   chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run"
+  autostart_guard_end || exit 1
 }
 trap 'adb_exit $? cleanup' EXIT
 # INT and TERM end the suite; the EXIT trap cleans up (a handler that only cleans up lets the script go on).
@@ -53,10 +55,12 @@ pane() { # name dir env…
   n=$1 d=$2; shift 2
   "$hc" run --bg --keep --cwd "$work/home/src/$d" --name "$n" --label herdr.space="sp$d" --label herdr.tab="tb$n" -- env "$@" "$work/bin/claude" >/dev/null
 }
-# payments and mobile stop a few seconds after their hand-off: payments done, mobile asking.
-pane payments acme-shop FAKE_STATE=working FAKE_THEN=done FAKE_AFTER=6 FAKE_MSG='The comparison is ready for you to read'
+# payments and mobile stop once every task has been handed out (the go file below): payments done, mobile asking.
+# They wait for the file instead of a timer, so however slow the setup is, the stop can never come before the
+# hand-off (QueueStops skips a pane that was already stopped then; companion/internal/track/stop.go).
+pane payments acme-shop FAKE_STATE=working FAKE_THEN=done FAKE_GO_FILE="$work/go-flip" FAKE_MSG='The comparison is ready for you to read'
 pane checkout acme-shop FAKE_STATE=working
-pane mobile acme-app FAKE_STATE=working FAKE_THEN=done FAKE_AFTER=8 FAKE_MSG='Round prices to whole numbers, or keep the cents?'
+pane mobile acme-app FAKE_STATE=working FAKE_THEN=done FAKE_GO_FILE="$work/go-flip" FAKE_MSG='Round prices to whole numbers, or keep the cents?'
 pane design acme-app FAKE_STATE=idle
 sleep 1
 # The design pane's Claude session, on no task yet: turning the page on goes through it once.
@@ -69,6 +73,10 @@ lines = [{"type": "user", "origin": {"kind": "human"}, "promptSource": "typed", 
          {"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "Spacing is 12 now"}], "stop_reason": "end_turn"}}]
 open(sys.argv[1], "w").write("".join(json.dumps(l, ensure_ascii=False) + "\n" for l in lines))
 PY
+
+# PROGRESS_SLOW_SECS deliberately slows the setup here: with the panes waiting for the go file, the suite
+# must still pass, however slow it gets (with the old timer this is what raced the hand-off).
+sleep "${PROGRESS_SLOW_SECS:-0}"
 
 # The progress file, as the sample scene. Each pane is put on its task the way the filing pane does it:
 # what was typed there is queued (Q1, the queue being empty), then placed.
@@ -90,6 +98,9 @@ t file --pane hc:mobile "Show each price in the customer's own currency"
 t place Q1 --task T6
 t file --pane hc:checkout "Also send a receipt email after payment"
 t place Q1 --task new --under P1 --title "Send a receipt email after payment" --why "Looks like a new task"
+# Every task is handed out now: let payments and mobile stop. PROGRESS_NO_FLIP=1 leaves them working,
+# which must leave the two stops unqueued and the suite red — the deterministic red for this ordering.
+[ "${PROGRESS_NO_FLIP:-}" = 1 ] || touch "$work/go-flip"
 file="$HERDR_ANYWHERE_STATE/track.json"
 q() { python3 -c "import json,sys; q=json.load(open('$file')).get('queue') or []; sys.exit(0 if $1 else 1)"; }
 

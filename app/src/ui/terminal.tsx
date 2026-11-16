@@ -2,7 +2,7 @@
 // choices, keys) is ui/pane-bar.tsx.
 import { cleanup, Clipboard, colorScheme, effect, keyboardFrame, openUrl, platform, signal, Text, untracked, View, WebView, windowSize } from 'nsh'
 import type { Store } from '../store.ts'
-import { terminalPage, webViewScrollable } from './terminal-page.ts'
+import { edgeBack, terminalPage, webViewScrollable } from './terminal-page.ts'
 import { showTerminalKeyboard } from '../page.ts'
 import { pictureTaps } from './picture-taps.ts'
 import { TerminalSession, terminalNote } from './terminal-session.ts'
@@ -34,7 +34,7 @@ export function TerminalView(props: { store: Store; address: string; fontSize?: 
   const conn = useSignal(props.store.conn)
   const note = () => terminalNote(state(), slow(), conn(), why())
   const away = useSignal(session.away)
-  const html = untracked(() => terminalPage({ dark: colorScheme() === 'dark', fontSize: props.fontSize ?? 13, scrollback: 5000, phone: windowSize().width < WIDE, raised: keyboardFrame().height }))
+  const html = untracked(() => terminalPage({ dark: colorScheme() === 'dark', fontSize: props.fontSize ?? 13, scrollback: 5000, phone: windowSize().width < WIDE, raised: keyboardFrame().height, edge: edgeBack(platform.os, windowSize().width < WIDE) }))
   effect(() => session.setTheme(colorScheme() === 'dark'))
   effect(() => { if (props.fontSize) session.setFontSize(props.fontSize) })
   return (

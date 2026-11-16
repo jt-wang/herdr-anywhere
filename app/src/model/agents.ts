@@ -2,6 +2,7 @@
 // until left" (herdr-app defaults/mods/agents/main.js).
 import type { Shown } from './model.ts'
 import { formats, t, type Key } from '../strings/index.ts'
+import { pinOrder } from './pin-order.ts'
 
 export type AgentInfo = {
   address: string
@@ -20,6 +21,8 @@ export type AgentInfo = {
   focused: boolean
   /** Pinned on the computer: herdr-core's label `herdr.pinned` on its terminal, which every Herdr screen reads. */
   pinned: boolean
+  /** Its place in Pinned (pin-order.ts): the label `herdr-anywhere.pin-order`, or the place a move is writing now. */
+  place?: string
   programName: string
   programKey: string
   /** What a blocked agent says it waits for (its report's kind and msg). */
@@ -84,7 +87,8 @@ export class AgentList {
     const rankOf = (a: AgentInfo) => Math.max(this.rank(a), ...subs.get(a.address)!.map((s) => RANK[s.status ?? ''] ?? 0))
     const byPriority = this.sort === 'priority'
     let list = byPriority ? [...input].sort((x, y) => rankOf(y) - rankOf(x) || this.since(y) - this.since(x) || y.seq - x.seq) : [...input]
-    const pinned = list.filter((a) => a.pinned)
+    // Pinned in the order they were pinned or dragged to, never by status: a change only changes a row's dot.
+    const pinned = pinOrder(input.filter((a) => a.pinned))
     const rest = list.filter((a) => !a.pinned)
     list = [...pinned, ...rest]
 

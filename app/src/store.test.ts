@@ -4,6 +4,9 @@ import { t as tr } from './strings/index.ts'
 import { FakeCore, settle } from './testing/fakecore.ts'
 import { panes, terminalOf } from './model/layout.ts'
 import { spaceActiveTab } from './model/model.ts'
+import * as CX from './testing/screens/codex-0.167.1.ts'
+import * as CL from './testing/screens/claude-2.1.325.ts'
+import * as OC from './testing/screens/opencode-2.2.0.ts'
 
 /** Waits for a condition the store reaches on its own timers, up to 5 s: a fixed wait failed while the computer was busy. */
 async function until(ok: () => boolean) {
@@ -318,6 +321,69 @@ test('a sub-agent kept from peek becomes a tab of its own beside its parent', as
   expect(s.tabs.length).toBe(2)
   expect(core.terms.get(kid.address)!.labels['herdr.space']).toBe(r.space)
   expect(store.model.paneOf(kid.address) !== undefined).toBe(true)
+})
+
+test('keeping a sub-agent that already has a tab goes to that tab and makes no other', async () => {
+  const { core, store } = setup()
+  await store.connect()
+  const r = await store.newSpace({ argv: ['claude'] })
+  const kid = core.run({ argv: ['codex'], parent: r.terminal })
+  await settle()
+  await store.keepTerminal(kid.address)
+  await settle()
+  const pane = store.model.paneOf(kid.address)!
+  store.focusTerminal(r.terminal)
+  const labels = core.calls.filter((c) => c.method === 'terminal.label').length
+  await store.keepTerminal(kid.address)
+  await store.keepTerminal(kid.address)
+  await settle()
+  const s = store.model.space(r.space)!
+  expect(s.tabs.length).toBe(2)
+  expect(core.doc().spaces[0].tabs.length).toBe(2)
+  expect(core.calls.filter((c) => c.method === 'terminal.label').length).toBe(labels)
+  expect(store.model.focusedPane()).toBe(pane)
+})
+
+// herdr-core sends the labels event before its answer to terminal.label (measured with e2e/run.sh, hc 0.1.21: keeping a
+// sub-agent gave two tabs with one id, the copy placed from its new labels while the phone waited for the answer).
+test('keeping two sub-agents of one agent gives each one tab, with ids of their own and no empty tab', async () => {
+  const { core, store } = setup()
+  await store.connect()
+  const r = await store.newSpace({ argv: ['claude'] })
+  // keep already on, as herdr-core had it when the store's terminal.get came (it handled the phone's terminal.keep first).
+  const kids = [core.run({ argv: ['codex'], parent: r.terminal, keep: true }), core.run({ argv: ['pi'], parent: r.terminal, keep: true })]
+  await settle()
+  const tabs = (s: any) => s.tabs.map((c: any) => `${c.id}:${panes(c.root).map((n: any) => terminalOf(n) ?? 'none').join('+')}`)
+  // terminal.keep answered only after the new labels' event has been handled (the store places the terminal by them).
+  core.holding.add('terminal.keep')
+  for (const k of kids) {
+    const kept = store.keepTerminal(k.address)
+    await settle()
+    core.release()
+    await kept
+    await settle()
+  }
+  const mine = tabs(store.model.space(r.space)!)
+  expect(mine.length).toBe(3)
+  expect(new Set(mine.map((t: string) => t.split(':')[0])).size).toBe(3)
+  expect(mine.map((t: string) => t.split(':')[1])).toEqual([r.terminal, kids[0].address, kids[1].address])
+  expect(core.doc().spaces[0].tabs.length).toBe(3)
+})
+
+test('a sub-agent kept as a tab more than once before keeps its first tab; the copies go from the shared layout and it keeps running', async () => {
+  const core = new FakeCore()
+  const doc = { spaces: [] as any[] }
+  core.addSpace(doc, 'sp1', '/Users/sam/src/api', '', [{ id: 'tb1', argv: ['claude'] }])
+  const kid = core.run({ argv: ['codex'], parent: 't1', keep: true, labels: { 'herdr.space': 'sp1', 'herdr.tab': 'tb4' } })
+  const tab = (id: string, pane: string) => ({ id, name: '', root: { id: pane, type: 'block', content: { terminal: kid.address } } })
+  doc.spaces[0].tabs.push(tab('tb2', 'p2'), tab('tb3', 'p3'), tab('tb4', 'p4'))
+  core.docs.set('', { value: doc, version: 1 })
+  const { store } = setup(core)
+  await store.connect()
+  await until(() => core.doc().spaces[0].tabs.length === 2)
+  expect(store.model.space('sp1')!.tabs.map((c) => c.id)).toEqual(['tb1', 'tb2'])
+  expect(core.doc().spaces[0].tabs.map((c: any) => c.id)).toEqual(['tb1', 'tb2'])
+  expect(core.calls.some((c) => c.method === 'terminal.kill')).toBe(false)
 })
 
 test('a computer that forgot this phone stops the retries and asks to pair again, connected or not', async () => {
@@ -933,7 +999,7 @@ test('pins are the computer\'s: a terminal labeled herdr.pinned shows pinned, an
   expect(pinned()).toBe(true)
 })
 
-test('pinning on the phone writes the label the desktop reads, and unpinning removes it, keeping the other labels', async () => {
+test('pinning on the phone writes the pin the desktop reads and the agent\'s place in Pinned, in one call; unpinning removes both, keeping the other labels', async () => {
   const { core, store } = setup()
   await store.connect()
   const r = await store.newSpace({ argv: ['claude'] })
@@ -942,13 +1008,147 @@ test('pinning on the phone writes the label the desktop reads, and unpinning rem
   await settle()
   await store.pin(r.terminal, true)
   await settle()
-  expect(core.calls.filter((c) => c.method === 'terminal.label').map((c) => c.params)).toEqual([{ terminal: r.terminal, labels: { 'herdr.pinned': '1' } }])
-  expect(core.terms.get(r.terminal)!.labels).toEqual({ 'herdr.space': r.space, 'herdr.tab': r.tab, 'herdr.pinned': '1' })
+  expect(core.calls.filter((c) => c.method === 'terminal.label').map((c) => c.params)).toEqual([{ terminal: r.terminal, labels: { 'herdr.pinned': '1', 'herdr-anywhere.pin-order': 'i' } }])
+  expect(core.terms.get(r.terminal)!.labels).toEqual({ 'herdr.space': r.space, 'herdr.tab': r.tab, 'herdr.pinned': '1', 'herdr-anywhere.pin-order': 'i' })
   expect(store.agents()[0].pinned).toBe(true)
   await store.pin(r.terminal, false)
   await settle()
+  expect(core.calls.filter((c) => c.method === 'terminal.label').at(-1)!.params).toEqual({ terminal: r.terminal, labels: { 'herdr.pinned': '', 'herdr-anywhere.pin-order': '' } })
   expect(core.terms.get(r.terminal)!.labels).toEqual({ 'herdr.space': r.space, 'herdr.tab': r.tab })
   expect(store.agents()[0].pinned).toBe(false)
+})
+
+// Agents in one space, one tab each, as `hc run` makes them; `labels` per agent on top of their space and tab.
+function agentsCore(labels: Record<string, string>[], core = new FakeCore()) {
+  const terms = labels.map((l, i) => {
+    const t = core.run({ argv: ['claude'], labels: { 'herdr.space': 's0', 'herdr.tab': `c${i}`, ...l } })
+    core.setStatus(t.address, 'idle')
+    return t.address
+  })
+  core.docs.set('', { version: 1, value: { spaces: [{ id: 's0', name: '', folder: '/x', tabs: terms.map((t, i) => (
+    { id: `c${i}`, name: '', root: { id: `c${i}`, type: 'row', children: [{ id: `x${i}`, type: 'block', content: { terminal: t } }] } })) }] } })
+  return { core, terms }
+}
+const pinnedRows = (store: Store) => store.shown().view.groups.find((g) => g.id === 'pinned')?.members.map((m) => m.address) ?? []
+const placeOf = (core: FakeCore, t: string) => core.terms.get(t)!.labels['herdr-anywhere.pin-order']
+const labelCalls = (core: FakeCore) => core.calls.filter((c) => c.method === 'terminal.label').map((c) => c.params)
+
+test('Pinned keeps the order agents were pinned in: a new pin goes last, and a status change moves nothing', async () => {
+  const { core, terms: [a, b, c] } = agentsCore([{}, {}, {}])
+  const { store } = setup(core)
+  await store.connect()
+  for (const t of [c, a, b]) { await store.pin(t, true); await settle() }
+  expect(pinnedRows(store)).toEqual([c, a, b])
+  core.setStatus(b, 'blocked', 'claude-code', { kind: 'permission', msg: 'Bash: npm test' })
+  core.setStatus(a, 'working')
+  await settle()
+  expect(pinnedRows(store)).toEqual([c, a, b])
+})
+
+test('an agent pinned in Herdr Desktop App (herdr.pinned only) goes last, and the phone writes its place without touching herdr.pinned', async () => {
+  const { core, terms: [a, b, c] } = agentsCore([{ 'herdr.pinned': '1', 'herdr-anywhere.pin-order': 'r' }, { 'herdr.pinned': '1' }, { 'herdr.pinned': '1', 'herdr-anywhere.pin-order': 'i' }])
+  const { store } = setup(core)
+  await store.connect()
+  await settle()
+  expect(pinnedRows(store)).toEqual([c, a, b])
+  expect(labelCalls(core)).toEqual([{ terminal: b, labels: { 'herdr-anywhere.pin-order': placeOf(core, b) } }])
+  expect(placeOf(core, b) > 'r').toBe(true)
+  // Pinned there later, while the phone looks: last again, after b.
+  core.label(a, { 'herdr.pinned': '' })
+  await settle()
+  core.label(a, { 'herdr.pinned': '1' })
+  await settle()
+  expect(pinnedRows(store)).toEqual([c, b, a])
+  expect(core.terms.get(a)!.labels['herdr.pinned']).toBe('1')
+  // Each place is written once: no write goes out again when the label comes back.
+  expect(labelCalls(core).filter((p) => p.terminal === b).length).toBe(1)
+})
+
+test('on a slow line the place of an agent pinned in Herdr Desktop App goes out once, however many syncs pass before the answer', async () => {
+  const { core, terms: [a] } = agentsCore([{ 'herdr.pinned': '1' }])
+  core.holding.add('terminal.label')
+  const { store } = setup(core)
+  await store.connect()
+  for (let i = 0; i < 3; i++) { store.sync(); await settle() }
+  expect(labelCalls(core).length).toBe(1)
+  core.release()
+  await settle()
+  store.sync()
+  await settle()
+  expect([labelCalls(core).length, placeOf(core, a)]).toEqual([1, 'i'])
+})
+
+test('unpinned in Herdr Desktop App, an agent loses its place on the phone too, so pinning it again puts it last', async () => {
+  const { core, terms: [a, b] } = agentsCore([{ 'herdr.pinned': '1', 'herdr-anywhere.pin-order': 'i' }, { 'herdr.pinned': '1', 'herdr-anywhere.pin-order': 'r' }])
+  const { store } = setup(core)
+  await store.connect()
+  core.label(a, { 'herdr.pinned': '' })
+  await settle()
+  expect(placeOf(core, a)).toBe(undefined)
+  expect(labelCalls(core)).toEqual([{ terminal: a, labels: { 'herdr-anywhere.pin-order': '' } }])
+  await store.pin(a, true)
+  await settle()
+  expect(pinnedRows(store)).toEqual([b, a])
+})
+
+test('moving a pinned agent writes only its own place; another phone, and the app started again, show the same order', async () => {
+  const { core, terms: [a, b, c, d] } = agentsCore([
+    { 'herdr.pinned': '1', 'herdr-anywhere.pin-order': 'i' }, { 'herdr.pinned': '1', 'herdr-anywhere.pin-order': 'r' },
+    { 'herdr.pinned': '1', 'herdr-anywhere.pin-order': 'v' }, { 'herdr.pinned': '1', 'herdr-anywhere.pin-order': 'x' }])
+  const { store } = setup(core)
+  await store.connect()
+  await store.movePin(d, 1)
+  await settle()
+  expect(pinnedRows(store)).toEqual([a, d, b, c])
+  expect(labelCalls(core)).toEqual([{ terminal: d, labels: { 'herdr-anywhere.pin-order': placeOf(core, d) } }])
+  // Another phone moves another agent: this phone follows the label.
+  core.label(a, { 'herdr-anywhere.pin-order': 'w' })
+  await settle()
+  expect(pinnedRows(store)).toEqual([d, b, c, a])
+  // Started again (a new connection to the same herdr-core): the order is the labels', nothing kept on the phone.
+  const again = new FakeCore()
+  again.terms = core.terms
+  again.docs = core.docs
+  const restarted = setup(again).store
+  await restarted.connect()
+  await settle()
+  expect(pinnedRows(restarted)).toEqual([d, b, c, a])
+  expect(labelCalls(again)).toEqual([])
+})
+
+test('a moved row shows in its new place at once, before herdr-core answers; if the write fails it goes back', async () => {
+  const { core, terms: [a, b, c] } = agentsCore([
+    { 'herdr.pinned': '1', 'herdr-anywhere.pin-order': 'i' }, { 'herdr.pinned': '1', 'herdr-anywhere.pin-order': 'r' }, { 'herdr.pinned': '1', 'herdr-anywhere.pin-order': 'v' }])
+  const { store } = setup(core)
+  await store.connect()
+  core.holding.add('terminal.label')
+  const moving = store.movePin(c, 0)
+  await settle()
+  expect(pinnedRows(store)).toEqual([c, a, b])
+  core.release()
+  await moving
+  await settle()
+  expect(pinnedRows(store)).toEqual([c, a, b])
+  core.holding.clear()
+  // herdr-core refuses (it no longer knows the terminal): the row goes back and the error tells why.
+  const gone = core.terms.get(a)!
+  core.terms.delete(a)
+  await expect(() => store.movePin(a, 2)).rejects.toThrow('no terminal')
+  await settle()
+  core.terms.set(a, gone)
+  expect(pinnedRows(store)).toEqual([c, a, b])
+})
+
+test('with the line down a pinned agent cannot move: the order stays as it was', async () => {
+  const { core, terms: [a, b] } = agentsCore([{ 'herdr.pinned': '1', 'herdr-anywhere.pin-order': 'i' }, { 'herdr.pinned': '1', 'herdr-anywhere.pin-order': 'r' }])
+  const { store } = setup(core)
+  await store.connect()
+  core.drop('network')
+  await settle()
+  let failed = false
+  try { await store.movePin(b, 0) } catch { failed = true }
+  await settle()
+  expect([failed, pinnedRows(store)]).toEqual([true, [a, b]])
 })
 
 test('pins the phone kept by itself before are not shown: only the computer\'s count', async () => {
@@ -1071,4 +1271,201 @@ test('an agent that rang costs nothing on later passes until what it says change
   await settle()
   expect(told.length).toBe(1)
   expect(told[0].startsWith('ran the tests and fixed one')).toBe(true)
+})
+
+test("a terminal's Kitty pictures are kept for it while the app runs; the 4 terminals opened last keep theirs", () => {
+  const { store } = setup()
+  const a = store.picturesOf('box/t1')
+  expect(store.picturesOf('box/t1')).toBe(a)
+  const two = store.picturesOf('box/t2')
+  for (let i = 3; i <= 5; i++) store.picturesOf(`box/t${i}`)
+  expect(store.picturesOf('box/t1') === a).toBe(false)
+  const five = store.picturesOf('box/t5')
+  expect(store.picturesOf('box/t5')).toBe(five)
+  expect(store.picturesOf('box/t2') === two).toBe(false)
+})
+
+// Codex 0.167.1 ends a plan with "Implement this plan?" and reports done meanwhile, as after any turn
+// (its status and events are the same after both, measured): only its screen tells them apart. The phone reads it when Codex says done.
+test("Codex's 'Implement this plan?' waits on you though Codex reports done: it rings as needing you, once", async () => {
+  const { core, store } = setup()
+  const rung: string[] = []
+  store.onAlert = (k) => rung.push(k)
+  await store.connect()
+  const r = await store.newSpace({ argv: ['codex'] })
+  await settle()
+  core.setStatus(r.terminal, 'working', 'codex')
+  await settle()
+  core.screens.set(r.terminal, CX.PLAN)
+  core.setStatus(r.terminal, 'done', 'codex')
+  await until(() => rung.length > 0)
+  await settle(10)
+  expect(rung).toEqual(['blocked'])
+  expect(store.statusOf(r.terminal)).toBe('blocked')
+  expect([store.term(r.terminal)?.status?.state, store.term(r.terminal)?.status?.kind, store.term(r.terminal)?.status?.msg]).toEqual(['blocked', 'permission', 'approve plan'])
+  expect(store.menuFor(r.terminal)?.question).toBe('Implement this plan?')
+  // 3 closes it: Codex reports idle, and nothing waits any more.
+  core.screens.set(r.terminal, CX.DONE)
+  core.setStatus(r.terminal, 'idle', 'codex')
+  await settle(10)
+  expect(store.term(r.terminal)?.status?.state).toBe('idle')
+  expect(store.menuFor(r.terminal)).toBe(undefined)
+  expect(rung).toEqual(['blocked'])
+})
+
+test('an ordinary done from Codex still rings as done', async () => {
+  const { core, store } = setup()
+  const rung: string[] = []
+  store.onAlert = (k) => rung.push(k)
+  await store.connect()
+  const r = await store.newSpace({ argv: ['codex'] })
+  await settle()
+  core.setStatus(r.terminal, 'working', 'codex')
+  await settle()
+  core.screens.set(r.terminal, CX.DONE)
+  core.setStatus(r.terminal, 'done', 'codex')
+  await until(() => rung.length > 0)
+  expect(rung).toEqual(['done'])
+  expect(store.term(r.terminal)?.status?.state).toBe('done')
+})
+
+// An agent that asks one set of choices after another stays blocked, its report the same (Claude Code through a
+// call's questions): only its screen says the next one is up. Claude Code 2.1.325's screens, read off the real program.
+const attachedOn = async (screen: string) => {
+  const s = setup()
+  await s.store.connect()
+  const r = await s.store.newSpace({ argv: ['claude'] })
+  await settle()
+  await s.store.attach(r.terminal, { cols: 46, rows: 40 }, { data: () => {}, close: () => {} })
+  s.core.screens.set(r.terminal, screen)
+  s.core.setStatus(r.terminal, 'blocked', 'claude-code', { kind: 'question', msg: 'answer: Which plan should the fake shop use?' })
+  await settle()
+  return { ...s, addr: r.terminal, reads: () => s.core.calls.filter((c) => c.method === 'terminal.read').length }
+}
+const draw = (core: FakeCore, addr: string, screen: string) => { core.screens.set(addr, screen); core.output(addr, `\x1b[H\x1b[2J${screen}`) }
+const runTimers = async (timers: (() => void)[]) => { for (let i = 0; i < 10 && timers.length; i++) { for (const f of timers.splice(0)) f(); await settle() } }
+
+test("a blocked agent's next question, drawn on its screen while its report stays the same: the menu is read again once the screen is still", async () => {
+  const { core, store, timers, advance, addr, reads } = await attachedOn(CL.Q1)
+  expect(store.menuFor(addr)?.question).toBe('Which plan should the fake shop use?')
+  expect(reads()).toBe(1)
+  draw(core, addr, CL.MULTI)
+  await settle()
+  advance(250)
+  await runTimers(timers)
+  expect(store.menuFor(addr)?.question).toBe('Which pages should get the new banner?')
+  expect(store.menuFor(addr)?.options.slice(0, 3).map((o) => o.label)).toEqual(['Home', 'Cart', 'Help'])
+  expect(reads()).toBe(2)
+})
+
+test('a blocked agent whose screen stays still is not read again: no bytes, no reads', async () => {
+  const { store, timers, advance, addr, reads } = await attachedOn(CL.Q1)
+  for (let i = 0; i < 5; i++) { advance(1000); await runTimers(timers) }
+  expect(reads()).toBe(1)
+  expect(store.menuFor(addr)?.question).toBe('Which plan should the fake shop use?')
+})
+
+test('a screen that keeps drawing is read once it is still, and at most once a second while it goes on', async () => {
+  const { core, timers, advance, addr, reads } = await attachedOn(CL.Q1)
+  // 20 bytes 100 ms apart: still for 200 ms never comes, so the second-long cap reads it twice in those 2 s.
+  for (let i = 0; i < 20; i++) { core.output(addr, '.'); await settle(); advance(100); for (const f of timers.splice(0)) f(); await settle() }
+  advance(250); await runTimers(timers)
+  expect(reads()).toBeLessThanOrEqual(4)
+  expect(reads()).toBeGreaterThan(1)
+})
+
+test('an agent at work draws all the time: its bytes read nothing; once it waits on a question, they do', async () => {
+  const { core, store, timers, advance, addr, reads } = await attachedOn(CL.Q1)
+  core.setStatus(addr, 'working', 'claude-code')
+  await settle()
+  expect(store.menuFor(addr)).toBe(undefined)
+  const before = reads()
+  for (let i = 0; i < 30; i++) { core.output(addr, `line ${i}\r\n`); await settle(); advance(100); await runTimers(timers) }
+  advance(1000); await runTimers(timers)
+  expect(reads()).toBe(before)
+  core.screens.set(addr, CL.THREE_Q1)
+  core.setStatus(addr, 'blocked', 'claude-code', { kind: 'question', msg: 'answer: Which shelf should the fake lamp go on?' })
+  await settle()
+  expect(store.menuFor(addr)?.question).toBe('Which shelf should the fake lamp go on?')
+  draw(core, addr, CL.THREE_Q2)
+  await settle(); advance(250); await runTimers(timers)
+  expect(store.menuFor(addr)?.question).toBe('Which color should the fake lamp be?')
+})
+
+test("Codex waiting on a question blinks its title once a second: titles alone read nothing", async () => {
+  const s = setup()
+  await s.store.connect()
+  const r = await s.store.newSpace({ argv: ['codex'] })
+  await settle()
+  await s.store.attach(r.terminal, { cols: 46, rows: 40 }, { data: () => {}, close: () => {} })
+  s.core.screens.set(r.terminal, CX.ASK1)
+  s.core.setStatus(r.terminal, 'blocked', 'codex', { kind: 'question' })
+  await settle()
+  const reads = () => s.core.calls.filter((c) => c.method === 'terminal.read').length
+  expect(reads()).toBe(1)
+  // The bytes Codex 0.167.1 wrote while it waited, a folder name made up.
+  for (let i = 0; i < 10; i++) {
+    s.core.output(r.terminal, `\x1b]0;[ ${i % 2 ? '.' : '!'} ] Action Required | demo-shop\x07`)
+    await settle(); s.advance(1000); await runTimers(s.timers)
+  }
+  expect(reads()).toBe(1)
+})
+
+test("Codex's and OpenCode's next question, drawn while each stays blocked: the menu follows", async () => {
+  for (const [argv, app, first, next, q] of [['codex', 'codex', CX.ASK1, CX.ASK2, 'How big should it be?'], ['opencode', 'opencode', OC.TWO_Q1, OC.TWO_Q2, 'How big should it be?']] as const) {
+    const s = setup()
+    await s.store.connect()
+    const r = await s.store.newSpace({ argv: [argv] })
+    await settle()
+    await s.store.attach(r.terminal, { cols: 46, rows: 40 }, { data: () => {}, close: () => {} })
+    s.core.screens.set(r.terminal, first)
+    s.core.setStatus(r.terminal, 'blocked', app, { kind: 'question' })
+    await settle()
+    expect(s.store.menuFor(r.terminal)?.question).toBe('Which color should the demo button be?')
+    draw(s.core, r.terminal, next)
+    await settle(); s.advance(250); await runTimers(s.timers)
+    expect([app, s.store.menuFor(r.terminal)?.question]).toEqual([app, q])
+  }
+})
+
+test('the cursor moved, the question the same: the menu is read again, the same options, the other one highlighted', async () => {
+  const { core, store, timers, advance, addr } = await attachedOn(CL.THREE_Q1)
+  expect(store.menuFor(addr)?.options.map((o) => o.selected)).toEqual([true, false, false, false])
+  draw(core, addr, CL.THREE_Q1_DOWN)
+  await settle(); advance(250); await runTimers(timers)
+  expect(store.menuFor(addr)?.options.map((o) => [o.n, o.label, o.selected])).toEqual([[1, 'Top shelf', false], [2, 'Bottom shelf', true], [3, 'Type something.', false], [4, 'Chat about this', false]])
+})
+
+test('a Companion restarted on the computer: the phone retries at 1, 2, 4, 8, then every 15 s, and is back at the first retry after it is up', async () => {
+  // Down for 12 s (as chat-behind's shots stop one Companion and start another on the same port and state).
+  let now = 1_000_000
+  let upAt = 0
+  const core = new FakeCore()
+  let first = true
+  const pipe = () => {
+    if (first) { first = false; return core }
+    if (now >= upAt) return new FakeCore()
+    const c = new FakeCore()
+    c.send = () => { c.drop('network') } // refused: nothing listens on the port
+    return c
+  }
+  const timers: { f: () => void; ms: number }[] = []
+  const store = new Store({ pipe, now: () => now, setInterval: (() => 0) as any, clearInterval: (() => {}) as any,
+    setTimeout: ((f: () => void, ms: number) => { timers.push({ f, ms }); return 0 }) as any })
+  await store.connect()
+  core.drop('closed')
+  await settle()
+  upAt = now + 12_000
+  const waits: number[] = []
+  while (store.conn.get() !== 'ready' && waits.length < 20) {
+    const t = timers.shift()!
+    waits.push(t.ms); now += t.ms
+    t.f()
+    await settle(20)
+  }
+  expect(store.conn.get()).toBe('ready')
+  expect(waits).toEqual([1000, 2000, 4000, 8000])
+  // In 90 s down it would try 9 times: 1 + 2 + 4 + 8 + 15 × 5 = 90.
+  const schedule = [1, 2, 4, 8, 16, 32, 64, 128, 256].map((s) => Math.min(s * 1000, 15_000))
+  expect(schedule.reduce((a, b) => a + b, 0)).toBe(90_000)
 })
