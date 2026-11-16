@@ -76,6 +76,8 @@ final class AppController: UIViewController, UIDocumentPickerDelegate, QLPreview
 
   override func viewDidLoad() {
     super.viewDidLoad()
+    // iOS suspension counts toward the VM wall clock; our bundled code uses the SDK maximum.
+    app.limits = NshLimits(callBudget: TimeInterval(UInt32.max) / 1000)
     app.frame = view.bounds
     app.autoresizingMask = [.flexibleWidth, .flexibleHeight]
     // No app.onError: nsh 0.3.0 frees the handler as it is set, so the first JS error the app does not catch would
