@@ -1,8 +1,8 @@
-// A real Root screen over the protocol fake, with one competing document write and a held read response.
+// A real Root screen over the protocol fake, with one competing write and a held CAS error delivery.
 import { signal, Storage, Text, View } from 'nsh'
 import type { Store } from '../src/store.ts'
 import { panes, terminalOf } from '../src/model/layout.ts'
-import { FakeCore, settle } from '../src/testing/fakecore.ts'
+import { FakeCore } from '../src/testing/fakecore.ts'
 
 export class LayoutRace {
   private store?: Store
@@ -11,6 +11,7 @@ export class LayoutRace {
   private conflicts = 0
   private input: string[] = []
   private version = 0
+  private resumeConflict?: () => void
   private phase = signal('ready')
 
   constructor(private core: FakeCore) {
@@ -33,8 +34,12 @@ export class LayoutRace {
         if (method === 'doc.set' && error.kind === 'conflict' && this.phase() === 'armed') {
           this.conflicts++
           this.originalPane = store.model.paneOf(this.terminal) ?? ''
+          // The RPC already finished. Keep Store.flush awaiting its error (and holding its write lock)
+          // while Android takes pictures; holding a doc.get reply instead let it time out and sync retry.
+          const released = new Promise<void>(resolve => { this.resumeConflict = resolve })
           await this.record('blocked')
           this.phase.set('blocked')
+          await released
         }
         throw error
       }
@@ -58,17 +63,25 @@ export class LayoutRace {
     const value = JSON.parse(JSON.stringify(d.value))
     value.spaces[0].name = 'grove'
     this.core.docs.set('', { value, version: d.version + 1 })
-    this.core.holding.add('doc.get')
     this.phase.set('armed')
   }
 
   private async release() {
-    if (this.phase() !== 'blocked' || this.conflicts !== 1 || !this.originalPane) throw new Error('no held layout conflict')
-    this.core.holding.delete('doc.get')
-    this.core.release()
-    await settle(30)
-    await this.record('released')
-    this.phase.set('released')
+    if (this.phase() !== 'blocked' || this.conflicts !== 1 || !this.originalPane || !this.resumeConflict) throw new Error('no held layout conflict')
+    this.resumeConflict()
+    this.resumeConflict = undefined
+    const deadline = Date.now() + 5000
+    while (Date.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, 20))
+      const slot = this.store!.slots.get('')
+      if (slot?.loaded && slot.available && !slot.writing && slot.version >= this.version + 1
+        && this.store!.model.space('splayout')?.name === 'grove') {
+        await this.record('released')
+        this.phase.set('released')
+        return
+      }
+    }
+    throw new Error('Store did not accept the remote layout within 5 seconds')
   }
 
   private async record(stage: string) {
