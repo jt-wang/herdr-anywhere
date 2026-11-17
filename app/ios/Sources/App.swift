@@ -1,7 +1,8 @@
 // The app: one window showing the NSH app full screen, as `nsh package` builds it; the app keeps clear of the
 // notch and home bar itself (safeAreaInsets). TailPocket answers the app's tailPocket.* host calls (src/tunnel.ts);
 // this class answers page.pickFiles and page.uploadFile (src/link.ts): NSH 0.3.0 has a picker for photos and none for
-// other files; page.copyImage, page.videoFrame and page.openFile (src/page.ts).
+// other files; page.copyImage, page.videoFrame and page.openFile (src/page.ts). Notify (Notify.swift) answers
+// page.front and page.notify, and opens tapped notifications.
 import AVFoundation
 import NativeShell
 import QuickLook
@@ -75,11 +76,15 @@ final class AppController: UIViewController, UIDocumentPickerDelegate, QLPreview
 
   override func viewDidLoad() {
     super.viewDidLoad()
+    // iOS suspension counts toward the VM wall clock; our bundled code uses the SDK maximum.
+    app.limits = NshLimits(callBudget: TimeInterval(UInt32.max) / 1000)
     app.frame = view.bounds
     app.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-    app.onError = { message in NSLog("nsh error: %@", message) }
+    // No app.onError: nsh 0.3.0 frees the handler as it is set, so the first JS error the app does not catch would
+    // crash it (e2e/ios-onerror.sh). nsh writes those errors to the log itself.
     view.addSubview(app)
     tailPocket = TailPocketNsh.attach(app)
+    Notify.shared.attach(app)
     app.handle("page.pickFiles") { [weak self] data, reply in
       let limit = (data as? [String: Any])?["limit"] as? Int
       Task { @MainActor in self?.pickFiles(limit: limit) { reply.resolve($0) } }

@@ -2,7 +2,7 @@
 // The phone knows nothing of any agent: the computer finds the record, reads it, and says when it is not sure.
 import { formats, t } from '../strings/index.ts'
 
-export type ChatStep = { id: string; kind: 'read' | 'edit' | 'run' | 'search' | 'web' | 'agent' | 'note' | 'think' | 'other' | string; title: string
+export type ChatStep = { id: string; kind: 'read' | 'edit' | 'run' | 'search' | 'web' | 'agent' | 'note' | 'think' | 'you' | 'other' | string; title: string
   /** The record says it failed (a command's exit code, a refused call). */
   failed?: boolean
   /** The lines an edit added and removed. */
@@ -18,10 +18,15 @@ export type ChatTurn = {
   images?: ChatPicture[]
   steps: ChatStep[]
   reply: string
-  ask?: { text: string; options: string[] }
+  ask?: ChatAsk
   end: 'open' | 'done' | 'stopped'
   secs?: number
 }
+/** A question the agent asked and nobody has answered yet. `text` and `options` are its first question's words (all a
+ *  computer before 0.2.0 sends); `questions`, every question of the call as the record has them, the agent's
+ *  "(Recommended)" taken off the label it marks. None for a prompt only the screen shows (a permission). */
+export type ChatAsk = { text: string; options: string[]; questions?: ChatQuestion[] }
+export type ChatQuestion = { header?: string; text: string; multi?: boolean; options: { label: string; detail?: string; recommended?: boolean }[] }
 /** `chat` false: no chat button. `unknown`: nothing sure to show, and why (the companion's chat.go lists them). */
 /** `setup`: with unknown "setup-needed" or "setup-not-loaded", the agent whose chat setup (ChatSetup) is missing or
  *  not yet used. */
@@ -119,17 +124,34 @@ const span = (secs: number) => {
   return m < 60 ? formats().span('m', m) : formats().span('h', Math.floor(m / 60))
 }
 
-/** The one line a finished turn's steps fold behind. */
+/** The summary of a turn's work, whether it is still open or finished. */
 export function foldLine(turn: ChatTurn): string {
-  const n = t('chatSteps', { n: turn.steps.length })
-  return turn.secs ? `${t('chatWorked', { time: span(turn.secs) })} · ${n}` : n
+  const n = t('chatSteps', { n: turn.steps.filter((x) => x.kind !== 'you').length })
+  return turn.end === 'open' ? `${t('chatWorking')} · ${n}` : turn.secs ? `${t('chatWorked', { time: span(turn.secs) })} · ${n}` : n
 }
 
 /** Whether a turn shows its fold line, and its steps. */
 export function shows(turn: ChatTurn, expanded: boolean): { fold: boolean; steps: boolean } {
-  if (!turn.steps.length) return { fold: false, steps: false }
-  if (turn.end === 'open') return { fold: false, steps: true }
+  if (!turn.steps.some((x) => x.kind !== 'you')) return { fold: false, steps: false }
   return { fold: true, steps: expanded }
+}
+
+/** What you said while the agent worked (steps of kind `you`): shown above a closed fold line, so a finished turn
+ *  doesn't hide it; in its place among the steps once they show. */
+export function outsideFold(turn: ChatTurn, expanded: boolean): ChatStep[] {
+  const s = shows(turn, expanded)
+  return !s.steps ? turn.steps.filter((x) => x.kind === 'you') : []
+}
+
+/** A small preview of an open turn's work. A step has no running/completed field, so this is only the latest
+ *  recorded activity. Replies already rendered below the work are not repeated here. */
+export function workPreview(turn: ChatTurn): { note?: ChatStep; step?: ChatStep; failures: number } {
+  const work = turn.steps.filter((x) => x.kind !== 'you')
+  const failures = work.filter((x) => x.failed).length
+  if (turn.end !== 'open') return { failures }
+  const note = work.findLast((x) => x.kind === 'note')
+  const step = work.findLast((x) => x.kind !== 'note')
+  return { note: note?.title.trim() === turn.reply.trim() ? undefined : note, step, failures }
 }
 
 /** How often an open chat view asks again: while the agent works or waits on you, its record grows; an agent that

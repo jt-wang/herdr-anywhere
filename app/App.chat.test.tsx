@@ -69,18 +69,24 @@ test('a step whose details are gone says so', async () => {
   const gone = [{ ...turns[0], end: 'open', steps: [{ id: 'gone', kind: 'run', title: 'make' }] }]
   const app = await pane({ status: 'working', chat: JSON.stringify({ chat: true, turns: gone }) })
   await app.press('id:show-chat')
+  await app.press('id:fold-u1')
   await app.press('id:step-gone')
   await app.waitFor("text:This step's details are gone.")
 })
 
-test('an open question shows the question and its options, to answer in the terminal', async () => {
+// With its screen's menu read, the question is a card to answer here (App.ask.test.tsx). Without it, the words only.
+test("an open question whose screen can't be read: its options numbered, to answer in the terminal, one tap away", async () => {
   const app = await pane({ status: 'blocked', chat: JSON.stringify({ chat: true, turns: ask }) })
   await app.press('id:show-chat')
   await app.waitFor('text:Which color should the button be?')
-  expect(app.texts()).toContain('Red')
-  expect(app.texts()).toContain('Blue')
+  expect(app.texts()).toContain('1. Red')
+  expect(app.texts()).toContain('2. Blue')
   expect(app.texts()).toContain('Answer it in the terminal.')
-  expect(app.count('id:step-toolu_3')).toBe(1) // an open turn's steps show
+  expect(app.count('id:ask-card')).toBe(0)
+  expect(app.count('id:step-toolu_3')).toBe(0) // the question stays visible above folded work
+  expect(app.count('id:fold-u3')).toBe(1)
+  await app.press('id:ask-terminal-u3')
+  await app.waitFor('id:show-chat')
 })
 
 test('when the computer is not sure it shows no turn at all, only why and the way back', async () => {
@@ -98,7 +104,7 @@ test('an OpenCode that reports no status still has its chat, and the view keeps 
   expect(asks(app)).toContain('/api/chat/t1')
   await app.press('id:show-chat')
   await app.waitFor("text:Can't tell which conversation this is yet. It shows once OpenCode does some work.")
-  app.host.send('fake.chat', { chat: true, turns })
+  await app.host.send('fake.chat', { chat: true, turns })
   await pollUntil(app, 'Fixed: total_items counts each item once.')
 })
 
@@ -106,8 +112,8 @@ test('an OpenCode that has not said which conversation it shows: the view says s
   const app = await pane({ argv: 'opencode', status: 'idle', chat: JSON.stringify({ chat: true, unknown: 'not-reported' }) })
   await app.press('id:show-chat')
   await app.waitFor("text:Can't tell which conversation this is yet. It shows once OpenCode does some work.")
-  app.host.send('fake.chat', { chat: true, turns: ask })
-  app.host.send('fake.status', { address: 't1', state: 'working' })
+  await app.host.send('fake.chat', { chat: true, turns: ask })
+  await app.host.send('fake.status', { address: 't1', state: 'working' })
   await pollUntil(app, 'pick a color')
 })
 
@@ -116,7 +122,7 @@ test('while the agent works the view asks again every 3 s, and shows what is new
   await app.press('id:show-chat')
   await app.waitFor('text:pick a color')
   const before = asks(app).length
-  app.host.send('fake.chat', { chat: true, turns: [{ ...ask[0], ask: undefined, end: 'done', reply: 'Blue it is.' }] })
+  await app.host.send('fake.chat', { chat: true, turns: [{ ...ask[0], ask: undefined, end: 'done', reply: 'Blue it is.' }] })
   await pollUntil(app, 'Blue it is.')
   expect(asks(app).length).toBeGreaterThan(before)
 })
@@ -125,7 +131,7 @@ test('the record falling behind shows why, then the turns once it catches up', a
   const app = await pane({ status: 'working', chat: JSON.stringify({ chat: true, unknown: 'behind' }) })
   await app.press('id:show-chat')
   await app.waitFor("text:The record hasn't caught up with the screen yet.")
-  app.host.send('fake.chat', { chat: true, turns: ask })
+  await app.host.send('fake.chat', { chat: true, turns: ask })
   await pollUntil(app, 'pick a color')
 })
 
@@ -133,7 +139,7 @@ test('a computer that stops answering leaves the last turns up, marked', async (
   const app = await pane({ status: 'working', chat: JSON.stringify({ chat: true, turns: ask }) })
   await app.press('id:show-chat')
   await app.waitFor('text:pick a color')
-  app.host.send('fake.chat', { offline: true })
+  await app.host.send('fake.chat', { offline: true })
   await pollUntil(app, "Can't reach the computer. This is what it said last.")
   expect(app.texts()).toContain('pick a color')
 })
@@ -185,6 +191,28 @@ test('images sent with a prompt, and in a step\'s result, show as pictures', asy
   await app.waitFor('id:image-toolu_img.0')
 })
 
+test('a picture is fetched once, not again at each 3 s ask while the agent works', async () => {
+  const pics = [{ ...turns[0], images: [{ id: 'u1.1' }] }]
+  const app = await pane({ status: 'working', chat: JSON.stringify({ chat: true, turns: pics }) })
+  await app.press('id:show-chat')
+  await app.waitFor('id:image-u1.1')
+  // The turn grows (a step, then another), the record falls behind for a moment, and a new turn comes.
+  const open = { id: 'u2', from: 'you', said: 'go on', end: 'open', reply: '', steps: [] as any[] }
+  const sends = [
+    { chat: true, turns: [...pics, { ...open, steps: [{ id: 's1', kind: 'run', title: 'make' }] }] },
+    { chat: true, turns: [...pics, { ...open, steps: [{ id: 's1', kind: 'run', title: 'make' }, { id: 's2', kind: 'run', title: 'make test' }] }] },
+    { chat: true, unknown: 'behind' },
+    { chat: true, turns: [...pics, { ...open, end: 'done', reply: 'Done.', steps: [{ id: 's1', kind: 'run', title: 'make' }] }] },
+  ]
+  for (const a of sends) {
+    await app.host.send('fake.chat', a)
+    await app.clock.runFor(3100)
+  }
+  await pollUntil(app, 'Done.')
+  expect(asks(app).filter((x) => x === '/api/chat/t1/images/u1.1').length).toBe(1)
+  expect(app.count('id:image-u1.1')).toBe(1)
+})
+
 test('an image shows under the path it came from, which can be selected and copied', async () => {
   const pics = [{ ...turns[0], images: [{ id: 'u1.1', source: '/tmp/claude/x/images/1.png' }, { id: 'u1.2' }], steps: [{ id: 'toolu_img', kind: 'read', title: 'shot.png' }] }]
   const app = await pane({ chat: JSON.stringify({ chat: true, turns: pics }) })
@@ -198,6 +226,32 @@ test('an image shows under the path it came from, which can be selected and copi
   await app.press('id:step-toolu_img')
   await app.waitFor('id:image-toolu_img.0')
   expect(app.texts()).toContain('/work/acme/toolu_img.png')
+})
+
+test('a tap on an image opens it in the picture sheet, which zooms; it shows the image already fetched', async () => {
+  const pics = [{ ...turns[0], images: [{ id: 'u1.1', source: '/tmp/claude/x/images/1.png' }, { id: 'u1.2' }] }]
+  const app = await pane({ chat: JSON.stringify({ chat: true, turns: pics }) }, { 'page.copyImage': true })
+  await app.press('id:show-chat')
+  await app.waitFor('id:image-u1.1')
+  await app.press('id:image-u1.1')
+  await app.waitFor('id:picture-image')
+  expect(app.count('id:picture-zoom')).toBe(1)
+  // Its path, to copy; the picture itself is the one the chat fetched, not read again from the computer.
+  await app.press('id:picture-copy-path')
+  expect(app.clipboard()).toBe('/tmp/claude/x/images/1.png')
+  expect(app.storage()['fake-pictures']).toBe(undefined)
+  await app.longPress('id:picture')
+  await app.waitFor('text:Picture copied')
+  const call = app.host.calls().find((c: any) => c.name === 'page.copyImage') as any
+  expect(String(call?.data?.url)).toMatch(/^data:image\/png;base64,iVBOR/)
+  await app.press('id:picture-close')
+  await app.waitUntil(() => !app.shows('id:picture-sheet'))
+  expect(app.shows('id:image-u1.1')).toBe(true)
+  // An image the record gives no path for: no path, nothing to copy but the picture.
+  await app.press('id:image-u1.2')
+  await app.waitFor('id:picture-image')
+  expect(app.count('id:picture-copy-path')).toBe(0)
+  expect(app.count('id:picture-path')).toBe(0)
 })
 
 test('thinking is a step of its own, its whole text a tap away', async () => {
@@ -216,8 +270,72 @@ test('what was opened stays open when the view asks again and a turn is added', 
   await app.press('id:fold-u1')
   await app.press('id:step-toolu_2')
   await app.waitFor('text:input of toolu_2')
-  app.host.send('fake.chat', { chat: true, turns: [...turns, { ...ask[0], ask: undefined, end: 'done', reply: 'Blue it is.' }] })
+  await app.host.send('fake.chat', { chat: true, turns: [...turns, { ...ask[0], ask: undefined, end: 'done', reply: 'Blue it is.' }] })
   await pollUntil(app, 'Blue it is.')
+  expect(app.count('id:step-toolu_1')).toBe(1)
+  expect(app.texts()).toContain('input of toolu_2')
+})
+
+// A busy computer answers late: an answer asked before the turn ended, replied after a newer one, doesn't put the view
+// back to before (seen in CI: chat asks of 2 to 7.6 s, six at once).
+test('an answer that comes back after a newer one is not shown over it', async () => {
+  const working = { ...ask[0], ask: undefined }
+  const app = await pane({ status: 'working', chat: JSON.stringify({ chat: true, turns: [...turns, working] }) })
+  await app.press('id:show-chat')
+  await app.waitFor('text:pick a color')
+  await app.host.send('fake.chat', { chat: true, turns: [...turns, working], slow: 8000 })
+  await app.clock.runFor(3100)
+  expect(asks(app).filter((x) => x === '/api/chat/t1').length).toBeGreaterThan(1)
+  await app.host.send('fake.chat', { chat: true, turns: [...turns, { ...working, end: 'done', reply: 'Blue it is.' }] })
+  await app.clock.runFor(500)
+  await app.host.send('fake.status', { address: 't1', state: 'done' })
+  await app.clock.runFor(2000)
+  await app.waitFor('text:Blue it is.')
+  // The old answer lands about 6 s later; the next ask would put things right again, so each second is looked at.
+  const seen: string[] = []
+  for (let i = 0; i < 10; i++) {
+    await app.clock.runFor(1000)
+    seen.push(app.texts().includes('Blue it is.') && !app.texts().includes('Working…') ? 'new' : 'old')
+  }
+  expect(seen).toEqual(Array(10).fill('new'))
+})
+
+// After the computer stopped answering for a while (the phone away, the connection down) and an ask from before
+// came back late, every newer answer is still shown: no ask is taken for old once the view has moved on.
+test('after the computer was unreachable, with an older answer landing late, the view takes new answers again', async () => {
+  const working = { ...ask[0], ask: undefined }
+  const app = await pane({ status: 'working', chat: JSON.stringify({ chat: true, turns: [...turns, working] }) })
+  await app.press('id:show-chat')
+  await app.waitFor('text:pick a color')
+  await app.host.send('fake.chat', { chat: true, turns: [...turns, working], slow: 8000 })
+  await app.clock.runFor(3100)
+  await app.host.send('fake.chat', { offline: true })
+  for (let i = 0; i < 10 && !app.texts().includes("Can't reach the computer. This is what it said last."); i++) await app.clock.runFor(1000)
+  expect(app.texts()).toContain("Can't reach the computer. This is what it said last.")
+  await app.clock.runFor(9000) // the ask from before lands, older than the failed ones
+  const said = ['Blue it is.', 'Green after all.', 'Red, final.']
+  for (const reply of said) {
+    await app.host.send('fake.chat', { chat: true, turns: [...turns, { ...working, end: 'done', reply }] })
+    for (let i = 0; i < 10 && !app.texts().includes(reply); i++) await app.clock.runFor(1000)
+    expect(app.texts()).toContain(reply)
+    expect(app.texts()).not.toContain("Can't reach the computer. This is what it said last.")
+  }
+})
+
+// A moment of doubt (here the agent's status not known for one ask) shows why instead of the turns; once the
+// turns are back, what was opened is open again.
+test('what was opened stays open after the computer was not sure for a moment', async () => {
+  const app = await pane({ status: 'working', chat: JSON.stringify({ chat: true, turns: [...turns, ask[0]] }) })
+  await app.press('id:show-chat')
+  await app.press('id:fold-u1')
+  await app.press('id:step-toolu_2')
+  await app.waitFor('text:input of toolu_2')
+  await app.host.send('fake.chat', { chat: true, unknown: 'no-status' })
+  for (let i = 0; i < 10 && app.count('id:chat-unknown') === 0; i++) await app.clock.runFor(1000)
+  expect(app.count('id:chat-unknown')).toBe(1)
+  await app.host.send('fake.chat', { chat: true, turns: [...turns, ask[0]] })
+  for (let i = 0; i < 10 && app.count('id:fold-u1') === 0; i++) await app.clock.runFor(1000)
+  await app.clock.runFor(500)
   expect(app.count('id:step-toolu_1')).toBe(1)
   expect(app.texts()).toContain('input of toolu_2')
 })
@@ -227,12 +345,12 @@ test('a record falling behind for a moment keeps the turns up with "Updating…"
   await app.press('id:show-chat')
   await app.press('id:fold-u1')
   await app.waitFor('id:step-toolu_1')
-  app.host.send('fake.chat', { chat: true, unknown: 'behind' })
+  await app.host.send('fake.chat', { chat: true, unknown: 'behind' })
   await pollUntil(app, 'Updating…')
   expect(app.count('id:step-toolu_1')).toBe(1)
   expect(app.texts()).toContain('fix the total')
   expect(app.texts()).not.toContain("The record hasn't caught up with the screen yet.")
-  app.host.send('fake.chat', { chat: true, turns: [...turns, { ...ask[0], ask: undefined, end: 'done', reply: 'Blue it is.' }] })
+  await app.host.send('fake.chat', { chat: true, turns: [...turns, { ...ask[0], ask: undefined, end: 'done', reply: 'Blue it is.' }] })
   await pollUntil(app, 'Blue it is.')
   expect(app.count('id:step-toolu_1')).toBe(1)
   expect(app.texts()).not.toContain('Updating…')
@@ -242,7 +360,7 @@ test('a record behind for over 10 s says so above the turns', async () => {
   const app = await pane({ status: 'working', chat: JSON.stringify({ chat: true, turns: [...turns, ask[0]] }) })
   await app.press('id:show-chat')
   await app.waitFor('text:fix the total')
-  app.host.send('fake.chat', { chat: true, unknown: 'behind' })
+  await app.host.send('fake.chat', { chat: true, unknown: 'behind' })
   await pollUntil(app, 'Updating…')
   expect(app.texts()).not.toContain("The record hasn't caught up with the screen yet.")
   await pollUntil(app, "The record hasn't caught up with the screen yet.")
@@ -328,6 +446,24 @@ test('the files a reply names show under it as cards, by what they are, when the
   for (const x of ['demo.mp4', 'Video · 18.4 MB', 'guide.pdf', 'PDF · 2.4 MB', 'NOTES.md', 'Text · 3.1 KB']) expect(app.texts()).toContain(x)
 })
 
+test('the files a reply names are asked about once, not again at each 3 s ask while the agent works', async () => {
+  const done = JSON.parse(withFiles())
+  const app = await pane({ status: 'working', chat: JSON.stringify(done) })
+  await app.press('id:show-chat')
+  await app.waitFor('id:file-renders/demo.mp4')
+  const fileAsks = () => JSON.parse(app.storage()['fake-file-asks'] ?? '[]').filter((x: string) => x.startsWith('check ')).length
+  const once = fileAsks()
+  const open = { id: 'u2', from: 'you', said: 'go on', end: 'open', reply: '', steps: [] as any[] }
+  for (const n of [1, 2]) {
+    await app.host.send('fake.chat', { ...done, turns: [...done.turns, { ...open, steps: Array.from({ length: n }, (_, i) => ({ id: `s${i}`, kind: 'run', title: 'make' })) }] })
+    await app.clock.runFor(3100)
+  }
+  expect(app.texts().filter((x: string) => x === 'make').length).toBe(1) // only the latest activity
+  expect(app.count('id:step-s0')).toBe(0)
+  expect(once).toBe(1)
+  expect(fileAsks()).toBe(1)
+})
+
 test('notes a reply names open in the app, as Markdown', async () => {
   const app = await pane({ chat: withFiles() })
   await app.press('id:show-chat')
@@ -393,4 +529,64 @@ test('a file no app on the phone opens, or one that could not be fetched, says s
   await failed.press('id:show-chat')
   await failed.press('id:file-docs/guide.pdf')
   await failed.waitFor("text:Couldn't get the file from the computer.")
+})
+
+test('a message the agent took while it worked shows where it was taken, as yours, marked so; it is not a step to open', async () => {
+  const working = [{ id: 'u5', from: 'you', said: 'tidy the menu', end: 'open', reply: '', steps: [
+    { id: 'toolu_5', kind: 'run', title: 'npm test' },
+    { id: 'y1', kind: 'you', title: 'Also keep the old colors' },
+    { id: 'toolu_6', kind: 'edit', title: 'menu.tsx', added: 2, deleted: 1 }] }]
+  const app = await pane({ status: 'working', chat: JSON.stringify({ chat: true, turns: working }) })
+  await app.press('id:show-chat')
+  await app.waitFor('id:you-y1')
+  expect(app.texts()).toContain('Also keep the old colors')
+  expect(app.texts()).toContain('Added while it was working')
+  expect(app.count('id:step-y1')).toBe(0)
+  expect(app.count('id:step-toolu_5')).toBe(0)
+  await app.press('id:fold-u5')
+  expect(app.count('id:step-toolu_5')).toBe(1)
+})
+
+test('once the turn is done and folded, what you said while it worked still shows above the fold line, not twice when opened', async () => {
+  const finished = [{ id: 'u6', from: 'you', said: 'tidy the menu', end: 'done', secs: 40, reply: 'The menu is tidy.', steps: [
+    { id: 'toolu_7', kind: 'run', title: 'npm test' },
+    { id: 'y2', kind: 'you', title: 'Also keep the old colors' },
+    { id: 'toolu_8', kind: 'edit', title: 'menu.tsx', added: 2, deleted: 1 }] }]
+  const app = await pane({ chat: JSON.stringify({ chat: true, turns: finished }) })
+  await app.press('id:show-chat')
+  await app.waitFor('text:Worked for <1m · 2 steps')
+  expect(app.count('id:you-y2')).toBe(1)
+  expect(app.count('id:step-toolu_7')).toBe(0)
+  await app.press('id:fold-u6')
+  await app.waitFor('id:step-toolu_7')
+  expect(app.count('id:you-y2')).toBe(1)
+})
+
+// Chat diagnostics for a view that closes with no tap. A view that stays emits no chat event;
+// fake-diag also records connection events, which these assertions do not count.
+const diags = (app: any): string[] =>
+  (JSON.parse(app.storage()['fake-diag'] ?? '[]') as string[]).filter((line) => line.startsWith('chat-'))
+
+test('an open chat view the computer stops offering says so for the diagnostics; one that stays says nothing', async () => {
+  const app = await pane({ chat: JSON.stringify({ chat: true, turns }) })
+  await app.press('id:show-chat')
+  await app.waitFor('id:chat-view')
+  await app.host.send('fake.status', { address: 't1', state: 'working' })
+  await app.clock.runFor(3100)
+  expect(diags(app)).toEqual([])
+  await app.host.send('fake.chat', { chat: false })
+  await app.host.send('fake.status', { address: 't1', state: 'done' })
+  await app.clock.runFor(3100)
+  expect(app.count('id:chat-view')).toBe(0)
+  expect(diags(app)).toEqual(['chat-gone addr=t1 agent=true program=claude'])
+})
+
+test('an open chat view whose pane stops being an agent says why for the diagnostics', async () => {
+  const app = await pane({ argv: 'fakeagent', chat: JSON.stringify({ chat: true, turns }) })
+  await app.press('id:show-chat')
+  await app.waitFor('id:chat-view')
+  await app.host.send('fake.status', { address: 't1', state: 'done', app: '' })
+  await app.clock.runFor(3100)
+  expect(app.count('id:chat-view')).toBe(0)
+  expect(diags(app)).toEqual(['chat-closed addr=t1 agent=false program=program chat=true'])
 })

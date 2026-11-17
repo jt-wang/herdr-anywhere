@@ -78,11 +78,11 @@ export class TerminalSession {
 
   constructor(private store: Store, readonly address: string, post: (m: string) => void, later?: (f: () => void, ms: number) => number,
     private opts: { observe?: boolean; on?: Gestures; reload?: () => void; pageTimer?: (f: () => void, ms: number) => unknown } = {}) {
-    this.channel = new PageChannel(post, later)
+    this.channel = new PageChannel(post, later, store.picturesOf?.(address))
     this.waitForPage()
     this.off = store.conn.sub((c) => {
       if (c === 'ready' && this.state.get() === 'lost') void this.attach()
-    })
+    }, 'TerminalSession')
   }
 
   /** A message from the page. */

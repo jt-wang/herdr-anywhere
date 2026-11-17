@@ -214,7 +214,7 @@ func TestSocketCloseEndsHcConnect(t *testing.T) {
 	pidfile := filepath.Join(t.TempDir(), "pid")
 	t.Setenv("HM_PIDFILE", pidfile)
 	f := newFixture(t, withHC(t))
-	_, token := f.pair(t)
+	id, token := f.pair(t)
 	c, _, err := dial(t, wsURL(f, "token="+token), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -233,6 +233,21 @@ func TestSocketCloseEndsHcConnect(t *testing.T) {
 			t.Fatalf("hc connect (pid %d) still runs 3 s after the socket closed", pid)
 		}
 	}
+	prefix := "device " + id + " disconnected (hc: "
+	for deadline := time.Now().Add(3 * time.Second); !strings.Contains(f.logs.String(), prefix); time.Sleep(20 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("closed session did not log its disconnect")
+		}
+	}
+	if !strings.Contains(f.logs.String(), "connected (binary, hc pid "+strconv.Itoa(pid)+")") {
+		t.Fatal("connect log lacks this session's hc PID")
+	}
+	for _, line := range strings.Split(f.logs.String(), "\n") {
+		if strings.Contains(line, prefix) && !strings.HasSuffix(line, " hc pid "+strconv.Itoa(pid)) {
+			t.Fatal("disconnect log lacks this session's hc PID")
+		}
+	}
+
 }
 
 func TestRevokeClosesLiveSocketsWithin3s(t *testing.T) {

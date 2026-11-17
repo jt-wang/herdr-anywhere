@@ -224,7 +224,7 @@ func (s *Server) hc(w http.ResponseWriter, r *http.Request) {
 	if err := s.cfg.Store.Touch(d.ID); err != nil && !errors.Is(err, store.ErrNoDevice) {
 		s.log.Printf("last seen: %v", err)
 	}
-	s.log.Printf("device %s disconnected (hc: %v)", d.ID, exitText(err))
+	s.log.Printf("device %s disconnected (hc: %v) hc pid %d", d.ID, exitText(err), cmd.Process.Pid)
 }
 
 func exitText(err error) string {

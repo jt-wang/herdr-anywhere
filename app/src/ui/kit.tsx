@@ -4,7 +4,7 @@
 // sidebar-foreground = dim text, accent = selected, secondary = raised; chart-1..4 = working, blocked, done,
 // idle; chart-5 = herdr's accent.
 import { cleanup, colorScheme, Image, openUrl, Scroll, signal, Text, View, type Accessor } from 'nsh'
-import type { Store } from '../store.ts'
+import type { Store, ConnSubscriberSite } from '../store.ts'
 import type { Shown } from '../model/model.ts'
 import { duration } from '../model/agents.ts'
 import { PROGRAM_ICONS as ICONS } from '../data/icons.ts'
@@ -16,14 +16,14 @@ import { PHONE_UI } from './phone-glyphs.ts'
 /** The store's change counter as a signal: read `rev()` in a view to follow the store. */
 export function useRev(store: Store): Accessor<number> {
   const rev = signal(store.rev.get())
-  const offs = [store.rev.sub((v) => rev.set(v)), store.conn.sub(() => rev.update((n) => n + 1)), store.machines.sub(() => rev.update((n) => n + 1))]
+  const offs = [store.rev.sub((v) => rev.set(v)), store.conn.sub(() => rev.update((n) => n + 1), 'kit.useRev'), store.machines.sub(() => rev.update((n) => n + 1))]
   cleanup(() => offs.forEach((off) => off()))
   return rev
 }
 
-export function useSignal<T>(s: { get(): T; sub(f: (v: T) => void): () => unknown }): Accessor<T> {
+export function useSignal<T>(s: { get(): T; sub(f: (v: T) => void, site?: ConnSubscriberSite): () => unknown }): Accessor<T> {
   const v = signal(s.get())
-  const off = s.sub((x) => v.set(x))
+  const off = s.sub((x) => v.set(x), 'kit.useSignal')
   cleanup(() => { off() })
   return v
 }
@@ -114,6 +114,11 @@ export function IconButton(props: { name: keyof typeof GLYPHS; label: string; te
 const PRIVACY_URL = 'https://herdr-anywhere.jingtao.io/privacy/'
 export const openPrivacy = () => void openUrl(PRIVACY_URL).catch(() => {})
 
+/** The app's panels from the bottom (a menu, Add an agent, renaming, the switcher…): a rounded panel with an edge,
+ *  over the screen dimmed behind it, so it stands apart from a terminal of the same colour in light and dark. */
+export const PANEL = 'bg-popover rounded-t-[14px] border-t border-x border-border'
+export const PANEL_BACKDROP = 'bg-black/40'
+
 export function Button(props: { label: string; testID?: string; onPress: () => void; kind?: 'primary' | 'plain' | 'outline' | 'danger'; disabled?: boolean }) {
   const k = () => props.kind ?? 'primary'
   return (
@@ -174,12 +179,15 @@ const FADE = ['bg-sidebar/20', 'bg-sidebar/45', 'bg-sidebar/70', 'bg-sidebar/90'
 
 /** A row of buttons that scrolls sideways: while more lies past its end, the end fades, so a button cut there reads as more to scroll to. */
 export function ChoiceRow(props: { testID?: string; children?: any }) {
+  // Taken once: read in the JSX below, `props.children` would be made again (every button with it) each time what it
+  // reads changes, such as the menu after any agent's report, and a button under a finger would lose its press.
+  const children = props.children
   const shown = signal(0), content = signal(0), offset = signal(0)
   const more = () => content() - offset() - shown() > 1
   return (
     <View class="flex-1 min-w-0">
       <Scroll horizontal scrollEventThrottle={16} scrollbar={false} onLayout={(b) => shown.set(b.size.width)} onScroll={(e) => offset.set(e.offset.x)}>
-        <View class="flex-row gap-1.5" onLayout={(b) => content.set(b.size.width)}>{props.children}</View>
+        <View class="flex-row gap-1.5" onLayout={(b) => content.set(b.size.width)}>{children}</View>
       </Scroll>
       <If when={more()}>
         <View testID={props.testID ? `${props.testID}-more` : undefined} pointerEvents="none" class="absolute right-0 top-0 bottom-0 flex-row">

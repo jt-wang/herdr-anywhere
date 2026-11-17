@@ -1,0 +1,16 @@
+❯ QTHREE please
+──────────────────────────────────────────────
+←  ☒ Shelf  ☒ Color  ☐ Count  ✔ Submit  →
+
+How many fake lamps should we stock?
+
+❯ 1. Ten
+     A small batch
+  2. Fifty
+     A big batch
+  3. Type something.
+──────────────────────────────────────────────
+  4. Chat about this
+
+Enter to select · Tab/Arrow keys to navigate ·
+Esc to cancel
