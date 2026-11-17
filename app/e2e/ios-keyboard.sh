@@ -15,6 +15,7 @@
 # tap (e2e/ios-uitest/tests/OpenSpace.swift) and a second one.
 # SIM_UDID is required, so the run never lands on another simulator. Needs go, nsh, hc, idb, xcodegen and Xcode.
 set -eu
+. "$(dirname "$0")/autostart-guard.sh"; autostart_guard ios-keyboard # a login entry of its own, never the person's
 : "${SIM_UDID:?set SIM_UDID to the simulator to use}"
 app=$(cd "$(dirname "$0")/.." && pwd)
 shot=${1:-}
@@ -42,6 +43,7 @@ cleanup() {
   HC_SESSION="hmios-$$" HC_SOCKET="" HOME="$work/sam" XDG_RUNTIME_DIR="$run" "$hc" server stop >/dev/null 2>&1 || true
   chmod -R u+w "$work" 2>/dev/null; rm -rf "${work:?}" "${run:?}" || echo "NOTE: left after the cleanup: $(ls -A "$work" 2>/dev/null | head -5 | tr '\n' ' ')"
   xcrun simctl shutdown "$SIM_UDID" 2>/dev/null || true
+  autostart_guard_end || exit 1
   exit "$st"
 }
 # INT and TERM end the suite; EXIT cleans up.
@@ -62,7 +64,8 @@ until curl -fsS "http://127.0.0.1:$port/api/info" >/dev/null 2>&1; do
   i=$((i + 1)); [ $i -gt 100 ] && { cat "$work/serve.log" >&2; exit 1; }
   sleep 0.1
 done
-link=$(HERDR_ANYWHERE_STATE="$work/companion" "$work/herdr-anywhere" pair --url "http://127.0.0.1:$port" 2>/dev/null | grep -o 'http://[^ ]*#pair=[A-Za-z0-9_-]*' | head -1)
+# The link is built into the app, and the build can take longer than the default 10 minutes (the Companion then says 410).
+link=$(HERDR_ANYWHERE_STATE="$work/companion" "$work/herdr-anywhere" pair --ttl 60m --url "http://127.0.0.1:$port" 2>/dev/null | grep -o 'http://[^ ]*#pair=[A-Za-z0-9_-]*' | head -1)
 [ -n "$link" ] || { echo "pair printed no link" >&2; exit 1; }
 # Built from a copy of app/ that also asks the Companion for /hm-e2e/openSpace/… each time it opens a space
 # (e2e/ios-touch-app.sh), for a failure to tell a tap on the space the app never got from one it got late.

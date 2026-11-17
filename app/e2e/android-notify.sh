@@ -8,6 +8,7 @@
 # Usage: ANDROID_SERIAL=emulator-5554 e2e/android-notify.sh APK [COMPANION] OUT
 # COMPANION is a herdr-anywhere binary; without it one is built from companion/. Needs python3, hc and the Android SDK.
 set -eu
+. "$(dirname "$0")/autostart-guard.sh"; autostart_guard android-notify # a login entry of its own, never the person's
 : "${ANDROID_SERIAL:?set ANDROID_SERIAL to the device to use}"
 apk=$1
 if [ $# -ge 3 ]; then bin=$2; out=$3; else bin=""; out=$2; fi
@@ -35,6 +36,7 @@ cleanup() {
   [ -n "${serve_pid:-}" ] && kill "$serve_pid" 2>/dev/null
   "$hc" server stop >/dev/null 2>&1 || true
   chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run"
+  autostart_guard_end || exit 1
 }
 trap 'adb_exit $? cleanup' EXIT
 # INT and TERM end the suite; the EXIT trap cleans up (a handler that only cleans up lets the script go on).

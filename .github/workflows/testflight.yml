@@ -1,0 +1,171 @@
+name: TestFlight
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: App version (three numbers, such as 0.2.0)
+        required: true
+        type: string
+      build:
+        description: New positive iOS build number
+        required: true
+        type: string
+      expected_sha:
+        description: Full reviewed commit on the default branch
+        required: true
+        type: string
+      upload:
+        description: Validate with Apple and upload to TestFlight
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: testflight
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  TF_VERSION: ${{ inputs.version }}
+  TF_BUILD: ${{ inputs.build }}
+  TF_EXPECTED_SHA: ${{ inputs.expected_sha }}
+  TF_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+
+jobs:
+  request:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Check request
+        run: python3 app/scripts/testflight.py --version "$TF_VERSION" --build "$TF_BUILD" --expected-sha "$TF_EXPECTED_SHA" --request-only
+      - name: Check release control flow
+        run: |
+          python3 app/scripts/testflight.test.py
+
+  archive:
+    needs: request
+    if: github.repository == 'jt-wang/herdr-anywhere' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.workflow_sha == github.sha
+    environment: testflight
+    runs-on: xcode-27
+    timeout-minutes: 120
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
+      CARGO_BUILD_JOBS: 1
+      TF_UPLOAD: ${{ inputs.upload }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Check configuration before building
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          IOS_DISTRIBUTION_P12_BASE64: ${{ secrets.IOS_DISTRIBUTION_P12_BASE64 }}
+          IOS_DISTRIBUTION_P12_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_P12_PASSWORD }}
+          IOS_PROVISION_PROFILE_BASE64: ${{ secrets.IOS_PROVISION_PROFILE_BASE64 }}
+          ASC_KEY_ID: ${{ inputs.upload && secrets.ASC_KEY_ID || '' }}
+          ASC_ISSUER_ID: ${{ inputs.upload && secrets.ASC_ISSUER_ID || '' }}
+          ASC_PRIVATE_KEY_P8: ${{ inputs.upload && secrets.ASC_PRIVATE_KEY_P8 || '' }}
+        run: |
+          args=()
+          if [ "$TF_UPLOAD" = true ]; then args+=(--upload); fi
+          python3 app/scripts/testflight.py --version "$TF_VERSION" --build "$TF_BUILD" --expected-sha "$TF_EXPECTED_SHA" --config-only "${args[@]}"
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: third_party/tailpocket-8ae23dd/go.mod
+          cache-dependency-path: third_party/tailpocket-8ae23dd/go.sum
+      - name: CLI cache key
+        id: key
+        run: echo "key=$(app/ios/nsh-patches/key.sh | tr ' ' '-')" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: cache
+        with:
+          path: ${{ runner.temp }}/nsh-cli
+          key: nsh-cli-${{ runner.os }}-${{ runner.arch }}-${{ steps.key.outputs.key }}-${{ hashFiles('app/ios/nsh-patches/build-nsh-cli.sh') }}
+      - name: Build the patched CLI
+        if: steps.cache.outputs.cache-hit != 'true'
+        env:
+          CARGO_HOME: ${{ runner.temp }}/nsh-cli-cargo
+          RUSTUP_HOME: ${{ runner.temp }}/nsh-cli-rustup
+        run: |
+          rustup toolchain install 1.99.1 --profile minimal --no-self-update
+          export LIBCLANG_PATH="$DEVELOPER_DIR/Toolchains/XcodeDefault.xctoolchain/usr/lib"
+          app/ios/nsh-patches/build-nsh-cli.sh "$RUNNER_TEMP/nsh-cli-source" "$RUNNER_TEMP/nsh-cli"
+      - uses: ./.github/actions/nsh-ios
+        with:
+          xcode: /Applications/Xcode_27.0.app
+      - name: Verify the CLI
+        run: |
+          app/ios/nsh-patches/build-nsh-cli.sh --verify "$RUNNER_TEMP/nsh-cli"
+          export PATCH_KEY="$(app/ios/nsh-patches/key.sh)"
+          python3 - <<'PY_BINDING'
+          import hashlib, json, os
+          from pathlib import Path
+          temp = Path(os.environ['RUNNER_TEMP'])
+          cli, embed = temp / 'nsh-cli', Path(os.environ['NSH_IOS_EMBED'])
+          key = os.environ['PATCH_KEY']
+          for folder in (cli, embed):
+              if (folder / 'nsh-build.txt').read_text().strip() != key:
+                  raise SystemExit('CLI/framework patch key mismatch')
+          binary = cli / 'bin/nsh'
+          device = embed / 'NativeShell.xcframework/ios-arm64/NativeShell.framework/NativeShell'
+          digest = lambda p: hashlib.sha256(p.read_bytes()).hexdigest()
+          (temp / 'testflight-toolchain.json').write_text(json.dumps({
+              'sha': os.environ['GITHUB_SHA'], 'patch_key': key,
+              'cli_sha256': digest(binary), 'framework_sha256': digest(device),
+              'cli_key_sha256': digest(cli / 'nsh-build.txt'),
+              'framework_key_sha256': digest(embed / 'nsh-build.txt')
+          }, indent=2) + '\n')
+          PY_BINDING
+          echo "$RUNNER_TEMP/nsh-cli/bin" >> "$GITHUB_PATH"
+          echo "NSH_CACHE=$RUNNER_TEMP/nsh-cli-cache" >> "$GITHUB_ENV"
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: steps.cache.outputs.cache-hit != 'true'
+        with:
+          path: ${{ runner.temp }}/nsh-cli
+          key: nsh-cli-${{ runner.os }}-${{ runner.arch }}-${{ steps.key.outputs.key }}-${{ hashFiles('app/ios/nsh-patches/build-nsh-cli.sh') }}
+      - name: Install XcodeGen
+        env:
+          XCODEGEN_VERSION: "2.45.4"
+          XCODEGEN_SHA256: "090ec29491aad50aec10631bf6e62253fed733c50f3aab0f5ffc86bc170bdbef"
+        run: |
+          curl -sfL -o "$RUNNER_TEMP/xcodegen.zip" "https://github.com/yonaskolb/XcodeGen/releases/download/$XCODEGEN_VERSION/xcodegen.zip"
+          echo "$XCODEGEN_SHA256  $RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
+          unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP/xcodegen"
+          xcodegen=$(find "$RUNNER_TEMP/xcodegen" -type f -name xcodegen -perm -u+x -print -quit)
+          test -n "$xcodegen"
+          dirname "$xcodegen" >> "$GITHUB_PATH"
+      - name: Prepare without signing credentials
+        run: python3 app/scripts/testflight.py --version "$TF_VERSION" --build "$TF_BUILD" --expected-sha "$TF_EXPECTED_SHA" --prepare-only
+      - name: Sign and check the app
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          IOS_DISTRIBUTION_P12_BASE64: ${{ secrets.IOS_DISTRIBUTION_P12_BASE64 }}
+          IOS_DISTRIBUTION_P12_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_P12_PASSWORD }}
+          IOS_PROVISION_PROFILE_BASE64: ${{ secrets.IOS_PROVISION_PROFILE_BASE64 }}
+          ASC_KEY_ID: ${{ inputs.upload && secrets.ASC_KEY_ID || '' }}
+          ASC_ISSUER_ID: ${{ inputs.upload && secrets.ASC_ISSUER_ID || '' }}
+          ASC_PRIVATE_KEY_P8: ${{ inputs.upload && secrets.ASC_PRIVATE_KEY_P8 || '' }}
+        run: |
+          args=()
+          if [ "$TF_UPLOAD" = true ]; then args+=(--upload); fi
+          python3 app/scripts/testflight.py --version "$TF_VERSION" --build "$TF_BUILD" --expected-sha "$TF_EXPECTED_SHA" "${args[@]}"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: testflight-${{ inputs.build }}
+          path: |
+            app/ios/build/testflight/export/Herdr.ipa
+            app/ios/build/testflight/receipt.json
+            ${{ runner.temp }}/testflight-toolchain.json
+          if-no-files-found: error
+          retention-days: 7

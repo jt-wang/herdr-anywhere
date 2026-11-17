@@ -25,8 +25,27 @@ adb_noted() {
     if [ "$adb_rc" = 137 ]; then
       "$adb_real" logcat -d -t 300 2>/dev/null | grep -iE 'lowmemorykiller|lmkd|kill(ing)? |uiautomator|InputManager' | tail -20 | sed 's/^/    /' >> "$adb_file"
     fi
+    adb_lost
   fi
   return "$adb_rc"
+}
+# After a failed call: when adb no longer has the phone as a device (on CI once "device offline" in the middle of a
+# suite, the emulator still up), adb reconnect offline, then up to HM_ADB_BACK s (30) for it, and the list says
+# whether it came back and when, or what the emulator's console says. The call is not run again: it may have done
+# part of its work, or printed part of its output to a reader.
+adb_lost() {
+  adb_was=$("$adb_real" get-state 2>&1 | tr -d '\r')
+  [ "$adb_was" != device ] || return 0
+  "$adb_real" reconnect offline >/dev/null 2>&1 || true
+  adb_w=0
+  until [ "$("$adb_real" get-state 2>/dev/null | tr -d '\r')" = device ]; do
+    if [ "$adb_w" -ge "${HM_ADB_BACK:-30}" ]; then
+      echo "    adb had lost the phone ($adb_was); after adb reconnect offline it was not back in $adb_w s; the emulator's console says: $("$adb_real" emu avd name 2>&1 | tr -d '\r' | head -1)" >> "$adb_file"
+      return 0
+    fi
+    sleep 1; adb_w=$((adb_w + 1))
+  done
+  echo "    adb had lost the phone ($adb_was); after adb reconnect offline it was back in $adb_w s" >> "$adb_file"
 }
 # True, and says so, once adb has not found the phone for HM_ADB_GONE s (20) in a row: the emulator went, and a suite
 # that waits on the phone (an upload, 600 s) should stop then, not run out its wait. adb root and unroot lose it for
@@ -60,7 +79,7 @@ adb_exit() {
 if [ "${1:-}" = --self-test ]; then
   t=$(mktemp -d)
   # A stand-in adb: input is killed (137), anything else works, and its log has one kill line.
-  fake() { case $1 in shell) [ "$2" = input ] && return 137; [ "$2" = dumpsys ] && return 141; return 0 ;; logcat) echo "I lowmemorykiller: Kill 'uiautomator'"; echo "I other: line" ;; esac; }
+  fake() { case $1 in get-state) echo device ;; shell) [ "$2" = input ] && return 137; [ "$2" = dumpsys ] && return 141; return 0 ;; logcat) echo "I lowmemorykiller: Kill 'uiautomator'"; echo "I other: line" ;; esac; }
   adb_note fake "$t/failed"
   # Not followed by || : a test of its status turns set -e off inside it.
   ( set -e; "$adb" shell uiautomator dump; "$adb" shell dumpsys window || :; "$adb" shell dumpsys window || :; "$adb" shell input tap 10 20; echo "went on" > "$t/on" )
@@ -79,7 +98,7 @@ if [ "${1:-}" = --self-test ]; then
   here=$(cd "$(dirname "$0")" && pwd)
   for want in 137 0; do
     sh -c 'set -eu; d=$2; . "$1/adb-note.sh"; adb_note fake_ "$d/f"
-      fake_() { [ "$1" = boom ] && return 137; return 0; }
+      fake_() { [ "$1" = boom ] && return 137; [ "$1" = get-state ] && echo device; return 0; }
       cleanup() { status=$?; echo "cleanup ran, status=$status" > "$d/cleanup"; }
       trap '"'"'adb_exit $? cleanup'"'"' EXIT
       "$adb" fine; [ "$3" = 0 ] || "$adb" boom; echo went on > "$d/on"' _ "$here" "$t" "$want" > "$t/out" 2>&1
@@ -114,6 +133,26 @@ if [ "${1:-}" = --self-test ]; then
   echo "error: device offline" > "$t/state"
   adb_gone > "$t/said" && { echo "FAIL: adb-note self-test: gone at once after the phone was back"; fail=1; }
   unset HM_ADB_GONE
+  # A call that fails because adb lost the phone (device offline, as once on CI in the middle of a suite with the
+  # emulator still up): written down with whether it came back after adb reconnect offline, and in how long.
+  # fake_lost: get-state says offline until reconnect offline was run and $t/back more get-states were asked.
+  fake_lost() {
+    case "$*" in
+      get-state) n=$(cat "$t/back"); if [ -e "$t/reconnected" ] && [ "$n" -le 0 ]; then echo device; else echo $((n - 1)) > "$t/back"; echo "error: device offline" >&2; return 1; fi ;;
+      'reconnect offline') : > "$t/reconnected" ;;
+      'emu avd name') echo "test_avd"; echo OK ;;
+      *) echo "adb: device offline" >&2; return 1 ;;
+    esac
+  }
+  adb_note fake_lost "$t/lost"; echo 2 > "$t/back"; rm -f "$t/reconnected"
+  "$adb" shell cmd statusbar expand-notifications 2>/dev/null && { echo "FAIL: adb-note self-test: a call with the phone lost worked"; fail=1; }
+  grep -q "adb shell cmd statusbar expand-notifications -> exit 1" "$t/lost" || { echo "FAIL: adb-note self-test: the call with the phone lost is not written down"; fail=1; }
+  grep -q "adb had lost the phone (error: device offline); after adb reconnect offline it was back in [0-9]* s" "$t/lost" ||
+    { echo "FAIL: adb-note self-test: a lost phone that came back is written down as:"; cat "$t/lost"; fail=1; }
+  adb_note fake_lost "$t/lost"; echo 99 > "$t/back"; rm -f "$t/reconnected"
+  HM_ADB_BACK=1 "$adb" shell rm -f /sdcard/x 2>/dev/null
+  grep -q "adb had lost the phone (error: device offline); after adb reconnect offline it was not back in 1 s; the emulator's console says: test_avd" "$t/lost" ||
+    { echo "FAIL: adb-note self-test: a lost phone that stayed lost is written down as:"; cat "$t/lost"; fail=1; }
   rm -rf "${t:?}"
   [ "$fail" = 0 ] && echo "PASS: adb-note self-test" || exit 1
 fi

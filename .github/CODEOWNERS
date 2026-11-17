@@ -6,3 +6,5 @@
 /companion/go.mod         @jt-wang
 /companion/go.sum         @jt-wang
 /third_party/             @jt-wang
+/app/scripts/testflight.py @jt-wang
+/app/scripts/testflight.test.py @jt-wang

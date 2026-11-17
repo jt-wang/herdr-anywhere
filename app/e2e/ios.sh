@@ -9,6 +9,7 @@
 # The pairing code lives 10 minutes (herdr-anywhere pair --ttl), so it is made after the slow parts: the app is built,
 # installed and opened once without a link first, then built again with it (only the page changes) and opened.
 set -eu
+. "$(dirname "$0")/autostart-guard.sh"; autostart_guard ios # a login entry of its own, never the person's
 : "${SIM_UDID:?set SIM_UDID to the simulator to use}"
 app=$(cd "$(dirname "$0")/.." && pwd)
 shot=${1:-}
@@ -31,6 +32,7 @@ cleanup() {
   HC_SESSION="hmios-$$" HC_SOCKET="" HOME="$work/home" XDG_RUNTIME_DIR="$run" "$hc" server stop >/dev/null 2>&1 || true
   printf "%s\n" "$placeholder" > "$app/e2e/pair.ts"
   chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run"
+  autostart_guard_end || exit 1
 }
 trap cleanup EXIT; trap 'exit 130' INT; trap 'exit 143' TERM
 (

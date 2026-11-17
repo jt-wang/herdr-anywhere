@@ -16,3 +16,4 @@ third_party/tailpocket-8ae23dd/sdk/apple/NSH/NativeShell.xcframework
 .dev/
 
 __pycache__/
+.amp/portals/

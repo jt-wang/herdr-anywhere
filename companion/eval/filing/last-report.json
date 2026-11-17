@@ -1,55 +1,55 @@
 {
  "agent": "claude",
- "label": "Claude Code · Haiku 5.5",
+ "label": "claude --model claude-haiku-5-5",
  "languages": {
   "en": {
    "stops": "8/8",
-   "sessions": "3/3",
+   "sessions": "2/3",
    "messages": "4/4",
-   "new_tasks": 11,
-   "seconds": 77
+   "new_tasks": 10,
+   "seconds": 72
   },
   "zh-Hans": {
    "stops": "8/8",
    "sessions": "3/3",
    "messages": "4/4",
-   "new_tasks": 11,
-   "seconds": 77
+   "new_tasks": 12,
+   "seconds": 81
   },
   "zh-Hant": {
    "stops": "8/8",
    "sessions": "3/3",
-   "messages": "4/4",
+   "messages": "3/4",
    "new_tasks": 12,
-   "seconds": 77
+   "seconds": 80
   },
   "es": {
    "stops": "8/8",
    "sessions": "2/3",
    "messages": "4/4",
    "new_tasks": 10,
-   "seconds": 88
+   "seconds": 79
   },
   "ja": {
    "stops": "8/8",
    "sessions": "3/3",
-   "messages": "4/4",
-   "new_tasks": 12,
-   "seconds": 87
+   "messages": "3/4",
+   "new_tasks": 13,
+   "seconds": 68
   },
   "ko": {
    "stops": "8/8",
    "sessions": "3/3",
    "messages": "4/4",
    "new_tasks": 11,
-   "seconds": 77
+   "seconds": 78
   },
   "ru": {
    "stops": "8/8",
    "sessions": "3/3",
-   "messages": "3/4",
-   "new_tasks": 12,
-   "seconds": 67
+   "messages": "4/4",
+   "new_tasks": 11,
+   "seconds": 79
   }
  },
  "rules": {
@@ -86,7 +86,7 @@
   "R3": {
    "pass": true,
    "failed": [],
-   "checked": 99
+   "checked": 98
   },
   "R4": {
    "pass": true,
@@ -107,9 +107,14 @@
    "pass": true,
    "failed": [
     {
+     "lang": "en",
+     "ok": false,
+     "detail": "v2: want 2, got Change the README port to 8080 and update the CHANGELOG [waiting]"
+    },
+    {
      "lang": "es",
      "ok": false,
-     "detail": "v2: want 2, got Cambiar el puerto a 8080 en la documentación [waiting]"
+     "detail": "v2: want 2, got Actualizar el puerto del README y el CHANGELOG [waiting]"
     }
    ],
    "checked": 21
@@ -118,9 +123,14 @@
    "pass": true,
    "failed": [
     {
-     "lang": "ru",
+     "lang": "zh-Hant",
      "ok": false,
-     "detail": "m4: want T3, on T25 Добавить в FAQ пункт о сбросе пароля"
+     "detail": "m4: want T3, on T25 FAQ 加上重設密碼的說明"
+    },
+    {
+     "lang": "ja",
+     "ok": false,
+     "detail": "m4: want T3, on T26 パスワードリセットの FAQ を追加する"
     }
    ],
    "checked": 28
@@ -131,6 +141,6 @@
    "checked": 7
   }
  },
- "inputs": "cd01df05561824b213d4a5c2ed107506b310d2c5147d93e13f0f404db1640a3d",
+ "inputs": "f06d5fb938946df96ed85d2ea9ce7821932308a0d1c181e3d3a4a1e0f3815c6a",
  "pass": true
 }

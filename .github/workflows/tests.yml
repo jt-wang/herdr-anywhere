@@ -31,7 +31,39 @@ env:
   # Update both together.
   NSH_SHA256: "34fdd2ec43d5e22986723e7633acf9223e365bd5bace1a502b5ae24fb75c266c"
 
+# Every run step is `bash --noprofile --norc -eo pipefail {0}` (pwsh where a step says so). A step with no shell given
+# runs `bash -e {0}`, with no pipefail, and `go test … | tee log` took tee's exit 0 over a failed test.
+# app/scripts/check-pipefail.sh fails on a pipe in a step without pipefail.
+defaults:
+  run:
+    shell: bash
+
 jobs:
+  nsh-regressions:
+    name: NativeShell lifecycle regressions (red and green)
+    if: ${{ !inputs.only_ios27 }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends clang libclang-dev cmake
+          rustup toolchain install 1.99.1 --profile minimal
+      - name: Lifecycle fixes and failing controls
+        run: |
+          git clone --depth 1 --branch v0.3.0 https://github.com/longbridge/nsh "$RUNNER_TEMP/nsh-source"
+          app/ios/nsh-patches/test-nsh.sh "$RUNNER_TEMP/nsh-source" "$RUNNER_TEMP/nsh-regressions"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: nsh-regressions
+          path: ${{ runner.temp }}/nsh-regressions
+          retention-days: 7
+
   companion:
     name: Companion (go test)
     if: ${{ !inputs.only_ios27 }}
@@ -50,13 +82,61 @@ jobs:
       # default 10 minutes with no test failing (computers.yml gives it 30 for the same reason).
       - run: go vet ./... && go test -timeout 30m ./...
         working-directory: companion
+      - name: iOS pairing and early failure logs
+        run: |
+          python3 app/e2e/ios-pin-pair.test.py
+          python3 app/e2e/ios-title-pair.test.py
       # The filing agent's last evaluation (eval/filing/last-report.json) is for the rules and code as they are now and
       # passed. The evaluation itself needs an agent's login, so it runs where that is: run.sh.
       - run: companion/eval/filing/check.sh
 
+  nsh-cli:
+    name: Build the patched test CLI
+    if: ${{ !inputs.only_ios27 }}
+    runs-on: macos-26
+    timeout-minutes: 45
+    env:
+      CARGO_BUILD_JOBS: 1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: CLI cache key
+        id: key
+        run: echo "key=$(app/ios/nsh-patches/key.sh | tr ' ' '-')" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: cache
+        with:
+          path: ${{ runner.temp }}/nsh-cli
+          key: nsh-cli-${{ runner.os }}-${{ runner.arch }}-${{ steps.key.outputs.key }}-${{ hashFiles('app/ios/nsh-patches/build-nsh-cli.sh') }}
+      - name: Build the CLI
+        if: steps.cache.outputs.cache-hit != 'true'
+        env:
+          CARGO_HOME: ${{ runner.temp }}/nsh-cli-cargo
+          RUSTUP_HOME: ${{ runner.temp }}/nsh-cli-rustup
+        run: |
+          rustup toolchain install 1.99.1 --profile minimal --no-self-update
+          export LIBCLANG_PATH="$(xcode-select -p)/Toolchains/XcodeDefault.xctoolchain/usr/lib"
+          app/ios/nsh-patches/build-nsh-cli.sh "$RUNNER_TEMP/nsh-cli-source" "$RUNNER_TEMP/nsh-cli"
+      - name: Verify CLI cache
+        run: app/ios/nsh-patches/build-nsh-cli.sh --verify "$RUNNER_TEMP/nsh-cli"
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: steps.cache.outputs.cache-hit != 'true'
+        with:
+          path: ${{ runner.temp }}/nsh-cli
+          key: nsh-cli-${{ runner.os }}-${{ runner.arch }}-${{ steps.key.outputs.key }}-${{ hashFiles('app/ios/nsh-patches/build-nsh-cli.sh') }}
+      - name: Package the CLI
+        run: tar -C "$RUNNER_TEMP/nsh-cli" -czf "$RUNNER_TEMP/nsh-cli.tar.gz" bin/nsh nsh-build.txt SHA256SUMS
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: patched-nsh-cli
+          path: ${{ runner.temp }}/nsh-cli.tar.gz
+          retention-days: 7
+
   app:
     name: App (unit and screen tests)
     if: ${{ !inputs.only_ios27 }}
+    needs: nsh-cli
     runs-on: macos-26
     # About twice its longest recent run.
     timeout-minutes: 12
@@ -64,14 +144,43 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Install nsh
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: patched-nsh-cli
+          path: ${{ runner.temp }}/nsh-cli-artifact
+      - name: Install the verified test CLI
         run: |
-          curl -sfL -o nsh.tar.gz "https://github.com/longbridge/nsh/releases/download/$NSH_VERSION/nsh-macos-arm64.tar.gz"
-          echo "$NSH_SHA256  nsh.tar.gz" | shasum -a 256 -c -
-          tar -xzf nsh.tar.gz -C "$HOME" && mv "$HOME/nsh" "$HOME/.nsh"
-          echo "$HOME/.nsh/bin" >> "$GITHUB_PATH"
+          mkdir -p "$RUNNER_TEMP/nsh-cli"
+          tar -xzf "$RUNNER_TEMP/nsh-cli-artifact/nsh-cli.tar.gz" -C "$RUNNER_TEMP/nsh-cli"
+          app/ios/nsh-patches/build-nsh-cli.sh --verify "$RUNNER_TEMP/nsh-cli"
+          echo "$RUNNER_TEMP/nsh-cli/bin" >> "$GITHUB_PATH"
+          echo "NSH_CACHE=$RUNNER_TEMP/nsh-cli-cache" >> "$GITHUB_ENV"
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: companion/go.mod
+          cache-dependency-path: companion/go.sum
+      - run: python3 ios/nsh-patches/build-nsh-cli.test.py
+        working-directory: app
+      - run: sh app/e2e/ios-open-space-test.sh --mutations
       - run: nsh --version && nsh check && scripts/test.sh
         working-directory: app
+      - run: python3 e2e/chat-away-check.test.py
+        working-directory: app
+      - name: Keep nsh crash reports after a failed test
+        if: failure()
+        run: |
+          mkdir -p "$RUNNER_TEMP/nsh-crashes"
+          for reports in "$HOME/Library/Logs/DiagnosticReports" /Library/Logs/DiagnosticReports; do
+            if [ -d "$reports" ]; then
+              find "$reports" -type f -name 'nsh-*.ips' -exec cp {} "$RUNNER_TEMP/nsh-crashes/" \;
+            fi
+          done
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: nsh-crashes
+          path: ${{ runner.temp }}/nsh-crashes/
+          retention-days: 3
 
   ios27:
     name: iPhone app opens on iOS 27 (simulator)
@@ -79,7 +188,7 @@ jobs:
     # xcode-27 is the runner image with Xcode 27 and the iOS 27 simulators.
     runs-on: xcode-27
     # About twice its longest recent run.
-    timeout-minutes: 30
+    timeout-minutes: 60
     env:
       XCODEGEN_VERSION: "2.45.4"
       # SHA-256 of xcodegen.zip; matches the digest GitHub lists for the release asset. Update both together.
@@ -101,9 +210,14 @@ jobs:
           curl -sfL -o xcodegen.zip "https://github.com/yonaskolb/XcodeGen/releases/download/$XCODEGEN_VERSION/xcodegen.zip"
           echo "$XCODEGEN_SHA256  xcodegen.zip" | shasum -a 256 -c -
           unzip -q xcodegen.zip -d "$RUNNER_TEMP/xcodegen"
-          echo "$(dirname "$(find "$RUNNER_TEMP/xcodegen" -type f -name xcodegen -perm -u+x | head -1)")" >> "$GITHUB_PATH"
+          xcodegen=$(find "$RUNNER_TEMP/xcodegen" -type f -name xcodegen -perm -u+x -print -quit)
+          [ -n "$xcodegen" ] || { echo "FAIL: no xcodegen in xcodegen.zip"; exit 1; }
+          dirname "$xcodegen" >> "$GITHUB_PATH"
       # The Xcode the TestFlight builds use.
       - run: sudo xcode-select -s /Applications/Xcode_27.0.app && xcodebuild -version
+      - uses: ./.github/actions/nsh-ios
+        with:
+          xcode: /Applications/Xcode_27.0.app
       - name: Build the app for the simulator (Release)
         id: build
         run: ios/build.sh App.tsx simulator
@@ -177,6 +291,20 @@ jobs:
           echo "PLAYWRIGHT_DIR=$RUNNER_TEMP/pw/node_modules/playwright-core" >> "$GITHUB_ENV"
       - run: e2e/page-touch.sh
         working-directory: app
+      # Oh My Pi's pictures on the page (fixtures/kitty). Its screenshots, with the same output on main's page beside
+      # them, are the run's page-kitty-shots.
+      - name: Pictures on the page (Kitty graphics)
+        working-directory: app
+        run: |
+          if git fetch --depth 1 origin main && git show FETCH_HEAD:app/src/ui/terminal-page.ts > src/ui/terminal-page.before.ts; then
+            export BEFORE="$PWD/src/ui/terminal-page.before.ts"
+          fi
+          e2e/page-kitty.sh
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: page-kitty-shots
+          path: app/e2e/out/kitty/
 
   secrets:
     name: Secret scan (gitleaks)

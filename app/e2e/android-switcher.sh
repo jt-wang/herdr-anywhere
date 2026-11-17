@@ -3,6 +3,7 @@
 # show. Each tap has to do what it says, again and again, with the new terminals on screen behind the sheet.
 # Usage: ANDROID_SERIAL=emulator-5554 e2e/android-switcher.sh APK COMPANION [folder for screenshots]
 set -eu
+. "$(dirname "$0")/autostart-guard.sh"; autostart_guard android-switcher # a login entry of its own, never the person's
 : "${ANDROID_SERIAL:?set ANDROID_SERIAL to the device to use}"
 apk=$1; bin=$2; shot=${3:-}
 app=$(cd "$(dirname "$0")/.." && pwd)
@@ -38,7 +39,7 @@ export XDG_STATE_HOME="$work/state" XDG_CONFIG_HOME="$work/config" XDG_DATA_HOME
 "$hc" run --bg --keep --cwd "$work/home/src/acme-api" --label herdr.space=spsw --label herdr.tab=tbsw >/dev/null
 "$bin" serve --listen "127.0.0.1:$port" --hc "$hc" --state "$state" > "$work/serve.log" 2>&1 &
 serve_pid=$!
-cleanup() { kill "$serve_pid" 2>/dev/null; "$hc" server stop >/dev/null 2>&1 || true; chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run" "$state"; }
+cleanup() { kill "$serve_pid" 2>/dev/null; "$hc" server stop >/dev/null 2>&1 || true; chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run" "$state"; autostart_guard_end || exit 1; }
 trap 'adb_exit $? cleanup' EXIT
 # INT and TERM end the suite; the EXIT trap cleans up (a handler that only cleans up lets the script go on).
 trap 'exit 130' INT; trap 'exit 143' TERM

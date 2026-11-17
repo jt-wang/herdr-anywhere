@@ -41,7 +41,7 @@
     },
     "agent": "build",
     "model": {
-     "id": "gpt-5.5",
+     "id": "fake-model",
      "providerID": "fake",
      "variant": "default"
     },
