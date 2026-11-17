@@ -137,7 +137,7 @@ class ArchiveTest(ReleaseTest):
                     'ITSAppUsesNonExemptEncryption': False, 'CFBundleExecutable': 'Herdr',
                     'CFBundleIcons': {'CFBundlePrimaryIcon': {'CFBundleIconName': 'AppIcon'}}}
             with zipfile.ZipFile(folder / 'Herdr.ipa', 'w') as z:
-                for name, value in {'Info.plist': plistlib.dumps(info), 'Herdr': b'synthetic-binary',
+                for name, value in {'Info.plist': plistlib.dumps(info), 'Herdr': getattr(self, 'binary_data', b'synthetic-binary'),
                                     'PrivacyInfo.xcprivacy': plistlib.dumps({'NSPrivacyAccessedAPITypes': []}),
                                     'embedded.mobileprovision': b'synthetic-profile', 'nsh/bundle.nshc': b'bytecode',
                                     'nsh/assets/assets/sounds/tone.mp3': b'synthetic-sound'}.items():
@@ -162,6 +162,20 @@ class ArchiveTest(ReleaseTest):
         self.assertTrue(any(c[:2] == ['security', 'delete-keychain'] for c in self.commands))
         self.assertIn(['security', 'list-keychains', '-d', 'user', '-s', 'existing.keychain-db'], self.commands)
         self.assertFalse(list((self.root / 'home').rglob('*.mobileprovision')))
+
+    def test_binary_control_byte_terminates_synthetic_home(self):
+        # QuickJS bytecode stores this approved synthetic home before byte 0x01.
+        self.binary_data = b'/Users/sam\x01'
+        self.run_release(upload=True)
+        self.assertTrue(any('--upload-app' in c for c in self.commands))
+        self.assert_cleaned()
+
+    def test_private_home_still_blocks_upload_before_control_byte(self):
+        self.binary_data = b'/Users/samuel\x01'
+        with self.assertRaisesRegex(tf.ReleaseError, 'private build path'):
+            self.run_release(upload=True)
+        self.assertFalse(any('--validate-app' in c or '--upload-app' in c for c in self.commands))
+        self.assert_cleaned()
 
     def test_validate_builds_checks_and_cleans_without_uploading(self):
         for key in ('ASC_KEY_ID', 'ASC_ISSUER_ID', 'ASC_PRIVATE_KEY_P8'):

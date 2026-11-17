@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.0-testflight.2
+
+- Fix a bytecode path-check false positive that blocked TestFlight uploads.
+
 ## v0.2.0-testflight.1
 
 - Build and upload the iPhone app through GitHub Actions using repository-managed signing credentials.

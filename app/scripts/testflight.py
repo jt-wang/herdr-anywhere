@@ -118,7 +118,7 @@ def check_ipa(ipa, folder, env, bundle, version, build, sounds):
     command(['codesign', '--verify', '--deep', '--strict', app], env)
     for f in app.rglob('*'):
         if f.is_file():
-            for match in re.finditer(rb'/(Users|Volumes)/([^/\s\x00]{1,64})', f.read_bytes()):
+            for match in re.finditer(rb'/(Users|Volumes)/([^/\s\x00-\x1f\x7f]{1,64})', f.read_bytes()):
                 if not (match[1] == b'Users' and match[2] in (b'runner', b'sam')):
                     raise ReleaseError('IPA contains a private build path')
     for framework in (app / 'Frameworks').glob('*.framework'):
