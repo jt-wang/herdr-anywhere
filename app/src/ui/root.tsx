@@ -167,11 +167,15 @@ function Connected(props: { deps: RootDeps; store: Store; link: Link; unpaired: 
   })
 
   const openSpace = (id: string) => {
+    ;(globalThis as any).__tapTrace?.('open-enter')
     store.selectSpace(id)
+    ;(globalThis as any).__tapTrace?.('selected')
     const top = nav.routes().at(-1)
     if (top?.name === 'space' && top.id === id) return
     nav.popToRoot()
+    ;(globalThis as any).__tapTrace?.('popped')
     nav.push({ name: 'space', id })
+    ;(globalThis as any).__tapTrace?.('pushed')
   }
   const openTerminal = (addr: string) => {
     if (!store.focusTerminal(addr)) return peeking.set(addr)

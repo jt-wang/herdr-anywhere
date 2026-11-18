@@ -25,6 +25,12 @@ mkdir -p "$work/sam/src/acme-api" "$work/state" "$work/config" "$work/data"
 : > "$work/started" # what e2e/ios-failure-logs.sh keeps, and the crash reports named, are from after this
 placeholder=$(cat "$app/e2e/pair.ts")
 cleanup() {
+  if [ -n "$shot" ]; then
+    cp "$work/serve.log" "${shot%.png}-trace.log" 2>/dev/null || true
+    cp "$work/onerror.txt" "${shot%.png}-tap.txt" 2>/dev/null || true
+    data=$(xcrun simctl get_app_container "$SIM_UDID" "$id" data 2>/dev/null) || data=""
+    [ -z "$data" ] || cp "$data/Library/Caches/firsttap-native.txt" "${shot%.png}-native.txt" 2>/dev/null || true
+  fi
   [ -n "${serve_pid:-}" ] && kill "$serve_pid" 2>/dev/null
   # The same session the core was started in below, or `server stop` finds no core and leaves its holder running.
   HC_SESSION="hmioserr-$$" HC_SOCKET="" HOME="$work/sam" XDG_RUNTIME_DIR="$run" "$hc" server stop >/dev/null 2>&1 || true
