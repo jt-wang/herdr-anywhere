@@ -19,6 +19,8 @@ import urllib.request
 ORIGIN = 'https://api.appstoreconnect.apple.com'
 BUNDLE = 'io.jingtao.herdranywhere'
 ROUTES = ('/v1/apps', '/v1/builds', '/v1/betaGroups')
+# Exact machine codes only: never echo arbitrary server strings or code suffixes.
+ERROR_CODES = frozenset(('FORBIDDEN_ERROR', 'NOT_AUTHORIZED', 'AUTHENTICATION_ERROR'))
 
 
 class StatusError(Exception):
@@ -51,13 +53,15 @@ def raw_signature(der):
     return b''.join(parts)
 
 
-def token(env):
+def token(env, url):
     # https://developer.apple.com/documentation/appstoreconnectapi/generating-tokens-for-api-requests
-    # Team key, ES256, 2-minute life; scope restricts it to the three GET routes.
+    # Team key, ES256, 2-minute life; one scope for this exact GET path/query.
+    parsed = urllib.parse.urlsplit(safe_url(url))
+    target = parsed.path + ('?' + parsed.query if parsed.query else '')
     now = int(time.time())
     header = {'alg': 'ES256', 'kid': env['ASC_KEY_ID'], 'typ': 'JWT'}
     payload = {'iss': env['ASC_ISSUER_ID'], 'iat': now, 'exp': now + 120,
-               'aud': 'appstoreconnect-v1', 'scope': ['GET ' + p for p in ROUTES]}
+               'aud': 'appstoreconnect-v1', 'scope': ['GET ' + target]}
     message = '.'.join(b64(json.dumps(p, separators=(',', ':')).encode()) for p in (header, payload))
     child_env = {k: v for k, v in env.items() if k != 'APPLE_TEAM_ID'
                  and k != 'API_PRIVATE_KEYS_DIR'
@@ -98,14 +102,29 @@ class Client:
         remaining = self.deadline - time.monotonic()
         if remaining <= 0:
             raise StatusError('ASC observation timed out')
-        request = urllib.request.Request(url, headers={'Authorization': 'Bearer ' + token(self.env),
+        request = urllib.request.Request(url, headers={'Authorization': 'Bearer ' + token(self.env, url),
                                                      'Accept': 'application/json'}, method='GET')
         try:
             with self.opener.open(request, timeout=min(30, remaining)) as response:
                 return json.load(response)
         except urllib.error.HTTPError as exc:
-            # Never echo response bodies, URLs, headers, or exception text.
-            raise StatusError('ASC HTTP ' + str(exc.code) + ' on ' + urllib.parse.urlsplit(url).path) from None
+            # Bounded parsing; only exact allowlisted machine codes may leave here.
+            codes = set()
+            try:
+                body = exc.read(65537)
+                data = json.loads(body) if len(body) <= 65536 else None
+                errors = data.get('errors') if isinstance(data, dict) else None
+                if isinstance(errors, list):
+                    for error in errors:
+                        code = error.get('code') if isinstance(error, dict) else None
+                        if isinstance(code, str) and code in ERROR_CODES:
+                            codes.add(code)
+            except (ValueError, OSError, TimeoutError, RecursionError):
+                pass
+            finally:
+                exc.close()
+            suffix = ' (codes: ' + ', '.join(sorted(codes)) + ')' if codes else ''
+            raise StatusError('ASC HTTP ' + str(exc.code) + ' on ' + urllib.parse.urlsplit(url).path + suffix) from None
         except (urllib.error.URLError, TimeoutError):
             raise StatusError('ASC network error or request timeout') from None
 
@@ -216,15 +235,26 @@ def run(args, env):
     spec.loader.exec_module(release)
     release.release(Path(__file__).resolve().parents[2], args.version, args.build, args.expected_sha,
                     env=env, request_only=True)
+    if bool(args.status_run_id) != bool(args.uploaded_sha):
+        raise StatusError('Status recovery requires both status_run_id and uploaded_sha')
+    if args.status_run_id and (not re.fullmatch('[1-9][0-9]*', args.status_run_id)
+                               or not re.fullmatch('[0-9a-f]{40}', args.uploaded_sha)):
+        raise StatusError('Status recovery requires a positive run ID and full uploaded SHA')
+    if args.status_run_id and env.get('TF_UPLOAD') == 'true':
+        raise StatusError('Status recovery cannot upload')
+    if args.request_only:
+        return
+    uploaded_sha = args.uploaded_sha or args.expected_sha
     paths = list(Path(args.upload_artifact).rglob('receipt.json'))
     if len(paths) != 1:
         raise StatusError('Expected one archive upload receipt')
     uploaded = json.loads(paths[0].read_text())
-    if (any(uploaded.get(k) != v for k, v in {'sha': args.expected_sha, 'version': args.version,
+    if (any(uploaded.get(k) != v for k, v in {'sha': uploaded_sha, 'version': args.version,
                                            'build': args.build}.items())
             or uploaded.get('uploaded') is not True or uploaded.get('validated') is not True):
         raise StatusError('Archive receipt does not confirm this exact upload')
-    receipt = {'sha': args.expected_sha, 'bundle_id': BUNDLE, 'version': args.version, 'build': args.build,
+    receipt = {'sha': uploaded_sha, 'observer_sha': args.expected_sha, 'status_run_id': args.status_run_id or None,
+               'bundle_id': BUNDLE, 'version': args.version, 'build': args.build,
                'uploaded': True, 'processing_state': None, 'processing_valid': False,
                'internal_build_state': None, 'external_build_state': None, 'beta_review_state': None,
                'groups': None, 'public_invitation_for_build': None, 'observation': 'error',
@@ -254,15 +284,22 @@ def main():
     parser.add_argument('--version', required=True)
     parser.add_argument('--build', required=True)
     parser.add_argument('--expected-sha', required=True)
-    parser.add_argument('--upload-artifact', required=True)
-    parser.add_argument('--output', required=True)
+    parser.add_argument('--status-run-id', default='')
+    parser.add_argument('--uploaded-sha', default='')
+    parser.add_argument('--request-only', action='store_true')
+    parser.add_argument('--upload-artifact')
+    parser.add_argument('--output')
     parser.add_argument('--timeout', type=int, default=1200, choices=range(1, 1201), metavar='1..1200')
     args = parser.parse_args()
+    if not args.request_only and (not args.upload_artifact or not args.output):
+        parser.error('--upload-artifact and --output are required for observation')
     def cancelled(signum, frame):
         raise StatusError('ASC observation cancelled')
     previous = {sig: signal.signal(sig, cancelled) for sig in (signal.SIGINT, signal.SIGTERM)}
     try:
         receipt = run(args, dict(os.environ))
+        if args.request_only:
+            return 0
         print('Upload confirmed; processing VALID. Internal: ' + (receipt['internal_build_state'] or 'unknown')
               + '; external: ' + (receipt['external_build_state'] or 'unknown') + '.')
         print('Groups and public links are in the status receipt; no groups or invitations were changed.')

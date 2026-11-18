@@ -19,6 +19,14 @@ on:
         description: Validate with Apple and upload to TestFlight
         type: boolean
         default: false
+      status_run_id:
+        description: Read-only recovery from this previous upload run (leave upload false)
+        type: string
+        default: ''
+      uploaded_sha:
+        description: Full original upload SHA (required with status_run_id)
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -36,6 +44,9 @@ env:
   TF_BUILD: ${{ inputs.build }}
   TF_EXPECTED_SHA: ${{ inputs.expected_sha }}
   TF_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+  TF_STATUS_RUN_ID: ${{ inputs.status_run_id }}
+  TF_UPLOADED_SHA: ${{ inputs.uploaded_sha }}
+  TF_UPLOAD: ${{ inputs.upload }}
 
 jobs:
   request:
@@ -47,7 +58,9 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
       - name: Check request
-        run: python3 app/scripts/testflight.py --version "$TF_VERSION" --build "$TF_BUILD" --expected-sha "$TF_EXPECTED_SHA" --request-only
+        run: |
+          python3 app/scripts/testflight.py --version "$TF_VERSION" --build "$TF_BUILD" --expected-sha "$TF_EXPECTED_SHA" --request-only
+          python3 app/scripts/testflight-status.py --version "$TF_VERSION" --build "$TF_BUILD" --expected-sha "$TF_EXPECTED_SHA" --status-run-id "$TF_STATUS_RUN_ID" --uploaded-sha "$TF_UPLOADED_SHA" --request-only
       - name: Check release control flow
         run: |
           python3 app/scripts/testflight.test.py
@@ -55,7 +68,7 @@ jobs:
 
   archive:
     needs: request
-    if: github.repository == 'jt-wang/herdr-anywhere' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.workflow_sha == github.sha
+    if: inputs.status_run_id == '' && github.repository == 'jt-wang/herdr-anywhere' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.workflow_sha == github.sha
     environment: testflight
     runs-on: xcode-27
     timeout-minutes: 120
@@ -172,9 +185,12 @@ jobs:
           retention-days: 7
 
   status:
-    # Re-run this job alone to refresh ASC state without rebuilding or uploading.
-    needs: archive
-    if: inputs.upload && needs.archive.result == 'success'
+    # Recovery runs current reviewed code against a previous run's upload receipt.
+    needs: [request, archive]
+    if: always() && !cancelled() && needs.request.result == 'success' && ((inputs.status_run_id != '' && needs.archive.result == 'skipped') || (inputs.upload && needs.archive.result == 'success'))
+    permissions:
+      contents: read
+      actions: read
     environment: testflight
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -184,16 +200,24 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: inputs.status_run_id == ''
         with:
           name: testflight-${{ inputs.build }}
           path: ${{ runner.temp }}/testflight-upload
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: inputs.status_run_id != ''
+        with:
+          name: testflight-${{ inputs.build }}
+          path: ${{ runner.temp }}/testflight-upload
+          run-id: ${{ inputs.status_run_id }}
+          github-token: ${{ github.token }}
       - name: Read ASC processing and beta distribution status
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_PRIVATE_KEY_P8: ${{ secrets.ASC_PRIVATE_KEY_P8 }}
         run: |
-          python3 app/scripts/testflight-status.py --version "$TF_VERSION" --build "$TF_BUILD" --expected-sha "$TF_EXPECTED_SHA" --upload-artifact "$RUNNER_TEMP/testflight-upload" --output "$RUNNER_TEMP/testflight-status.json"
+          python3 app/scripts/testflight-status.py --version "$TF_VERSION" --build "$TF_BUILD" --expected-sha "$TF_EXPECTED_SHA" --status-run-id "$TF_STATUS_RUN_ID" --uploaded-sha "$TF_UPLOADED_SHA" --upload-artifact "$RUNNER_TEMP/testflight-upload" --output "$RUNNER_TEMP/testflight-status.json"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:

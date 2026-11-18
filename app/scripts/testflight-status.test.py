@@ -9,6 +9,7 @@ import io
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
@@ -59,6 +60,7 @@ class StatusTest(unittest.TestCase):
                                'validated': True, 'unknown-secret': 'never-export-upload-secret'}
         self.write_upload()
         self.args = argparse.Namespace(version='0.2.1', build='29', expected_sha='a' * 40,
+                                       status_run_id='', uploaded_sha='', request_only=False,
                                        upload_artifact=str(self.upload), output=str(self.root / 'status.json'), timeout=10)
         self.calls = []
         self.pages = [build_page()]
@@ -90,6 +92,58 @@ class StatusTest(unittest.TestCase):
     def run_status(self):
         with patch.object(status, 'Client', return_value=self.client), patch.object(status.time, 'sleep'):
             return status.run(self.args, self.env)
+
+    def cli(self, *extra):
+        argv = ['status', '--version', '0.2.1', '--build', '29', '--expected-sha', 'a' * 40,
+                '--upload-artifact', str(self.upload), '--output', self.args.output, *extra]
+        with patch.dict(os.environ, self.env, clear=True), patch.object(sys, 'argv', argv), \
+                patch.object(status, 'Client', return_value=self.client), \
+                patch.object(status.subprocess, 'run', side_effect=AssertionError('Must not archive or upload')), \
+                contextlib.redirect_stdout(io.StringIO()) as out:
+            code = status.main()
+        return code, out.getvalue()
+
+    def test_recovery_cli_uses_original_upload_sha_without_rebuilding_or_uploading(self):
+        original = 'b' * 40
+        self.upload_receipt['sha'] = original
+        self.write_upload()
+        code, _ = self.cli('--status-run-id', '12345', '--uploaded-sha', original)
+        self.assertEqual(code, 0)
+        receipt = json.loads(Path(self.args.output).read_text())
+        self.assertEqual(receipt['sha'], original)
+        self.assertEqual(receipt['observer_sha'], 'a' * 40)
+        self.assertEqual(receipt['status_run_id'], '12345')
+        self.assertTrue(receipt['uploaded'])
+
+    def test_recovery_cli_rejects_wrong_receipt_sha_and_untrusted_observer_before_asc(self):
+        recovery = ('--status-run-id', '12345', '--uploaded-sha', 'b' * 40)
+        code, message = self.cli(*recovery)
+        self.assertEqual(code, 1)
+        self.assertIn('exact upload', message)
+        self.assertEqual(self.calls, [])
+        self.upload_receipt['sha'] = 'b' * 40
+        self.write_upload()
+        for key, value in (('GITHUB_SHA', 'b' * 40), ('GITHUB_WORKFLOW_SHA', 'b' * 40),
+                           ('GITHUB_REF', 'refs/heads/feature'), ('GITHUB_EVENT_NAME', 'push')):
+            with self.subTest(key=key), patch.dict(self.env, {key: value}):
+                code, _ = self.cli(*recovery)
+                self.assertEqual(code, 1)
+                self.assertEqual(self.calls, [])
+
+    def test_request_only_cli_rejects_incomplete_invalid_and_upload_recovery(self):
+        for extra in (('--status-run-id', '12345'), ('--uploaded-sha', 'b' * 40),
+                      ('--status-run-id', '../123', '--uploaded-sha', 'b' * 40),
+                      ('--status-run-id', '0', '--uploaded-sha', 'b' * 40),
+                      ('--status-run-id', '12345', '--uploaded-sha', 'short')):
+            with self.subTest(extra=extra):
+                self.assertEqual(self.cli('--request-only', *extra)[0], 1)
+                self.assertEqual(self.calls, [])
+        recovery = ('--status-run-id', '12345', '--uploaded-sha', 'b' * 40)
+        self.assertEqual(self.cli('--request-only', *recovery)[0], 0)
+        with patch.dict(self.env, TF_UPLOAD='true'):
+            self.assertEqual(self.cli('--request-only', *recovery)[0], 1)
+        self.assertEqual(self.calls, [])
+        self.assertFalse(Path(self.args.output).exists())
 
     def test_exact_build_and_processing_to_valid_without_groups_is_success(self):
         self.pages = [([], []), build_page(version='0.2.0'), build_page('PROCESSING'), build_page()]
@@ -192,6 +246,66 @@ class StatusTest(unittest.TestCase):
             self.run_status()
         self.assertEqual(json.loads(Path(self.args.output).read_text())['error'], 'ASC HTTP 403 on /v1/apps')
 
+    def test_http_error_only_exact_allowlisted_machine_codes_reach_console_and_receipt(self):
+        bodies = [
+            ({'errors': [{'code': 'FORBIDDEN_ERROR', 'detail': 'never-export-detail',
+                          'title': 'never-export-title', 'id': 'never-export-id'},
+                         {'code': 'NOT_AUTHORIZED'}, {'code': 'FORBIDDEN_ERROR'},
+                         {'code': 'FORBIDDEN_ERROR.never-export'}, {'code': 'NEVER_EXPORT'},
+                         {'code': ['FORBIDDEN_ERROR']}, None]},
+             ' (codes: FORBIDDEN_ERROR, NOT_AUTHORIZED)'),
+            ({'errors': [{'code': 'AUTHENTICATION_ERROR'}]}, ' (codes: AUTHENTICATION_ERROR)'),
+            ({'errors': [{'code': 'UNRECOGNIZED_UPPERCASE_SECRET', 'detail': 'FORBIDDEN_ERROR'}]}, ''),
+            ({'errors': 'FORBIDDEN_ERROR'}, ''), ([], ''), ({'errors': [42, {}]}, '')]
+        for body, suffix in bodies:
+            with self.subTest(body=body):
+                client = status.Client(self.env, time.monotonic() + 10)
+                client.opener.open = Mock(side_effect=urllib.error.HTTPError(
+                    status.ORIGIN, 403, 'never-export-message', {}, io.BytesIO(json.dumps(body).encode())))
+                self.client.listing.side_effect = lambda route, params: client.get(
+                    status.ORIGIN + route + '?private=never-export-query')
+                with patch.object(status, 'token', return_value='never-export-token'):
+                    code, message = self.cli()
+                expected = 'ASC HTTP 403 on /v1/apps' + suffix
+                self.assertEqual(code, 1)
+                self.assertEqual(message.strip(), expected)
+                self.assertEqual(json.loads(Path(self.args.output).read_text())['error'], expected)
+        for body in (b'not-json-never-export', b'\xff', b' ' * 65537,
+                     b'{"errors":[{"code":"FORBIDDEN_ERROR"}]}' + b' ' * 65537):
+            client.opener.open = Mock(side_effect=urllib.error.HTTPError(
+                status.ORIGIN, 403, 'never-export', {}, io.BytesIO(body)))
+            with patch.object(status, 'token', return_value='never-export-token'):
+                with self.assertRaisesRegex(status.StatusError, '^ASC HTTP 403 on /v1/apps$'):
+                    client.get(status.ORIGIN + '/v1/apps')
+
+    def test_real_client_scopes_each_request_including_encoded_query_and_pagination(self):
+        generated = subprocess.run(['openssl', 'genpkey', '-algorithm', 'EC', '-pkeyopt', 'ec_paramgen_curve:P-256'],
+                                   capture_output=True, check=True)
+        self.env['ASC_PRIVATE_KEY_P8'] = generated.stdout.decode()
+        client = status.Client(self.env, time.monotonic() + 10)
+        items, included = build_page()
+        next_url = status.ORIGIN + '/v1/apps?filter%5BbundleId%5D=' + status.BUNDLE + '&fields%5Bapps%5D=bundleId&cursor=a%2Bb%26c'
+        pages = [{'data': [], 'links': {'next': next_url}},
+                 {'data': [{'id': 'app-1', 'attributes': {'bundleId': status.BUNDLE}}]},
+                 {'data': items, 'included': included}, {'data': []}, {'data': []}]
+        client.opener.open = Mock(side_effect=[contextlib.closing(io.BytesIO(json.dumps(p).encode())) for p in pages])
+        status.observe(client, '0.2.1', '29', {}, time.monotonic() + 10)
+        targets = []
+        for call in client.opener.open.call_args_list:
+            request = call.args[0]
+            self.assertEqual(request.get_method(), 'GET')
+            jwt = request.get_header('Authorization').removeprefix('Bearer ')
+            payload = jwt.split('.')[1]
+            claims = json.loads(base64.urlsafe_b64decode(payload + '=' * (-len(payload) % 4)))
+            target = request.full_url.removeprefix(status.ORIGIN)
+            self.assertEqual(claims['scope'], ['GET ' + target])
+            targets.append(target)
+        self.assertEqual(len(set(targets)), 5)
+        self.assertIn('cursor=a%2Bb%26c', targets[1])
+        self.assertIn('fields%5Bapps%5D=', targets[0])
+        self.assertIn('filter%5BpreReleaseVersion.version%5D=', targets[2])
+        self.assertIn('filter%5Bbuilds%5D=', targets[4])
+
     def test_pagination_is_read_only_same_origin_and_redirects_are_rejected(self):
         client = status.Client(self.env, time.monotonic() + 10)
         client.opener.open = Mock(side_effect=AssertionError('Unexpected network request'))
@@ -237,13 +351,13 @@ class StatusTest(unittest.TestCase):
             seen.append(key)
             return external(args, **kwargs)
         with patch.object(status.subprocess, 'run', side_effect=signing):
-            jwt = status.token(self.env)
+            jwt = status.token(self.env, status.ORIGIN + '/v1/apps?filter%5BbundleId%5D=synthetic')
         header, payload, signature = [base64.urlsafe_b64decode(p + '=' * (-len(p) % 4)) for p in jwt.split('.')]
         self.assertEqual(json.loads(header), {'alg': 'ES256', 'kid': 'SYNTHETIC', 'typ': 'JWT'})
         claims = json.loads(payload)
         self.assertEqual(claims['aud'], 'appstoreconnect-v1')
         self.assertEqual(claims['exp'] - claims['iat'], 120)
-        self.assertTrue(all(s.startswith('GET ') for s in claims['scope']))
+        self.assertEqual(claims['scope'], ['GET /v1/apps?filter%5BbundleId%5D=synthetic'])
         self.assertEqual(len(signature), 64)
         # Independently verify the real signature after converting JOSE R||S back to DER.
         integers = []
@@ -272,23 +386,71 @@ class StatusTest(unittest.TestCase):
         self.assertFalse(list(self.root.glob('asc-status-*')))
         with patch.object(status.subprocess, 'run', side_effect=TimeoutError('never-export')):
             with self.assertRaises(TimeoutError):
-                status.token(self.env)
+                status.token(self.env, status.ORIGIN + '/v1/apps')
         self.assertFalse(list(self.root.glob('asc-status-*')))
 
     def test_workflow_status_is_separate_gated_and_has_only_asc_secrets(self):
         workflow = (Path(__file__).resolve().parents[2] / '.github/workflows/testflight.yml').read_text()
         request, rest = workflow.split('\n  archive:', 1)
         self.assertIn('python3 app/scripts/testflight-status.test.py', request)
+        self.assertIn('python3 app/scripts/testflight.py --version', request)
+        self.assertIn('--uploaded-sha "$TF_UPLOADED_SHA" --request-only', request)
         _, job = rest.split('\n  status:', 1)
-        self.assertIn('needs: archive', job)
-        self.assertIn("if: inputs.upload && needs.archive.result == 'success'", job)
+        self.assertIn('needs: [request, archive]', job)
+        self.assertIn("needs.request.result == 'success'", job)
+        self.assertIn("inputs.upload && needs.archive.result == 'success'", job)
         self.assertIn('environment: testflight', job)
-        import re
         self.assertEqual(set(re.findall(r'secrets\.([A-Z0-9_]+)', job)),
                          {'ASC_KEY_ID', 'ASC_ISSUER_ID', 'ASC_PRIVATE_KEY_P8'})
         self.assertNotIn('scripts/testflight.py ', job)
         self.assertIn('overwrite: true', job)
         self.assertIn('if: always()', job)
+
+    def test_workflow_recovery_skips_archive_and_selects_only_the_explicit_old_run(self):
+        workflow = (Path(__file__).resolve().parents[2] / '.github/workflows/testflight.yml').read_text()
+        archive, job = workflow.split('\n  archive:', 1)[1].split('\n  status:', 1)
+        archive_if = re.search(r'^    if: (.+)$', archive, re.M)[1]
+        status_if = re.search(r'^    if: (.+)$', job, re.M)[1]
+        # Evaluate these boolean workflow guards over a dispatch/outcome matrix.
+        def enabled(expression, run_id='', upload=False, request='success', result='skipped', cancelled=False):
+            values = {'inputs.status_run_id': run_id, 'inputs.upload': upload,
+                      'needs.request.result': request, 'needs.archive.result': result,
+                      'github.repository': 'jt-wang/herdr-anywhere', 'github.ref': 'refs/heads/main',
+                      'github.event.repository.default_branch': 'main',
+                      'github.workflow_sha': 'a' * 40, 'github.sha': 'a' * 40,
+                      'always()': True, 'cancelled()': cancelled}
+            for key in sorted(values, key=len, reverse=True):
+                expression = expression.replace(key, repr(values[key]))
+            expression = expression.replace('&&', ' and ').replace('||', ' or ')
+            expression = re.sub(r'!(?!=)', 'not ', expression)
+            return eval(expression, {'__builtins__': {}, 'format': lambda s, value: s.format(value)})
+
+        for upload in (False, True):
+            self.assertFalse(enabled(archive_if, run_id='12345', upload=upload))
+            self.assertTrue(enabled(archive_if, upload=upload))
+        self.assertTrue(enabled(status_if, run_id='12345'))
+        self.assertTrue(enabled(status_if, upload=True, result='success'))
+        self.assertFalse(enabled(status_if, result='success'))
+        self.assertFalse(enabled(status_if, upload=True, result='failure'))
+        self.assertFalse(enabled(status_if, upload=True, result='skipped'))
+        for result in ('success', 'failure', 'cancelled'):
+            self.assertFalse(enabled(status_if, run_id='12345', result=result))
+        for request in ('failure', 'skipped', 'cancelled'):
+            self.assertFalse(enabled(status_if, run_id='12345', request=request))
+        self.assertFalse(enabled(status_if, run_id='12345', cancelled=True))
+        downloads = re.findall(r'      - uses: actions/download-artifact@[^\n]+\n(.*?)(?=      - )', job, re.S)
+        self.assertEqual(len(downloads), 2)
+        for run_id in ('', '12345'):
+            selected = [step for step in downloads if enabled(re.search(r'        if: (.+)', step)[1], run_id=run_id)]
+            self.assertEqual(len(selected), 1)
+            self.assertEqual('run-id:' in selected[0], bool(run_id))
+            self.assertEqual('github-token:' in selected[0], bool(run_id))
+            self.assertIn('name: testflight-${{ inputs.build }}', selected[0])
+        self.assertIn('run-id: ${{ inputs.status_run_id }}', downloads[1])
+        self.assertIn('actions: read', job)
+        self.assertIn('ref: ${{ github.sha }}', job)
+        self.assertNotIn('ref: ${{ inputs.uploaded_sha }}', workflow)
+        self.assertIn('--status-run-id "$TF_STATUS_RUN_ID" --uploaded-sha "$TF_UPLOADED_SHA"', job)
 
 
 if __name__ == '__main__':

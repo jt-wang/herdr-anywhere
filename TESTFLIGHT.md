@@ -31,6 +31,24 @@ With `upload=true`, a separate read-only `status` job then observes the exact ve
 
 If processing takes longer, rerun only the `status` job while the upload artifact remains available; do not rerun the archive job merely to refresh status. A status failure does not undo a confirmed upload. Both receipts must be checked before reporting delivery complete.
 
+### Recover status using updated observer code
+
+To inspect an already uploaded build with a newer, reviewed workflow, dispatch from the current default branch with `upload=false`, an explicit `status_run_id` and the full original `uploaded_sha`. `expected_sha` must still be the current reviewed default-branch commit, not the older upload commit. For the confirmed 0.2.1 (29) upload:
+
+```sh
+repo=jt-wang/herdr-anywhere
+branch=$(gh api "repos/$repo" --jq .default_branch)
+sha=$(gh api "repos/$repo/commits/$branch" --jq .sha)
+gh workflow run testflight.yml -R "$repo" --ref "$branch" \
+  -f expected_sha="$sha" -f version=0.2.1 -f build=29 -f upload=false \
+  -f status_run_id=44239874593 \
+  -f uploaded_sha=9919440fa7bbed8289250c089b558a21ee752cf3
+```
+
+Recovery keeps the request guard, skips the entire archive job and never validates/uploads an IPA again. Only recovery uses cross-run artifact download with the job's read-only Actions permission and GitHub token; it downloads `testflight-BUILD` from the specified run in this repository. The observer checks that its receipt has the exact original SHA, version and build and confirms both validation and upload before any ASC request. Missing/expired artifacts or mismatched receipts fail closed, with no rebuild/upload fallback. Recovery inputs must be supplied together; recovery with `upload=true` is rejected. Leave both inputs empty for the unchanged normal archive/upload flow.
+
+The status receipt's `sha` identifies the original upload, `observer_sha` identifies the current executing code, and `status_run_id` records the recovery source run (null for a normal upload). HTTP failures expose only the HTTP status, allowlisted route and exact allowlisted machine codes (`FORBIDDEN_ERROR`, `NOT_AUTHORIZED`, `AUTHENTICATION_ERROR`), never response bodies, details, headers or arbitrary error strings. These codes help investigate authorization versus scope; a 403 alone does not establish which is responsible.
+
 ## Maintainer setup
 
 Create the **testflight** environment before adding credentials. Under **Deployment branches and tags**, choose **Selected branches and tags** and add only the repository's default **branch**, with its exact name. Do not add tag or pull-request patterns. Required reviewers are optional.
@@ -57,7 +75,7 @@ See GitHub's [environment branch restrictions](https://docs.github.com/en/action
 
 The workflow verifies that its NativeShell CLI and iOS framework match the repository's five-patch key. `testflight-toolchain.json` records that key, the source SHA and hashes of both build inputs. Dependency downloads, Go/Rust builds and `--prepare-only` run before signing material is installed, in steps with none of the seven signing or ASC secrets. Preparation generates the store bundle and Xcode project, records their hashes with the framework inputs, and restores the source files. The signing step checks those hashes, the clean checkout SHA, version and build before importing the p12. It then archives for arm64 iOS devices, exports with manual signing and checks the IPA. Normal compilation of the reviewed Swift sources still happens during archive; codesign uses the temporary keychain. Symbol uploads are disabled, and an IPA containing Symbols or dSYM entries is rejected. Version and signing edits are temporary and restored afterward.
 
-Only upload mode invokes `altool`; upload and read-only status write temporary p8 files. The status job uses a short-lived ES256 token restricted to the three GET routes it needs, rejects redirects and off-origin pagination, and removes its private signing file after each token. All helper subprocesses receive none of the seven raw signing or ASC secret environment variables. Team and profile identifiers are passed as signing arguments; `altool` receives its key identifiers as arguments and the temporary p8 through its private key directory. Signing files, the temporary keychain and installed profile are removed on normal completion, a caught failure, SIGINT or SIGTERM (keychain cleanup commands are bounded to three seconds each); GitHub-hosted runner disposal handles job termination. Use this workflow on the hosted runner specified in the file.
+Only upload mode invokes `altool`; upload and read-only status write temporary p8 files. The status job mints a short-lived ES256 token for each request, scoped to that exact GET path and encoded query (including filters, fields and pagination), after validating the URL against its three allowed routes. It rejects redirects and off-origin pagination and removes its private signing file after each token. All helper subprocesses receive none of the seven raw signing or ASC secret environment variables. Team and profile identifiers are passed as signing arguments; `altool` receives its key identifiers as arguments and the temporary p8 through its private key directory. Signing files, the temporary keychain and installed profile are removed on normal completion, a caught failure, SIGINT or SIGTERM (keychain cleanup commands are bounded to three seconds each); GitHub-hosted runner disposal handles job termination. Use this workflow on the hosted runner specified in the file.
 
 Missing configuration fails before dependency builds. Build, package checks, signing cleanup, validation or upload errors fail the run. Tool errors report the program and exit code without printing credential-bearing command lines. Artifacts contain only the IPA, receipt and toolchain record, not keychains, installed profiles, build folders or credentials.
 
