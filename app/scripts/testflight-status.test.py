@@ -255,6 +255,11 @@ class StatusTest(unittest.TestCase):
                          {'code': ['FORBIDDEN_ERROR']}, None]},
              ' (codes: FORBIDDEN_ERROR, NOT_AUTHORIZED)'),
             ({'errors': [{'code': 'AUTHENTICATION_ERROR'}]}, ' (codes: AUTHENTICATION_ERROR)'),
+            ({'errors': [{'code': 'PARAMETER_ERROR.INVALID', 'source': {'parameter': 'filter[builds]'},
+                          'detail': 'never-export-detail'},
+                         {'code': 'PARAMETER_ERROR.INVALID.never-export',
+                          'source': {'parameter': 'never-export-parameter'}}]},
+             ' (codes: PARAMETER_ERROR.INVALID) (parameters: filter[builds])'),
             ({'errors': [{'code': 'UNRECOGNIZED_UPPERCASE_SECRET', 'detail': 'FORBIDDEN_ERROR'}]}, ''),
             ({'errors': 'FORBIDDEN_ERROR'}, ''), ([], ''), ({'errors': [42, {}]}, '')]
         for body, suffix in bodies:

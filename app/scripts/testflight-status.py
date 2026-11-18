@@ -20,7 +20,10 @@ ORIGIN = 'https://api.appstoreconnect.apple.com'
 BUNDLE = 'io.jingtao.herdranywhere'
 ROUTES = ('/v1/apps', '/v1/builds', '/v1/betaGroups')
 # Exact machine codes only: never echo arbitrary server strings or code suffixes.
-ERROR_CODES = frozenset(('FORBIDDEN_ERROR', 'NOT_AUTHORIZED', 'AUTHENTICATION_ERROR'))
+ERROR_CODES = frozenset(('FORBIDDEN_ERROR', 'NOT_AUTHORIZED', 'AUTHENTICATION_ERROR',
+                         'PARAMETER_ERROR.INVALID', 'PARAMETER_ERROR.UNKNOWN',
+                         'PARAMETER_ERROR.INVALID_COMBINATION', 'PARAMETER_ERROR.INVALID_VALUE'))
+ERROR_PARAMETERS = frozenset(('filter[app]', 'filter[builds]', 'fields[betaGroups]'))
 
 
 class StatusError(Exception):
@@ -109,7 +112,7 @@ class Client:
                 return json.load(response)
         except urllib.error.HTTPError as exc:
             # Bounded parsing; only exact allowlisted machine codes may leave here.
-            codes = set()
+            codes, parameters = set(), set()
             try:
                 body = exc.read(65537)
                 data = json.loads(body) if len(body) <= 65536 else None
@@ -119,11 +122,17 @@ class Client:
                         code = error.get('code') if isinstance(error, dict) else None
                         if isinstance(code, str) and code in ERROR_CODES:
                             codes.add(code)
+                        source = error.get('source') if isinstance(error, dict) else None
+                        parameter = source.get('parameter') if isinstance(source, dict) else None
+                        if isinstance(parameter, str) and parameter in ERROR_PARAMETERS:
+                            parameters.add(parameter)
             except (ValueError, OSError, TimeoutError, RecursionError):
                 pass
             finally:
                 exc.close()
             suffix = ' (codes: ' + ', '.join(sorted(codes)) + ')' if codes else ''
+            if parameters:
+                suffix += ' (parameters: ' + ', '.join(sorted(parameters)) + ')'
             raise StatusError('ASC HTTP ' + str(exc.code) + ' on ' + urllib.parse.urlsplit(url).path + suffix) from None
         except (urllib.error.URLError, TimeoutError):
             raise StatusError('ASC network error or request timeout') from None
