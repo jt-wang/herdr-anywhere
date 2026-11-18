@@ -467,6 +467,7 @@ function SpaceStatus(props: { store: Store; spaceId: string }) {
 }
 
 export function SpaceScreen(props: { store: Store; spaceId: string; actions: SpaceActions }) {
+  diag('firsttap', { step: 'space-component', time: String(Date.now()) });
   const s = props.store
   const rev = useRev(s)
   const words = agentWords(s)

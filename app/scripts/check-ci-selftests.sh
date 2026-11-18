@@ -6,7 +6,7 @@
 # Usage: app/scripts/check-ci-selftests.sh [ignored]   HM_CHECK_ROOT=<app folder> checks another tree.
 app=${HM_CHECK_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}
 fail=0
-for s in e2e/app-lines.sh e2e/ci/groups.sh e2e/ci/traps.sh e2e/ios-failure-logs.sh e2e/ios-xcresult.sh; do
+for s in e2e/app-lines.sh e2e/ci/groups.sh e2e/ci/traps.sh e2e/ci/prev-tag.sh e2e/ios-failure-logs.sh e2e/ios-xcresult.sh; do
   out=$(cd "$app" && sh "$s" --self-test 2>&1) || { echo "check-ci-selftests: $s --self-test failed:"; printf '%s\n' "$out" | tail -5; fail=1; }
 done
 exit $fail

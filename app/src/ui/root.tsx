@@ -25,6 +25,7 @@ import { APP_VERSION, installProblem, Updates } from '../updates.ts'
 import { CHANNEL } from '../channel.ts'
 import { t } from '../strings/index.ts'
 import { restartFor } from '../restart.ts'
+import { diag } from '../diag.ts'
 
 export type RootDeps = {
   linker: Linker
@@ -166,11 +167,16 @@ function Connected(props: { deps: RootDeps; store: Store; link: Link; unpaired: 
   })
 
   const openSpace = (id: string) => {
-    store.selectSpace(id)
+    diag('firsttap', { step: 'open-enter', time: String(Date.now()) });
+    store.selectSpace(id);
+    diag('firsttap', { step: 'selected', time: String(Date.now()) });
     const top = nav.routes().at(-1)
     if (top?.name === 'space' && top.id === id) return
-    nav.popToRoot()
-    nav.push({ name: 'space', id })
+    diag('firsttap', { step: 'pop-before', time: String(Date.now()) });
+    nav.popToRoot();
+    diag('firsttap', { step: 'push-before', time: String(Date.now()) });
+    nav.push({ name: 'space', id });
+    diag('firsttap', { step: 'push-return', time: String(Date.now()) });
   }
   const openTerminal = (addr: string) => {
     if (!store.focusTerminal(addr)) return peeking.set(addr)

@@ -10,6 +10,38 @@ import TailPocketNSH
 import UIKit
 import UniformTypeIdentifiers
 
+// Diagnostic branch only. Observe dispatch without adding or changing a gesture recognizer.
+private final class FirstTapWindow: UIWindow {
+  private func record(_ event: UIEvent, _ stage: String) {
+    guard event.type == .touches else { return }
+    let rows = (event.allTouches ?? []).map { touch -> String in
+      let at = touch.location(in: self)
+      var chain: [String] = []
+      var current = touch.view
+      while let view = current {
+        let recognizers = (view.gestureRecognizers ?? []).map { "\(type(of: $0)):\($0.state.rawValue)" }.joined(separator: ",")
+        chain.append("\(type(of: view))#\(view.accessibilityIdentifier ?? "-")[\(recognizers)]")
+        current = view.superview
+      }
+      return "phase=\(touch.phase.rawValue) at=\(at.x),\(at.y) chain=\(chain.joined(separator: ">"))"
+    }
+    let line = "\(Date().timeIntervalSince1970) \(stage) timestamp=\(event.timestamp) \(rows.joined(separator: " | "))\n"
+    let url = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("firsttap-native.txt")
+    if !FileManager.default.fileExists(atPath: url.path) { FileManager.default.createFile(atPath: url.path, contents: nil) }
+    if let file = try? FileHandle(forWritingTo: url) {
+      defer { try? file.close() }
+      _ = try? file.seekToEnd()
+      try? file.write(contentsOf: Data(line.utf8))
+    }
+  }
+
+  override func sendEvent(_ event: UIEvent) {
+    record(event, "before")
+    super.sendEvent(event)
+    record(event, "after")
+  }
+}
+
 // iOS 27 ends the launch of an app built with the iOS 27 SDK that makes its window here, without a scene (crash in
 // _UIApplicationEvaluateRuntimeIssueForNoSceneLifecycleAdoption, TestFlight 0.1.24 on iOS 27.2.1): the window comes
 // from SceneDelegate, named in Info.plist's UIApplicationSceneManifest (project.yml). e2e/ios-scene.sh checks a build.
@@ -33,7 +65,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
   func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options: UIScene.ConnectionOptions) {
     guard let scene = scene as? UIWindowScene else { return }
-    let window = UIWindow(windowScene: scene)
+    let window = FirstTapWindow(windowScene: scene)
     window.rootViewController = AppController()
     self.window = window
     (UIApplication.shared.delegate as? AppDelegate)?.window = window

@@ -38,7 +38,7 @@ import (
 )
 
 // A var so a test can build two versions of this program.
-var version = "0.2.0"
+var version = "0.2.1"
 
 const defaultPort = "7681"
 

@@ -1298,8 +1298,10 @@ export class Store {
 
   selectSpace(id: string) {
     if (!this.model.space(id)) return
-    this.model.active = id
-    this.changed()
+    diag('firsttap', { step: 'store-select', time: String(Date.now()) });
+    this.model.active = id;
+    this.changed();
+    diag('firsttap', { step: 'store-select-return', time: String(Date.now()) });
   }
 
   selectTab(id: string) {

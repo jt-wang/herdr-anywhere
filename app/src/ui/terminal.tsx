@@ -8,6 +8,7 @@ import { pictureTaps } from './picture-taps.ts'
 import { TerminalSession, terminalNote } from './terminal-session.ts'
 import { useSignal } from './kit.tsx'
 import { t } from '../strings/index.ts'
+import { diag } from '../diag.ts'
 
 /** From this width a space draws as the desktop does (ui/space.tsx). */
 export const WIDE = 720
@@ -15,6 +16,7 @@ export const WIDE = 720
 export type TerminalGestures = { swipe?: (dir: 'next' | 'prev') => void; tap?: () => void }
 
 export function TerminalView(props: { store: Store; address: string; fontSize?: number; keys?: boolean; observe?: boolean; onSession?: (s: TerminalSession) => void } & TerminalGestures) {
+  diag('firsttap', { step: 'terminal-component', time: String(Date.now()) });
   let web: any
   // Loading the page again makes a new WebView, with a new web process: the old one may have crashed.
   const load = signal(0)
@@ -41,7 +43,7 @@ export function TerminalView(props: { store: Store; address: string; fontSize?: 
     <View class="flex-1 bg-background">
       <View class="flex-1">
         <Each of={[load()]}>
-          {() => <WebView ref={(r: any) => { web = r }} html={html} testID={`terminal-${props.address}`} class="flex-1" scrollable={webViewScrollable(platform.os)}
+          {() => <WebView ref={(r: any) => { web = r; diag('firsttap', { step: 'terminal-ref', time: String(Date.now()) }); }} html={html} testID={`terminal-${props.address}`} class="flex-1" scrollable={webViewScrollable(platform.os)}
             onLoadStart={() => session.pageLost()} onMessage={(e) => session.page(e.data)} />}
         </Each>
         <If when={away() && state() === 'live'}>

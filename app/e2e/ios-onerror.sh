@@ -25,6 +25,28 @@ mkdir -p "$work/sam/src/acme-api" "$work/state" "$work/config" "$work/data"
 : > "$work/started" # what e2e/ios-failure-logs.sh keeps, and the crash reports named, are from after this
 placeholder=$(cat "$app/e2e/pair.ts")
 cleanup() {
+  # Diagnostic branch only: retain whitelisted observation on success and failure, before deleting the test home.
+  if [ -n "$shot" ]; then
+    probe="${shot%.png}-probe"
+    mkdir -p "$probe"
+    container=$(xcrun simctl get_app_container "$SIM_UDID" "$id" data 2>/dev/null) || container=""
+    if [ -n "$container" ]; then
+      [ ! -f "$container/Library/Caches/firsttap-native.txt" ] || cp "$container/Library/Caches/firsttap-native.txt" "$probe/native.txt"
+      python3 - "$container/Library/Application Support/nsh/$id/storage.json" "$probe/js.json" <<'PY' || true
+import json, pathlib, sys
+data = json.loads(pathlib.Path(sys.argv[1]).read_text())
+events = []
+for key, value in data.items():
+    if key.startswith('e2e-connection-diag'):
+        events.extend(e for e in json.loads(value) if e.get('what') == 'firsttap')
+pathlib.Path(sys.argv[2]).write_text(json.dumps(events, indent=2) + '\n')
+PY
+    fi
+    grep ' /hm-e2e/firsttap/' "$work/serve.log" > "$probe/js-http.txt" || true
+    grep -F 'hm-e2e: an error nothing catches' "$work/app-system.log" > "$probe/error.txt" || true
+    [ ! -f "$work/onerror.txt" ] || cp "$work/onerror.txt" "$probe/taps.txt"
+  fi
+  [ -z "${log_pid:-}" ] || { kill "$log_pid" 2>/dev/null || true; wait "$log_pid" 2>/dev/null || true; }
   [ -n "${serve_pid:-}" ] && kill "$serve_pid" 2>/dev/null
   # The same session the core was started in below, or `server stop` finds no core and leaves its holder running.
   HC_SESSION="hmioserr-$$" HC_SOCKET="" HOME="$work/sam" XDG_RUNTIME_DIR="$run" "$hc" server stop >/dev/null 2>&1 || true
@@ -62,6 +84,8 @@ xcrun simctl boot "$SIM_UDID" 2>/dev/null || true
 xcrun simctl bootstatus "$SIM_UDID" -b >/dev/null
 xcrun simctl uninstall "$SIM_UDID" "$id" 2>/dev/null || true
 xcrun simctl install "$SIM_UDID" "$app/ios/build/Herdr.app"
+xcrun simctl spawn "$SIM_UDID" log stream --level debug --style compact --predicate 'process == "Herdr" OR eventMessage CONTAINS "hm-e2e: an error nothing catches"' > "$work/app-system.log" 2>&1 &
+log_pid=$!
 # simctl launch prints "<id>: <pid>" once the process is there. Reading launchd's list after it instead missed the
 # app on CI: it was gone (thrown and crashed) before the list came back.
 launched=$(xcrun simctl launch "$SIM_UDID" "$id" 2>&1) || { echo "FAIL: the app did not start: $launched"; exit 1; }

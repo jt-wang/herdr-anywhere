@@ -3,6 +3,7 @@ import type { Diag } from '../src/diag.ts'
 
 export const CONNECTION_EVIDENCE_KEY = 'e2e-connection-diag'
 const fieldsByEvent: Record<string, string[]> = {
+  'firsttap': ['step', 'time'],
   'pin-grant': ['gesture', 'pageY'],
   'pin-lift': ['gesture'],
   'pin-release': ['gesture', 'moves', 'firstY', 'lastY', 'firstDy', 'lastDy', 'dy', 'lifted', 'dragging'],

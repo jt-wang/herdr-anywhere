@@ -2,6 +2,7 @@
 import type { Table } from './index.ts'
 
 export const zhHans: Table = {
+  chatEarlier: '加载更早的消息', chatLoadingEarlier: '正在加载更早的消息…', chatEarlierFailed: '没能加载更早的消息，请重试。', chatHistoryLimit: '这段记录太大，无法加载，请到终端查看。',
   needsYou: '等你处理', done: '已完成', working: '工作中', idle: '空闲', unknown: '未知', pinned: '已置顶', pinToTop: '置顶', unpin: '取消置顶', dragHint: '拖到想放的位置后松手', moveUp: '上移', moveDown: '下移',
   notConnected: '未连接', notConnectedLower: '未连接', connecting: '正在连接…', reconnecting: '正在重新连接…',
   lastUpdatedNow: '刚刚更新', lastUpdated: '{age}前更新',

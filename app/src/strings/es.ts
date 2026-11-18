@@ -2,6 +2,7 @@
 import type { Table } from './index.ts'
 
 export const es: Table = {
+  chatEarlier: 'Cargar mensajes anteriores', chatLoadingEarlier: 'Cargando mensajes anteriores…', chatEarlierFailed: 'No se pudieron cargar los mensajes anteriores. Inténtalo de nuevo.', chatHistoryLimit: 'Esta parte del registro es demasiado grande. Léela en la terminal.',
   needsYou: 'Te necesita', done: 'Listo', working: 'Trabajando', idle: 'Inactivo', unknown: 'Desconocido', pinned: 'Fijados', pinToTop: 'Fijar arriba', unpin: 'Dejar de fijar', dragHint: 'Arrastra hasta donde quieras y suelta', moveUp: 'Subir', moveDown: 'Bajar',
   notConnected: 'Sin conexión', notConnectedLower: 'sin conexión', connecting: 'Conectando…', reconnecting: 'Reconectando…',
   lastUpdatedNow: 'Actualizado hace un momento', lastUpdated: 'Actualizado hace {age}',

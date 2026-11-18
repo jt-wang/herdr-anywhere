@@ -2,6 +2,7 @@
 import type { Table } from './index.ts'
 
 export const ko: Table = {
+  chatEarlier: '이전 메시지 불러오기', chatLoadingEarlier: '이전 메시지를 불러오는 중…', chatEarlierFailed: '이전 메시지를 불러오지 못했어요. 다시 시도해 주세요.', chatHistoryLimit: '이 부분의 기록이 너무 커서 불러올 수 없어요. 터미널에서 확인해 주세요.',
   needsYou: '응답 필요', done: '완료', working: '작업 중', idle: '대기 중', unknown: '알 수 없음', pinned: '고정됨', pinToTop: '맨 위에 고정', unpin: '고정 해제', dragHint: '원하는 위치로 끌어다 놓으세요', moveUp: '위로 이동', moveDown: '아래로 이동',
   notConnected: '연결 안 됨', notConnectedLower: '연결 안 됨', connecting: '연결 중…', reconnecting: '다시 연결 중…',
   lastUpdatedNow: '방금 업데이트됨', lastUpdated: '{age} 전에 업데이트됨',

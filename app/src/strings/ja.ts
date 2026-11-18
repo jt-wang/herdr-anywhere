@@ -2,6 +2,7 @@
 import type { Table } from './index.ts'
 
 export const ja: Table = {
+  chatEarlier: '前のメッセージを読み込む', chatLoadingEarlier: '前のメッセージを読み込んでいます…', chatEarlierFailed: '前のメッセージを読み込めませんでした。もう一度お試しください。', chatHistoryLimit: 'この部分の記録は大きすぎて読み込めません。ターミナルで確認してください。',
   needsYou: '対応待ち', done: '完了', working: '実行中', idle: '待機中', unknown: '不明', pinned: 'ピン留め', pinToTop: '先頭にピン留め', unpin: 'ピン留めを外す', dragHint: '置きたい位置までドラッグして指を離す', moveUp: '上へ移動', moveDown: '下へ移動',
   notConnected: '未接続', notConnectedLower: '未接続', connecting: '接続中…', reconnecting: '再接続中…',
   lastUpdatedNow: 'たった今更新', lastUpdated: '{age}前に更新',

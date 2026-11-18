@@ -42,15 +42,16 @@ export function ConnBanner(props: { store: Store }) {
   // (pair --url) gives no command: the address the phone uses, to start it there as it was set up.
   const toDo = () => why() === 'no-answer' || why() === 'refused'
   const atAddress = () => (why() === 'refused' && !s.restart?.command ? s.restart?.address ?? '' : '')
-  const down = () => { rev(); const c = s.conn.get(); return c === 'reconnecting' || c === 'failed' }
+  const connecting = () => { rev(); return s.conn.get() === 'connecting' }
+  const down = () => { rev(); const c = s.conn.get(); return c === 'connecting' || c === 'reconnecting' || c === 'failed' }
   const age = () => { rev(); tick(); const ms = s.staleFor(); return ms === undefined ? '' : ms < 60000 ? t('lastUpdatedNow') : t('lastUpdated', { age: duration(ms) }) }
   return (
     <If when={down()}>
       <View testID="conn-banner" class="flex-row gap-2 px-4 py-2 bg-popover border-b border-border">
         <View class="w-1.5 h-1.5 mt-[7px] rounded-full bg-chart-2" />
         <View class="flex-1 gap-[1px]">
-          <Text class="text-[12.5px] text-foreground">{atAddress() ? t('lostRefusedAt', { address: atAddress() }) : error() || t('notConnected')}</Text>
-          <If when={toDo()}>
+          <Text class="text-[12.5px] text-foreground">{connecting() ? t('connecting') : atAddress() ? t('lostRefusedAt', { address: atAddress() }) : error() || t('notConnected')}</Text>
+          <If when={!connecting() && toDo()}>
             <View class="mt-1 flex-row items-center gap-2">
               <If when={s.restart?.command} else={<View class="flex-1" />}>
                 <Text selectable testID="conn-command" class="flex-1 text-[12.5px] font-mono text-foreground">{s.restart?.command}</Text>

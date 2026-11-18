@@ -5,11 +5,13 @@
 // itself). The throw is in a timer of its own: one in a promise's callback would be a rejection, which nsh only logs.
 import './ios-e2e.tsx'
 import { PAIR } from './e2e/pair.ts'
+import { diag } from './src/diag.ts'
 
 setTimeout(() => {
   void fetch(new URL(PAIR).origin + '/hm-e2e/throwing')
     .catch(() => {})
     .finally(() => setTimeout(() => {
+      diag('firsttap', { step: 'timer-throw-before', time: String(Date.now()) });
       throw new Error('hm-e2e: an error nothing catches')
     }, 0))
 }, 10_000)

@@ -7,7 +7,7 @@ final class OnError: XCTestCase {
     let env = ProcessInfo.processInfo.environment
     let space = env["SPACE"] ?? "sperror", out = env["OUT"] ?? "/tmp/onerror.txt"
     var lines: [String] = []
-    func note(_ s: String) { lines.append(s); try? (lines.joined(separator: "\n") + "\n").write(toFile: out, atomically: true, encoding: .utf8) }
+    func note(_ s: String) { lines.append("\(Date().timeIntervalSince1970) \(s)"); try? (lines.joined(separator: "\n") + "\n").write(toFile: out, atomically: true, encoding: .utf8) }
     let app = XCUIApplication(bundleIdentifier: "io.jingtao.herdranywhere")
     // Read before activate(), which would start a crashed app again.
     let running = app.state != .notRunning
@@ -24,11 +24,13 @@ final class OnError: XCTestCase {
     sleep(5)
     let term = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'terminal-'")).firstMatch
     let t0 = Date()
+    note("first tap before")
     tile.tap()
+    note("first tap returned")
     if term.waitForExistence(timeout: 20) { note("tap: terminal after \(Int(Date().timeIntervalSince(t0) * 1000)) ms"); return }
     // No terminal in 20 s: one that comes in the next 20 s came late; else a second tap tells a lost tap from none.
     let late = term.waitForExistence(timeout: 20)
-    let second = !late && tile.exists && { tile.tap(); return term.waitForExistence(timeout: 20) }()
+    let second = !late && tile.exists && { note("second tap before"); tile.tap(); note("second tap returned"); return term.waitForExistence(timeout: 20) }()
     let what = late ? "came late (\(Int(Date().timeIntervalSince(t0) * 1000)) ms)"
       : second ? "lost: a second tap opened it" : "none: a second tap opened nothing either"
     note("tap: no terminal in 20 s; \(what); app running: \(app.state != .notRunning)")

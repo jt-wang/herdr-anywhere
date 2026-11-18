@@ -341,13 +341,29 @@ func (r *Reader) parse(path string) ([]chat.Turn, error) {
 	if err != nil {
 		return nil, err
 	}
+	out, err := r.parseWindow(path, off, -1, from0)
+	if len(out) > chat.MaxTurns {
+		out = out[len(out)-chat.MaxTurns:]
+	}
+	return out, err
+}
+
+func (r *Reader) Before(path, first string) (string, error) { return chat.FileBefore(path, first) }
+
+func (r *Reader) History(path, before string) (chat.HistoryPage, error) {
+	return chat.FileHistory(path, before, isPrompt, func(off, end int64) ([]chat.Turn, error) {
+		return r.parseWindow(path, off, end, off == 0)
+	})
+}
+
+func (r *Reader) parseWindow(path string, off, end int64, from0 bool) ([]chat.Turn, error) {
 	var out []chat.Turn
 	var cur *building
 	if !from0 {
 		cur = &building{t: chat.Turn{ID: "earlier", From: "you", End: "open"}, asked: map[string]*chat.Ask{}, head: true}
 	}
 	var rerr error
-	for raw := range chat.Lines(path, off, &rerr) {
+	for raw := range chat.LinesUntil(path, off, end, &rerr) {
 		l, err := parse(raw)
 		if err != nil {
 			return nil, err
@@ -511,9 +527,6 @@ func (r *Reader) parse(path string) ([]chat.Turn, error) {
 	}
 	if cur != nil && !(cur.head && len(cur.t.Steps) == 0 && len(cur.texts) == 0) {
 		out = append(out, cur.finish())
-	}
-	if len(out) > chat.MaxTurns {
-		out = out[len(out)-chat.MaxTurns:]
 	}
 	return out, nil
 }

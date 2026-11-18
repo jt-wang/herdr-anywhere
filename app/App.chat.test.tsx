@@ -590,3 +590,42 @@ test('an open chat view whose pane stops being an agent says why for the diagnos
   expect(app.count('id:chat-view')).toBe(0)
   expect(diags(app)).toEqual(['chat-closed addr=t1 agent=false program=program chat=true'])
 })
+
+test('older pages extend a long chat, survive polling and offline retries, and clear on a new session', async () => {
+  const history = Array.from({ length: 65 }, (_, n) => ({ id: `orchard-${n + 1}`, from: 'you',
+    said: `Inspect orchard row ${n + 1}`, reply: `Row ${n + 1} is healthy.`, end: 'done', steps: [] }))
+  const latest = { chat: true, session: 'orchard', before: 'middle', turns: history.slice(35), pages: {
+    middle: { chat: true, session: 'orchard', before: 'start', turns: history.slice(5, 35) },
+    start: { chat: true, session: 'orchard', turns: history.slice(0, 5) },
+  } }
+  const app = await pane({ status: 'working', chat: JSON.stringify(latest) })
+  await app.press('id:show-chat')
+  await app.waitFor('id:reply-orchard-65')
+  expect(app.count('id:reply-orchard-1')).toBe(0)
+  await app.scroll('id:chat-scroll', -100000)
+  await app.press('id:chat-earlier')
+  await app.waitFor('id:reply-orchard-6')
+  await app.clock.runFor(3200)
+  expect(app.count('id:reply-orchard-6')).toBe(1)
+  expect(app.count('id:reply-orchard-65')).toBe(1)
+  await app.scroll('id:chat-scroll', -100000)
+  await app.host.send('fake.chat', { offline: true })
+  await app.press('id:chat-earlier')
+  await app.waitFor('id:chat-earlier-error')
+  expect(app.count('id:reply-orchard-6')).toBe(1)
+  await app.host.send('fake.chat', latest)
+  await app.press('id:chat-earlier')
+  await app.waitFor('id:reply-orchard-1')
+  expect(app.count('id:chat-earlier')).toBe(0)
+  await app.clock.runFor(3200)
+  expect(app.count('id:reply-orchard-1')).toBe(1)
+  expect(app.count('id:reply-orchard-65')).toBe(1)
+  const fetched = asks(app).filter((x) => x.includes('?before='))
+  expect(fetched.map((x) => x.split('?')[1])).toEqual(['before=middle', 'before=start', 'before=start'])
+  await app.host.send('fake.chat', { chat: true, session: 'new-orchard', turns: [
+    { ...history[0], id: 'new-row', said: 'A different session', reply: 'A fresh orchard.' },
+  ] })
+  await pollUntil(app, 'A fresh orchard.')
+  expect(app.count('id:reply-orchard-1')).toBe(0)
+  expect(app.count('id:reply-orchard-65')).toBe(0)
+})
