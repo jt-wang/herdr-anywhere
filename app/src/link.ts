@@ -85,6 +85,8 @@ export async function pairThrough(tunnel: Tunnel, invite: string, device: string
 export type LinkerIO = {
   load: (k: string) => Promise<string | null>
   save: (k: string, v: string) => void
+  /** Awaitable storage for the outbox: it must be saved before submitting text. */
+  write?: (k: string, v: string) => Promise<void>
   remove: (k: string) => void
   socket?: (url: string, enc: Enc) => Pipe
   tunnel?: Tunnel
@@ -96,6 +98,7 @@ type Tunnelling = { opening: Promise<Opened>; open?: Opened }
 
 export class Linker {
   readonly link = new Signal<Link | null>(null)
+  private contentEpoch = 0
   /** The TailPocket tunnel every pipe uses, until its forwarder stops answering. */
   private tunnel?: Tunnelling
   constructor(private io: LinkerIO) {}
@@ -111,6 +114,8 @@ export class Linker {
 
   set(l: Link) {
     this.dropTunnel(this.tunnel)
+    const old = this.link.get()
+    if (old && (old.url !== l.url || old.token !== l.token)) this.clearContent()
     this.io.save('link', JSON.stringify(l))
     this.link.set(l)
   }
@@ -118,9 +123,34 @@ export class Linker {
   forget() {
     this.dropTunnel(this.tunnel)
     if (this.link.get()?.via === 'tailpocket') this.io.tunnel?.forget()
+    this.clearContent()
     this.io.remove('link')
     this.link.set(null)
   }
+
+  /** One content slot, bound to this pairing rather than a transient tunnel port. Old stores cannot write it after
+   *  forgetting or switching computers. Identity stays inside the value, never in storage key names. */
+  content() {
+    const link = this.link.get()!
+    const identity = JSON.stringify([link.url, link.token])
+    const epoch = this.contentEpoch
+    const current = () => { const l = this.link.get(); return epoch === this.contentEpoch && !!l && JSON.stringify([l.url, l.token]) === identity }
+    return {
+      load: async () => {
+        const text = await this.io.load('content')
+        if (!current() || !text) return null
+        try { const v = JSON.parse(text); return v.identity === identity ? v.value as string : null } catch { return null }
+      },
+      save: async (value: string) => {
+        if (!current()) return
+        const text = JSON.stringify({ identity, value })
+        if (this.io.write) await this.io.write('content', text)
+        else this.io.save('content', text)
+      },
+    }
+  }
+
+  private clearContent() { this.contentEpoch++; this.io.remove('content'); this.io.remove('sending') }
 
   /** A pipe to herdr-core through the companion; binary that does not get through moves the link to base64. */
   pipe(): Pipe {
@@ -129,6 +159,7 @@ export class Linker {
     const open = this.io.socket ?? ((url, enc) => new SocketPipe(url, enc))
     const outer: Pipe = { send: () => {}, close: () => {} }
     const closed = (r: string) => {
+      if (r === 'unpaired' && this.link.get() === l) this.clearContent()
       if (r === 'binary-unsupported' && l.enc === 'bin' && this.link.get() === l) this.set({ ...l, enc: 'b64' })
       outer.onClose?.(r)
     }

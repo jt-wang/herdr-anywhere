@@ -629,3 +629,36 @@ test('older pages extend a long chat, survive polling and offline retries, and c
   expect(app.count('id:reply-orchard-1')).toBe(0)
   expect(app.count('id:reply-orchard-65')).toBe(0)
 })
+
+test('cached chat survives terminal switches and an offline cold launch, then yields to a new remote session', async () => {
+  const recorded = { chat: true, session: 'orchard-cache', turns }
+  const app = await pane({ chat: JSON.stringify(recorded) })
+  await app.press('id:show-chat')
+  await app.waitFor('id:reply-u1')
+  await app.host.send('fake.chat', { offline: true })
+  await app.press('id:show-terminal')
+  await app.press('id:show-chat')
+  await app.clock.runFor(100)
+  expect(app.count('id:reply-u1')).toBe(1)
+  expect(app.count('id:chat-offline')).toBe(1)
+  const content = app.storage()['fake-content']
+  expect(!!content).toBe(true)
+  const cold = await open('./fixtures/fake.tsx', { host: { params: {
+    scene: 'companion-off', content, chat: JSON.stringify({ offline: true }),
+  } }, clock: {} })
+  await cold.clock.runFor(100)
+  expect(cold.count('id:space-sp1')).toBe(1)
+  await cold.press('id:space-sp1')
+  await cold.press('id:show-chat')
+  await cold.clock.runFor(100)
+  expect(cold.count('id:reply-u1')).toBe(1)
+  expect(cold.count('id:chat-offline')).toBe(1)
+  // Returning online must replace the old conversation, not combine two sessions.
+  await app.host.send('fake.chat', { chat: true, session: 'new-grove', turns: [
+    { ...turns[0], id: 'new-grove', reply: 'A new grove.' },
+  ] })
+  await app.clock.runFor(10000)
+  expect(app.count('id:reply-u1')).toBe(0)
+  expect(app.count('id:reply-new-grove')).toBe(1)
+  expect(app.count('id:chat-offline')).toBe(0)
+})

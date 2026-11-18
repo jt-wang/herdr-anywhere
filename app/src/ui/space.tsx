@@ -155,12 +155,13 @@ function PhoneSpace(props: { store: Store; spaceId: string; tab: Tab; actions: S
     if (moved) untracked(() => {
       // An open view closed with no tap: what the pane was then (src/diag.ts).
       if (!key && chat.on() && chat.avail()) diag('chat-closed', { addr: a ?? '', agent: String(!!a && s.isAgent(a)), program: a ? s.program(a).key : '', chat: String(!!s.chat) })
-      chat.on.set(s.chatFirst.get()); chat.avail.set(false)
+      chat.on.set(s.chatFirst.get()); chat.avail.set(!!key && !!s.cachedChat(a!)?.chat)
     })
     if (!key) return
     void s.chat!.get(a!).then((r) => {
       if (asked !== key) return
       if (!r.chat && untracked(() => chat.on() && chat.avail())) diag('chat-gone', { addr: a!, agent: String(s.isAgent(a)), program: s.program(a).key })
+      if (!s.cachedChat(a!) || !r.chat || (r.unknown && r.unknown !== 'behind')) s.rememberChat(a!, r)
       chat.avail.set(r.chat)
     }, () => {})
   })

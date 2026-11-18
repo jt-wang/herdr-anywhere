@@ -20,6 +20,7 @@ import type { Step } from './model/ask.ts'
 import { spaceMarks } from './model/marks.ts'
 import { KittyImages } from './model/kitty.ts'
 import type { ChatApi } from './model/chat.ts'
+import { Content, type ContentIO, type CachedChat } from './content.ts'
 import { diag } from './diag.ts'
 
 function connectionErrorName(error: unknown): string {
@@ -52,6 +53,8 @@ export type StoreIO = {
   /** Keeps this screen's view (focus, zoom, seen) across launches. */
   load?: (key: string) => Promise<string | null>
   save?: (key: string, value: string) => void
+  /** Pairing-scoped content, separate from the older phone-wide view preferences. */
+  content?: ContentIO
 }
 
 /** A send from the input box unanswered this long is told apart: herdr-core holding it, or a slow line. herdr-core 0.1.20
@@ -157,7 +160,13 @@ export class Store {
   showNames: () => boolean = () => true
 
   private hc?: HcClient
-  private io: Required<Omit<StoreIO, 'load' | 'save' | 'callTimeoutMs' | 'slowSendMs'>> & Pick<StoreIO, 'load' | 'save' | 'callTimeoutMs' | 'slowSendMs'>
+  private io: Required<Omit<StoreIO, 'load' | 'save' | 'content' | 'callTimeoutMs' | 'slowSendMs'>> & Pick<StoreIO, 'load' | 'save' | 'content' | 'callTimeoutMs' | 'slowSendMs'>
+  private content: Content
+  /** The restored layout is display-only until a complete fresh snapshot replaces it. */
+  private restored = false
+  private contentLoaded = false
+  private restoringEvents?: any[]
+  private applyingSnapshot = false
   private loop?: ReturnType<typeof setInterval>
   private machineLoop?: ReturnType<typeof setInterval>
   private quietLoop?: ReturnType<typeof setInterval>
@@ -189,6 +198,7 @@ export class Store {
   private menus = new Map<string, Menu | undefined>()
 
   constructor(io: StoreIO) {
+    this.content = new Content(io.content)
     this.io = {
       setInterval: globalThis.setInterval.bind(globalThis), clearInterval: globalThis.clearInterval.bind(globalThis),
       setTimeout: globalThis.setTimeout.bind(globalThis), now: () => Date.now(), tunnelled: () => false, ...io,
@@ -206,6 +216,24 @@ export class Store {
     diag('connection-connect', { attempt: String(this.attempt), step: 'start' })
     this.conn.set(this.retry ? 'reconnecting' : 'connecting')
     try {
+      if (!this.contentLoaded) {
+        this.contentLoaded = true
+        await this.content.load()
+        const home = this.content.home
+        if (home) {
+          for (const [m, doc] of home.docs) replaceDoc(doc, this.model, m ?? undefined)
+          applyView(home.view, this.model)
+          this.model.folderInfo = new Map(home.folders)
+          this.terms.snapshot(-1, home.terms)
+          this.home = home.home
+          this.syncedAt = home.at
+          this.restored = true
+        }
+        this.pending.set(this.content.pending)
+        this.sending.set(this.content.sending.map((s) => ({ ...s, failed: true })))
+        for (const s of this.content.sending) this.toast({ title: tr('maybeNotSent'), body: tr('sendClosed'), level: 'error', action: { terminal: s.address } })
+        this.rev.set(this.rev.get() + 1)
+      }
       if (!this.savedView && this.io.load) {
         const v = await this.io.load('view')
         if (v) try { this.savedView = JSON.parse(v) } catch {}
@@ -221,10 +249,12 @@ export class Store {
         // Sends the app closed on, killed or swiped away while herdr-core held them: herdr-core dropped them with their
         // sender. Their text goes back to the input box, which says so.
         let left: Sending[] = []
-        try { left = JSON.parse((await this.io.load('sending')) ?? '[]') } catch {}
+        // New outboxes are pairing-scoped; only installations without one use the legacy send recovery.
+        if (!this.content.present) try { left = JSON.parse((await this.io.load('sending')) ?? '[]') } catch {}
         if (Array.isArray(left) && left.length) {
           this.sending.set(left.map((x) => ({ address: String(x.address), text: String(x.text), failed: true })))
           for (const x of left) this.toast({ title: tr('maybeNotSent'), body: tr('sendClosed'), level: 'error', action: { terminal: String(x.address) } })
+          if (this.io.content) { await this.keepSending(); this.io.save?.('sending', '[]') }
         }
       }
       this.agentList.onPersist = () => {
@@ -239,12 +269,40 @@ export class Store {
       diag('connection-connect', { attempt: String(this.attempt), step: 'hello-after' })
       this.opened = true
       diag('connection-connect', { attempt: String(this.attempt), step: 'subscribe-before' })
+      if (this.restored) this.restoringEvents = []
       const snap = await hc.subscribe((m) => this.event(m))
       diag('connection-connect', { attempt: String(this.attempt), step: 'subscribe-after' })
-      this.terms.snapshot(snap.seq, snap.terminals)
+      if (!this.restored) this.terms.snapshot(snap.seq, snap.terminals)
       await this.readEnv()
       await this.refreshMachines()
-      await Promise.all(this.machineNames().map((m) => this.readDoc(m)))
+      if (this.restored) {
+        // Fetch before touching the read model. Unavailable machines retain their cached spaces with unavailable
+        // slots: reconcile and doc.set already exclude them. An authoritative empty layout replaces the cache.
+        const docs = await Promise.all(this.machineNames().map(async (m) => {
+          try { return { m, d: await this.call<{ value: unknown; version: number }>('doc.get', { name: 'herdr-app', ...(m ? { on: m } : {}) }) } }
+          catch (e) { return { m, error: explain(e) } }
+        }))
+        if (this.hc !== hc) throw new HcError(tr('notConnected'))
+        this.savedView = captureView(this.model)
+        this.applyingSnapshot = true
+        this.model.spaces = this.model.spaces.filter((s) => docs.some((r) => r.m === s.machine && !r.d))
+        this.model.agents.clear()
+        this.model.folderInfo.clear()
+        this.slots.clear()
+        this.terms.snapshot(snap.seq, snap.terminals)
+        for (const { m, d, error } of docs) {
+          if (d) await this.readDoc(m, d)
+          else this.slots.set(m ?? '', { version: 0, last: '', available: false, loaded: true, writing: false, error })
+        }
+        this.restored = false
+        this.applyingSnapshot = false
+        const events = this.restoringEvents ?? []
+        this.restoringEvents = undefined
+        for (const e of events) this.event(e)
+        this.bump()
+      } else {
+        await Promise.all(this.machineNames().map((m) => this.readDoc(m)))
+      }
       this.retry = 0
       this.firstSync = true
       this.moving.clear()
@@ -252,6 +310,8 @@ export class Store {
       this.placeRefused.clear()
       this.sync()
       this.conn.set('ready')
+      this.keepHome()
+      void this.flushPending()
       this.error.set('')
       this.lostWhy.set('')
       this.loop = this.io.setInterval(() => this.sync(), 500)
@@ -261,6 +321,7 @@ export class Store {
       void this.refreshInstalled(undefined)
       diag('connection-connect', { attempt: String(this.attempt), step: 'ready' })
     } catch (e: any) {
+      this.restoringEvents = undefined
       diag('connection-connect-catch', { attempt: String(this.attempt), name: connectionErrorName(e) })
       this.hc?.close()
       this.hc = undefined
@@ -330,6 +391,7 @@ export class Store {
       if (!this.wantConnected) { returned('not-wanted'); return }
       if (reason === 'unpaired') {
         this.wantConnected = false
+        this.content = new Content()
         mark('conn-before')
         this.conn.set('unpaired')
         mark('conn-after')
@@ -415,7 +477,7 @@ export class Store {
       for (const m of list) {
         const slot = this.slots.get(m.name)
         const up = m.state === undefined || m.state === 'connected'
-        if (!slot || (up && !slot.available)) void this.readDoc(m.name)
+        if (!this.restored && (!slot || (up && !slot.available))) void this.readDoc(m.name)
       }
       if (this.machineNames().join(',') !== before) this.bump()
     } catch {}
@@ -428,6 +490,7 @@ export class Store {
   // ---- events and documents ---------------------------------------------------------------------
 
   private event(msg: any) {
+    if (this.restored) { this.restoringEvents?.push(msg); return }
     const r = this.terms.apply(msg)
     if (r.type === 'labels' && r.terminal && this.moving.delete(r.terminal)) r.changed = true
     if (r.rereadDocs) for (const m of this.machineNames()) void this.readDoc(m)
@@ -454,10 +517,11 @@ export class Store {
     })
   }
 
-  async readDoc(machine: string | undefined) {
+  async readDoc(machine: string | undefined, fetched?: { value: unknown; version: number }) {
+    if (this.restored && !fetched) return
     const key = machine ?? ''
     try {
-      const d = await this.call<{ value: unknown; version: number }>('doc.get', machine ? { name: 'herdr-app', on: machine } : { name: 'herdr-app' })
+      const d = fetched ?? await this.call<{ value: unknown; version: number }>('doc.get', machine ? { name: 'herdr-app', on: machine } : { name: 'herdr-app' })
       const slot = this.slots.get(key)
       if (slot && slot.writing) return
       if (slot && slot.loaded && slot.version >= d.version) return
@@ -546,7 +610,7 @@ export class Store {
   // ---- the 500 ms loop: status, seen, alerts, reconcile, flush -----------------------------------
 
   sync() {
-    if (!this.hc) return
+    if (!this.hc || this.restored) return
     this.syncedAt = this.io.now()
     const live = new Map(this.terms.list().filter((t) => t.state === 'live').map((t) => [t.address, t]))
     const visible = new Set(this.model.visibleAddresses())
@@ -713,8 +777,38 @@ export class Store {
   }
 
   private bump() {
+    if (this.applyingSnapshot) return
     this.io.save?.('view', JSON.stringify(captureView(this.model)))
+    this.keepHome()
     this.rev.set(this.rev.get() + 1)
+  }
+
+  private keepHome() {
+    if (!this.io.content || this.conn.get() !== 'ready' || this.restored || this.machineNames().some((m) => !this.slots.get(m ?? '')?.available)) return
+    this.content.home = {
+      at: this.syncedAt,
+      docs: this.machineNames().map((m) => [m ?? null, captureDoc(this.model, m)]),
+      // No terminal bytes, records, images or command output: only the metadata the home rows use.
+      terms: this.terms.list().map(({ address, name, state, argv, cwd, labels, parent, title, status, reported, foreground }) =>
+        ({ address, name, state, argv, cwd, labels, parent, title, status, reported, foreground })),
+      folders: [...this.model.folderInfo], view: captureView(this.model), home: this.home,
+    }
+    void this.saveContent().catch((e) => this.cacheError(e))
+  }
+
+  private saveContent() {
+    this.content.pending = this.pending.get()
+    this.content.sending = this.sending.get().map(({ address, text }) => ({ address, text }))
+    return this.content.save()
+  }
+
+  private cacheError(e: unknown) { this.toast({ title: String(e instanceof Error ? e.message : e), level: 'error' }) }
+
+  cachedChat(address: string) { return this.content.chats.get(address) }
+
+  rememberChat(address: string, answer: CachedChat) {
+    this.content.remember(address, answer)
+    void this.saveContent().catch((e) => this.cacheError(e))
   }
 
   toast(t: Omit<Toast, 'id'>) {
@@ -1048,11 +1142,16 @@ export class Store {
   async compose(addr: string, text: string) {
     // One at a time: herdr-core runs each send it is given, so a second while the first is held would arrive too.
     if (this.sending.get().some((x) => x.address === addr && !x.failed)) return
-    if (this.conn.get() !== 'ready' || !this.hc) { this.pending.set([...this.pending.get(), { address: addr, text }]); return }
+    if (this.conn.get() !== 'ready' || !this.hc) {
+      const draft = { address: addr, text }
+      this.pending.set([...this.pending.get(), draft])
+      try { await this.saveContent() }
+      catch (e) { this.pending.set(this.pending.get().filter((x) => x !== draft)); throw e }
+      return
+    }
     const mark = (patch: Partial<Sending> | null) => this.sending.set(this.sending.get().flatMap((x) =>
       x.address !== addr ? [x] : patch ? [{ ...x, ...patch }] : []))
     this.sending.set([...this.sending.get().filter((x) => x.address !== addr), { address: addr, text }])
-    this.keepSending()
     const slow = this.io.slowSendMs ?? SLOW_SEND_MS
     let going = true
     const ask = () => {
@@ -1063,10 +1162,11 @@ export class Store {
     }
     let timer = setTimeout(ask, slow)
     try {
+      await this.keepSending()
       await this.call('terminal.send', { terminal: addr, text, force: true }, { timeoutMs: 0 })
       going = false
       mark(null)
-      this.keepSending()
+      void this.keepSending().catch((e) => this.cacheError(e))
     } catch (e) {
       going = false
       mark({ failed: true })
@@ -1075,10 +1175,17 @@ export class Store {
   }
 
   /** The input box has taken back the text of a send that failed. */
-  forget(addr: string) { this.sending.set(this.sending.get().filter((x) => x.address !== addr)); this.keepSending() }
+  forget(addr: string) {
+    this.sending.set(this.sending.get().filter((x) => x.address !== addr))
+    void this.keepSending().catch((e) => this.cacheError(e))
+  }
 
   /** What is sending, kept across launches: the input box gets back what the app closed on. */
-  private keepSending() { this.io.save?.('sending', JSON.stringify(this.sending.get().map(({ address, text }) => ({ address, text })))) }
+  private keepSending() {
+    if (this.io.content) return this.saveContent()
+    this.io.save?.('sending', JSON.stringify(this.sending.get().map(({ address, text }) => ({ address, text }))))
+    return Promise.resolve()
+  }
 
   /** Sends what the composer attaches to the computer (link.ts); the screens that start the store set it. */
   files?: FileApi
@@ -1104,8 +1211,9 @@ export class Store {
         // Off the queue first: when the line goes before the answer comes, the computer may have it, and sending it
         // again would run it twice.
         const first = this.pending.get()[0]
+        if (this.sending.get().some((x) => x.address === first.address)) break
         this.pending.set(this.pending.get().slice(1))
-        await this.call('terminal.send', { terminal: first.address, text: first.text, force: true }, { timeoutMs: 0 })
+        await this.compose(first.address, first.text)
           .catch(() => this.toast({ title: tr('sendUnsure', { text: first.text }), level: 'error' }))
       }
     } finally { this.flushing = false }

@@ -18,14 +18,15 @@ const STEP_GLYPH: Record<string, string> = { read: 'file-text', edit: 'square-pe
 
 export function ChatView(props: { store: Store; address: string; status: () => string | undefined; back: () => void }) {
   const s = props.store
-  const answer = signal<ChatAnswer | undefined>(undefined)
-  const offline = signal(false)
-  const before = signal<string | undefined>(undefined)
+  const cached = s.cachedChat(props.address)
+  const answer = signal<ChatAnswer | undefined>(cached)
+  const offline = signal(s.conn.get() !== 'ready')
+  const before = signal<string | undefined>(cached?.before)
   const loadingEarlier = signal(false)
   const earlierError = signal('')
-  let session: string | undefined
-  let historyLoaded = false
-  let lastTurns: ChatTurn[] | undefined
+  let session = cached?.session
+  let historyLoaded = !!cached?.historyLoaded
+  let lastTurns = cached?.turns
   const merge = (older: ChatTurn[], newer: ChatTurn[]) => [...new Map([...older, ...newer].map((x) => [x.id, x])).values()]
   let alive = true
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -47,7 +48,10 @@ export function ChatView(props: { store: Store; address: string; status: () => s
       }
       if (!historyLoaded) before.set(a.before)
       if (a.turns) lastTurns = historyLoaded ? merge(lastTurns ?? [], a.turns) : a.turns
+      if (!a.turns && a.unknown !== 'behind') lastTurns = undefined
       answer.set(a.turns ? { ...a, turns: lastTurns } : a)
+      s.rememberChat(props.address, { ...answer()!, before: before(), historyLoaded,
+        ...(a.unknown === 'behind' && lastTurns ? { turns: lastTurns } : {}) })
       offline.set(false)
     } catch {
       if (alive && n >= shown) { shown = n; offline.set(true) }
@@ -99,6 +103,7 @@ export function ChatView(props: { store: Store; address: string; status: () => s
         lastTurns = merge(a.turns, lastTurns ?? [])
         answer.set({ ...answer()!, turns: lastTurns })
       }
+      s.rememberChat(props.address, { ...answer()!, before: before(), historyLoaded })
     } catch (e) {
       if (alive && session === fromSession) {
         earlierError.set(e instanceof Error ? e.message : 'history-unavailable')
