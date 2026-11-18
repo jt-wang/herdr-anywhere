@@ -122,26 +122,29 @@ jobs:
           previous = temp / 'android-previous/Herdr-Anywhere.apk'
           config = json.loads(Path('app/nsh.json').read_text())
 
+          class SigningError(Exception):
+              pass
+
           def tool(args):
               result = subprocess.run([str(arg) for arg in args], env=child_env,
                                       capture_output=True, timeout=180)
               if result.returncode:
                   # Signing tool diagnostics may include credential values. Never print argv or output.
-                  raise SystemExit('Android verification/signing tool failed')
+                  raise SigningError('tool exit ' + str(result.returncode))
               return result.stdout.decode('utf-8')
 
           def certificate(path):
               text = tool([tools / 'apksigner', 'verify', '--verbose', '--print-certs', path])
               certs = re.findall(r'^Signer #[0-9]+ certificate SHA-256 digest: ([0-9a-fA-F]{64})$', text, re.M)
               if len(certs) != 1:
-                  raise SystemExit('Exactly one verified APK signer required')
+                  raise SigningError('exactly one verified APK signer required')
               return certs[0].lower()
 
           def check_identity(path):
               text = tool([tools / 'aapt', 'dump', 'badging', path])
               match = re.search(r"^package: name='([^']+)' versionCode='([0-9]+)' versionName='([^']+)'", text, re.M)
               if not match or match.groups() != (config['id'], str(config['build']), config['version']):
-                  raise SystemExit('APK identity/version/build differs from app/nsh.json')
+                  raise SigningError('APK identity/version/build differs from app/nsh.json')
 
           def interrupted(signum, frame):
               raise SystemExit('Signing interrupted')
@@ -149,9 +152,12 @@ jobs:
           for sig in (signal.SIGTERM, signal.SIGINT):
               signal.signal(sig, interrupted)
           os.umask(0o077)
+          stage = 'verify previous certificate'
           try:
               old_cert = certificate(previous)
+              stage = 'verify built APK identity'
               check_identity(Path('app/android/build/Herdr.apk'))
+              stage = 'decode signing configuration'
               with tempfile.TemporaryDirectory(prefix='android-sign-', dir=temp) as directory:
                   directory = Path(directory)
                   keystore, password, alias = (directory / name for name in ('release.p12', 'password', 'alias'))
@@ -161,13 +167,17 @@ jobs:
                   alias.write_text(secrets['ANDROID_RELEASE_KEY_ALIAS'])
                   secrets.clear()
                   # apksigner replaces the build's debug signature; no Gradle/nsh/build script gets the key.
+                  stage = 'sign APK'
                   tool([tools / 'apksigner', 'sign', '--ks', keystore, '--ks-key-alias', alias.read_text(),
                         '--ks-pass', 'file:' + str(password), '--key-pass', 'file:' + str(password),
                         '--v4-signing-enabled', 'false', '--out', apk, 'app/android/build/Herdr.apk'])
+              stage = 'verify signed certificate'
               new_cert = certificate(apk)
               if new_cert != old_cert:
-                  raise SystemExit('Release signer does not match the previous stable APK')
+                  raise SigningError('signer does not match the previous stable APK')
+              stage = 'verify signed APK identity'
               check_identity(apk)
+              stage = 'verify APK alignment'
               tool([tools / 'zipalign', '-c', '-P', '16', '4', apk])
               # No .idsig, keystore, debug APK, logs, or build directories are delivered.
               receipt = {
@@ -180,10 +190,12 @@ jobs:
                   'signer_matches_previous': True,
               }
               (output / 'receipt.json').write_text(json.dumps(receipt, indent=2) + '\n')
-          except BaseException:
+          except BaseException as exc:
               apk.unlink(missing_ok=True)
               (output / 'receipt.json').unlink(missing_ok=True)
-              raise SystemExit('Android release signing/verification failed; no deliverable produced') from None
+              reason = str(exc) if isinstance(exc, SigningError) else type(exc).__name__
+              raise SystemExit('Android signing failed at ' + stage + ': ' + reason
+                               + '; no deliverable produced') from None
           PY_SIGN
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
