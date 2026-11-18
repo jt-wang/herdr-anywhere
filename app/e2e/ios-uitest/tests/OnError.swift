@@ -24,7 +24,9 @@ final class OnError: XCTestCase {
     sleep(5)
     let term = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'terminal-'")).firstMatch
     let t0 = Date()
+    note("tapping at \(t0.timeIntervalSince1970), frame \(tile.frame)")
     tile.tap()
+    note("tap sent at \(Date().timeIntervalSince1970)")
     if term.waitForExistence(timeout: 20) { note("tap: terminal after \(Int(Date().timeIntervalSince(t0) * 1000)) ms"); return }
     // No terminal in 20 s: one that comes in the next 20 s came late; else a second tap tells a lost tap from none.
     let late = term.waitForExistence(timeout: 20)

@@ -18,6 +18,7 @@ id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$a
 port=7691
 while nc -z 127.0.0.1 "$port" 2>/dev/null; do port=$((port + 1)); done
 work=$(mktemp -d)
+touch_log_start=$(date '+%Y-%m-%d %H:%M:%S')
 (cd "$app/../companion" && go build -o "$work/herdr-anywhere" ./cmd/herdr-anywhere)
 run=$(mktemp -d /tmp/hmXXXX)
 mkdir -p "$work/sam/src/acme-api" "$work/state" "$work/config" "$work/data"
@@ -25,6 +26,26 @@ mkdir -p "$work/sam/src/acme-api" "$work/state" "$work/config" "$work/data"
 : > "$work/started" # what e2e/ios-failure-logs.sh keeps, and the crash reports named, are from after this
 placeholder=$(cat "$app/e2e/pair.ts")
 cleanup() {
+  status=$?
+  if [ -n "$shot" ]; then
+    evidence="${shot%.png}-evidence"
+    mkdir -p "$evidence" || status=1
+    cp "$work/serve.log" "$evidence/trace.log" || status=1
+    if [ -d "$work/uitest/result.xcresult" ]; then
+      cp "$work/onerror.txt" "$evidence/tap.txt" || status=1
+      cp "$work/uitest/test.log" "$evidence/xctest.log" || status=1
+      data=$(xcrun simctl get_app_container "$SIM_UDID" "$id" data) || data=""
+      cp "$data/Library/Caches/firsttap-native.txt" "$evidence/native.txt" || status=1
+      # Keep the bundle outside the failure export: ios-xcresult.sh tidies binary files out of its folder.
+      cp -R "$work/uitest/result.xcresult" "$evidence/raw.xcresult" || status=1
+      xcrun xcresulttool get test-results summary --path "$evidence/raw.xcresult" > "$evidence/summary.json" || status=1
+      # Untidied attachments let the upload check inspect media embedded in the original bundle too.
+      xcrun xcresulttool export attachments --path "$evidence/raw.xcresult" --output-path "$evidence/attachments" || status=1
+    fi
+    xcrun simctl spawn "$SIM_UDID" log show --info --debug --start "$touch_log_start" --style compact \
+      --predicate '(process == "backboardd" AND (subsystem == "com.apple.BackBoard" OR subsystem == "com.apple.iohid")) OR (process == "Herdr" AND subsystem == "com.apple.UIKit")' \
+      > "$evidence/touch-system.log" || status=1
+  fi
   [ -n "${serve_pid:-}" ] && kill "$serve_pid" 2>/dev/null
   # The same session the core was started in below, or `server stop` finds no core and leaves its holder running.
   HC_SESSION="hmioserr-$$" HC_SOCKET="" HOME="$work/sam" XDG_RUNTIME_DIR="$run" "$hc" server stop >/dev/null 2>&1 || true
@@ -33,7 +54,8 @@ cleanup() {
   # As ios-keyboard.sh and ios-tui-scroll.sh do after their XCUITest: left booted, the next suite's idb read the
   # accessibility tree empty while its screenshot showed the screen.
   xcrun simctl shutdown "$SIM_UDID" 2>/dev/null || true
-  autostart_guard_end || exit 1
+  autostart_guard_end || status=1
+  exit "$status"
 }
 # INT and TERM end the suite (a handler that only cleans up returns, and the script goes on); EXIT cleans up.
 trap cleanup EXIT; trap 'exit 130' INT; trap 'exit 143' TERM

@@ -557,7 +557,7 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
-      - run: app/e2e/ci/tools.sh core nsh zsh ios shots ${{ startsWith(matrix.key, 'edge') && 'video' || '' }}
+      - run: app/e2e/ci/tools.sh core nsh zsh ios shots ${{ (startsWith(matrix.key, 'edge') || startsWith(matrix.key, 'onerror')) && 'video' || '' }}
       - uses: ./.github/actions/nsh-ios
         with:
           xcode: ${{ (matrix.key == 'onerror27' || matrix.key == 'chat27' || matrix.key == 'menus27' || matrix.key == 'edge27') && '/Applications/Xcode_27.0.app' || '/Applications/Xcode_26.6.app' }}
@@ -670,7 +670,10 @@ jobs:
           mkdir -p "$OUT" "$RUNNER_TEMP/check"
           (cd companion && CGO_ENABLED=0 go build -buildvcs=false -o "$RUNNER_TEMP/check/herdr-anywhere" ./cmd/herdr-anywhere)
           app/e2e/ci-shots-check.sh --self-test "$RUNNER_TEMP/check/herdr-anywhere"
+          # Raw xcresults retain their original media: refuse the raw bundle if the privacy check had to mask it.
+          find "$OUT" -type f -path '*-evidence/attachments/*' -exec shasum -a 256 {} + > "$RUNNER_TEMP/raw-attachments.sha256"
           app/e2e/ci-shots-check.sh "$OUT"
+          if [ -s "$RUNNER_TEMP/raw-attachments.sha256" ]; then shasum -a 256 -c "$RUNNER_TEMP/raw-attachments.sha256"; fi
           # A failure folder's names are made fit for the upload; checked here, as one bad name loses the whole artifact.
           sh app/e2e/ios-xcresult.sh --self-test
           # The suites' "app:" lines are the app's own, not log stream's header that repeats the words.

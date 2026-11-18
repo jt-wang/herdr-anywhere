@@ -6,6 +6,10 @@
 import './ios-e2e.tsx'
 import { PAIR } from './e2e/pair.ts'
 
+;(globalThis as any).__tapTrace = (stage: string) => {
+  void fetch(new URL(PAIR).origin + '/hm-e2e/tap/' + stage + '/' + Date.now()).catch(() => {})
+}
+
 setTimeout(() => {
   void fetch(new URL(PAIR).origin + '/hm-e2e/throwing')
     .catch(() => {})
