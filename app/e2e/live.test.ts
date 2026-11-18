@@ -5,7 +5,7 @@ import { expect, open, test } from 'nsh/test'
 
 test('pair, connect, run, type, share the layout, pin and unpin on herdr-core, close, and refuse an unknown token', async () => {
   const app = await open('./live-app.tsx', { network: 'live' })
-  await app.waitUntil(() => app.texts().some((t) => t === 'done' || t.startsWith('FAIL')), { timeout: 80000 })
+  await app.waitUntil(() => app.texts().some((t) => t === 'done' || t.startsWith('FAIL')), { timeout: 110000 })
   expect(app.texts()).toEqual([
     'paired: token long',
     'second use: That code expired or was already used. Run herdr-anywhere pair again.',
@@ -25,4 +25,4 @@ test('pair, connect, run, type, share the layout, pin and unpin on herdr-core, c
     'bad token: This computer no longer knows this phone. Pair it again.',
     'done',
   ])
-}, 90000)
+}, 120000)

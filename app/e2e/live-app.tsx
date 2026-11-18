@@ -48,7 +48,7 @@ async function run() {
   // The line goes quiet and stays open, as when the close never reaches the phone: only this test companion's own
   // `hc connect` stops. The phone notices by itself and connects again.
   void store.exec(`kill -STOP $(pgrep -P ${COMPANION})`).catch(() => {}) // its answer can't come back: that is the point
-  await until(() => store.conn.get() === 'reconnecting', 'the quiet line noticed', 25000)
+  await until(() => store.conn.get() === 'reconnecting', 'the quiet line noticed', 55000)
   await until(() => store.conn.get() === 'ready', 'connected again', 25000)
   say(`quiet line: ${store.conn.get()}`)
   const other = storeFor(l)

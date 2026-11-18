@@ -583,7 +583,8 @@ export class Store {
       if (created.length) applyView(view, this.model)
       if (!slot?.loaded && this.savedView) applyView(this.savedView, this.model)
       this.slots.set(key, { version: d.version, last, available: true, loaded: true, writing: false })
-      if (created.length && JSON.stringify(captureDoc(this.model, machine)) !== last) this.schedule()
+      // Connecting already ends with sync. Later document changes need their own pass, not the slow fallback.
+      if (this.connected || created.length && JSON.stringify(captureDoc(this.model, machine)) !== last) this.schedule()
       this.bump()
     } catch (e: any) {
       const slot = this.slots.get(key)

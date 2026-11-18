@@ -456,6 +456,14 @@ test('a sub-agent kept as a tab more than once before keeps its first tab; the c
   expect(store.model.space('sp1')!.tabs.map((c) => c.id)).toEqual(['tb1', 'tb2'])
   expect(core.doc().spaces[0].tabs.map((c: any) => c.id)).toEqual(['tb1', 'tb2'])
   expect(core.calls.some((c) => c.method === 'terminal.kill')).toBe(false)
+  // Another screen can write an old duplicated layout after connection, without any terminal status changing.
+  const remote = JSON.parse(JSON.stringify(core.doc()))
+  remote.spaces[0].tabs.push(tab('tb3', 'p3'), tab('tb4', 'p4'))
+  core.writeDoc(remote)
+  await until(() => core.doc().spaces[0].tabs.length === 2)
+  expect(store.model.space('sp1')!.tabs.map((c) => c.id)).toEqual(['tb1', 'tb2'])
+  expect(core.doc().spaces[0].tabs.map((c: any) => c.id)).toEqual(['tb1', 'tb2'])
+  expect(core.terms.get(kid.address)!.state).toBe('live')
 })
 
 test('a computer that forgot this phone stops the retries and asks to pair again, connected or not', async () => {
