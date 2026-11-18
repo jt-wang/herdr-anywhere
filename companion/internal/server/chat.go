@@ -24,7 +24,19 @@ func (s *Server) chat(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, chat.Answer{})
 		return
 	}
-	writeJSON(w, http.StatusOK, s.cfg.Chat.Chat(r.PathValue("addr")))
+	a, err := s.cfg.Chat.ChatPage(r.PathValue("addr"), r.URL.Query().Get("before"))
+	switch {
+	case errors.Is(err, chat.ErrBadCursor):
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid-cursor"})
+	case errors.Is(err, chat.ErrCursor):
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "history-changed"})
+	case errors.Is(err, chat.ErrHistoryLimit):
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "history-limit"})
+	case err != nil:
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "history-unavailable"})
+	default:
+		writeJSON(w, http.StatusOK, a)
+	}
 }
 
 func (s *Server) chatStep(w http.ResponseWriter, r *http.Request) {

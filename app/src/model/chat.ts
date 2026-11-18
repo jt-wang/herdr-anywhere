@@ -30,7 +30,7 @@ export type ChatQuestion = { header?: string; text: string; multi?: boolean; opt
 /** `chat` false: no chat button. `unknown`: nothing sure to show, and why (the companion's chat.go lists them). */
 /** `setup`: with unknown "setup-needed" or "setup-not-loaded", the agent whose chat setup (ChatSetup) is missing or
  *  not yet used. */
-export type ChatAnswer = { chat: boolean; unknown?: string; setup?: string; turns?: ChatTurn[] }
+export type ChatAnswer = { chat: boolean; unknown?: string; setup?: string; turns?: ChatTurn[]; session?: string; before?: string }
 /** A small file some agents' chats need in the agent's own folder (companion/internal/chat/setup.go): the phone shows
  *  what the computer says of it, by agent, and knows no agent by name. `reload`: what to type in an agent already
  *  running for it to use the file. */
@@ -102,7 +102,7 @@ export function clockText(ms: number): string {
 }
 
 export type ChatApi = {
-  get(address: string): Promise<ChatAnswer>
+  get(address: string, before?: string): Promise<ChatAnswer>
   /** null: the step is gone (the agent moved to another session) or the computer doesn't know it. */
   step(address: string, id: string): Promise<ChatDetail | null>
   /** An image of a turn or a step as a data: URL; null when it is gone. */

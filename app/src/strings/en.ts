@@ -1,6 +1,7 @@
 // The app's words, the source the other languages follow (index.ts). `{name}` is filled in; a { one, other } picks by `n`.
 // Herdr desktop has no translations, so its English words (Needs you, Working, space, tab, pane) are what these say.
 export const en = {
+  chatEarlier: 'Load earlier messages', chatLoadingEarlier: 'Loading earlier messages…', chatEarlierFailed: 'Could not load earlier messages. Try again.', chatHistoryLimit: 'This part of the record is too large to load. Read it in the terminal.',
   // Status
   needsYou: 'Needs you', done: 'Done', working: 'Working', idle: 'Idle', unknown: 'Unknown', pinned: 'Pinned', pinToTop: 'Pin to the top', unpin: 'Unpin', dragHint: 'Drag to where you want it, then let go', moveUp: 'Move up', moveDown: 'Move down',
   // Connection
