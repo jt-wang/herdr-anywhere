@@ -53,6 +53,7 @@ export type Stream = {
   write(data: string | Uint8Array): void
   resize(cols: number, rows: number): void
   focus(on: boolean): void
+  pause(on: boolean): void
   detach(): void
 }
 
@@ -143,17 +144,28 @@ export class HcClient {
     const r = await this.call<{ channel: number; terminal: any }>('terminal.attach', params)
     const ch = r.channel
     let open = true
-    this.listen(ch, (kind, payload) => {
+    let paused = false
+    // Without credit, hc sends at most its remaining 256 KiB window. Keeping those bytes preserves split escape
+    // sequences; hc bounds its own backlog and replaces it with a repaint when the viewer falls too far behind.
+    let waiting: { kind: number; payload: Uint8Array }[] = []
+    const receive = (kind: number, payload: Uint8Array) => {
       if (!open) return
       if (kind === DATA) {
+        if (paused) { waiting.push({ kind, payload }); return }
         this.credit(ch, payload.length)
         on.data(payload)
       } else if (kind === CLOSE) {
+        const reason = payload.length ? JSON.parse(dec.decode(payload)) : { reason: 'detached' }
+        // A real disconnect must reach the session immediately so it can reattach; a program's exit follows its
+        // final output when we resume. Agent notifications use the independent events channel.
+        if (paused && reason.reason !== 'disconnected') { waiting.push({ kind, payload }); return }
         open = false
+        waiting = []
         this.channels.delete(ch)
-        on.close(payload.length ? JSON.parse(dec.decode(payload)) : { reason: 'detached' })
+        on.close(reason)
       }
-    })
+    }
+    this.listen(ch, receive)
     const self = this
     return {
       channel: ch,
@@ -167,9 +179,19 @@ export class HcClient {
       focus(on) {
         if (open) self.send(ch, FOCUS, new Uint8Array([on ? 1 : 0]))
       },
+      pause(on) {
+        if (!open || paused === on) return
+        paused = on
+        if (paused) return
+        const pending = waiting
+        waiting = []
+        for (const f of pending) receive(f.kind, f.payload)
+        self.sayCredits()
+      },
       detach() {
         if (!open) return
         open = false
+        waiting = []
         self.channels.delete(ch)
         self.send(ch, CLOSE, new Uint8Array(0))
       },

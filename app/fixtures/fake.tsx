@@ -33,6 +33,8 @@ const opened = scene.startsWith('link')
 const params = (host.params ?? {}) as Record<string, string | undefined>
 const paired = params.via === 'tailpocket' ? { url: 'tailpocket:', via: 'tailpocket' } : { url: params.url ?? 'http://192.0.2.10:7681' }
 const memory = new Map<string, string>(opened ? [] : [['link', JSON.stringify({ ...paired, token: 'synthetic-token', device: 'd1', name: 'studio', enc: 'bin' })]])
+// A prior process's persisted content, passed unchanged by cache restart tests.
+if (params.content) memory.set('content', params.content)
 // `opened`: how many times the app opened before (the question about checking for new versions waits for the second).
 // `prefs`: settings saved before, as JSON (`{"showAgentNames":false}`).
 if (params.opened || params.prefs) memory.set('prefs', JSON.stringify({ ...(params.prefs ? JSON.parse(params.prefs) : {}), ...(params.opened ? { opened: Number(params.opened) } : {}) }))
@@ -40,9 +42,11 @@ if (params.opened || params.prefs) memory.set('prefs', JSON.stringify({ ...(para
 if (scene === 'progress') memory.set('prefs', JSON.stringify({ opened: 2, progressFirst: true, ...(params.appearance ? { appearance: params.appearance } : {}), ...(params.prefs ? JSON.parse(params.prefs) : {}) }))
 // Saved settings, where a test reads them (`app.storage()['fake-prefs']`).
 const io = { load: async (k: string) => memory.get(k) ?? null, save: (k: string, v: string) => { memory.set(k, v); if (k === 'prefs') void Storage.setItem('fake-prefs', v) }, remove: (k: string) => void memory.delete(k) }
+const contentWrite = async (k: string, v: string) => { memory.set(k, v); await Storage.setItem('fake-content', v) }
 
 export const core = new FakeCore()
 core.echo = true
+setInterval(() => core.heartbeat(), 15_000)
 if (params.hold) core.holding.add(params.hold)
 ;(globalThis as any).__core = core
 const EDIT_MENU = CLAUDE_EDIT_MENU
@@ -423,10 +427,10 @@ function counted(store: Store) {
 
 mount(() => (
   <Root deps={{
-    linker: new Linker(params.via === 'tailpocket' ? { ...io, tunnel: fakeTunnel } : io),
+    linker: new Linker({ ...io, write: contentWrite, ...(params.via === 'tailpocket' ? { tunnel: fakeTunnel } : {}) }),
     opensSettings: params.open === 'settings',
     prefs: new PrefStore(io),
-    makeStore: (l) => tapPicture(counted(new Store({ pipe: pipe(l), tunnelled: () => l.link.get()?.via === 'tailpocket', slowSendMs: params.slowSendMs ? Number(params.slowSendMs) : undefined }))),
+    makeStore: (l) => tapPicture(counted(new Store({ pipe: pipe(l), content: l.content(), tunnelled: () => l.link.get()?.via === 'tailpocket', slowSendMs: params.slowSendMs ? Number(params.slowSendMs) : undefined }))),
     device: 'Test phone',
     updateEveryMs: params.updateEveryMs ? Number(params.updateEveryMs) : undefined,
     tunnel: params.via === 'tailpocket' ? fakeTunnel : undefined,

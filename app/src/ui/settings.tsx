@@ -99,7 +99,7 @@ function ChatSetupRows(props: { store: Store }) {
 const maybeTailnet = (host: string) => /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(host) || /\.ts\.net(:|$)/.test(host)
 
 /** How often the route is asked again: a direct path can come a little after the relay. */
-const ROUTE_EVERY_MS = 10_000
+const ROUTE_EVERY_MS = 30_000
 
 /** A new version, if there is one; whether the computer installs them by itself; which version this app is. */
 function UpdateRows(props: { updates: Updates }) {
@@ -212,14 +212,22 @@ export function SettingsScreen(props: { updates?: Updates; store: Store; prefs: 
   const route = signal<Route | null>(null)
   const companion = signal('')
   const ask = () => {
-    if (conn() !== 'ready') return
+    if (conn() !== 'ready' || !props.store.appActive) return
     void props.linker.path().then((r) => route.set(r))
     if (!companion()) void companionVersion(props.linker, props.fetcher).then((v) => companion.set(v))
   }
-  ask()
-  const asking = setInterval(ask, ROUTE_EVERY_MS)
-  const offConn = props.store.conn.sub(() => ask(), 'Settings.ask')
-  cleanup(() => { clearInterval(asking); offConn() })
+  let asking: ReturnType<typeof setInterval> | undefined
+  const resume = () => {
+    clearInterval(asking)
+    asking = undefined
+    if (!props.store.appActive || props.store.conn.get() !== 'ready') return
+    ask()
+    asking = setInterval(ask, ROUTE_EVERY_MS)
+  }
+  resume()
+  const offConn = props.store.conn.sub(resume, 'Settings.ask')
+  const offActive = props.store.activity.sub(resume)
+  cleanup(() => { clearInterval(asking); offConn(); offActive() })
   const status = () => {
     const c = conn()
     return c === 'ready' ? { word: t('connected'), dot: 'bg-chart-3' }

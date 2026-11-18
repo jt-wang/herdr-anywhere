@@ -28,18 +28,19 @@ export type ProgressActions = {
   fold: (id: string) => void
 }
 
-/** One reading of the tree for every progress screen, read again every few seconds while one is open. */
+/** One reading of the tree for every progress screen, with a 30-second foreground fallback. */
 export class ProgressData {
   tree = signal<Tree | null>(null)
   error = signal('')
   private users = 0
   private timer: ReturnType<typeof setInterval> | undefined
+  private off: (() => void)[] = []
   /** Rings for each task that newly needs the user (model/progress-alerts.ts); root.tsx sets it. */
   onAlert?: (a: Alert) => void
   private outcomes = new Outcomes()
   /** The language the computer was last told, so the sorting agent writes in the phone's (root.tsx keeps it in prefs). */
   told?: { get: () => string; set: (l: string) => void }
-  constructor(readonly store: Store, private every = 4000, private keep?: { load: () => Promise<string | null>; save: (v: string) => void }) {
+  constructor(readonly store: Store, private every = 30_000, private keep?: { load: () => Promise<string | null>; save: (v: string) => void }) {
     void keep?.load().then((v) => { if (v) this.outcomes = Outcomes.from(v) }).catch(() => {})
   }
 
@@ -84,14 +85,33 @@ export class ProgressData {
         this.keep?.save(this.outcomes.save(Date.now()))
         for (const a of rang) this.onAlert?.(a)
       }
+      this.schedule()
     } catch (e) {
       this.error.set(explain(e))
     }
   }
 
+  private schedule() {
+    if (this.timer) clearInterval(this.timer)
+    this.timer = undefined
+    const tasks = this.tree() && flat(this.tree()!).some(({ task }) => !closed(task.group))
+    const every = !this.users || !this.store.connected ? 0 : this.store.appActive ? this.every
+      : this.store.backgroundWatch.get() && tasks ? 60_000 : 0
+    if (every) this.timer = setInterval(() => void this.refresh(), every)
+  }
+
   use() {
-    if (this.users++ === 0) { void this.refresh(); this.timer = setInterval(() => void this.refresh(), this.every) }
-    cleanup(() => { if (--this.users === 0 && this.timer) { clearInterval(this.timer); this.timer = undefined } })
+    if (this.users++ === 0) {
+      const resume = () => { this.schedule(); if (this.store.appActive && this.store.connected) void this.refresh() }
+      this.off = [this.store.activity.sub(resume), this.store.backgroundWatch.sub(() => this.schedule()),
+        this.store.conn.sub(resume, 'ProgressData.poll')]
+      resume()
+    }
+    cleanup(() => {
+      if (--this.users) return
+      this.off.forEach((off) => off()); this.off = []
+      this.schedule()
+    })
   }
 }
 

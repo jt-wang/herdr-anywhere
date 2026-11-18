@@ -50,9 +50,9 @@ test('Install puts the file there; a Pi already running is told to type /reload,
   expect(app.texts()).toContain('Installed. This Pi was open before, so it starts using the file after /reload or a restart.')
   await app.press('id:chat-setup-reload')
   await app.waitUntil(() => sent(app).some((s) => s.startsWith('/reload')))
-  // Awaited: the clock moving before the fake had the new answer let the 3 s ask read the old one, and no other came.
+  // This fixture stays idle after /reload: the next read follows the 30 s idle fallback.
   await app.host.send('fake.chat', { chat: true, turns })
-  await app.clock.runFor(3100)
+  await app.clock.runFor(30_100)
   await app.waitFor('text:Done: 8px corners.')
 })
 

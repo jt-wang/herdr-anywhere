@@ -63,6 +63,7 @@ export class TerminalSession {
   private attachedOnce = false
   private copying?: (text: string) => void
   private off: () => unknown
+  private offActivity: () => unknown
   private disposed = false
   // What you saw when you last looked (before this opening), the screen's last lines now, and whether this opening
   // has asked for its mark.
@@ -83,6 +84,7 @@ export class TerminalSession {
     this.off = store.conn.sub((c) => {
       if (c === 'ready' && this.state.get() === 'lost') void this.attach()
     }, 'TerminalSession')
+    this.offActivity = store.activity.sub((front) => this.stream?.pause(!front))
   }
 
   /** A message from the page. */
@@ -222,8 +224,12 @@ export class TerminalSession {
     this.disposed = true
     if (this.lines && !this.opts.observe) this.store.saw(this.address, tailOf(this.lines))
     this.off()
+    this.offActivity()
     // A left terminal keeps the phone's width (Store.hold); one only watched never had it.
-    if (this.stream && !this.opts.observe) this.store.hold(this.address, this.stream)
+    if (this.stream && !this.opts.observe) {
+      this.stream.pause(true)
+      this.store.hold(this.address, this.stream)
+    }
     else this.stream?.detach()
     this.stream = undefined
   }
@@ -240,6 +246,7 @@ export class TerminalSession {
       }, { ...(resumed ? { resumed: true } : {}), ...(this.opts.observe ? { observe: true } : {}), ...(this.display() ? { display: this.display() } : {}) })
       if (this.disposed) return s.detach()
       this.stream = s
+      s.pause(!this.store.appActive)
       // Attached at the phone's size, it no longer needs the attachment it left behind.
       if (!this.opts.observe) this.store.release(this.address)
       if (!resumed && !this.opts.observe) this.before = this.store.lastSeen(this.address)

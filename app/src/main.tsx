@@ -13,6 +13,7 @@ const tunnel = platform.os !== 'web' && host.available() ? nativeTunnel : undefi
 const io = {
   load: (k: string) => Storage.getItem(k),
   save: (k: string, v: string) => void Storage.setItem(k, v).catch(() => {}),
+  write: (k: string, v: string) => Storage.setItem(k, v),
   remove: (k: string) => void Storage.removeItem(k).catch(() => {}),
 }
 const DEVICE: Record<string, string> = { ios: platform.idiom === 'pad' ? 'iPad' : 'iPhone', android: 'Android phone', web: 'Browser' }
@@ -25,7 +26,7 @@ export function start(o: { pairLink?: string; opensSettings?: boolean; updateEve
       linker: new Linker({ ...io, tunnel }),
       prefs: new PrefStore(io),
       makeStore: (l) => {
-        const store = new Store({ pipe: () => l.pipe(), tunnelled: () => l.link.get()?.via === 'tailpocket', load: io.load, save: io.save })
+        const store = new Store({ pipe: () => l.pipe(), tunnelled: () => l.link.get()?.via === 'tailpocket', load: io.load, save: io.save, content: l.content() })
         o.traceConnection?.(store.conn)
         return store
       },

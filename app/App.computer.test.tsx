@@ -43,7 +43,7 @@ test('the route line follows the tunnel: relay first, direct once it finds a pat
   const app = await settings({ via: 'tailpocket', routes: 'relay:tok,direct' }, { clock: {} })
   await app.clock.runFor(100)
   await app.waitFor('text:Through a relay (TOK)')
-  await app.clock.runFor(10_000)
+  await app.clock.runFor(30_000)
   await app.waitFor('text:Direct to your computer')
   expect(app.texts().some((t: string) => t.startsWith('Through a relay'))).toBe(false)
 })
