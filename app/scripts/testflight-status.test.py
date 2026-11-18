@@ -82,12 +82,13 @@ class StatusTest(unittest.TestCase):
             self.assertEqual(params['filter[preReleaseVersion.version]'], '0.2.1')
             self.assertEqual(params['filter[preReleaseVersion.platform]'], 'IOS')
             return self.pages.pop(0) if len(self.pages) > 1 else self.pages[0]
-        self.assertEqual(route, '/v1/betaGroups')
-        self.assertEqual(params['filter[app]'], 'app-1')
-        if 'filter[builds]' in params:
-            self.assertEqual(params['filter[builds]'], 'build-29')
-            return self.assigned, []
-        return self.all_groups, []
+        self.assertEqual(params, {})
+        if route == '/v1/apps/app-1/betaGroups':
+            return self.all_groups, []
+        match = re.fullmatch('/v1/betaGroups/([A-Za-z0-9-]+)/relationships/builds', route)
+        self.assertIsNotNone(match)
+        assigned = any(g['id'] == match[1] for g in self.assigned)
+        return [{'type': 'builds', 'id': 'build-29' if assigned else 'build-28'}], []
 
     def run_status(self):
         with patch.object(status, 'Client', return_value=self.client), patch.object(status.time, 'sleep'):
@@ -292,7 +293,8 @@ class StatusTest(unittest.TestCase):
         next_url = status.ORIGIN + '/v1/apps?filter%5BbundleId%5D=' + status.BUNDLE + '&fields%5Bapps%5D=bundleId&cursor=a%2Bb%26c'
         pages = [{'data': [], 'links': {'next': next_url}},
                  {'data': [{'id': 'app-1', 'attributes': {'bundleId': status.BUNDLE}}]},
-                 {'data': items, 'included': included}, {'data': []}, {'data': []}]
+                 {'data': items, 'included': included}, {'data': [group('group-1')]},
+                 {'data': [{'type': 'builds', 'id': 'build-29'}]}]
         client.opener.open = Mock(side_effect=[contextlib.closing(io.BytesIO(json.dumps(p).encode())) for p in pages])
         status.observe(client, '0.2.1', '29', {}, time.monotonic() + 10)
         targets = []
@@ -309,7 +311,8 @@ class StatusTest(unittest.TestCase):
         self.assertIn('cursor=a%2Bb%26c', targets[1])
         self.assertIn('fields%5Bapps%5D=', targets[0])
         self.assertIn('filter%5BpreReleaseVersion.version%5D=', targets[2])
-        self.assertIn('filter%5Bbuilds%5D=', targets[4])
+        self.assertEqual(targets[3], '/v1/apps/app-1/betaGroups')
+        self.assertEqual(targets[4], '/v1/betaGroups/group-1/relationships/builds')
 
     def test_pagination_is_read_only_same_origin_and_redirects_are_rejected(self):
         client = status.Client(self.env, time.monotonic() + 10)
@@ -321,7 +324,10 @@ class StatusTest(unittest.TestCase):
         self.assertEqual([v['id'] for v in data], ['1', '2'])
         for url in ('https://example.invalid/v1/builds', 'http://api.appstoreconnect.apple.com/v1/builds',
                     'https://api.appstoreconnect.apple.com@evil.invalid/v1/builds',
-                    status.ORIGIN + '/v1/betaTesters', status.ORIGIN + ':443/v1/builds'):
+                    status.ORIGIN + '/v1/betaTesters', status.ORIGIN + ':443/v1/builds',
+                    status.ORIGIN + '/v1/apps/app-1/betaTesters',
+                    status.ORIGIN + '/v1/betaGroups/group-1/relationships/betaTesters',
+                    status.ORIGIN + '/v1/betaGroups/../relationships/builds'):
             with self.subTest(url=url), patch.object(status, 'token') as token:
                 with self.assertRaisesRegex(status.StatusError, 'Unsafe'):
                     client.get(url)

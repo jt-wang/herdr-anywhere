@@ -130,7 +130,21 @@ jobs:
                                       capture_output=True, timeout=180)
               if result.returncode:
                   # Signing tool diagnostics may include credential values. Never print argv or output.
-                  raise SigningError('tool exit ' + str(result.returncode))
+                  diagnostic = result.stdout + result.stderr
+                  categories = ((b'Unsupported option', 'unsupported-option'),
+                                (b'Failed to load signer', 'load-signer-failed'),
+                                (b'password was incorrect', 'keystore-password-rejected'),
+                                (b'password verification failed', 'keystore-password-rejected'),
+                                (b'UnrecoverableKeyException', 'key-password-rejected'),
+                                (b'Invalid keystore format', 'invalid-keystore-format'),
+                                (b'does not contain a key', 'alias-has-no-key'),
+                                (b'does not contain key entries', 'keystore-has-no-key'),
+                                (b'does not contain a private key', 'alias-has-no-private-key'),
+                                (b'does not contain certificates', 'alias-has-no-certificates'),
+                                (b'FileNotFoundException', 'file-not-found'))
+                  labels = sorted({label for fragment, label in categories if fragment in diagnostic})
+                  suffix = ' (' + ', '.join(labels) + ')' if labels else ''
+                  raise SigningError('tool exit ' + str(result.returncode) + suffix)
               return result.stdout.decode('utf-8')
 
           def certificate(path):

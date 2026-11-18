@@ -18,7 +18,7 @@ import urllib.request
 
 ORIGIN = 'https://api.appstoreconnect.apple.com'
 BUNDLE = 'io.jingtao.herdranywhere'
-ROUTES = ('/v1/apps', '/v1/builds', '/v1/betaGroups')
+ROUTES = ('/v1/apps', '/v1/builds')
 # Exact machine codes only: never echo arbitrary server strings or code suffixes.
 ERROR_CODES = frozenset(('FORBIDDEN_ERROR', 'NOT_AUTHORIZED', 'AUTHENTICATION_ERROR',
                          'PARAMETER_ERROR.INVALID', 'PARAMETER_ERROR.UNKNOWN',
@@ -84,8 +84,10 @@ def token(env, url):
 
 def safe_url(url):
     parsed = urllib.parse.urlsplit(url)
+    group_relation = re.fullmatch(r'/v1/(?:apps/[A-Za-z0-9-]+/betaGroups|betaGroups/[A-Za-z0-9-]+/relationships/builds)',
+                                 parsed.path)
     if (parsed.scheme != 'https' or parsed.netloc != 'api.appstoreconnect.apple.com'
-            or parsed.path not in ROUTES or parsed.fragment):
+            or (parsed.path not in ROUTES and not group_relation) or parsed.fragment):
         raise StatusError('Unsafe ASC pagination URL rejected')
     return url
 
@@ -138,7 +140,7 @@ class Client:
             raise StatusError('ASC network error or request timeout') from None
 
     def listing(self, route, params):
-        url = ORIGIN + route + '?' + urllib.parse.urlencode(params)
+        url = ORIGIN + route + ('?' + urllib.parse.urlencode(params) if params else '')
         data, included, visited = [], [], set()
         while url:
             if url in visited or len(visited) >= 100:
@@ -178,17 +180,15 @@ def exact_build(items, included, app_id, version, build):
 
 
 def groups(client, app_id, build_id):
-    fields = 'name,isInternalGroup,hasAccessToAllBuilds,publicLinkEnabled,publicLink'
-    all_groups, _ = client.listing('/v1/betaGroups', {'filter[app]': app_id, 'fields[betaGroups]': fields})
-    assigned, _ = client.listing('/v1/betaGroups', {'filter[app]': app_id, 'filter[builds]': build_id,
-                                                'fields[betaGroups]': fields})
-    assigned_ids = {g['id'] for g in assigned}
+    # Read ownership relationships directly; the collection filter query is rejected by ASC.
+    all_groups, _ = client.listing('/v1/apps/' + app_id + '/betaGroups', {})
     result = []
     for group in all_groups:
+        builds, _ = client.listing('/v1/betaGroups/' + group['id'] + '/relationships/builds', {})
         attrs = group.get('attributes', {})
         internal = attrs.get('isInternalGroup') is True
         all_builds = attrs.get('hasAccessToAllBuilds') is True
-        explicit = group['id'] in assigned_ids
+        explicit = any(b['type'] == 'builds' and b['id'] == build_id for b in builds)
         # Internal automatic groups can have access without an explicit build assignment.
         access = explicit or (internal and all_builds)
         link = attrs.get('publicLink')
