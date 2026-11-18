@@ -25,6 +25,7 @@ import { APP_VERSION, installProblem, Updates } from '../updates.ts'
 import { CHANNEL } from '../channel.ts'
 import { t } from '../strings/index.ts'
 import { restartFor } from '../restart.ts'
+import { diag } from '../diag.ts'
 
 export type RootDeps = {
   linker: Linker
@@ -161,18 +162,25 @@ function Connected(props: { deps: RootDeps; store: Store; link: Link; unpaired: 
   // Another screen has no use for the keyboard the composer brought up, and Settings would sit under it.
   let depth = nav.routes().length
   effect(() => {
-    const now = nav.routes().length
+    const routes = nav.routes()
+    const now = routes.length
+    diag('ui-nav', { route: routes.at(-1)?.name ?? 'home', depth: String(now) })
     if (now !== depth) { depth = now; Keyboard.dismiss() }
   })
 
   const openSpace = (id: string) => {
+    diag('ui-open-space', { step: 'enter' })
     store.selectSpace(id)
+    diag('ui-open-space', { step: 'selected' })
     const top = nav.routes().at(-1)
-    if (top?.name === 'space' && top.id === id) return
+    if (top?.name === 'space' && top.id === id) { diag('ui-open-space', { step: 'already-open' }); return }
     nav.popToRoot()
+    diag('ui-open-space', { step: 'popped' })
     nav.push({ name: 'space', id })
+    diag('ui-open-space', { step: 'pushed' })
   }
   const openTerminal = (addr: string) => {
+    diag('ui-handler', { action: 'open-terminal' })
     if (!store.focusTerminal(addr)) return peeking.set(addr)
     const sp = store.model.activeSpace()
     if (sp) openSpace(sp.id)
@@ -205,8 +213,10 @@ function Connected(props: { deps: RootDeps; store: Store; link: Link; unpaired: 
       </View>
     </NavPage>
   )
-  const page = (r: Route) =>
-    r.name === 'progress' ? progressPage(r, <ProgressHome data={progress} actions={pactions} />)
+  const page = (r: Route) => {
+    // JS page construction, not a presented-frame timestamp. Native separately records the host's appearance.
+    diag('ui-page', { route: r.name })
+    return r.name === 'progress' ? progressPage(r, <ProgressHome data={progress} actions={pactions} />)
     : r.name === 'task' ? progressPage(r, <TaskScreen data={progress} id={r.id} actions={pactions} />)
     : r.name === 'space'
       ? <NavPage headerVisible={false} class="bg-sidebar">
@@ -230,6 +240,7 @@ function Connected(props: { deps: RootDeps; store: Store; link: Link; unpaired: 
             view,
           }} />
         </NavPage>
+  }
   return (
     <View class="flex-1 bg-sidebar">
       <NavStack state={nav} class="flex-1">{(r) => page(r)}</NavStack>

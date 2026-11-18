@@ -1,0 +1,35 @@
+import { expect, open, test } from 'nsh/test'
+
+const calls = (app: any) => JSON.parse(app.storage()['diagnostic-calls'] ?? '[]')
+test('diagnostic settings require explicit consent; share and clear are explicit local host actions', async () => {
+  const app = await open('../testing/diagnostics.tsx')
+  await app.waitFor('id:diagnostic-toggle')
+  expect(app.texts()).toContain('Enable → reproduce the problem once → export the report.')
+  expect(app.texts()).toContain('Recording off — no diagnostic collection. Off by default.')
+  expect(calls(app).map((c: any) => c.method)).toEqual(['page.diagnostics.status'])
+  for (const category of ['interaction', 'performance', 'network', 'resources']) expect(app.count(`id:diagnostic-${category}`)).toBe(1)
+  await app.press('id:diagnostic-network')
+  await app.waitUntil(() => calls(app).some((c: any) => c.args?.categories?.network === false))
+  expect(calls(app).at(-1).args).toEqual({ categories: { network: false } })
+  expect(app.texts()).toContain('Recording off — no diagnostic collection. Off by default.')
+  await app.press('id:diagnostic-toggle')
+  await app.waitUntil(() => calls(app).some((c: any) => c.method === 'page.diagnostics.set' && c.args.enabled === true))
+  await app.waitFor('text:● Recording selected categories')
+  await app.press('id:diagnostic-export')
+  await app.waitUntil(() => calls(app).some((c: any) => c.method === 'page.diagnostics.export'))
+  expect(calls(app).find((c: any) => c.method === 'page.diagnostics.export').args).toEqual({})
+  expect(app.count('id:diagnostic-note')).toBe(0) // cancelling share makes no success claim
+  await app.press('id:diagnostic-clear')
+  await app.waitFor('text:Saved diagnostics cleared.')
+  await app.press('id:diagnostic-toggle')
+  await app.waitUntil(() => calls(app).some((c: any) => c.method === 'page.diagnostics.set' && c.args.enabled === false))
+})
+
+test('unsupported hosts show no usable diagnostic toggle or share/clear actions', async () => {
+  const app = await open('../testing/diagnostics.tsx', { host: { params: { unsupported: 'true' } } })
+  await app.waitFor('id:diagnostic-unsupported')
+  expect(app.count('id:diagnostic-toggle')).toBe(0)
+  expect(app.count('id:diagnostic-export')).toBe(0)
+  expect(app.count('id:diagnostic-clear')).toBe(0)
+  for (const category of ['interaction', 'performance', 'network', 'resources']) expect(app.count(`id:diagnostic-${category}`)).toBe(0)
+})

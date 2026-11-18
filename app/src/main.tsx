@@ -6,6 +6,7 @@ import { PrefStore } from './prefs.ts'
 import { Store } from './store.ts'
 import { Root } from './ui/root.tsx'
 import { nativeTunnel } from './tunnel.ts'
+import { diag, diagnostics } from './diag.ts'
 import './fonts.ts'
 
 // TailPocket lives in the phone apps' host projects; a browser pairs over the LAN, or through the page's computer.
@@ -20,6 +21,7 @@ const DEVICE: Record<string, string> = { ios: platform.idiom === 'pad' ? 'iPad' 
 /** `pairLink`: a link (or a TailPocket invite) to pair with at once, as a web page opened at a link does.
  *  `updateEveryMs`: how often a connected phone reads the computer's answer about new versions (an hour; an e2e's is short). */
 export function start(o: { pairLink?: string; opensSettings?: boolean; updateEveryMs?: number; traceConnection?: (conn: Store['conn']) => void } = {}) {
+  void diagnostics.refresh().then(() => diag('app-start', {}))
   void pageAddress().then((page) => mount(() => (
     <Root deps={{
       linker: new Linker({ ...io, tunnel }),

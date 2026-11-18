@@ -2,6 +2,14 @@
 import type { Table } from './index.ts'
 
 export const zhHans: Table = {
+  diagnosticTitle: '设备本地诊断', diagnosticRecord: '记录诊断日志',
+  diagnosticInteraction: '交互／生命周期', diagnosticPerformance: '性能', diagnosticNetwork: '网络', diagnosticResources: '资源／电池',
+  diagnosticOff: '记录已关闭，不采集诊断数据。默认关闭。', diagnosticRecording: '● 正在记录所选类别', diagnosticNoCategories: '未选择类别，不采集诊断数据。',
+  diagnosticContent: '无跟踪、无分析统计。报告不含会话内容：消息、终端输出、标题、名称、路径、地址和凭据。分享前请确认所选类别及时间范围。',
+  diagnosticInstructions: '开启诊断 → 复现一次问题 → 导出报告。',
+  diagnosticPrivacy: '日志只保存在本设备，重启 app 后仍保留，不会自动上传。导出会打开分享面板，由你选择发给谁。完成后请关闭记录；清除可删除已保存的日志。',
+  diagnosticExport: '导出／分享报告', diagnosticClear: '清除已保存的诊断日志', diagnosticCleared: '已清除保存的诊断日志。',
+  diagnosticUnsupported: '当前 app 宿主不支持诊断功能。', diagnosticFailed: '未能完成诊断操作，请重试。',
   chatEarlier: '加载更早的消息', chatLoadingEarlier: '正在加载更早的消息…', chatEarlierFailed: '没能加载更早的消息，请重试。', chatHistoryLimit: '这段记录太大，无法加载，请到终端查看。',
   needsYou: '等你处理', done: '已完成', working: '工作中', idle: '空闲', unknown: '未知', pinned: '已置顶', pinToTop: '置顶', unpin: '取消置顶', dragHint: '拖到想放的位置后松手', moveUp: '上移', moveDown: '下移',
   notConnected: '未连接', notConnectedLower: '未连接', connecting: '正在连接…', reconnecting: '正在重新连接…',

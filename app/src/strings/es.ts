@@ -2,6 +2,14 @@
 import type { Table } from './index.ts'
 
 export const es: Table = {
+  diagnosticTitle: 'Diagnóstico en el dispositivo', diagnosticRecord: 'Grabar diagnóstico',
+  diagnosticInteraction: 'Interacción / ciclo de vida', diagnosticPerformance: 'Rendimiento', diagnosticNetwork: 'Red', diagnosticResources: 'Recursos / batería',
+  diagnosticOff: 'Grabación desactivada: no se recopilan diagnósticos. Desactivada por defecto.', diagnosticRecording: '● Grabando las categorías seleccionadas', diagnosticNoCategories: 'Sin categorías seleccionadas: no se recopilan datos.',
+  diagnosticContent: 'Sin seguimiento ni analíticas. Los informes excluyen el contenido de las sesiones: mensajes, salida de terminal, títulos, nombres, rutas, direcciones y credenciales. Confirma las categorías y el intervalo de tiempo antes de compartir.',
+  diagnosticInstructions: 'Actívalo → reproduce el problema una vez → exporta el informe.',
+  diagnosticPrivacy: 'Se guarda solo en este dispositivo, incluso al reiniciar la app. No se sube automáticamente. Al exportar se abre el menú para compartir; tú eliges el destinatario. Desactívalo al terminar y borra los registros guardados si lo deseas.',
+  diagnosticExport: 'Exportar / compartir informe', diagnosticClear: 'Borrar diagnóstico guardado', diagnosticCleared: 'Se borró el diagnóstico guardado.',
+  diagnosticUnsupported: 'Este entorno de la app no admite diagnósticos.', diagnosticFailed: 'No se pudo completar la acción de diagnóstico. Inténtalo de nuevo.',
   chatEarlier: 'Cargar mensajes anteriores', chatLoadingEarlier: 'Cargando mensajes anteriores…', chatEarlierFailed: 'No se pudieron cargar los mensajes anteriores. Inténtalo de nuevo.', chatHistoryLimit: 'Esta parte del registro es demasiado grande. Léela en la terminal.',
   needsYou: 'Te necesita', done: 'Listo', working: 'Trabajando', idle: 'Inactivo', unknown: 'Desconocido', pinned: 'Fijados', pinToTop: 'Fijar arriba', unpin: 'Dejar de fijar', dragHint: 'Arrastra hasta donde quieras y suelta', moveUp: 'Subir', moveDown: 'Bajar',
   notConnected: 'Sin conexión', notConnectedLower: 'sin conexión', connecting: 'Conectando…', reconnecting: 'Reconectando…',

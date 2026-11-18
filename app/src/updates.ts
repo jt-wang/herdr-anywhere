@@ -4,6 +4,7 @@
 import manifest from '../nsh.json'
 import { Signal, type Conn } from './store.ts'
 import { t } from './strings/index.ts'
+import { diagnosticFetch } from './request.ts'
 
 export const APP_VERSION: string = (manifest as any).version
 
@@ -128,7 +129,7 @@ export class Updates {
 
   async refresh() {
     try {
-      const r = await this.d.fetcher(`${await this.d.baseUrl()}/api/info`)
+      const r = await diagnosticFetch(this.d.fetcher, `${await this.d.baseUrl()}/api/info`)
       const info = r.ok ? readInfo(await r.json()) : null
       if (info) { this.info.set(info); this.tell() }
     } catch {}
@@ -160,7 +161,7 @@ export class Updates {
   }
 
   private post(path: string, body?: string) {
-    return this.d.baseUrl().then((base) => this.d.fetcher(`${base}${path}`, {
+    return this.d.baseUrl().then((base) => diagnosticFetch(this.d.fetcher, `${base}${path}`, {
       method: 'POST', body, headers: { authorization: `Bearer ${this.d.token()}`, ...(body ? { 'content-type': 'application/json' } : {}) },
     }))
   }

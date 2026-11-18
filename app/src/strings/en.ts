@@ -1,6 +1,14 @@
 // The app's words, the source the other languages follow (index.ts). `{name}` is filled in; a { one, other } picks by `n`.
 // Herdr desktop has no translations, so its English words (Needs you, Working, space, tab, pane) are what these say.
 export const en = {
+  diagnosticTitle: 'On-device diagnostics', diagnosticRecord: 'Record diagnostics',
+  diagnosticInteraction: 'Interaction / lifecycle', diagnosticPerformance: 'Performance', diagnosticNetwork: 'Network', diagnosticResources: 'Resources / battery',
+  diagnosticOff: 'Recording off — no diagnostic collection. Off by default.', diagnosticRecording: '● Recording selected categories', diagnosticNoCategories: 'No categories selected — not collecting.',
+  diagnosticContent: 'No tracking or analytics. Reports exclude session content: messages, terminal output, titles, names, paths, addresses and credentials. Before sharing, confirm the selected categories and time range.',
+  diagnosticInstructions: 'Enable → reproduce the problem once → export the report.',
+  diagnosticPrivacy: 'Saved only on this device, including after restarting the app. No automatic upload. Export opens the share sheet; you choose who receives it. Turn recording off when finished; clear to delete saved logs.',
+  diagnosticExport: 'Export / share report', diagnosticClear: 'Clear saved diagnostics', diagnosticCleared: 'Saved diagnostics cleared.',
+  diagnosticUnsupported: 'Diagnostics are not supported by this app host.', diagnosticFailed: 'Could not complete the diagnostic action. Please try again.',
   chatEarlier: 'Load earlier messages', chatLoadingEarlier: 'Loading earlier messages…', chatEarlierFailed: 'Could not load earlier messages. Try again.', chatHistoryLimit: 'This part of the record is too large to load. Read it in the terminal.',
   // Status
   needsYou: 'Needs you', done: 'Done', working: 'Working', idle: 'Idle', unknown: 'Unknown', pinned: 'Pinned', pinToTop: 'Pin to the top', unpin: 'Unpin', dragHint: 'Drag to where you want it, then let go', moveUp: 'Move up', moveDown: 'Move down',

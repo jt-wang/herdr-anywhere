@@ -7,7 +7,8 @@ type Event = { what: string; fields: Record<string, string> }
 
 function setup() {
   const events: Event[] = []
-  setDiag((what, fields) => events.push({ what, fields }))
+  // HTTP/RPC now emit their own spans too; this suite asserts the connection state machine's exact sequence.
+  setDiag((what, fields) => { if (what.startsWith('connection-')) events.push({ what, fields }) })
   const cores = [new FakeCore(), new FakeCore()]
   const timers: (() => void)[] = []
   let opened = 0

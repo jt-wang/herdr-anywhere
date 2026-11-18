@@ -10,6 +10,14 @@ import TailPocketNSH
 import UIKit
 import UniformTypeIdentifiers
 
+private final class DiagnosticWindow: UIWindow {
+  override func sendEvent(_ event: UIEvent) {
+    Diagnostics.shared.touch(event, stage: "before")
+    super.sendEvent(event)
+    Diagnostics.shared.touch(event, stage: "after")
+  }
+}
+
 // iOS 27 ends the launch of an app built with the iOS 27 SDK that makes its window here, without a scene (crash in
 // _UIApplicationEvaluateRuntimeIssueForNoSceneLifecycleAdoption, TestFlight 0.1.24 on iOS 27.2.1): the window comes
 // from SceneDelegate, named in Info.plist's UIApplicationSceneManifest (project.yml). e2e/ios-scene.sh checks a build.
@@ -33,7 +41,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
   func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options: UIScene.ConnectionOptions) {
     guard let scene = scene as? UIWindowScene else { return }
-    let window = UIWindow(windowScene: scene)
+    let window = DiagnosticWindow(windowScene: scene)
     window.rootViewController = AppController()
     self.window = window
     (UIApplication.shared.delegate as? AppDelegate)?.window = window
@@ -74,6 +82,11 @@ final class AppController: UIViewController, UIDocumentPickerDelegate, QLPreview
   private var pickLimit = 9
   private var previewing: URL?
 
+  override func viewDidAppear(_ animated: Bool) {
+    super.viewDidAppear(animated)
+    Diagnostics.shared.log.record("lifecycle.host-appeared")
+  }
+
   override func viewDidLoad() {
     super.viewDidLoad()
     // iOS suspension counts toward the VM wall clock; our bundled code uses the SDK maximum.
@@ -85,6 +98,7 @@ final class AppController: UIViewController, UIDocumentPickerDelegate, QLPreview
     view.addSubview(app)
     tailPocket = TailPocketNsh.attach(app)
     Notify.shared.attach(app)
+    Diagnostics.shared.attach(app, presenter: self)
     app.handle("page.pickFiles") { [weak self] data, reply in
       let limit = (data as? [String: Any])?["limit"] as? Int
       Task { @MainActor in self?.pickFiles(limit: limit) { reply.resolve($0) } }

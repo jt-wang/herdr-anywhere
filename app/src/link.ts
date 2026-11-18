@@ -8,6 +8,8 @@ import { Signal } from './store.ts'
 import type { FolderApi, Listing, Missing } from './model/folders.ts'
 import { t as tr, type Key } from './strings/index.ts'
 import type { ChatAnswer, ChatApi, ChatChange, ChatPicture, ChatRead, ChatRun, ChatSetup } from './model/chat.ts'
+import { diag, diagnosticRequest } from './diag.ts'
+import { diagnosticFetch } from './request.ts'
 
 /** `via: 'tailpocket'`: the computer is reached through TailPocket, which keeps its own link (with the phone's key).
  *  `via: 'demo'`: Try it's made-up computer (demo.ts). */
@@ -24,7 +26,7 @@ const host = (url: string) => url.replace(/^https?:\/\//, '')
 export async function pairWith(p: PairLink, device: string, fetcher: typeof fetch = fetch): Promise<Link> {
   let r: Response
   try {
-    r = await fetcher(`${p.url}/api/pair`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code: p.code, device }) })
+    r = await diagnosticFetch(fetcher, `${p.url}/api/pair`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code: p.code, device }) })
   } catch {
     throw new Error(tr('cantReachHost', { host: host(p.url) }))
   }
@@ -203,8 +205,11 @@ export class Linker {
   }
 
   private tunnelling(tunnel: Tunnel): Tunnelling {
+    const request = diagnosticRequest(), started = Date.now()
+    diag('tunnel-start', { request })
     const t: Tunnelling = { opening: tunnel.connect() }
-    t.opening.then((c) => { if (this.tunnel === t) t.open = c; else c.close() }, () => {})
+    const end = (result: string) => diag('tunnel-end', { request, elapsed: String(Math.max(0, Date.now() - started)), result })
+    t.opening.then((c) => { end('ok'); if (this.tunnel === t) t.open = c; else c.close() }, () => end('error'))
     return t
   }
 
@@ -218,7 +223,7 @@ export class Linker {
 /** The companion's own version, from its `/api/info`; '' when it cannot say. */
 export async function companionVersion(linker: Linker, fetcher: typeof fetch = fetch): Promise<string> {
   try {
-    const r = await fetcher(`${await linker.baseUrl()}/api/info`)
+    const r = await diagnosticFetch(fetcher, `${await linker.baseUrl()}/api/info`)
     const body: any = r.ok ? await r.json() : {}
     return typeof body.version === 'string' ? body.version : ''
   } catch {
@@ -232,7 +237,7 @@ export function folderApi(linker: Linker, fetcher: typeof fetch = fetch): Folder
     const token = linker.link.get()?.token ?? ''
     let r: Response
     try {
-      r = await fetcher(`${await linker.baseUrl()}${path}`, { ...init, headers: { authorization: `Bearer ${token}`, ...(init?.body ? { 'content-type': 'application/json' } : {}) } })
+      r = await diagnosticFetch(fetcher, `${await linker.baseUrl()}${path}`, { ...init, headers: { authorization: `Bearer ${token}`, ...(init?.body ? { 'content-type': 'application/json' } : {}) } })
     } catch {
       throw new Error(tr('cantReachComputer'))
     }
@@ -263,7 +268,7 @@ const pictures = (x: unknown): ChatPicture[] => !Array.isArray(x) ? [] : x.flatM
 
 export function chatApi(linker: Linker, fetcher: typeof fetch = fetch): ChatApi {
   const call = async (path: string) => {
-    const r = await fetcher(`${await linker.baseUrl()}${path}`, { headers: { authorization: `Bearer ${linker.link.get()?.token ?? ''}` } })
+    const r = await diagnosticFetch(fetcher, `${await linker.baseUrl()}${path}`, { headers: { authorization: `Bearer ${linker.link.get()?.token ?? ''}` } })
     return { r, body: (await r.json().catch(() => ({}))) as any }
   }
   return {
@@ -286,7 +291,7 @@ export function chatApi(linker: Linker, fetcher: typeof fetch = fetch): ChatApi 
     },
     async files(address, paths) {
       if (!paths.length) return []
-      const r = await fetcher(`${await linker.baseUrl()}/api/file/check`, { method: 'POST', body: JSON.stringify({ terminal: address, paths }),
+      const r = await diagnosticFetch(fetcher, `${await linker.baseUrl()}/api/file/check`, { method: 'POST', body: JSON.stringify({ terminal: address, paths }),
         headers: { authorization: `Bearer ${linker.link.get()?.token ?? ''}`, 'content-type': 'application/json' } })
       const body = (await r.json().catch(() => ({}))) as any
       if (!r.ok || !Array.isArray(body?.files)) return []
@@ -296,13 +301,13 @@ export function chatApi(linker: Linker, fetcher: typeof fetch = fetch): ChatApi 
     },
     async fileLink(address, path) {
       const base = await linker.baseUrl()
-      const r = await fetcher(`${base}/api/file/link`, { method: 'POST', body: JSON.stringify({ terminal: address, path }),
+      const r = await diagnosticFetch(fetcher, `${base}/api/file/link`, { method: 'POST', body: JSON.stringify({ terminal: address, path }),
         headers: { authorization: `Bearer ${linker.link.get()?.token ?? ''}`, 'content-type': 'application/json' } })
       const body = (await r.json().catch(() => ({}))) as any
       return r.ok && typeof body?.url === 'string' && body.url.startsWith('/api/file?') ? base + body.url : null
     },
     async fileText(address, path, max) {
-      const r = await fetcher(`${await linker.baseUrl()}/api/file?path=${encodeURIComponent(path)}&terminal=${encodeURIComponent(address)}`,
+      const r = await diagnosticFetch(fetcher, `${await linker.baseUrl()}/api/file?path=${encodeURIComponent(path)}&terminal=${encodeURIComponent(address)}`,
         { headers: { authorization: `Bearer ${linker.link.get()?.token ?? ''}`, range: `bytes=0-${max - 1}` } })
       return r.ok ? await r.text() : null
     },
@@ -311,7 +316,7 @@ export function chatApi(linker: Linker, fetcher: typeof fetch = fetch): ChatApi 
       return r.ok && Array.isArray(body?.setups) ? body.setups.map(setupOf).filter((x: ChatSetup | null): x is ChatSetup => !!x) : []
     },
     async setSetup(agent, on, force) {
-      const r = await fetcher(`${await linker.baseUrl()}/api/chat-setups/${encodeURIComponent(agent)}${force ? '?force=1' : ''}`,
+      const r = await diagnosticFetch(fetcher, `${await linker.baseUrl()}/api/chat-setups/${encodeURIComponent(agent)}${force ? '?force=1' : ''}`,
         { method: on ? 'PUT' : 'DELETE', headers: { authorization: `Bearer ${linker.link.get()?.token ?? ''}` } })
       const setup = setupOf(await r.json().catch(() => null)) ?? undefined
       if (r.ok) return { result: 'ok', setup }
@@ -357,7 +362,7 @@ export function imageApi(linker: Linker, fetcher: typeof fetch = fetch): ImageAp
       const token = linker.link.get()?.token ?? ''
       let r: Response
       try {
-        r = await fetcher(`${await linker.baseUrl()}/api/image?path=${encodeURIComponent(path)}&terminal=${encodeURIComponent(terminal)}`, { headers: { authorization: `Bearer ${token}` } })
+        r = await diagnosticFetch(fetcher, `${await linker.baseUrl()}/api/image?path=${encodeURIComponent(path)}&terminal=${encodeURIComponent(terminal)}`, { headers: { authorization: `Bearer ${token}` } })
       } catch {
         throw new Error(tr('cantReachComputer'))
       }
@@ -369,7 +374,7 @@ export function imageApi(linker: Linker, fetcher: typeof fetch = fetch): ImageAp
     async check(terminal, paths) {
       let r: Response
       try {
-        r = await fetcher(`${await linker.baseUrl()}/api/image/check`, { method: 'POST', body: JSON.stringify({ terminal, paths }),
+        r = await diagnosticFetch(fetcher, `${await linker.baseUrl()}/api/image/check`, { method: 'POST', body: JSON.stringify({ terminal, paths }),
           headers: { authorization: `Bearer ${linker.link.get()?.token ?? ''}`, 'content-type': 'application/json' } })
       } catch {
         throw new Error(tr('cantReachComputer'))
@@ -411,7 +416,7 @@ export function fileApi(linker: Linker, fetcher: typeof fetch = fetch): FileApi 
     async sendPhoto(file, on) {
       let r: Response
       try {
-        r = await fetcher(await url(file.name, on), { method: 'POST', body: file, headers: { authorization: `Bearer ${linker.link.get()?.token ?? ''}`, 'content-type': 'application/octet-stream' } })
+        r = await diagnosticFetch(fetcher, await url(file.name, on), { method: 'POST', body: file, headers: { authorization: `Bearer ${linker.link.get()?.token ?? ''}`, 'content-type': 'application/octet-stream' } })
       } catch {
         throw new Error(tr('cantReachComputer'))
       }
@@ -421,7 +426,18 @@ export function fileApi(linker: Linker, fetcher: typeof fetch = fetch): FileApi 
     async sendPicked(file, on) {
       const link = linker.link.get()
       if (link?.via === 'demo') return `~/.cache/herdr-anywhere/uploads/demo/${file.name}`
-      const r = await nativeHost.call('page.uploadFile', { id: file.id, url: await url(file.name, on), token: link?.token ?? '' }, { timeout: 0 }) as { status: number; body: string }
+      const target = await url(file.name, on)
+      const request = diagnosticRequest(), started = Date.now()
+      const fields = { request, endpoint: '/api/files', method: 'POST', requestBytes: String(file.size) }
+      diag('http-start', fields)
+      let r: { status: number; body: string }
+      try {
+        r = await nativeHost.call('page.uploadFile', { id: file.id, url: target, token: link?.token ?? '' }, { timeout: 0 }) as typeof r
+        diag('http-end', { ...fields, elapsed: String(Math.max(0, Date.now() - started)), status: String(r.status), result: r.status >= 200 && r.status < 300 ? 'ok' : 'error' })
+      } catch (e) {
+        diag('http-end', { ...fields, elapsed: String(Math.max(0, Date.now() - started)), result: 'error' })
+        throw e
+      }
       let body: any = {}
       try { body = JSON.parse(r.body) } catch {}
       return landed(r.status, body, file.name)

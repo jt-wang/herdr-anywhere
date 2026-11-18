@@ -2,6 +2,14 @@
 import type { Table } from './index.ts'
 
 export const ja: Table = {
+  diagnosticTitle: '端末内の診断', diagnosticRecord: '診断を記録',
+  diagnosticInteraction: '操作／ライフサイクル', diagnosticPerformance: 'パフォーマンス', diagnosticNetwork: 'ネットワーク', diagnosticResources: 'リソース／バッテリー',
+  diagnosticOff: '記録は無効です。診断は収集しません。初期設定では無効です。', diagnosticRecording: '● 選択したカテゴリを記録中', diagnosticNoCategories: 'カテゴリ未選択のため収集していません。',
+  diagnosticContent: '追跡や利用分析は行いません。レポートにはセッションの内容（メッセージ、端末出力、タイトル、名前、パス、アドレス、認証情報）を含めません。共有前にカテゴリと時間範囲を確認してください。',
+  diagnosticInstructions: '有効にする → 問題を一度再現する → レポートを書き出す。',
+  diagnosticPrivacy: '記録はこの端末内だけに保存され、アプリの再起動後も残ります。自動送信はしません。書き出すと共有画面が開き、送信先を選べます。終了後は記録を無効にし、保存済みの記録は消去してください。',
+  diagnosticExport: 'レポートを書き出す／共有', diagnosticClear: '保存済みの診断を消去', diagnosticCleared: '保存済みの診断を消去しました。',
+  diagnosticUnsupported: 'このアプリの実行環境は診断に対応していません。', diagnosticFailed: '診断操作を完了できませんでした。もう一度お試しください。',
   chatEarlier: '前のメッセージを読み込む', chatLoadingEarlier: '前のメッセージを読み込んでいます…', chatEarlierFailed: '前のメッセージを読み込めませんでした。もう一度お試しください。', chatHistoryLimit: 'この部分の記録は大きすぎて読み込めません。ターミナルで確認してください。',
   needsYou: '対応待ち', done: '完了', working: '実行中', idle: '待機中', unknown: '不明', pinned: 'ピン留め', pinToTop: '先頭にピン留め', unpin: 'ピン留めを外す', dragHint: '置きたい位置までドラッグして指を離す', moveUp: '上へ移動', moveDown: '下へ移動',
   notConnected: '未接続', notConnectedLower: '未接続', connecting: '接続中…', reconnecting: '再接続中…',

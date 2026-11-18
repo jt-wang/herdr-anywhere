@@ -2,6 +2,14 @@
 import type { Table } from './index.ts'
 
 export const zhHant: Table = {
+  diagnosticTitle: '裝置本機診斷', diagnosticRecord: '記錄診斷日誌',
+  diagnosticInteraction: '互動／生命週期', diagnosticPerformance: '效能', diagnosticNetwork: '網路', diagnosticResources: '資源／電池',
+  diagnosticOff: '記錄已關閉，不收集診斷資料。預設關閉。', diagnosticRecording: '● 正在記錄所選類別', diagnosticNoCategories: '未選擇類別，不收集診斷資料。',
+  diagnosticContent: '無追蹤、無分析統計。報告不含對話內容：訊息、終端機輸出、標題、名稱、路徑、位址和憑證。分享前請確認所選類別及時間範圍。',
+  diagnosticInstructions: '開啟診斷 → 重現一次問題 → 匯出報告。',
+  diagnosticPrivacy: '日誌只儲存在本裝置，重新啟動 app 後仍保留，不會自動上傳。匯出會開啟分享面板，由你選擇傳給誰。完成後請關閉記錄；清除可刪除已儲存的日誌。',
+  diagnosticExport: '匯出／分享報告', diagnosticClear: '清除已儲存的診斷日誌', diagnosticCleared: '已清除儲存的診斷日誌。',
+  diagnosticUnsupported: '目前的 app 宿主不支援診斷功能。', diagnosticFailed: '無法完成診斷操作，請重試。',
   chatEarlier: '載入更早的訊息', chatLoadingEarlier: '正在載入更早的訊息…', chatEarlierFailed: '無法載入更早的訊息，請重試。', chatHistoryLimit: '這段記錄太大，無法載入，請到終端機查看。',
   needsYou: '等你處理', done: '已完成', working: '工作中', idle: '閒置', unknown: '未知', pinned: '已釘選', pinToTop: '釘選到頂端', unpin: '取消釘選', dragHint: '拖到想放的位置後放開', moveUp: '上移', moveDown: '下移',
   notConnected: '未連線', notConnectedLower: '未連線', connecting: '正在連線…', reconnecting: '正在重新連線…',

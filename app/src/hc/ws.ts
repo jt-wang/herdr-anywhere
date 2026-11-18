@@ -4,6 +4,7 @@
 // `binary-unsupported` (1003, or binary that gets no answer), `network`, `closed` (we closed it). Through TailPocket,
 // src/link.ts turns a `network` close before any answer into `no-answer`.
 import type { Pipe } from './client.ts'
+import { diag, diagnosticRequest } from '../diag.ts'
 
 export type Enc = 'bin' | 'b64'
 export type SocketIO = { WebSocket: typeof WebSocket; setTimeout: typeof setTimeout; clearTimeout: typeof clearTimeout }
@@ -49,11 +50,19 @@ export class SocketPipe implements Pipe {
   private again?: number
   private waiting: Uint8Array[] = []
   private waitingBytes = 0
+  private request = diagnosticRequest()
+  private started = Date.now()
 
   constructor(url: string, private enc: Enc, private io: SocketIO = { WebSocket, setTimeout, clearTimeout }) {
-    this.ws = new io.WebSocket(url)
+    diag('socket-start', { request: this.request, enc })
+    try { this.ws = new io.WebSocket(url) }
+    catch (error) {
+      diag('socket-end', { request: this.request, elapsed: String(Math.max(0, Date.now() - this.started)), result: 'error' })
+      throw error
+    }
     this.ws.binaryType = 'arraybuffer'
     this.ws.onopen = () => {
+      diag('socket-open', { request: this.request, elapsed: String(Math.max(0, Date.now() - this.started)) })
       for (const b of this.queue.splice(0)) this.send(b)
     }
     this.ws.onmessage = (e) => {
@@ -85,7 +94,7 @@ export class SocketPipe implements Pipe {
       // brings its code ("pair again" is 4401).
       return false
     }
-    if (this.enc === 'bin' && !this.heard && this.watchdog === undefined) this.watchdog = this.io.setTimeout(() => { if (!this.heard) this.end('binary-unsupported') }, ANSWER_MS)
+    if (this.enc === 'bin' && !this.heard && this.watchdog === undefined) this.watchdog = this.io.setTimeout(() => { if (!this.heard) this.end('binary-unsupported', 'timeout') }, ANSWER_MS)
     return true
   }
 
@@ -93,7 +102,7 @@ export class SocketPipe implements Pipe {
     this.waiting.push(b)
     this.waitingBytes += b.length
     if (this.waitingBytes > MAX_WAITING) return this.end('network')
-    if (this.refused === undefined) this.refused = this.io.setTimeout(() => this.end('network'), REFUSED_MS)
+    if (this.refused === undefined) this.refused = this.io.setTimeout(() => this.end('network', 'timeout'), REFUSED_MS)
     if (this.again === undefined) this.again = this.io.setTimeout(() => this.drain(), RETRY_MS)
   }
 
@@ -116,9 +125,10 @@ export class SocketPipe implements Pipe {
     this.refused = undefined
   }
 
-  private end(reason: string) {
+  private end(reason: string, result = 'disconnected') {
     if (this.done) return
     this.done = true
+    diag('socket-end', { request: this.request, elapsed: String(Math.max(0, Date.now() - this.started)), reason, result })
     this.io.clearTimeout(this.watchdog)
     this.io.clearTimeout(this.refused)
     this.io.clearTimeout(this.again)

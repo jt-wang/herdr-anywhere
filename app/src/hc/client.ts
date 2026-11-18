@@ -1,6 +1,7 @@
 // A herdr-core client over any byte pipe, as herdr-app speaks it (herdr-app/src/hc.rs):
 // one `hello {framed:true}` line, then frames; JSON-RPC on channel 0, events and terminals on their own channels.
 import { CLOSE, CREDIT, DATA, FOCUS, FrameParser, RESIZE, concat, encodeFrame, resizePayload, u32 } from './frames.ts'
+import { diag, diagnosticMethod, diagnosticRequest } from '../diag.ts'
 
 /** Bytes both ways: a WebSocket to the companion, or a fake core in tests. */
 export interface Pipe {
@@ -59,6 +60,18 @@ export type Stream = {
 const enc = new TextEncoder()
 const dec = new TextDecoder()
 
+function traceCall(method: string, rpcId: number, timeout: number) {
+  const fields = { request: diagnosticRequest(), method: diagnosticMethod(method), rpcId: String(rpcId), timeout: String(timeout) }
+  const started = Date.now()
+  let ended = false
+  diag('rpc-start', fields)
+  return (result: string) => {
+    if (ended) return
+    ended = true
+    diag('rpc-end', { ...fields, result, elapsed: String(Math.max(0, Date.now() - started)) })
+  }
+}
+
 export function newerOrSame(version: string, min: string): boolean {
   const a = version.split(/[.-]/).map((n) => parseInt(n, 10) || 0)
   const b = min.split('.').map((n) => parseInt(n, 10) || 0)
@@ -94,6 +107,7 @@ export class HcClient {
   }
 
   hello(): Promise<Hello> {
+    const end = traceCall('hello', 0, 0)
     return new Promise<Hello>((resolve, reject) => {
       this.helloWait = { resolve, reject }
       this.pipe.send(enc.encode(JSON.stringify({ jsonrpc: '2.0', id: 0, method: 'hello', params: { framed: true } }) + '\n'))
@@ -102,7 +116,11 @@ export class HcClient {
       if (!newerOrSame(h.version, MIN_VERSION)) throw new HcError(`herdr-core ${h.version} is too old: update it to ${MIN_VERSION} or newer (hc update)`, 'needs_update')
       const missing = NEEDED.filter((m) => !h.methods.includes(m))
       if (missing.length) throw new HcError(`this herdr-core lacks ${missing.join(', ')}: update it (hc update)`, 'needs_update')
+      end('ok')
       return h
+    }).catch((e) => {
+      end(e instanceof HcError && e.kind === 'disconnected' ? 'disconnected' : 'error')
+      throw e
     })
   }
 
@@ -111,13 +129,19 @@ export class HcClient {
     if (this.closed) return Promise.reject(new HcError('connection lost', 'disconnected'))
     const id = this.nextId++
     const ms = opts.timeoutMs ?? this.timeoutMs
+    const end = traceCall(method, id, ms)
     return new Promise<T>((resolve, reject) => {
       const timer = ms > 0 ? setTimeout(() => {
         this.pending.delete(id)
+        end('timeout')
         reject(new HcError(`${method} timed out`, 'timeout'))
       }, ms) : undefined
-      this.pending.set(id, { resolve, reject, timer })
-      this.send(0, DATA, enc.encode(JSON.stringify({ jsonrpc: '2.0', id, method, params })))
+      this.pending.set(id, {
+        resolve: (value) => { end('ok'); resolve(value) },
+        reject: (error) => { end(error instanceof HcError && error.kind === 'disconnected' ? 'disconnected' : 'error'); reject(error) }, timer,
+      })
+      try { this.send(0, DATA, enc.encode(JSON.stringify({ jsonrpc: '2.0', id, method, params }))) }
+      catch (error) { end('error'); throw error }
     })
   }
 

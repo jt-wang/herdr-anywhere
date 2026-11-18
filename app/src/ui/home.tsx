@@ -19,6 +19,7 @@ import { AgentName, AgentRow, agentWords } from './agent-row.tsx'
 import { EdgeScroll, Hold, inList, shifts, targetIndex, type RowBox } from './pin-drag.ts'
 import { t } from '../strings/index.ts'
 import { pinDropEvidence, pinWriteEvidence } from './pin-evidence.ts'
+import { diag } from '../diag.ts'
 import icon from '../../assets/brand/herdr-anywhere.png'
 
 export type HomeActions = {
@@ -341,7 +342,8 @@ function SpaceRow(props: { store: Store; space: Space; color: string; actions: H
     }
   }
   return (
-    <View role="button" testID={`space-${props.space.id}`} accessibilityLabel={name()} onPress={() => props.actions.openSpace(props.space.id)} onLongPress={menu}
+    <View role="button" testID={`space-${props.space.id}`} accessibilityLabel={name()}
+      onPress={() => { diag('ui-handler', { action: 'open-space' }); props.actions.openSpace(props.space.id) }} onLongPress={menu}
       class={`flex-row items-center gap-2.5 mx-2 pl-2 h-11 rounded-[8px] active:bg-sidebar-accent ${active() ? 'bg-accent' : ''}`}>
       <SpaceBadge name={name()} color={props.color} />
       <Text class="text-[14px] text-foreground shrink-0 max-w-[60%]" numberOfLines={1}>{name()}</Text>

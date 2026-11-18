@@ -11,6 +11,7 @@ import { FONT_MAX, FONT_MIN, type Appearance, type PrefStore } from '../prefs.ts
 import { allowNotifications, notifications, notifyChannels, onFront, openChannel, type ChannelKind, type Channels, type ChannelState, type Permission } from '../page.ts'
 import { Glyph, IconButton, openPrivacy, SectionLabel, useRev, useSignal } from './kit.tsx'
 import { lang, t, type Key } from '../strings/index.ts'
+import { diagnostics, type DiagnosticCategory, type NativeDiagnostics } from '../diag.ts'
 
 function Row(props: { label: string; detail?: string; children?: any; testID?: string; onPress?: () => void }) {
   return (
@@ -167,6 +168,76 @@ function Toggle(props: { on: boolean; label: string; testID: string; onChange: (
     <View role="switch" accessibilityLabel={props.label} accessibilityState={{ checked: props.on }} testID={props.testID} onPress={() => props.onChange(!props.on)}
       class={`w-11 h-[26px] rounded-full p-[3px] ${props.on ? 'bg-chart-3 items-end' : 'bg-input items-start'}`}>
       <View class="w-5 h-5 rounded-full bg-white" />
+    </View>
+  )
+}
+
+/** Native owns consent, bounded retention and sharing; unsupported hosts never show a usable switch. */
+export function DiagnosticRows(props: { controller?: NativeDiagnostics }) {
+  const controller = props.controller ?? diagnostics
+  const state = signal(controller.status)
+  const busy = signal(false)
+  const note = signal('')
+  void controller.refresh().then((s) => state.set(s))
+  const run = async (action: 'toggle' | 'export' | 'clear' | DiagnosticCategory) => {
+    if (busy()) return
+    busy.set(true); note.set('')
+    try {
+      if (action === 'toggle') {
+        const wanted = !state().enabled
+        const next = await controller.set(wanted)
+        state.set(next)
+        if (!next.supported || next.enabled !== wanted) note.set(t('diagnosticFailed'))
+      } else if (action === 'clear') {
+        note.set(t(await controller.clear() ? 'diagnosticCleared' : 'diagnosticFailed'))
+      } else if (action === 'export') {
+        await controller.export() // Cancel is not a failure and must not claim the report was shared.
+      } else {
+        const wanted = !state().categories[action]
+        const next = await controller.setCategories({ [action]: wanted })
+        state.set(next)
+        if (!next.supported || next.categories[action] !== wanted) note.set(t('diagnosticFailed'))
+      }
+    } catch { note.set(t('diagnosticFailed')) }
+    finally { busy.set(false) }
+  }
+  const actions: { id: 'export' | 'clear'; label: Key }[] = [
+    { id: 'export', label: 'diagnosticExport' }, { id: 'clear', label: 'diagnosticClear' },
+  ]
+  const categories: { id: DiagnosticCategory; label: Key }[] = [
+    { id: 'interaction', label: 'diagnosticInteraction' }, { id: 'performance', label: 'diagnosticPerformance' },
+    { id: 'network', label: 'diagnosticNetwork' }, { id: 'resources', label: 'diagnosticResources' },
+  ]
+  return (
+    <View>
+      <SectionLabel label={t('diagnosticTitle')} />
+      <If when={state().supported} else={<Row label={t('diagnosticTitle')} detail={t('diagnosticUnsupported')} testID="diagnostic-unsupported" />}>
+        <Row label={t('diagnosticRecord')} detail={t('diagnosticInstructions')}>
+          <View pointerEvents={busy() ? 'none' : 'auto'}>
+            <Toggle label={t('diagnosticRecord')} testID="diagnostic-toggle" on={state().enabled} onChange={() => void run('toggle')} />
+          </View>
+        </Row>
+        <Text testID="diagnostic-recording" class={`px-4 py-2 text-[12px] ${state().enabled ? 'text-destructive' : 'text-sidebar-foreground'}`}>
+          {t(!state().enabled ? 'diagnosticOff' : Object.values(state().categories).some(Boolean) ? 'diagnosticRecording' : 'diagnosticNoCategories')}
+        </Text>
+        <Each of={categories} key={(c) => c.id}>{(c) => (
+          <Row label={t(c().label)}>
+            <View pointerEvents={busy() ? 'none' : 'auto'}>
+              <Toggle label={t(c().label)} testID={`diagnostic-${c().id}`} on={state().categories[c().id]} onChange={() => void run(c().id)} />
+            </View>
+          </Row>
+        )}</Each>
+        <View class="px-4 py-2"><Text class="text-[12px] leading-[17px] text-sidebar-foreground">{t('diagnosticContent')}</Text></View>
+        <View class="px-4 py-2"><Text class="text-[12px] leading-[17px] text-sidebar-foreground">{t('diagnosticPrivacy')}</Text></View>
+        <Each of={actions} key={(a) => a.id}>{(a) => (
+          <Row label={t(a().label)}>
+            <View role="button" testID={`diagnostic-${a().id}`} disabled={busy()} onPress={() => void run(a().id)} class="px-2.5 py-1 rounded-[6px] bg-muted active:bg-accent">
+              <Text class="text-[12px] text-foreground">{t(a().label)}</Text>
+            </View>
+          </Row>
+        )}</Each>
+        <If when={note()}><Text testID="diagnostic-note" class="px-4 py-2 text-[12px] text-sidebar-foreground">{note()}</Text></If>
+      </If>
     </View>
   )
 }
@@ -348,6 +419,7 @@ export function SettingsScreen(props: { updates?: Updates; store: Store; prefs: 
         }>
           <Row label={t('demoLeaveFull')} testID="settings-demo-leave" onPress={props.forget} />
         </If>
+        <DiagnosticRows />
         <View class="mt-5 border-t border-border">
           <Row label={t('privacy')} testID="settings-privacy" onPress={openPrivacy} />
         </View>

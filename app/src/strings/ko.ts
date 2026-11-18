@@ -2,6 +2,14 @@
 import type { Table } from './index.ts'
 
 export const ko: Table = {
+  diagnosticTitle: '기기 내 진단', diagnosticRecord: '진단 기록',
+  diagnosticInteraction: '상호작용 / 수명 주기', diagnosticPerformance: '성능', diagnosticNetwork: '네트워크', diagnosticResources: '리소스 / 배터리',
+  diagnosticOff: '기록이 꺼져 있어 진단을 수집하지 않아요. 기본값은 꺼짐이에요.', diagnosticRecording: '● 선택한 범주 기록 중', diagnosticNoCategories: '선택한 범주가 없어 수집하지 않아요.',
+  diagnosticContent: '추적이나 이용 분석이 없어요. 보고서에는 메시지, 터미널 출력, 제목, 이름, 경로, 주소, 인증 정보 등 세션 내용을 포함하지 않아요. 공유 전에 선택한 범주와 시간 범위를 확인해 주세요.',
+  diagnosticInstructions: '켜기 → 문제를 한 번 재현하기 → 보고서 내보내기.',
+  diagnosticPrivacy: '앱을 다시 시작해도 이 기기에만 저장돼요. 자동으로 업로드하지 않아요. 내보내면 공유 화면에서 받는 사람을 선택할 수 있어요. 끝나면 기록을 끄고, 저장된 기록은 지워 주세요.',
+  diagnosticExport: '보고서 내보내기 / 공유', diagnosticClear: '저장된 진단 지우기', diagnosticCleared: '저장된 진단을 지웠어요.',
+  diagnosticUnsupported: '이 앱 실행 환경은 진단을 지원하지 않아요.', diagnosticFailed: '진단 작업을 완료하지 못했어요. 다시 시도해 주세요.',
   chatEarlier: '이전 메시지 불러오기', chatLoadingEarlier: '이전 메시지를 불러오는 중…', chatEarlierFailed: '이전 메시지를 불러오지 못했어요. 다시 시도해 주세요.', chatHistoryLimit: '이 부분의 기록이 너무 커서 불러올 수 없어요. 터미널에서 확인해 주세요.',
   needsYou: '응답 필요', done: '완료', working: '작업 중', idle: '대기 중', unknown: '알 수 없음', pinned: '고정됨', pinToTop: '맨 위에 고정', unpin: '고정 해제', dragHint: '원하는 위치로 끌어다 놓으세요', moveUp: '위로 이동', moveDown: '아래로 이동',
   notConnected: '연결 안 됨', notConnectedLower: '연결 안 됨', connecting: '연결 중…', reconnecting: '다시 연결 중…',

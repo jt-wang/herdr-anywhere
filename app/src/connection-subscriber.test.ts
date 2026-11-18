@@ -9,7 +9,7 @@ test('a connection subscriber renewed during notification does not delay retry s
   const timers: (() => void)[] = []
   let opened = 0, visits = 0
   let off: () => unknown = () => {}
-  setDiag((what, fields) => events.push({ what, fields }))
+  setDiag((what, fields) => { if (what.startsWith('connection-')) events.push({ what, fields }) })
   const store = new Store({ pipe: () => cores[opened++], setInterval: (() => 1) as any,
     clearInterval: (() => {}) as any, setTimeout: ((f: () => void) => { timers.push(f); return 1 }) as any })
   const follow = (conn: string) => {
