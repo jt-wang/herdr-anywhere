@@ -231,6 +231,28 @@ def observe(client, version, build, receipt, deadline, interval=30):
             if state == 'VALID':
                 receipt['groups'] = groups(client, app_id, item['id'])
                 receipt['public_invitation_for_build'] = any(g['public_invitation_for_build'] for g in receipt['groups'])
+                # Enumerate every page, without a version/state filter: an older version's
+                # build number or an invalid/expired upload can still be occupied.
+                items, included = client.listing('/v1/builds', {
+                    'filter[app]': app_id, 'filter[preReleaseVersion.platform]': 'IOS',
+                    'include': 'preReleaseVersion', 'limit': '200'})
+                builds = []
+                for candidate in items:
+                    pre = related(candidate, 'preReleaseVersion', included).get('attributes', {})
+                    attrs = candidate.get('attributes', {})
+                    number, release_version = attrs.get('version'), pre.get('version')
+                    if (candidate.get('type') != 'builds' or pre.get('platform') != 'IOS'
+                            or not isinstance(number, str) or not re.fullmatch(r'[0-9]+(?:\.[0-9]+){0,2}', number)
+                            or not isinstance(release_version, str)
+                            or not re.fullmatch(r'[0-9]+(?:\.[0-9]+){0,2}', release_version)):
+                        raise StatusError('ASC build inventory contains an unexpected identity')
+                    builds.append({'id': candidate['id'], 'version': release_version, 'build': number,
+                                   'processing_state': enum(attrs.get('processingState'))})
+                receipt['build_inventory'] = {
+                    'queried_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+                    'builds': builds,
+                    'highest_numeric_build': max((int(b['build']) for b in builds if b['build'].isdigit()), default=None),
+                    'build_30_occupied': any(b['build'] == '30' for b in builds)}
                 return
             if state != 'PROCESSING':
                 raise StatusError('ASC build processing failed or returned an unknown state')

@@ -64,6 +64,7 @@ class StatusTest(unittest.TestCase):
                                        upload_artifact=str(self.upload), output=str(self.root / 'status.json'), timeout=10)
         self.calls = []
         self.pages = [build_page()]
+        self.inventory = build_page()
         self.all_groups, self.assigned = [], []
         self.client = Mock()
         self.client.listing.side_effect = self.listing
@@ -78,6 +79,11 @@ class StatusTest(unittest.TestCase):
             return [{'id': 'app-1', 'attributes': {'bundleId': status.BUNDLE}}], []
         if route == '/v1/builds':
             self.assertEqual(params['filter[app]'], 'app-1')
+            if params.get('include') == 'preReleaseVersion':
+                self.assertNotIn('filter[version]', params)
+                self.assertNotIn('filter[preReleaseVersion.version]', params)
+                self.assertNotIn('filter[processingState]', params)
+                return self.inventory
             self.assertEqual(params['filter[version]'], '29')
             self.assertEqual(params['filter[preReleaseVersion.version]'], '0.2.1')
             self.assertEqual(params['filter[preReleaseVersion.platform]'], 'IOS')
@@ -149,7 +155,7 @@ class StatusTest(unittest.TestCase):
     def test_exact_build_and_processing_to_valid_without_groups_is_success(self):
         self.pages = [([], []), build_page(version='0.2.0'), build_page('PROCESSING'), build_page()]
         receipt = self.run_status()
-        self.assertEqual(sum(route == '/v1/builds' for route, _ in self.calls), 4)
+        self.assertEqual(sum(route == '/v1/builds' for route, _ in self.calls), 5)
         self.assertTrue(receipt['uploaded'])
         self.assertTrue(receipt['processing_valid'])
         self.assertEqual(receipt['internal_build_state'], 'IN_BETA_TESTING')
@@ -159,6 +165,27 @@ class StatusTest(unittest.TestCase):
         self.assertFalse(receipt['public_invitation_for_build'])
         self.assertEqual(receipt['observation'], 'complete')
         self.assertNotIn('unknown-secret', Path(self.args.output).read_text())
+
+    def test_inventory_includes_other_versions_and_failed_builds_and_compares_numerically(self):
+        items, included = [], []
+        for number, version, state in (('9', '0.1.0', 'VALID'), ('100', '0.2.0', 'INVALID'),
+                                       ('30', '0.2.2', 'PROCESSING'), ('29', '0.2.1', 'VALID')):
+            rows, related = build_page(number=number, version=version, state=state)
+            rows[0]['relationships']['preReleaseVersion']['data']['id'] = 'pre-' + number
+            related[0]['id'] = 'pre-' + number
+            rows[0]['attributes']['private-field'] = 'never-export-inventory'
+            items.extend(rows)
+            included.extend(related)
+        self.inventory = items, included
+        inventory = self.run_status()['build_inventory']
+        self.assertEqual(inventory['highest_numeric_build'], 100)
+        self.assertTrue(inventory['build_30_occupied'])
+        self.assertEqual([(b['version'], b['build']) for b in inventory['builds']],
+                         [('0.1.0', '9'), ('0.2.0', '100'), ('0.2.2', '30'), ('0.2.1', '29')])
+        self.assertRegex(inventory['queried_at'], r'^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$')
+        self.assertNotIn('never-export-inventory', Path(self.args.output).read_text())
+        self.inventory = build_page()
+        self.assertFalse(self.run_status()['build_inventory']['build_30_occupied'])
 
     def test_wrong_version_platform_number_and_app_never_match(self):
         for kwargs in ({'version': '0.2.0'}, {'platform': 'MAC_OS'}, {'number': '28'}):
@@ -290,13 +317,20 @@ class StatusTest(unittest.TestCase):
         self.env['ASC_PRIVATE_KEY_P8'] = generated.stdout.decode()
         client = status.Client(self.env, time.monotonic() + 10)
         items, included = build_page()
+        inventory_items, inventory_included = build_page(number='30', version='0.2.2', state='PROCESSING')
         next_url = status.ORIGIN + '/v1/apps?filter%5BbundleId%5D=' + status.BUNDLE + '&fields%5Bapps%5D=bundleId&cursor=a%2Bb%26c'
+        inventory_next = status.ORIGIN + '/v1/builds?filter%5Bapp%5D=app-1&include=preReleaseVersion&cursor=inventory2'
         pages = [{'data': [], 'links': {'next': next_url}},
                  {'data': [{'id': 'app-1', 'attributes': {'bundleId': status.BUNDLE}}]},
                  {'data': items, 'included': included}, {'data': [group('group-1')]},
-                 {'data': [{'type': 'builds', 'id': 'build-29'}]}]
+                 {'data': [{'type': 'builds', 'id': 'build-29'}]},
+                 {'data': [], 'links': {'next': inventory_next}},
+                 {'data': inventory_items, 'included': inventory_included}]
         client.opener.open = Mock(side_effect=[contextlib.closing(io.BytesIO(json.dumps(p).encode())) for p in pages])
-        status.observe(client, '0.2.1', '29', {}, time.monotonic() + 10)
+        receipt = {}
+        status.observe(client, '0.2.1', '29', receipt, time.monotonic() + 10)
+        self.assertEqual(receipt['build_inventory']['highest_numeric_build'], 30)
+        self.assertTrue(receipt['build_inventory']['build_30_occupied'])
         targets = []
         for call in client.opener.open.call_args_list:
             request = call.args[0]
@@ -307,12 +341,13 @@ class StatusTest(unittest.TestCase):
             target = request.full_url.removeprefix(status.ORIGIN)
             self.assertEqual(claims['scope'], ['GET ' + target])
             targets.append(target)
-        self.assertEqual(len(set(targets)), 5)
+        self.assertEqual(len(set(targets)), 7)
         self.assertIn('cursor=a%2Bb%26c', targets[1])
         self.assertIn('fields%5Bapps%5D=', targets[0])
         self.assertIn('filter%5BpreReleaseVersion.version%5D=', targets[2])
         self.assertEqual(targets[3], '/v1/apps/app-1/betaGroups')
         self.assertEqual(targets[4], '/v1/betaGroups/group-1/relationships/builds')
+        self.assertEqual(targets[6], inventory_next.removeprefix(status.ORIGIN))
 
     def test_pagination_is_read_only_same_origin_and_redirects_are_rejected(self):
         client = status.Client(self.env, time.monotonic() + 10)
