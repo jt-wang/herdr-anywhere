@@ -21,6 +21,10 @@ type Answer struct {
 	// Setup is the agent whose Setup the phone can offer, when Unknown is SetupNeeded or SetupNotLoaded.
 	Setup string `json:"setup,omitempty"`
 	Turns []Turn `json:"turns,omitempty"`
+	// Session is opaque and stable across appends, but changes when this terminal shows another record.
+	Session string `json:"session,omitempty"`
+	// Before requests an older chronological page. A page can be empty; continue while it supplies Before.
+	Before string `json:"before,omitempty"`
 }
 
 // Service answers for a terminal of the local herdr-core: one `hc get`, the reader of the agent it reports, and a
@@ -41,8 +45,10 @@ type Service struct {
 	hcTimeout time.Duration                     // how long `hc get` may take (0: 5 s); tests shorten it
 	logged    sync.Map
 
-	mu       sync.Mutex
-	sessions map[string]seen // by terminal address: the session id an agent last reported (Follow)
+	mu         sync.Mutex
+	sessions   map[string]seen // by terminal address: the session id an agent last reported (Follow)
+	historyKey sync.Once
+	cursorKey  [32]byte
 }
 
 // A local address as herdr-core gives them (t7, t1b) or a terminal's name. One with "/" is on another machine.
@@ -159,6 +165,10 @@ func (s *Service) named(t terminal) (string, Reader) {
 
 func (s *Service) Chat(addr string) Answer {
 	app, r, path, version, state, msg, err := s.findMsg(addr)
+	return s.chatFound(app, r, path, version, state, msg, err)
+}
+
+func (s *Service) chatFound(app string, r Reader, path, version, state, msg string, err error) Answer {
 	// A slow hc can't say now what runs there: unsure, not "no chat here", which closes an open chat view.
 	if errors.Is(err, errSlow) {
 		return Answer{Chat: true, Unknown: NoTerminal}

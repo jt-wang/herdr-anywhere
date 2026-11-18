@@ -369,8 +369,13 @@ func lineAt(f *os.File, size, pos int64) ([]byte, int64, error) {
 
 // Lines is EachLine as a loop: for l := range Lines(path, off, &err) { … }. err is set when reading fails.
 func Lines(path string, off int64, err *error) iter.Seq[[]byte] {
+	return LinesUntil(path, off, -1, err)
+}
+
+// LinesUntil is Lines with a fixed exclusive end, so appends cannot move a history page.
+func LinesUntil(path string, off, end int64, err *error) iter.Seq[[]byte] {
 	return func(yield func([]byte) bool) {
-		e := EachLine(path, off, func(l []byte) error {
+		e := eachLineUntil(path, off, end, func(l []byte) error {
 			if !yield(l) {
 				return errStop
 			}
@@ -388,6 +393,10 @@ var errStop = errors.New("stop")
 // newline), and one still being written (no newline yet) is left for the next read. One line at a time is held, so
 // a reader's memory is its longest line, not what it reads.
 func EachLine(path string, off int64, fn func([]byte) error) error {
+	return eachLineUntil(path, off, -1, fn)
+}
+
+func eachLineUntil(path string, off, end int64, fn func([]byte) error) error {
 	f, err := os.Open(path)
 	if err != nil {
 		return err
@@ -405,7 +414,13 @@ func EachLine(path string, off int64, fn func([]byte) error) error {
 		}
 		cut = b[0] != '\n'
 	}
-	r := bufio.NewReaderSize(io.NewSectionReader(f, off, st.Size()-off), 64<<10)
+	if end < 0 {
+		end = st.Size()
+	}
+	if end > st.Size() {
+		return ErrCursor
+	}
+	r := bufio.NewReaderSize(io.NewSectionReader(f, off, end-off), 64<<10)
 	for {
 		line, err := r.ReadBytes('\n')
 		if err == io.EOF {

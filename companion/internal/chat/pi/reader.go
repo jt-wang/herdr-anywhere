@@ -165,13 +165,18 @@ func branch(path string) (_ []msg, cwd string, cut bool, _ error) {
 	if err != nil {
 		return nil, "", false, err
 	}
+	ms, cwd, cut, _, err := branchWindow(path, off, -1, "")
+	return ms, cwd, cut, err
+}
+
+func branchWindow(path string, off, end int64, head string) (_ []msg, cwd string, cut bool, parent string, _ error) {
 	byID := map[string]entry{}
 	var last string
 	var rerr error
-	for raw := range chat.Lines(path, off, &rerr) {
+	for raw := range chat.LinesUntil(path, off, end, &rerr) {
 		var e entry
 		if json.Unmarshal(raw, &e) != nil {
-			return nil, "", false, chat.Formatf("a line that isn't JSON")
+			return nil, "", false, "", chat.Formatf("a line that isn't JSON")
 		}
 		if e.Type == "session" {
 			cwd = e.Cwd
@@ -184,13 +189,17 @@ func branch(path string) (_ []msg, cwd string, cut bool, _ error) {
 		last = e.ID
 	}
 	if rerr != nil {
-		return nil, "", false, rerr
+		return nil, "", false, "", rerr
+	}
+	if head != "" {
+		last = head
 	}
 	var chain []entry
 	for id, n := last, 0; id != "" && n <= len(byID); n++ {
 		e, ok := byID[id]
 		if !ok {
 			cut = true // the window starts here
+			parent = id
 			break
 		}
 		chain = append(chain, e)
@@ -207,11 +216,11 @@ func branch(path string) (_ []msg, cwd string, cut bool, _ error) {
 		}
 		var m message
 		if json.Unmarshal(e.Message, &m) != nil {
-			return nil, "", false, chat.Formatf("message %s", e.ID)
+			return nil, "", false, "", chat.Formatf("message %s", e.ID)
 		}
 		out = append(out, msg{id: e.ID, at: e.Timestamp, m: m})
 	}
-	return out, cwd, cut, nil
+	return out, cwd, cut, parent, nil
 }
 
 func rel(p, cwd string) string {
@@ -313,6 +322,29 @@ func parse(path string) ([]chat.Turn, error) {
 	if err != nil {
 		return nil, err
 	}
+	turns := parseMessages(ms, cwd, cut)
+	if len(turns) > chat.MaxTurns {
+		turns = turns[len(turns)-chat.MaxTurns:]
+	}
+	return turns, nil
+}
+
+func (r *Reader) Before(path, first string) (string, error) { return chat.FileBefore(path, first) }
+
+func (r *Reader) History(path, before string) (chat.HistoryPage, error) {
+	return chat.FileBranchHistory(path, before, isUser, func(off, end int64, head string) ([]chat.Turn, string, error) {
+		ms, cwd, cut, parent, err := branchWindow(path, off, end, head)
+		if err != nil {
+			return nil, "", err
+		}
+		if len(ms) == 0 {
+			return nil, parent, nil
+		}
+		return parseMessages(ms, cwd, cut), parent, nil
+	})
+}
+
+func parseMessages(ms []msg, cwd string, cut bool) []chat.Turn {
 	results := map[string]*message{}
 	for i := range ms {
 		if ms[i].m.Role == "toolResult" {
@@ -415,10 +447,7 @@ func parse(path string) ([]chat.Turn, error) {
 		}
 	}
 	finish()
-	if len(turns) > chat.MaxTurns {
-		turns = turns[len(turns)-chat.MaxTurns:]
-	}
-	return turns, nil
+	return turns
 }
 
 var exited = regexp.MustCompile(`\n*Command exited with code (\d+)\s*$`)

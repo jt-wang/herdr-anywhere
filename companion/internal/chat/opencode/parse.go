@@ -150,6 +150,14 @@ func at(ms int64) string {
 // parse makes turns of a session's rows, in their order: a prompt opens a turn, the model's texts before its last
 // are notes between the steps, its last text is the reply, and the end row closes the turn.
 func parse(msgs []message) []chat.Turn {
+	turns := parseAll(msgs)
+	if len(turns) > chat.MaxTurns {
+		turns = turns[len(turns)-chat.MaxTurns:]
+	}
+	return turns
+}
+
+func parseAll(msgs []message) []chat.Turn {
 	var turns []chat.Turn
 	var cur *chat.Turn
 	var started int64
@@ -234,9 +242,6 @@ func parse(msgs []message) []chat.Turn {
 		// Still working: what it said last is the latest note, not yet a reply.
 		flush()
 		turns = append(turns, *cur)
-	}
-	if len(turns) > chat.MaxTurns {
-		turns = turns[len(turns)-chat.MaxTurns:]
 	}
 	return turns
 }

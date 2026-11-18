@@ -1,0 +1,195 @@
+name: Android release APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: Full reviewed commit on the default branch (40 lowercase hex characters)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-release
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  ANDROID_EXPECTED_SHA: ${{ inputs.expected_sha }}
+  ANDROID_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+
+jobs:
+  release:
+    if: github.repository == 'jt-wang/herdr-anywhere' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.workflow_sha == github.sha
+    # Reuse the default-branch-only deployment policy; the Android credentials are repository secrets.
+    environment: testflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Check reviewed source
+        run: |
+          python3 - <<'PY_REQUEST'
+          import json, os, re, subprocess
+          from pathlib import Path
+          env = os.environ
+          sha = env['ANDROID_EXPECTED_SHA']
+          repo = 'jt-wang/herdr-anywhere'
+          branch = env.get('ANDROID_DEFAULT_BRANCH', '')
+          ref = 'refs/heads/' + branch
+          if (not branch or env.get('GITHUB_EVENT_NAME') != 'workflow_dispatch'
+                  or env.get('GITHUB_REPOSITORY') != repo or env.get('GITHUB_REF') != ref
+                  or not re.fullmatch('[0-9a-f]{40}', sha)
+                  or env.get('GITHUB_SHA') != sha or env.get('GITHUB_WORKFLOW_SHA') != sha
+                  or env.get('GITHUB_WORKFLOW_REF') != repo + '/.github/workflows/android-release.yml@' + ref
+                  or subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip() != sha):
+              raise SystemExit('Trusted default-branch workflow and exact reviewed SHA required')
+          subprocess.run(['git', 'diff', '--exit-code', 'HEAD'], check=True, capture_output=True)
+          config = json.loads(Path('app/nsh.json').read_text())
+          if (not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', config['version'])
+                  or type(config['build']) is not int or config['build'] <= 0):
+              raise SystemExit('Invalid app/nsh.json version/build')
+          PY_REQUEST
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: companion/go.mod
+          cache-dependency-path: companion/go.sum
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Install build dependencies without signing credentials
+        run: |
+          app/e2e/ci/tools.sh nsh
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-36' 'build-tools;36.0.0'
+      - name: Build without release signing credentials
+        run: |
+          unset HERDR_ANDROID_KEYSTORE HERDR_ANDROID_KEYSTORE_PASSWORD
+          app/android/build.sh
+          # Stop Gradle before introducing secrets; no build/dependency program runs in the signing step.
+          (cd app/android && ./gradlew --stop)
+      - name: Download the previous stable release APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/android-previous"
+          # Use real releases, not tags: TestFlight-only tags have no Android APK.
+          gh api repos/jt-wang/herdr-anywhere/releases --paginate --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name' > "$RUNNER_TEMP/android-previous/tags"
+          python3 - <<'PY_PREVIOUS'
+          import json, os, re
+          from pathlib import Path
+          folder = Path(os.environ['RUNNER_TEMP']) / 'android-previous'
+          current = tuple(map(int, json.loads(Path('app/nsh.json').read_text())['version'].split('.')))
+          tags = [tag for tag in folder.joinpath('tags').read_text().splitlines()
+                  if re.fullmatch(r'v[0-9]+\.[0-9]+\.[0-9]+', tag)]
+          previous = [(tuple(map(int, tag[1:].split('.'))), tag) for tag in tags]
+          previous = [item for item in previous if item[0] < current]
+          if not previous:
+              raise SystemExit('No previous stable release; refusing a new signing identity')
+          folder.joinpath('tag').write_text(max(previous)[1] + '\n')
+          PY_PREVIOUS
+          previous=$(cat "$RUNNER_TEMP/android-previous/tag")
+          gh release download "$previous" --repo jt-wang/herdr-anywhere --pattern Herdr-Anywhere.apk --dir "$RUNNER_TEMP/android-previous"
+      - name: Sign and verify the existing APK
+        env:
+          ANDROID_RELEASE_KEYSTORE: ${{ secrets.ANDROID_RELEASE_KEYSTORE }}
+          ANDROID_RELEASE_PASSWORD: ${{ secrets.ANDROID_RELEASE_PASSWORD }}
+          ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+        run: |
+          python3 - <<'PY_SIGN'
+          import base64, hashlib, json, os, re, signal, subprocess, tempfile
+          from pathlib import Path
+
+          # Read secrets only here. Children never inherit raw base64, passwords or the alias.
+          secret_names = ('ANDROID_RELEASE_KEYSTORE', 'ANDROID_RELEASE_PASSWORD', 'ANDROID_RELEASE_KEY_ALIAS')
+          secrets = {name: os.environ.pop(name, '') for name in secret_names}
+          if not all(secrets.values()):
+              raise SystemExit('Missing Android signing configuration')
+          child_env = dict(os.environ)
+          temp = Path(os.environ['RUNNER_TEMP'])
+          tools = Path(os.environ['ANDROID_HOME']) / 'build-tools/36.0.0'
+          output = temp / 'android-release'
+          output.mkdir(mode=0o700)
+          apk = output / 'Herdr-Anywhere.apk'
+          previous = temp / 'android-previous/Herdr-Anywhere.apk'
+          config = json.loads(Path('app/nsh.json').read_text())
+
+          def tool(args):
+              result = subprocess.run([str(arg) for arg in args], env=child_env,
+                                      capture_output=True, timeout=180)
+              if result.returncode:
+                  # Signing tool diagnostics may include credential values. Never print argv or output.
+                  raise SystemExit('Android verification/signing tool failed')
+              return result.stdout.decode('utf-8')
+
+          def certificate(path):
+              text = tool([tools / 'apksigner', 'verify', '--verbose', '--print-certs', path])
+              certs = re.findall(r'^Signer #[0-9]+ certificate SHA-256 digest: ([0-9a-fA-F]{64})$', text, re.M)
+              if len(certs) != 1:
+                  raise SystemExit('Exactly one verified APK signer required')
+              return certs[0].lower()
+
+          def check_identity(path):
+              text = tool([tools / 'aapt', 'dump', 'badging', path])
+              match = re.search(r"^package: name='([^']+)' versionCode='([0-9]+)' versionName='([^']+)'", text, re.M)
+              if not match or match.groups() != (config['id'], str(config['build']), config['version']):
+                  raise SystemExit('APK identity/version/build differs from app/nsh.json')
+
+          def interrupted(signum, frame):
+              raise SystemExit('Signing interrupted')
+
+          for sig in (signal.SIGTERM, signal.SIGINT):
+              signal.signal(sig, interrupted)
+          os.umask(0o077)
+          try:
+              old_cert = certificate(previous)
+              check_identity(Path('app/android/build/Herdr.apk'))
+              with tempfile.TemporaryDirectory(prefix='android-sign-', dir=temp) as directory:
+                  directory = Path(directory)
+                  keystore, password, alias = (directory / name for name in ('release.p12', 'password', 'alias'))
+                  # Files are owner-only, live exclusively under RUNNER_TEMP, and are removed even on failure.
+                  keystore.write_bytes(base64.b64decode(''.join(secrets['ANDROID_RELEASE_KEYSTORE'].split()), validate=True))
+                  password.write_text(secrets['ANDROID_RELEASE_PASSWORD'])
+                  alias.write_text(secrets['ANDROID_RELEASE_KEY_ALIAS'])
+                  secrets.clear()
+                  # apksigner replaces the build's debug signature; no Gradle/nsh/build script gets the key.
+                  tool([tools / 'apksigner', 'sign', '--ks', keystore, '--ks-key-alias', alias.read_text(),
+                        '--ks-pass', 'file:' + str(password), '--key-pass', 'file:' + str(password),
+                        '--v4-signing-enabled', 'false', '--out', apk, 'app/android/build/Herdr.apk'])
+              new_cert = certificate(apk)
+              if new_cert != old_cert:
+                  raise SystemExit('Release signer does not match the previous stable APK')
+              check_identity(apk)
+              tool([tools / 'zipalign', '-c', '-P', '16', '4', apk])
+              # No .idsig, keystore, debug APK, logs, or build directories are delivered.
+              receipt = {
+                  'repository': 'jt-wang/herdr-anywhere', 'source_sha': os.environ['GITHUB_SHA'],
+                  'version': config['version'], 'build': config['build'],
+                  'apk_sha256': hashlib.sha256(apk.read_bytes()).hexdigest(),
+                  'previous_release': (temp / 'android-previous/tag').read_text().strip(),
+                  'previous_apk_sha256': hashlib.sha256(previous.read_bytes()).hexdigest(),
+                  'signer_sha256': new_cert, 'previous_signer_sha256': old_cert,
+                  'signer_matches_previous': True,
+              }
+              (output / 'receipt.json').write_text(json.dumps(receipt, indent=2) + '\n')
+          except BaseException:
+              apk.unlink(missing_ok=True)
+              (output / 'receipt.json').unlink(missing_ok=True)
+              raise SystemExit('Android release signing/verification failed; no deliverable produced') from None
+          PY_SIGN
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: android-release-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/android-release/Herdr-Anywhere.apk
+            ${{ runner.temp }}/android-release/receipt.json
+          if-no-files-found: error
+          retention-days: 7

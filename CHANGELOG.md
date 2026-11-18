@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.1
+
+- Load earlier messages in long Claude Code, Codex, Pi and OpenCode conversations. Loading history keeps your place and preserves messages already shown if the connection drops.
+- Show Connecting immediately while the first connection is being established.
+- Includes the 0.2.0 changes below, including compact, collapsed command summaries in the chat view.
+
 ## v0.2.0-testflight.2
 
 - Fix a bytecode path-check false positive that blocked TestFlight uploads.

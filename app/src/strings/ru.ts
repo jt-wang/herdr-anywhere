@@ -2,6 +2,7 @@
 import type { Table } from './index.ts'
 
 export const ru: Table = {
+  chatEarlier: 'Загрузить предыдущие сообщения', chatLoadingEarlier: 'Загрузка предыдущих сообщений…', chatEarlierFailed: 'Не удалось загрузить предыдущие сообщения. Попробуйте ещё раз.', chatHistoryLimit: 'Эта часть записи слишком большая. Прочитайте её в терминале.',
   needsYou: 'Ждёт вас', done: 'Готово', working: 'Работает', idle: 'Простаивает', unknown: 'Неизвестно', pinned: 'Закреплённые', pinToTop: 'Закрепить сверху', unpin: 'Открепить', dragHint: 'Перетащите на нужное место и отпустите', moveUp: 'Переместить выше', moveDown: 'Переместить ниже',
   notConnected: 'Нет соединения', notConnectedLower: 'нет соединения', connecting: 'Подключение…', reconnecting: 'Переподключение…',
   lastUpdatedNow: 'Обновлено только что', lastUpdated: 'Обновлено {age} назад',

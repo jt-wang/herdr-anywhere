@@ -20,6 +20,13 @@ export function ChatView(props: { store: Store; address: string; status: () => s
   const s = props.store
   const answer = signal<ChatAnswer | undefined>(undefined)
   const offline = signal(false)
+  const before = signal<string | undefined>(undefined)
+  const loadingEarlier = signal(false)
+  const earlierError = signal('')
+  let session: string | undefined
+  let historyLoaded = false
+  let lastTurns: ChatTurn[] | undefined
+  const merge = (older: ChatTurn[], newer: ChatTurn[]) => [...new Map([...older, ...newer].map((x) => [x.id, x])).values()]
   let alive = true
   let timer: ReturnType<typeof setTimeout> | undefined
   // Asks overlap when the computer is slow (each 2 to 7.6 s in CI, six at once): an answer to an ask older than the
@@ -31,7 +38,16 @@ export function ChatView(props: { store: Store; address: string; status: () => s
       const a = await s.chat!.get(props.address)
       if (!alive || n < shown) return
       shown = n
-      answer.set(a)
+      if (a.session !== session) {
+        session = a.session
+        historyLoaded = false
+        lastTurns = undefined
+        earlierError.set('')
+        prepend = undefined
+      }
+      if (!historyLoaded) before.set(a.before)
+      if (a.turns) lastTurns = historyLoaded ? merge(lastTurns ?? [], a.turns) : a.turns
+      answer.set(a.turns ? { ...a, turns: lastTurns } : a)
       offline.set(false)
     } catch {
       if (alive && n >= shown) { shown = n; offline.set(true) }
@@ -57,12 +73,43 @@ export function ChatView(props: { store: Store; address: string; status: () => s
   const viewport = signal(0)
   let pinned = true
   let content = 0
-  const toEnd = (height: number) => { content = height; if (pinned) scroller?.scrollTo({ y: Math.max(0, height - viewport()), animated: false }) }
+  let offset = 0
+  let prepend: { height: number; y: number } | undefined
+  const toEnd = (height: number) => {
+    content = height
+    if (prepend && height > prepend.height) {
+      scroller?.scrollTo({ y: prepend.y + height - prepend.height, animated: false })
+      prepend = undefined
+    } else if (pinned) scroller?.scrollTo({ y: Math.max(0, height - viewport()), animated: false })
+  }
+  const loadEarlier = async () => {
+    const cursor = before(), fromSession = session
+    if (!cursor || loadingEarlier()) return
+    loadingEarlier.set(true)
+    earlierError.set('')
+    pinned = false
+    try {
+      const a = await s.chat!.get(props.address, cursor)
+      if (!alive || session !== fromSession) return
+      if (a.session !== session) { void ask(); return }
+      historyLoaded = true
+      before.set(a.before)
+      if (a.turns?.length) {
+        if (a.turns.some((x) => !lastTurns?.some((old) => old.id === x.id))) prepend = { height: content, y: offset }
+        lastTurns = merge(a.turns, lastTurns ?? [])
+        answer.set({ ...answer()!, turns: lastTurns })
+      }
+    } catch (e) {
+      if (alive && session === fromSession) {
+        earlierError.set(e instanceof Error ? e.message : 'history-unavailable')
+        if (earlierError() === 'history-changed') void ask()
+      }
+    } finally { if (alive) loadingEarlier.set(false) }
+  }
 
   // The record falls behind the screen for a moment at each new prompt: the turns already shown stay up, marked, so
   // what was opened stays open. Any other doubt shows no turn at all.
-  let lastTurns: ChatTurn[] | undefined
-  const turns = () => { const a = answer(); if (a?.turns) lastTurns = a.turns; return a?.turns ?? (a?.unknown === 'behind' ? lastTurns : undefined) }
+  const turns = () => { const a = answer(); return a?.turns ?? (a?.unknown === 'behind' ? lastTurns : undefined) }
   // Behind with turns to show: the answer's own (the first time the chat opens) or the last ones seen.
   const behind = () => { const a = answer(); return a?.unknown === 'behind' && !!(a.turns ?? lastTurns) }
   // Said above the turns only when it lasts: over 10 s behind.
@@ -104,8 +151,14 @@ export function ChatView(props: { store: Store; address: string; status: () => s
              out 49 points taller first, and the scroll to the end made then left it 49 short of the end onScroll counts,
              past its 40: no new turn was followed (measured on CI's emulator, Codex's pane). */
           keyboardShouldPersistTaps="handled" onLayout={(b) => { viewport.set(b.size.height); toEnd(content) }}
-          scrollEventThrottle={64} onScroll={(e) => { pinned = (e?.offset?.y ?? 0) + viewport() >= content - 40 }}>
+          scrollEventThrottle={64} onScroll={(e) => { offset = e?.offset?.y ?? 0; pinned = offset + viewport() >= content - 40 }}>
           <View class="gap-4" onLayout={(b) => toEnd(b.size.height)}>
+            <If when={before()}>
+              <View role="button" testID="chat-earlier" disabled={loadingEarlier()} onPress={() => void loadEarlier()} class="min-h-[44px] items-center justify-center rounded-[8px] bg-secondary active:bg-accent">
+                <Text class="text-[13px] text-foreground">{t(loadingEarlier() ? 'chatLoadingEarlier' : 'chatEarlier')}</Text>
+              </View>
+            </If>
+            <If when={earlierError()}><Text testID="chat-earlier-error" class="text-[12.5px] text-muted-foreground">{t(earlierError() === 'history-limit' ? 'chatHistoryLimit' : 'chatEarlierFailed')}</Text></If>
             <If when={turns()?.length} else={<If when={answer()}><Text class="text-[13px] text-muted-foreground text-center py-6">{t('chatEmpty')}</Text></If>}>
               <Each of={turns() ?? []} key={(x) => x.id}>{(x) => <TurnView store={s} address={props.address} turn={x()} carded={!!card()} back={props.back} opened={opened} inspect={() => { pinned = false }} />}</Each>
               <If when={card()}>{(c) => <AskCard store={s} address={props.address} agent={s.program(props.address).name} card={c} back={props.back} />}</If>
