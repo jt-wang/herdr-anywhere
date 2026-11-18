@@ -603,7 +603,7 @@ jobs:
               $s ios-picture e2e/ios-picture.sh "$OUT/picture"
               $s ios-pin-order e2e/ios-pin-order.sh ;;
             onerror)
-              $s ios-onerror e2e/ios-onerror.sh "$OUT/onerror.png" ;;
+              $s ios-onerror e2e/ios-onerror-race.sh "$OUT/onerror.png" ;;
             title)
               # ios-sheet-title.sh takes a Companion built for this Mac.
               mkdir -p "$OUT/sheet-title"

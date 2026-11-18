@@ -139,7 +139,7 @@ echo "ok: the app is still running 5 s after the error (pid $after)"
 cp -R "$app/e2e/ios-uitest" "$work/uitest"
 (cd "$work/uitest" && xcodegen generate --quiet)
 rc=0
-TEST_RUNNER_SPACE=sperror TEST_RUNNER_OUT="$work/onerror.txt" perl -e 'alarm 300; exec @ARGV' xcodebuild test -quiet -project "$work/uitest/KeyboardCheck.xcodeproj" -scheme UITests -only-testing:UITests/OnError -destination "id=$SIM_UDID" -derivedDataPath "$work/uitest/derived" -resultBundlePath "$work/uitest/result.xcresult" > "$work/uitest/test.log" 2>&1 || rc=$?
+TEST_RUNNER_SPACE=sperror TEST_RUNNER_OUT="$work/onerror.txt" perl -e 'alarm($ENV{HM_ONERROR_DRIVER_TIMEOUT} // 300); exec @ARGV' xcodebuild test -quiet -project "$work/uitest/KeyboardCheck.xcodeproj" -scheme UITests -only-testing:UITests/OnError -destination "id=$SIM_UDID" -derivedDataPath "$work/uitest/derived" -resultBundlePath "$work/uitest/result.xcresult" > "$work/uitest/test.log" 2>&1 || rc=$?
 sed 's/^/  /' "$work/onerror.txt" 2>/dev/null || true
 if [ "$rc" != 0 ]; then
   echo "FAIL: the tap after the error (xcodebuild test exit $rc)"
