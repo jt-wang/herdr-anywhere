@@ -154,10 +154,9 @@ export function workPreview(turn: ChatTurn): { note?: ChatStep; step?: ChatStep;
   return { note: note?.title.trim() === turn.reply.trim() ? undefined : note, step, failures }
 }
 
-/** How often an open chat view asks again: while the agent works or waits on you, its record grows; an agent that
- *  reports no status (OpenCode 1, `undefined`) never says when, so it is asked as often. */
+/** The transcript is HTTP, not the terminal's byte stream: keep it live while working, with a slow idle fallback. */
 export function refreshEvery(status: string | undefined): number {
-  return status === undefined || status === 'working' || status === 'blocked' ? 3000 : 0
+  return status === undefined || status === 'working' ? 3000 : 30_000
 }
 
 /** What the view says when the computer isn't sure. `agent`: the program's name, for a reason that names it. */

@@ -164,13 +164,52 @@ test('detaching sends CLOSE once and stops delivering', async () => {
   expect(core.sent.filter((f) => f.ch === 2 && f.kind === CLOSE).length).toBe(1)
 })
 
+test('pausing a viewer withholds output and credit, not events or calls; resume delivers the final bytes before close', async () => {
+  const core = new FakeCore()
+  const hc = new HcClient(core)
+  await hc.hello()
+  core.answer = (m) => m.method === 'terminal.attach' ? { channel: 9, terminal: {} }
+    : m.method === 'events.subscribe' ? { channel: 3, seq: 0, terminals: [] } : { ok: true }
+  const seen: string[] = []
+  await hc.subscribe((e) => seen.push(e.method))
+  const s = await hc.attach({ terminal: 't1', cols: 61, rows: 19 }, {
+    data: (b) => seen.push(dec.decode(b)), close: (r) => seen.push(r.reason),
+  })
+  s.pause(true)
+  core.sent.length = 0
+  core.frame(9, DATA, 'first')
+  core.frame(3, DATA, '{"method":"event"}\n')
+  await tick()
+  expect(await hc.call('server.status')).toEqual({ ok: true })
+  expect(seen).toEqual(['event'])
+  expect(core.sent.filter((f) => f.ch === 9)).toEqual([])
+  expect(core.sent.some((f) => f.ch === 3 && f.kind === CREDIT)).toBe(true)
+  s.pause(false)
+  s.pause(false)
+  expect(seen).toEqual(['event', 'first'])
+  expect(core.sent.filter((f) => f.ch === 9).map((f) => [f.kind, new DataView(f.payload.buffer, f.payload.byteOffset).getUint32(0, true)])).toEqual([[CREDIT, 5]])
+  s.pause(true)
+  core.frame(9, DATA, 'final')
+  core.frame(9, CLOSE, '{"reason":"exited"}')
+  await tick()
+  expect(seen).toEqual(['event', 'first'])
+  s.pause(false)
+  expect(seen).toEqual(['event', 'first', 'final', 'exited'])
+  s.pause(false)
+  expect(seen).toEqual(['event', 'first', 'final', 'exited'])
+})
+
 test('losing the pipe fails pending calls and tells every stream', async () => {
   const core = new FakeCore()
   const hc = new HcClient(core)
   await hc.hello()
   core.answer = (m) => m.method === 'terminal.attach' ? { channel: 4, terminal: {} } : undefined
   let streamClosed: any
-  await hc.attach({ terminal: 't1', cols: 80, rows: 24 }, { data: () => {}, close: (r) => { streamClosed = r } })
+  const got: string[] = []
+  const stream = await hc.attach({ terminal: 't1', cols: 80, rows: 24 }, { data: (b) => got.push(dec.decode(b)), close: (r) => { streamClosed = r } })
+  stream.pause(true)
+  core.frame(4, DATA, 'old connection')
+  await tick()
   const pending = hc.call('terminal.list', {}).then(() => 'answered', (e) => e.message)
   let lost = ''
   hc.onClose = (r) => { lost = r }
@@ -178,6 +217,8 @@ test('losing the pipe fails pending calls and tells every stream', async () => {
   expect(await pending).toBe('connection lost')
   expect(streamClosed).toEqual({ reason: 'disconnected' })
   expect(lost).toBe('closed')
+  stream.pause(false)
+  expect(got).toEqual([])
 })
 
 test('a first paint and first events that come in the same read as their reply are kept', async () => {

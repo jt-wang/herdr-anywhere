@@ -2,6 +2,7 @@
 import { expect, test } from 'nsh/test'
 import { Store } from '../store.ts'
 import { FakeCore, settle } from '../testing/fakecore.ts'
+import { CREDIT, FrameParser } from '../hc/frames.ts'
 import { PAGE_READY_MS, TerminalSession, terminalNote } from './terminal-session.ts'
 import { t } from '../strings/index.ts'
 import { sinceLabel } from '../model/seen.ts'
@@ -30,6 +31,27 @@ test('the page saying ready attaches at its size; output reaches the page after 
   expect(posted.map((m) => m.t)).toEqual(['reset', 'write', 'write'])
   expect(posted.slice(1).map((m) => m.data).join('')).toBe(`\x1b[H\x1b[2J${r.terminal}$ hello`)
   expect(s.state.get()).toBe('live')
+})
+
+test('a background terminal holds output without releasing its width, and resumes in order', async () => {
+  const { core, r, s, store, posted } = await setup()
+  s.page(JSON.stringify({ t: 'ready', cols: 61, rows: 19 }))
+  await settle()
+  posted.length = 0
+  store.appActive = false
+  core.output(r.terminal, '\x1b[31mfirst')
+  core.output(r.terminal, ' second\x1b[0m')
+  await settle()
+  expect(posted).toEqual([])
+  expect(s.state.get()).toBe('live')
+  const attaches = () => core.calls.filter((c) => c.method === 'terminal.attach').length
+  expect(attaches()).toBe(1)
+  store.appActive = true
+  await settle()
+  expect(posted.filter((m) => m.t === 'write').map((m) => m.data).join('')).toBe('\x1b[31mfirst second\x1b[0m')
+  expect(attaches()).toBe(1)
+  s.dispose()
+  store.disconnect()
 })
 
 test('typing goes to the terminal; Ctrl from the key bar applies to the next key only', async () => {
@@ -280,9 +302,16 @@ test('opening a terminal again leaves the phone one attachment to it, and a left
   s.dispose()
   await settle()
   const before = posted.length
+  let credits = 0
+  const parser = new FrameParser((ch, kind) => { if (kind === CREDIT) credits++ })
+  const send = core.send.bind(core)
+  core.send = (b) => { parser.push(b); send(b) }
+  store.appActive = false
+  store.appActive = true // Leaving the page unsubscribes: returning to the app must not resume its held stream.
   core.output(r.terminal, 'meanwhile')
   await settle()
   expect(posted.length).toBe(before)
+  expect(credits).toBe(0)
   const again = new TerminalSession(store, r.terminal, () => {}, (f) => { queueMicrotask(f); return 1 })
   again.page(JSON.stringify({ t: 'ready', cols: 54, rows: 37 }))
   await settle()

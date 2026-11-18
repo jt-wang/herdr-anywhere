@@ -177,9 +177,10 @@ function Composer(props: { toTerminal: () => void; keepTerminal: () => boolean; 
   const addr = props.session.address
   const sendingAll = useSignal(props.store.sending)
   const mine = () => sendingAll().find((x) => x.address === addr)
+  const queueing = signal(false)
   /** Sent and not yet answered: the text stays in the box, greyed, with no second send until it is. The box stays
    *  editable: made read-only, it lost its focus on Android and the keyboard went down with it. */
-  const busy = () => !!mine() && !mine()!.failed
+  const busy = () => queueing() || !!mine() && !mine()!.failed
   const text = signal(mine()?.text ?? '')
   // What the typed text measures; the hint as the box lays it out at this phone's text size, wrapped at the box's
   // width (the hidden copy below, as wide as the box's text); the box's width.
@@ -205,10 +206,13 @@ function Composer(props: { toTerminal: () => void; keepTerminal: () => boolean; 
     props.session.claim()
     held = undefined
     const going = props.store.compose(addr, typed)
-    // Queued for when the computer is back (`pending`): it has left the box.
-    if (!props.store.sending.get().some((x) => x.address === addr)) { text.set(''); content.set(undefined) }
-    void going.catch((e) => props.store.toast(e?.kind !== 'disconnected' ? { title: t('couldntSend'), body: `${String(e?.message ?? e)} ${t('stillInBox')}`, level: 'error' }
-      : held === 'draft' ? { title: t('couldntSend'), body: t('sendLost'), level: 'error' } : { title: t('maybeNotSent'), body: t('sendLostUnsure'), level: 'error' }))
+    // An offline send leaves the box only after its pending text is durable.
+    const queued = !props.store.sending.get().some((x) => x.address === addr)
+    queueing.set(queued)
+    void going.then(() => { if (queued) { text.set(''); content.set(undefined) } })
+      .catch((e) => props.store.toast(e?.kind !== 'disconnected' ? { title: t('couldntSend'), body: `${String(e?.message ?? e)} ${t('stillInBox')}`, level: 'error' }
+        : held === 'draft' ? { title: t('couldntSend'), body: t('sendLost'), level: 'error' } : { title: t('maybeNotSent'), body: t('sendLostUnsure'), level: 'error' }))
+      .finally(() => queueing.set(false))
   }
   const failed = (body: string) => props.store.toast({ title: t('couldntAttach'), body, level: 'error' })
   // One after another: a path joins the text when its file has landed, on the machine the terminal is on.

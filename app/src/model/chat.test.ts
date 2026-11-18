@@ -33,11 +33,11 @@ test('an agent that says its conversation only while it works: the view says so 
   expect(unknownText('ambiguous', 'OpenCode')).toBe("Can't tell for sure which conversation this is.")
 })
 
-test('the view asks again every 3 s while the agent works or waits, and when its status changes otherwise', () => {
+test('the HTTP transcript stays live while working and uses a 30 s idle fallback', () => {
   expect(refreshEvery('working')).toBe(3000)
-  expect(refreshEvery('blocked')).toBe(3000)
-  expect(refreshEvery('done')).toBe(0)
-  expect(refreshEvery('idle')).toBe(0)
+  expect(refreshEvery('blocked')).toBe(30_000)
+  expect(refreshEvery('done')).toBe(30_000)
+  expect(refreshEvery('idle')).toBe(30_000)
   // An agent that reports no status (OpenCode 1) never says when its record grows: asked every 3 s.
   expect(refreshEvery(undefined)).toBe(3000)
 })

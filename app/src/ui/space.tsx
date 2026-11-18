@@ -11,7 +11,7 @@ import { layoutRects } from '../store.ts'
 import { addresses, find, panes, terminalOf, type Node } from '../model/layout.ts'
 import { focusedPaneOf, shownNode, spaceActiveTab, type Tab } from '../model/model.ts'
 import { gitTail } from '../model/marks.ts'
-import { ConnBanner, Glyph, IconButton, PANEL, PANEL_BACKDROP, ProgramIcon, SpaceBadge, StatusDot, StatusMark, shortPath, useRev } from './kit.tsx'
+import { ConnBanner, Glyph, IconButton, PANEL, PANEL_BACKDROP, ProgramIcon, SpaceBadge, StatusDot, StatusMark, shortPath, useRev, useSignal } from './kit.tsx'
 import { t } from '../strings/index.ts'
 import { TerminalView, WIDE } from './terminal.tsx'
 import { attachToTerminal, KEY_ROW_MAX_SCALE, PaneBar } from './pane-bar.tsx'
@@ -136,6 +136,7 @@ const frame = (focused: boolean) => `rounded-[10px] overflow-hidden border ${foc
 function PhoneSpace(props: { store: Store; spaceId: string; tab: Tab; actions: SpaceActions; sessions: Map<string, TerminalSession>; back: () => void; menu: () => void; split: (pane: string, direction: 'right' | 'down') => void }) {
   const s = props.store
   const rev = useRev(s)
+  const active = useSignal(s.activity)
   const node = () => { rev(); const f = focusedPaneOf(props.tab); return f ? find(props.tab.root, f) : undefined }
   const session = signal<TerminalSession | undefined>(undefined)
   const switching = signal(false)
@@ -147,6 +148,7 @@ function PhoneSpace(props: { store: Store; spaceId: string; tab: Tab; actions: S
   let asked = ''
   effect(() => {
     rev()
+    if (!active()) { asked = ''; return }
     const a = addr()
     const key = a && s.chat && s.isAgent(a) ? `${a} ${s.program(a).key} ${s.statusOf(a) ?? ''}` : ''
     if (key === asked) return
@@ -155,12 +157,13 @@ function PhoneSpace(props: { store: Store; spaceId: string; tab: Tab; actions: S
     if (moved) untracked(() => {
       // An open view closed with no tap: what the pane was then (src/diag.ts).
       if (!key && chat.on() && chat.avail()) diag('chat-closed', { addr: a ?? '', agent: String(!!a && s.isAgent(a)), program: a ? s.program(a).key : '', chat: String(!!s.chat) })
-      chat.on.set(s.chatFirst.get()); chat.avail.set(false)
+      chat.on.set(s.chatFirst.get()); chat.avail.set(!!key && !!s.cachedChat(a!)?.chat)
     })
     if (!key) return
     void s.chat!.get(a!).then((r) => {
       if (asked !== key) return
       if (!r.chat && untracked(() => chat.on() && chat.avail())) diag('chat-gone', { addr: a!, agent: String(s.isAgent(a)), program: s.program(a).key })
+      if (!s.cachedChat(a!) || !r.chat || (r.unknown && r.unknown !== 'behind')) s.rememberChat(a!, r)
       chat.avail.set(r.chat)
     }, () => {})
   })
