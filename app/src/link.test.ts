@@ -314,6 +314,10 @@ test('the chat calls send the token and the address; an older companion without 
   const turns = [{ id: 'u1', from: 'you', said: 'hi', steps: [], reply: 'hello', end: 'done' }]
   expect(await chatApi(linker, answer(200, { chat: true, turns })).get('t1')).toEqual({ chat: true, turns })
   expect(asked[0]).toEqual({ url: 'http://192.0.2.10:7681/api/chat/t1', auth: 'Bearer tk' })
+  const page = { chat: true, session: 'orchard', before: 'next', turns }
+  expect(await chatApi(linker, answer(200, page)).get('t1', 'cursor+/=')).toEqual(page)
+  expect(asked.at(-1)!.url).toBe('http://192.0.2.10:7681/api/chat/t1?before=cursor%2B%2F%3D')
+  expect(await chatApi(linker, answer(409, { error: 'history-changed' })).get('t1', 'old').then(() => '', (e) => e.message)).toBe('history-changed')
   expect(await chatApi(linker, answer(404, 'not found')).get('t1')).toEqual({ chat: false })
   expect(await chatApi(linker, answer(200, { chat: true, unknown: 'behind' })).get('t1')).toEqual({ chat: true, unknown: 'behind' })
   await chatApi(linker, answer(200, { chat: false })).get('rohan/t7')

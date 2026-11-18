@@ -97,7 +97,7 @@ herdr-anywhere serve --lan --web "app/dist/web/Herdr Anywhere"
 
 ## iPhone and other agents
 
-**iPhone:** there is no ready-made app yet. You can build it under your own Apple account with [app/ios/README.md](app/ios/README.md). While it's open it plays the sound and shows the toast. It posts no system notifications.
+**iPhone:** the app is in TestFlight testing. The public invitation will be announced on [X (@thejingtao)](https://x.com/thejingtao). With an invitation, install it through TestFlight and scan the same pairing code. You can also [build it under your own Apple account](app/ios/README.md). The app asks for notification permission, but iOS can pause it in the background; notices still appear when you open it.
 
 **Agents:** anything that runs in Herdr opens in a terminal you can type into. Status and alerts come from each agent's own reports. Claude Code, Pi, Kimi and Antigravity send them. OpenCode, Grok, Cursor and Codex 0.159 don't, so they work without alerts.
 
@@ -130,7 +130,7 @@ go build -o ~/.local/bin/herdr-anywhere ./cmd/herdr-anywhere    # needs Go 1.27.
 |---|---|---|
 | Android | `app/android/build.sh` (needs a JDK, the Android SDK and NDK, and Go) | `app/android/build/Herdr.apk` |
 | iOS simulator | [Prepare NativeShell](app/ios/README.md#build-and-install), then `app/ios/build.sh App.tsx simulator` (needs Xcode, xcodegen and Go) | `app/ios/build/Herdr.app` |
-| iPhone, under your Apple account (not yet tried on a phone) | [app/ios/README.md](app/ios/README.md) | `app/ios/build/Herdr.app` |
+| iPhone, under your Apple account | [app/ios/README.md](app/ios/README.md) | `app/ios/build/Herdr.app` |
 | Web | `cd app && nsh package --target web -o dist/web` | `app/dist/web/Herdr Anywhere` |
 | The release's companion | `cd companion && CGO_ENABLED=0 go build -buildvcs=false -trimpath -ldflags '-s -w' -o herdr-anywhere-macos-arm64 ./cmd/herdr-anywhere` (for an Intel Mac: `GOARCH=amd64` and `-o herdr-anywhere-macos-amd64`) | `companion/herdr-anywhere-macos-arm64` |
 

@@ -43,6 +43,7 @@ const io = { load: async (k: string) => memory.get(k) ?? null, save: (k: string,
 
 export const core = new FakeCore()
 core.echo = true
+if (params.hold) core.holding.add(params.hold)
 ;(globalThis as any).__core = core
 const EDIT_MENU = CLAUDE_EDIT_MENU
 if (scene === 'busy' || scene === 'single') {
@@ -227,6 +228,13 @@ async function chat(url: string) {
   if (/\/images\/[^/?]+$/.test(path)) return answer(200, { url: params.chatPicture ? SAMPLE_PICTURE : PIXEL })
   const step = /\/steps\/([^/?]+)$/.exec(path)
   if (!step) {
+    const before = new URL(url).searchParams.get('before')
+    if (before) {
+      const page = chatAnswer.pages?.[before]
+      if (!page) return answer(409, { error: 'history-changed' })
+      if (page.slow) await new Promise((r) => setTimeout(r, page.slow))
+      return answer(page.error ? 422 : 200, page)
+    }
     // An answer with `slow` (ms) is the one current when asked, replied that much later, as a busy computer does.
     const now = chatAnswer
     if (now.slow) await new Promise((r) => setTimeout(r, now.slow))

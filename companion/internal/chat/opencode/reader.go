@@ -236,11 +236,11 @@ func (r *Reader) Turns(path string) ([]chat.Turn, error) {
 	if ok && c.stamp == st {
 		return c.turns, nil
 	}
-	ms, err := rows(path)
+	page, err := r.History(path, "")
 	if err != nil {
 		return nil, err
 	}
-	ts := parse(ms)
+	ts := page.Turns
 	r.mu.Lock()
 	if r.cache == nil {
 		r.cache = map[string]cached{}

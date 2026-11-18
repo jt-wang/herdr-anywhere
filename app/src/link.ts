@@ -267,8 +267,9 @@ export function chatApi(linker: Linker, fetcher: typeof fetch = fetch): ChatApi 
     return { r, body: (await r.json().catch(() => ({}))) as any }
   }
   return {
-    async get(address) {
-      const { r, body } = await call(`/api/chat/${encodeURIComponent(address)}`)
+    async get(address, before) {
+      const { r, body } = await call(`/api/chat/${encodeURIComponent(address)}${before ? `?before=${encodeURIComponent(before)}` : ''}`)
+      if (before && !r.ok) throw new Error(body?.error ?? 'history-unavailable')
       if (!r.ok || !body || typeof body.chat !== 'boolean') return { chat: false }
       if (Array.isArray(body.turns)) for (const turn of body.turns) if (turn?.images) turn.images = pictures(turn.images)
       return body as ChatAnswer

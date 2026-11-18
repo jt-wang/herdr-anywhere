@@ -415,6 +415,22 @@ func (r *Reader) parse(path string) ([]chat.Turn, error) {
 	if err != nil {
 		return nil, err
 	}
+	out, err := r.parseWindow(path, off, -1, from0)
+	if len(out) > chat.MaxTurns {
+		out = out[len(out)-chat.MaxTurns:]
+	}
+	return out, err
+}
+
+func (r *Reader) Before(path, first string) (string, error) { return chat.FileBefore(path, first) }
+
+func (r *Reader) History(path, before string) (chat.HistoryPage, error) {
+	return chat.FileHistory(path, before, isStart, func(off, end int64) ([]chat.Turn, error) {
+		return r.parseWindow(path, off, end, off == 0)
+	})
+}
+
+func (r *Reader) parseWindow(path string, off, end int64, from0 bool) ([]chat.Turn, error) {
 	var turns []chat.Turn
 	var b *building
 	var head *chat.Turn
@@ -434,7 +450,7 @@ func (r *Reader) parse(path string) ([]chat.Turn, error) {
 	}
 	cwd := ""
 	var rerr error
-	for raw := range chat.Lines(path, off, &rerr) {
+	for raw := range chat.LinesUntil(path, off, end, &rerr) {
 		var l line
 		if err := json.Unmarshal(raw, &l); err != nil {
 			return nil, chat.Formatf("a line that isn't JSON")
@@ -527,9 +543,6 @@ func (r *Reader) parse(path string) ([]chat.Turn, error) {
 		if t.Said != "" || len(t.Steps) > 0 || t.Reply != "" {
 			out = append(out, t)
 		}
-	}
-	if len(out) > chat.MaxTurns {
-		out = out[len(out)-chat.MaxTurns:]
 	}
 	return out, nil
 }
