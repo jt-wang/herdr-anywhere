@@ -2,6 +2,16 @@
 
 A cloud coding agent can request an iOS build through GitHub Actions. Apple signing credentials stay in the repository's `testflight` environment; the agent needs a GitHub token with **Actions: write** and **Contents: read**.
 
+## 0.2.2 (32) test candidate
+
+This candidate combines paired home/recent-chat persistence, pending-text recovery, reduced background polling and hidden-terminal backpressure with opt-in local diagnostics. Diagnostics are off by default; exports use the name **Herder Anywhere Diagnostics** and require preview before the system share sheet. Nothing is uploaded automatically.
+
+Test online chat, switch to the terminal and back, then disconnect and restart the app. Previously loaded home rows and recent chat text should remain readable. Queue text offline, restart again, reconnect and confirm it is delivered once. Images/files and TUI screens are not persisted offline. Unconfirmed in-flight sends are returned for user review, not automatically replayed.
+
+Compare foreground/background behavior with background watching enabled and disabled. Hidden terminal output should stop consuming channel credit while keeping the phone's terminal width; independent status notifications and RPC remain available. This reduces work, but is not a measured battery-life claim.
+
+**Known issue:** intermittent first taps on home, including after an uncaught JS error, have not been resolved. Passing samples do not establish a fix. If it occurs, enable the relevant diagnostic categories, reproduce it and preview/share the report. This is a TestFlight test candidate, not approval of a public Release, Latest update or website claim.
+
 ## Request a build
 
 After the maintainer completes the setup below, read the reviewed default-branch commit and dispatch **TestFlight** with that full SHA:
