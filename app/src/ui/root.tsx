@@ -234,7 +234,10 @@ function Connected(props: { deps: RootDeps; store: Store; link: Link; unpaired: 
         </NavPage>
       : <NavPage headerVisible={false} class="bg-sidebar">
           <HomeScreen updates={updates} prefs={deps.prefs} store={store} actions={{
-            openSpace, openAgent: (a) => openTerminal(a.address), openSub: (addr) => openTerminal(addr),
+            // A swipe can expose home before native reports the old page's dismissal. A home tap must reopen it,
+            // not take openSpace's same-page shortcut (which still preserves state for the in-page switcher).
+            openSpace: (id) => { nav.popToRoot(); openSpace(id) },
+            openAgent: (a) => { nav.popToRoot(); openTerminal(a.address) }, openSub: (addr) => { nav.popToRoot(); openTerminal(addr) },
             addAgent: (space) => newTarget.set({ kind: 'tab', space, agent: true }), newMenu: () => newTarget.set({ kind: 'space' }), settings: () => nav.push({ name: 'settings' }),
             rename: (kind, id, current) => renaming.set({ kind, id, current }), leaveDemo: props.leaveDemo,
             doing: (addr) => (deps.prefs.prefs.get().progressFirst ? progress.taskOn(addr) : undefined),

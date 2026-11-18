@@ -2,15 +2,17 @@
 
 A cloud coding agent can request an iOS build through GitHub Actions. Apple signing credentials stay in the repository's `testflight` environment; the agent needs a GitHub token with **Actions: write** and **Contents: read**.
 
-## 0.2.2 (32) test candidate
+## 0.2.2 (33) test candidate
 
 This candidate combines paired home/recent-chat persistence, pending-text recovery, reduced background polling and hidden-terminal backpressure with opt-in local diagnostics. Diagnostics are off by default; exports use the name **Herder Anywhere Diagnostics** and require preview before the system share sheet. Nothing is uploaded automatically.
+
+Build 33 also fixes a home navigation race: swiping back can reveal home before the old space route is removed. A tap on the same agent or space during that interval now reopens it instead of being treated as already open. On the original iPhone, open an agent, swipe back from the left edge, then immediately tap that agent once; repeat with its space row. Both should open without a second tap. Check that a short, cancelled swipe stays in the pane and selecting the current tab keeps an unsent draft.
 
 Test online chat, switch to the terminal and back, then disconnect and restart the app. Previously loaded home rows and recent chat text should remain readable. Queue text offline, restart again, reconnect and confirm it is delivered once. Images/files and TUI screens are not persisted offline. Unconfirmed in-flight sends are returned for user review, not automatically replayed.
 
 Compare foreground/background behavior with background watching enabled and disabled. Hidden terminal output should stop consuming channel credit while keeping the phone's terminal width; independent status notifications and RPC remain available. This reduces work, but is not a measured battery-life claim.
 
-**Known issue:** intermittent first taps on home, including after an uncaught JS error, have not been resolved. Passing samples do not establish a fix. If it occurs, enable the relevant diagnostic categories, reproduce it and preview/share the report. This is a TestFlight test candidate, not approval of a public Release, Latest update or website claim.
+**Known issue:** other intermittent first-tap symptoms on home, including after an uncaught JS error, remain unconfirmed. The swipe-back fix does not establish that they share its cause or are resolved. If a tap still fails, enable the relevant diagnostic categories, reproduce it and preview/share the report. This is a TestFlight test candidate, not approval of a public Release, Latest update or website claim.
 
 ## Request a build
 
