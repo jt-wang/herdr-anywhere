@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.2.2
+
+TestFlight candidate (32), not a public Release or Latest update.
+
+- Open the last successful home snapshot and recent chat text before connecting. Switching between chat and terminal keeps the conversation; recent text remains readable after an offline restart. Cached content belongs to one pairing and is cleared when it is forgotten or revoked. Images, files and TUI screens are not saved for offline viewing.
+- Keep unsent queued messages across app restarts. Messages already handed to the computer without confirmation return for review instead of being sent again automatically.
+- Reduce idle foreground refreshes to a 30-second fallback and watched background work to 60 seconds. Stop business polling when no background work is being watched; refresh immediately on return. Working chat transcripts still update while visible.
+- Pause hidden terminal output using the existing flow-control window, keeping the phone's viewer and terminal width. Notifications and connection health continue independently.
+- Add opt-in, local-only diagnostics, off by default. Preview the selected time range and categories before explicitly sharing **Herder Anywhere Diagnostics** through the system share sheet. No automatic upload or chat/terminal/input/credential content is collected.
+
+Known issue: intermittent first taps on a space on home, including after an uncaught script error, remain unresolved. This candidate does not claim to fix them.
+
 ## v0.2.1
 
 - Load earlier messages in long Claude Code, Codex, Pi and OpenCode conversations. Loading history keeps your place and preserves messages already shown if the connection drops.
