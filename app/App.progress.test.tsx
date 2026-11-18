@@ -4,7 +4,7 @@
 import { expect, open, test } from 'nsh/test'
 
 // These run in Chinese with the Chinese scene; the page in every language is below.
-const progress = (locale = 'zh-Hans') => open('./fixtures/fake.tsx', { host: { params: { scene: 'progress' } }, locale })
+const progress = (locale = 'zh-Hans') => open('./fixtures/fake.tsx', { host: { params: { scene: 'progress' } }, locale, clock: {} })
 const ran = (app: any): string[] => JSON.parse(app.storage()['fake-exec'] ?? '[]')
 
 test('the first screen: what needs the user, then each goal over its tasks, then what finished outside a goal', async () => {
@@ -38,6 +38,7 @@ test('with one goal, what needs the user does not name it', async () => {
   const app = await progress()
   await app.waitFor('text:上线 Acme 商店的新结账流程 · 价格取整，还是保留到分？')
   await app.host.send('fake.progress', { only: 'P1' })
+  await app.wait(30_000)
   await app.waitFor('text:价格取整，还是保留到分？')
 }, 60000)
 
@@ -72,6 +73,7 @@ test('while the computer is still sorting, the page says how many are left', asy
   await app.waitFor('text:要你处理')
   expect(app.count('id:queue-line')).toBe(0)
   await app.host.send('fake.progress', { queue: 2 })
+  await app.wait(30_000)
   await app.waitFor('text:还有 2 条在整理')
 }, 60000)
 
@@ -133,6 +135,7 @@ test('a filing pane that has not started shows a card that opens it', async () =
   await app.waitFor('text:要你处理')
   expect(app.count('id:organizer-waits')).toBe(0)
   await app.host.send('fake.progress', { organizerWaits: 't2' })
+  await app.wait(30_000)
   await app.waitFor('id:organizer-waits')
   await app.press('id:organizer-waits-open')
   await app.waitFor('id:terminal-t2')
@@ -194,13 +197,14 @@ test('the app opens on the view the user last switched to', async () => {
 }, 60000)
 
 test('a task that newly needs the user rings once, saying where it sits and what it waits for', async () => {
-  const app = await open('./fixtures/fake.tsx', { host: { params: { scene: 'progress' }, handlers: { 'page.front': true, 'page.notify': true, 'page.notifications': 'granted' } }, locale: 'zh-Hans' })
+  const app = await open('./fixtures/fake.tsx', { host: { params: { scene: 'progress' }, handlers: { 'page.front': true, 'page.notify': true, 'page.notifications': 'granted' } }, locale: 'zh-Hans', clock: {} })
   await app.waitFor('text:要你处理')
   await app.host.send('page.front', { front: false })
   await app.host.send('fake.progress', { wait: 'T4', waiting: '删卡前要不要再问一次？' })
   const notified = () => app.host.calls().filter((c: any) => c.name === 'page.notify').map((c: any) => c.data)
+  await app.wait(60_000)
   await app.waitUntil(() => notified().length > 0, { timeout: 10000 })
-  await app.wait(5000) // one more reading of the tree: no second notification for the same change
+  await app.wait(60_000) // one more background reading: no second notification for the same change
   expect(notified().map((n: any) => [n.title, n.body])).toEqual([['上线 Acme 商店的新结账流程 › 让顾客能保存银行卡', '等你：删卡前要不要再问一次？']])
 }, 60000)
 
@@ -277,6 +281,7 @@ test('what an agent said shows as paragraphs and list items, without Markdown ma
   const app = await progress()
   await app.waitFor('id:task-T9')
   await app.host.send('fake.progress', { said: { id: 'T9', text: '表单做好了。**还差**两步：\n\n- 校验卡号\n- 删卡\n\n## 然后\n跑一遍 `checkout` 测试' } })
+  await app.wait(30_000)
   await app.press('id:task-T9')
   await app.waitFor('id:said-T9')
   for (const x of ['表单做好了。还差两步：', '校验卡号', '删卡', '然后', '跑一遍 checkout 测试']) expect(app.texts()).toContain(x)

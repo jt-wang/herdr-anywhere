@@ -46,6 +46,7 @@ const contentWrite = async (k: string, v: string) => { memory.set(k, v); await S
 
 export const core = new FakeCore()
 core.echo = true
+setInterval(() => core.heartbeat(), 15_000)
 if (params.hold) core.holding.add(params.hold)
 ;(globalThis as any).__core = core
 const EDIT_MENU = CLAUDE_EDIT_MENU

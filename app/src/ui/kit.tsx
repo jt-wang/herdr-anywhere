@@ -16,7 +16,7 @@ import { PHONE_UI } from './phone-glyphs.ts'
 /** The store's change counter as a signal: read `rev()` in a view to follow the store. */
 export function useRev(store: Store): Accessor<number> {
   const rev = signal(store.rev.get())
-  const offs = [store.rev.sub((v) => rev.set(v)), store.conn.sub(() => rev.update((n) => n + 1), 'kit.useRev'), store.machines.sub(() => rev.update((n) => n + 1))]
+  const offs = [store.rev.sub(() => rev.update((n) => n + 1)), store.conn.sub(() => rev.update((n) => n + 1), 'kit.useRev'), store.machines.sub(() => rev.update((n) => n + 1))]
   cleanup(() => offs.forEach((off) => off()))
   return rev
 }

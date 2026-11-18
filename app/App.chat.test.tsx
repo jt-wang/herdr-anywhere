@@ -127,6 +127,26 @@ test('while the agent works the view asks again every 3 s, and shows what is new
   expect(asks(app).length).toBeGreaterThan(before)
 })
 
+test('a background chat stops fetching and catches up on return, even when the agent finished while away', async () => {
+  const app = await pane({ status: 'working', chat: JSON.stringify({ chat: true, turns: ask }) })
+  await app.press('id:show-chat')
+  await app.waitFor('text:pick a color')
+  await app.host.send('page.front', { front: false })
+  await app.clock.runFor(100)
+  const before = asks(app).length
+  await app.clock.runFor(30_000)
+  expect(asks(app).length).toBe(before)
+  await app.host.send('fake.chat', { chat: true, turns: [{ ...ask[0], ask: undefined, end: 'done', reply: 'Blue it is.' }] })
+  await app.host.send('fake.status', { address: 't1', state: 'done' })
+  await app.clock.runFor(100)
+  const afterStatus = asks(app).length // The pane may probe chat availability on a status change.
+  await app.clock.runFor(30_000)
+  expect(asks(app).length).toBe(afterStatus)
+  await app.host.send('page.front', { front: true })
+  await app.clock.runFor(100)
+  await app.waitFor('text:Blue it is.')
+}, 90_000)
+
 test('the record falling behind shows why, then the turns once it catches up', async () => {
   const app = await pane({ status: 'working', chat: JSON.stringify({ chat: true, unknown: 'behind' }) })
   await app.press('id:show-chat')
@@ -657,7 +677,7 @@ test('cached chat survives terminal switches and an offline cold launch, then yi
   await app.host.send('fake.chat', { chat: true, session: 'new-grove', turns: [
     { ...turns[0], id: 'new-grove', reply: 'A new grove.' },
   ] })
-  await app.clock.runFor(10000)
+  await app.clock.runFor(31_000)
   expect(app.count('id:reply-u1')).toBe(0)
   expect(app.count('id:reply-new-grove')).toBe(1)
   expect(app.count('id:chat-offline')).toBe(0)

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -38,6 +39,15 @@ func main() {
 		} else {
 			n, _ := strconv.Atoi(os.Getenv("FAKE_AFTER"))
 			time.Sleep(time.Duration(n) * time.Second)
+		}
+		// The credit-window test fills a paused viewer's backlog before reporting done.
+		if n, _ := strconv.Atoi(os.Getenv("FAKE_FLOOD_BYTES")); n > 0 {
+			for n > 0 {
+				size := min(n, 1024)
+				fmt.Print(strings.Repeat("x", size))
+				n -= size
+			}
+			fmt.Print("\r\nSYNTHETIC FLOOD COMPLETE\r\n")
 		}
 		report(then, os.Getenv("FAKE_MSG"))
 	}

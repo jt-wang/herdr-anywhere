@@ -98,6 +98,10 @@ export class FakeCore implements Pipe {
     this.later(encodeFrame(ch, kind, typeof payload === 'string' ? enc.encode(payload) : payload))
   }
 
+  heartbeat() {
+    if (this.eventCh !== undefined) this.out(this.eventCh, DATA, JSON.stringify({ jsonrpc: '2.0', method: 'heartbeat', params: { seq: this.seq } }) + '\n')
+  }
+
   emit(type: string, terminal: string | undefined, data: any, machine?: string) {
     const params: any = { seq: ++this.seq, type, data }
     if (terminal) params.terminal = terminal

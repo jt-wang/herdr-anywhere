@@ -39,6 +39,78 @@ test('connecting reads the environment, the machines and an empty layout', async
   expect(store.model.spaces).toEqual([])
 })
 
+test('background events still alert without refreshing Git, and returning refreshes the folder', async () => {
+  const { core, store, advance } = setup()
+  const doc = { spaces: [] as any[] }
+  core.addSpace(doc, 'power-space', '/synthetic/power', 'Power fixture', [{ id: 'power-tab', argv: ['claude'], status: 'working' }])
+  core.docs.set('', { value: doc, version: 1 })
+  await store.connect()
+  await settle()
+  const alerts: string[] = []
+  store.onAlert = (kind) => alerts.push(kind)
+  store.appActive = false
+  advance(61_000)
+  core.calls.length = 0
+  core.setStatus('t1', 'blocked', 'claude-code', { kind: 'permission', msg: 'Approve synthetic task' })
+  await settle()
+  expect(alerts).toEqual(['blocked'])
+  expect(core.calls.filter((c) => c.method === 'machine.exec')).toEqual([])
+  expect(store.conn.get()).toBe('ready')
+  store.appActive = true
+  await settle()
+  expect(core.calls.filter((c) => c.method === 'machine.exec' && c.params.line.startsWith('git ')).length).toBe(1)
+  store.disconnect()
+})
+
+test('machine fallback is 30 s in front, 60 s for watched background work, and off otherwise', async () => {
+  const core = new FakeCore()
+  const doc = { spaces: [] as any[] }
+  core.addSpace(doc, 'grove', '/synthetic/grove', 'Grove', [{ id: 'work', argv: ['claude'], status: 'working' }])
+  core.docs.set('', { value: doc, version: 1 })
+  let now = 1_000_000, id = 0
+  const ticks = new Map<number, { run: () => void; every: number; next: number }>()
+  const store = new Store({ pipe: () => core, now: () => now,
+    setInterval: ((run: () => void, every: number) => { ticks.set(++id, { run, every, next: now + every }); return id }) as any,
+    clearInterval: ((id: number) => { ticks.delete(id) }) as any,
+    setTimeout: (() => 0) as any,
+  })
+  const advance = async (seconds: number) => {
+    for (let i = 0; i < seconds; i++) {
+      now += 1000
+      if (i % 10 === 0) { core.heartbeat(); await settle() }
+      for (const tick of [...ticks.values()]) if (tick.next <= now) { tick.next += tick.every; tick.run() }
+      await settle()
+    }
+  }
+  const requests = () => core.calls.filter((c) => c.method === 'machine.list').length
+  await store.connect()
+  core.calls.length = 0
+  await advance(60)
+  expect(requests()).toBe(2)
+  store.appActive = false
+  core.calls.length = 0
+  await advance(60)
+  expect(requests()).toBe(1)
+  store.setBackgroundWatch(false)
+  core.calls.length = 0
+  await advance(120)
+  expect(requests()).toBe(0)
+  expect(store.conn.get()).toBe('ready')
+  store.setBackgroundWatch(true)
+  await advance(60)
+  expect(requests()).toBe(1)
+  core.setStatus('t1', 'done', 'claude-code')
+  await settle()
+  core.calls.length = 0
+  await advance(120)
+  expect(requests()).toBe(0)
+  store.appActive = true
+  await settle()
+  expect(requests()).toBe(1) // returning refreshes immediately, without waiting for the next fallback
+  store.disconnect()
+  expect(ticks.size).toBe(0)
+})
+
 test('a new space starts a kept, labeled terminal and writes the shared layout', async () => {
   const { core, store } = setup()
   await store.connect()
@@ -926,7 +998,7 @@ test('a line that goes quiet without closing is dropped and connected again', as
   core.mute = true
   await run(10)
   expect(store.conn.get()).toBe('ready')
-  await run(10)
+  await run(40)
   expect(store.conn.get()).toBe('reconnecting')
   expect(timers.length > 0).toBe(true)
 })

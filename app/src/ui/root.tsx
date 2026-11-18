@@ -104,7 +104,7 @@ function Connected(props: { deps: RootDeps; store: Store; link: Link; unpaired: 
   const startOn = props.deps.prefs.prefs.get()
   const first: Route = startOn.progressFirst && startOn.homeView !== 'agents' ? { name: 'progress' } : { name: 'home' }
   const nav = createNavStack<Route>(props.deps.opensSettings ? [first, { name: 'settings' }] : [first])
-  const progress = new ProgressData(store, 4000, { load: () => Storage.getItem('progress-alerts'), save: (v) => void Storage.setItem('progress-alerts', v).catch(() => {}) })
+  const progress = new ProgressData(store, 30_000, { load: () => Storage.getItem('progress-alerts'), save: (v) => void Storage.setItem('progress-alerts', v).catch(() => {}) })
   progress.told = { get: () => deps.prefs.prefs.get().progressLang, set: (l) => deps.prefs.set({ progressLang: l }) }
   const newTarget = signal<NewTarget | null>(null)
   const renaming = signal<RenameTarget | null>(null)
@@ -146,6 +146,7 @@ function Connected(props: { deps: RootDeps; store: Store; link: Link; unpaired: 
   const offPage = followPage({ front: (f) => { store.appActive = f; if (f) void updates.inFront() }, open: (a) => openTerminal(a), home: () => nav.popToRoot() })
   const offConn = store.conn.sub((c) => { if (c === 'unpaired') props.unpaired() }, 'Root.unpaired')
   const conn = useSignal(store.conn)
+  effect(() => store.setBackgroundWatch(prefs().stayConnected))
   effect(() => keepAlive(wantsKeepAlive(conn(), prefs().stayConnected)))
   // A program started from the phone asks the terminal's colours as it starts (OpenCode picks light or dark from them).
   effect(() => { const th = xtermTheme(colorScheme() === 'dark'); store.display = { fg: th.foreground, bg: th.background, cursor: th.cursor } })

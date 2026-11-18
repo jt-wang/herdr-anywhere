@@ -100,7 +100,7 @@ export const LOST_TEXT: Record<string, Key> = {
 }
 
 // Read only by the test connection hook; Signal ignores this registration metadata.
-export type ConnSubscriberSite = 'Updates.follow' | 'Root.unpaired' | 'kit.useSignal' | 'kit.useRev'
+export type ConnSubscriberSite = 'Updates.follow' | 'Root.unpaired' | 'kit.useSignal' | 'kit.useRev' | 'ProgressData.poll'
   | 'TerminalSession' | 'Store.whenConnected' | 'Settings.ask'
 
 /** Tiny observable so views can follow the store without knowing NSH (and tests can run without a screen). */
@@ -112,10 +112,10 @@ export class Signal<T> {
   sub(f: (v: T) => void, _site?: ConnSubscriberSite) { this.subs.add(f); return () => this.subs.delete(f) }
 }
 
-/** Silence that means the line is dead, though the socket says it is open: the phone asks for the machines every 2.5 s
- *  and herdr-core sends a heartbeat every 15 s (measured, hc 0.1.18). The socket alone doesn't tell:
+/** Allow three missed 15 s core heartbeats without manufacturing business requests to keep the line alive.
+ *  The socket alone doesn't tell:
  *  a close from the computer can fail to reach the phone, which then goes on saying Connected. */
-const QUIET_MS = 15_000
+const QUIET_MS = 45_000
 /** A check later than this after the last one: the app was suspended, so nothing could have been heard. */
 const ASLEEP_MS = 5_000
 /** How long something the person just asked for waits for a lost line to come back before it fails. */
@@ -145,7 +145,19 @@ export class Store {
   shell = '/bin/zsh'
   slots = new Map<string, Slot>()
   /** What the person can see: the app is in front and a tab's panes are on screen. */
-  appActive = true
+  readonly activity = new Signal(true)
+  readonly backgroundWatch = new Signal(true)
+  get appActive() { return this.activity.get() }
+  set appActive(front: boolean) {
+    if (front === this.appActive) return
+    this.activity.set(front)
+    if (front && this.connected) {
+      this.sync()
+      void this.refreshMachines()
+    }
+    this.polling()
+  }
+  setBackgroundWatch(on: boolean) { this.backgroundWatch.set(on); this.polling() }
   viewingTab = false
   /** Tabs this phone draws whole, every pane on screen; the others show the focused pane. Forgotten when the app restarts. */
   shownWhole = new Set<string>()
@@ -168,7 +180,7 @@ export class Store {
   private restoringEvents?: any[]
   private applyingSnapshot = false
   private loop?: ReturnType<typeof setInterval>
-  private machineLoop?: ReturnType<typeof setInterval>
+  private pollEvery = 0
   private quietLoop?: ReturnType<typeof setInterval>
   private heardAt = 0
   private checkedAt = 0
@@ -314,8 +326,7 @@ export class Store {
       void this.flushPending()
       this.error.set('')
       this.lostWhy.set('')
-      this.loop = this.io.setInterval(() => this.sync(), 500)
-      this.machineLoop = this.io.setInterval(() => void this.refreshMachines(), 2500)
+      this.polling()
       this.heardAt = this.checkedAt = this.io.now()
       this.quietLoop = this.io.setInterval(() => this.checkQuiet(), 1000)
       void this.refreshInstalled(undefined)
@@ -344,9 +355,20 @@ export class Store {
 
   private stopLoops() {
     if (this.loop) this.io.clearInterval(this.loop)
-    if (this.machineLoop) this.io.clearInterval(this.machineLoop)
     if (this.quietLoop) this.io.clearInterval(this.quietLoop)
-    this.loop = this.machineLoop = this.quietLoop = undefined
+    this.loop = this.quietLoop = undefined
+    this.pollEvery = 0
+  }
+
+  /** Terminal state arrives on the event stream. Poll only as a fallback for machine discovery and reconciliation. */
+  private polling() {
+    const tasks = this.pending.get().length > 0 || this.terms.list().some((t) => t.state === 'live' && this.program(t.address).agent &&
+      (!t.reported || t.status?.state === 'working' || t.status?.state === 'blocked'))
+    const every = !this.connected ? 0 : this.appActive ? 30_000 : this.backgroundWatch.get() && tasks ? 60_000 : 0
+    if (every === this.pollEvery) return
+    if (this.loop !== undefined) this.io.clearInterval(this.loop)
+    this.pollEvery = every
+    this.loop = every ? this.io.setInterval(() => { this.sync(); void this.refreshMachines() }, every) : undefined
   }
 
   private checkQuiet() {
@@ -473,7 +495,7 @@ export class Store {
       const r = await this.call<{ machines: Machine[] }>('machine.list', {})
       const list = (r.machines ?? []).filter((m) => !m.temporary)
       const before = this.machineNames().join(',')
-      this.machines.set(list)
+      if (JSON.stringify(list) !== JSON.stringify(this.machines.get())) this.machines.set(list)
       for (const m of list) {
         const slot = this.slots.get(m.name)
         const up = m.state === undefined || m.state === 'connected'
@@ -499,8 +521,8 @@ export class Store {
       if (!slot || slot.version !== r.doc.version) void this.readDoc(r.doc.machine)
     }
     if (!r.changed) return
-    // New words in a title show only through a redraw, which the pass makes when something changed.
-    if (r.type === 'title') this.dirty = true
+    // Metadata can change without changing the status word (including switching away from an agent).
+    this.dirty = true
     // A status is read now, not after the read it came in: herdr-core clears a status as soon as the program that
     // reported it exits, and words reported just before that came in the same read as the clearing.
     if (r.type === 'status') { this.sync(); return }
@@ -607,7 +629,7 @@ export class Store {
     throw new HcError(slot?.error ?? (machine ? tr('noMachine', { machine }) : tr('layoutUnavailable')))
   }
 
-  // ---- the 500 ms loop: status, seen, alerts, reconcile, flush -----------------------------------
+  // ---- event-driven sync and slow fallback: status, seen, alerts, reconcile, flush ---------------
 
   sync() {
     if (!this.hc || this.restored) return
@@ -658,7 +680,8 @@ export class Store {
     void this.flushPending()
     if (this.reconcile(live)) changed = true
     void this.flush()
-    void this.refreshGit()
+    if (this.appActive) void this.refreshGit()
+    this.polling()
     if (changed) this.bump()
   }
 

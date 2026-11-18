@@ -5,7 +5,7 @@ import { cleanup, effect, Image, Keyboard, Scroll, signal, Text, untracked, Vide
 import { Sheet, TextView } from 'nsh/base'
 import type { Store } from '../store.ts'
 import { changeRows, clockText, pathsIn, sizeText, foldLine, outsideFold, workPreview, refreshEvery, shows, unknownText, type ChatAnswer, type ChatSetup, type ChatChange, type ChatDetail, type ChatFile, type ChatPicture, type ChatRun, type ChatStep, type ChatTurn } from '../model/chat.ts'
-import { Glyph, IconButton, useRev } from './kit.tsx'
+import { Glyph, IconButton, useRev, useSignal } from './kit.tsx'
 import { AskCard } from './ask-card.tsx'
 import { askCard } from '../model/ask.ts'
 import { t } from '../strings/index.ts'
@@ -18,6 +18,7 @@ const STEP_GLYPH: Record<string, string> = { read: 'file-text', edit: 'square-pe
 
 export function ChatView(props: { store: Store; address: string; status: () => string | undefined; back: () => void }) {
   const s = props.store
+  const active = useSignal(s.activity)
   const cached = s.cachedChat(props.address)
   const answer = signal<ChatAnswer | undefined>(cached)
   const offline = signal(s.conn.get() !== 'ready')
@@ -34,10 +35,11 @@ export function ChatView(props: { store: Store; address: string; status: () => s
   // one shown is dropped, so the view never goes back to before.
   let asked = 0, shown = 0
   const ask = async () => {
+    if (!s.appActive) return
     const n = ++asked
     try {
       const a = await s.chat!.get(props.address)
-      if (!alive || n < shown) return
+      if (!alive || !s.appActive || n < shown) return
       shown = n
       if (a.session !== session) {
         session = a.session
@@ -63,13 +65,19 @@ export function ChatView(props: { store: Store; address: string; status: () => s
   const opened: Opened = (id) => { let o = openedBy.get(id); if (!o) { o = closed(); openedBy.set(id, o) } return o }
   const schedule = () => {
     clearTimeout(timer)
+    if (!s.appActive) return
     const every = refreshEvery(props.status())
-    if (every) timer = setTimeout(() => void ask().then(() => { if (alive) schedule() }), every)
+    if (every) timer = setTimeout(() => { void ask(); if (alive) schedule() }, every)
   }
-  // Ask now and on each change of status; keep asking while the agent works or waits.
+  // Notifications follow core events, not this screen's history. Resume with a fresh read, even if the agent finished.
+  let lastStatus: string | undefined
+  let wasFront = false
   effect(() => {
-    props.status()
-    untracked(() => { void ask(); schedule() })
+    const front = active()
+    const status = props.status()
+    if (front === wasFront && status === lastStatus) return
+    wasFront = front; lastStatus = status
+    untracked(() => { clearTimeout(timer); if (front) { void ask(); schedule() } })
   })
   cleanup(() => { alive = false; clearTimeout(timer) })
 
