@@ -295,7 +295,7 @@ final class Diagnostics: NSObject {
                                    "limits": "App-only breadcrumbs; no backboardd/system log access. An interrupted run is not proof of a crash. Battery readings cannot attribute app energy usage. No automatic upload."]
         self.removeExports()
         try FileManager.default.createDirectory(at: self.exports, withIntermediateDirectories: true)
-        let url = self.exports.appendingPathComponent("Herdr-diagnostics.json")
+        let url = self.exports.appendingPathComponent("Herder Anywhere Diagnostics.json")
         try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]).write(to: url, options: .atomic)
         let sheet = UIActivityViewController(activityItems: [url], applicationActivities: nil)
         sheet.popoverPresentationController?.sourceView = presenter.view
