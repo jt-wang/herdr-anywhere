@@ -40,7 +40,7 @@ export default class AddPhone extends View {
   // A phone pairing waits for this computer's user to compare its emoji: the window says when one asks.
   pollWindow(cx) {
     const v = this.view;
-    if ((v.kind !== "code" && v.kind !== "asking") || !v.id || this.polling) return;
+    if ((v.kind !== "code" && v.kind !== "asking" && v.kind !== "answering") || !v.id || this.polling) return;
     this.polling = true;
     cx.spawn(async (cx) => {
       const r = await this.run(["pair", "--json", "--window", v.id]).catch(() => ({ code: 1 }));
@@ -56,12 +56,15 @@ export default class AddPhone extends View {
   answer(approve, cx) {
     const v = this.view;
     if (v.kind !== "asking") return;
-    this.view = { kind: "answering" };
+    // After a yes the phone still has to finish pairing: the window says paired (or ended) a moment later.
+    const answering = { kind: "answering", id: v.id, expires: v.expires, rows: v.rows };
+    this.view = answering;
     cx.notify();
     cx.spawn(async (cx) => {
       const r = await this.run(["pair", "--json", "--window", v.id, "--answer", approve ? "yes" : "no"]).catch(() => ({ code: 1 }));
-      this.view = parseWindow(r, v) ?? { kind: "ended" };
-      if (this.view.kind === "code" || this.view.kind === "asking") this.view = approve ? { kind: "answering" } : { kind: "ended" };
+      const next = parseWindow(r, answering);
+      if (this.view !== answering) return;
+      this.view = next ?? (approve ? answering : { kind: "ended" });
       cx.notify();
     });
   }
@@ -100,7 +103,8 @@ export default class AddPhone extends View {
     cx.spawn(async (cx) => {
       const now = parseDevices(await this.run(["devices", "--json"]).catch(() => ({ code: 1 })));
       if (!now || JSON.stringify(now) === JSON.stringify(this.devices)) return;
-      const added = this.view.kind === "code" ? addedSince(this.devices, now) : [];
+      const k = this.view.kind;
+      const added = k === "code" || k === "asking" || k === "answering" ? addedSince(this.devices, now) : [];
       this.devices = now;
       if (added.length) this.view = { kind: "paired", name: added[0].name };
       cx.notify();
@@ -197,7 +201,7 @@ export default class AddPhone extends View {
               .child(this.button(t, "ap-approve", s.approve, (cx) => this.answer(true, cx))),
           );
       case "answering":
-        return this.message(t, s.loading);
+        return this.message(t, s.finishing);
       case "ended":
         return this.message(t, s.ended, this.button(t, "ap-new", s.newCode, (cx) => this.getCode(cx)));
       case "loading":

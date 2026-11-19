@@ -37,6 +37,7 @@ export function parseWindow({ code, stdout }, view) {
     case "ended":
       return { kind: "ended" };
     case "waiting":
+      // A phone that stopped asking: the code again. After a yes, the phone is still finishing.
       return view.kind === "asking" ? { kind: "code", ...base } : undefined;
   }
   return undefined;

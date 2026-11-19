@@ -11,13 +11,13 @@ const CODE = (seconds = 120) => ({
   stdout: JSON.stringify({ invite: 'herdr2:X', expires: new Date(Date.now() + seconds * 1000).toISOString(), qr: ['101', '010', '101'] }),
 })
 // A companion with the emoji check: pair --json names the window; pair --json --window says what it is doing.
-const WINDOW = (state, seconds = 120) => {
+const WINDOW = (state, seconds = 120, answered = { state: 'paired', device: 'Pixel' }) => {
   const code = CODE(seconds)
   code.stdout = JSON.stringify({ ...JSON.parse(code.stdout), invite: 'herdr2:X', id: 'w1' })
   return (args) => {
     if (!args.includes('--window')) return code
     const answer = args[args.indexOf('--answer') + 1]
-    const st = args.includes('--answer') ? (answer === 'yes' ? { state: 'paired', device: 'Pixel' } : { state: 'ended' }) : state()
+    const st = args.includes('--answer') ? (answer === 'yes' ? answered : { state: 'ended' }) : state()
     return { code: 0, stderr: '', stdout: JSON.stringify(st) }
   }
 }
@@ -156,6 +156,21 @@ test('a phone asking is shown with its emoji, and only Pair lets it in', async (
   assert.ok(!calls.some((c) => c.includes('--answer')), 'Enter answered')
   await click(d, 'ap-approve')
   assert.ok(calls.includes('herdr-anywhere pair --state /state --json --window w1 --answer yes'))
+  assert.match(d.words(), /Pixel is paired/)
+})
+
+// As serve does: right after the yes the window waits for the phone to finish, then says paired.
+test('after Pair the dialog waits for the phone to finish, then names it', async () => {
+  let state = ASKING
+  const d = await open(WINDOW(() => state, 120, { state: 'waiting' }))
+  await fire(d, 1000)
+  await click(d, 'ap-approve')
+  assert.match(d.words(), /Pairing…/)
+  state = { state: 'waiting' }
+  await fire(d, 1000)
+  assert.doesNotMatch(d.words(), /scan this code|no longer works/)
+  state = { state: 'paired', device: 'Pixel' }
+  await fire(d, 1000)
   assert.match(d.words(), /Pixel is paired/)
 })
 

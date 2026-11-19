@@ -35,6 +35,7 @@ export const STRINGS = {
     approve: "Pair",
     deny: "Don't pair",
     ended: "This code no longer works: the pairing was refused or given up.",
+    finishing: "Pairing…",
     units: { m: "m", h: "h", d: "d" },
   },
   "zh-Hans": {
@@ -66,6 +67,7 @@ export const STRINGS = {
     approve: "配对",
     deny: "不配对",
     ended: "这个配对码已失效：配对被拒绝或已放弃。",
+    finishing: "正在配对…",
     units: { m: "分钟", h: "小时", d: "天" },
   },
   "zh-Hant": {
@@ -97,6 +99,7 @@ export const STRINGS = {
     approve: "配對",
     deny: "不配對",
     ended: "這個配對碼已失效：配對被拒絕或已放棄。",
+    finishing: "正在配對…",
     units: { m: "分鐘", h: "小時", d: "天" },
   },
   es: {
@@ -128,6 +131,7 @@ export const STRINGS = {
     approve: "Emparejar",
     deny: "No emparejar",
     ended: "Este código ya no sirve: se rechazó o se abandonó el emparejamiento.",
+    finishing: "Emparejando…",
     units: { m: " min", h: " h", d: " d" },
   },
   ko: {
@@ -159,6 +163,7 @@ export const STRINGS = {
     approve: "페어링",
     deny: "페어링 안 함",
     ended: "이 코드는 더 이상 쓸 수 없어요. 페어링이 거절되었거나 중단되었어요.",
+    finishing: "페어링하는 중…",
     units: { m: "분", h: "시간", d: "일" },
   },
   ja: {
@@ -190,6 +195,7 @@ export const STRINGS = {
     approve: "ペアリング",
     deny: "ペアリングしない",
     ended: "このコードはもう使えません。ペアリングが拒否されたか、中断されました。",
+    finishing: "ペアリング中…",
     units: { m: "分", h: "時間", d: "日" },
   },
   ru: {
@@ -221,6 +227,7 @@ export const STRINGS = {
     approve: "Выполнить сопряжение",
     deny: "Не выполнять",
     ended: "Этот код больше не действует: сопряжение отклонено или прервано.",
+    finishing: "Выполняется сопряжение…",
     units: { m: " мин", h: " ч", d: " д" },
   },
 };
