@@ -64,6 +64,6 @@ ha="$HOME/.local/bin/herdr-anywhere"
 "$hc" run --bg --keep --cwd "$HOME" --label herdr.space=spup --label herdr.tab=tbup >/dev/null
 "$ha" start > "$work/start.out" 2>&1 || { echo "FAIL: start"; cat "$work/start.out"; exit 1; }
 out=$("$ha" pair --json)
-echo "$out" | grep -q '"invite":"herdr1:' || { echo "FAIL: no pairing code: $out"; exit 1; }
+echo "$out" | grep -q '"invite":"herdr2:' || { echo "FAIL: no pairing code: $out"; exit 1; }
 echo "ok: the companion runs through Tailcat and gave a pairing code"
 echo "PASS: installed from the release files without Go, and running"

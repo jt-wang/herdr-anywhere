@@ -6,7 +6,7 @@ toolchain go1.27.4
 
 require (
 	github.com/coder/websocket v1.8.15
-	github.com/jt-wang/tailpocket v0.0.0
+	github.com/jt-wang/tailpocket v0.3.0-pre.6
 	github.com/makiuchi-d/gozxing v0.1.1
 	github.com/mdp/qrterminal/v3 v3.2.1
 	github.com/tailscale/tailcat v0.6.0
@@ -72,7 +72,3 @@ require (
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
 )
-
-// ../third_party holds TailPocket v0.3 as Herdr Anywhere builds it: v0.3.0-pre.3, the public
-// jt-wang/tailpocket@81f6f8b4f2ac87b6800910bb2fe8087daf4d8ab6 (MIT, see its LICENSE and NOTICE), unchanged, Go test files left out.
-replace github.com/jt-wang/tailpocket => ../third_party/tailpocket-81f6f8b

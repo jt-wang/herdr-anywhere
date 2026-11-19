@@ -52,6 +52,7 @@ export const zhHant: Table = {
   tunnelUnreachable: "連不上電腦。電腦上的配套程式有在執行嗎（herdr-anywhere start）？手機有連上網路嗎？",
   inviteInvalid: '這不是 herdr-anywhere pair 產生的邀請，請重新掃描 QR 碼。',
   tunnelDenied: '電腦拒絕了這支手機。請重新執行 herdr-anywhere pair。',
+  emojiCheck: "請確認電腦上顯示的是同樣這四個表情符號，然後在電腦上確認。", pairNotConfirmed: "電腦沒有確認這支手機，或者這個配對碼已經用過了。請重新執行 herdr-anywhere pair。",
   tunnelFailed: '透過 TailPocket 配對失敗（{code}）。',
   noToken: '電腦已配對，但沒有回傳權杖。請重新執行 herdr-anywhere pair。',
   notPaired: '這支手機還沒有和電腦配對。',
@@ -60,6 +61,7 @@ export const zhHant: Table = {
   settings: '設定', back: '返回', look: '外觀', appearance: '外觀模式', system: '跟隨系統', light: '淺色', dark: '深色',
   terminalTextSize: '終端機字級', points: '{n} 點', smaller: '縮小', larger: '放大',
   showAgentNames: '顯示 agent 名稱', showAgentNamesDetail: '在每個標題前顯示 Claude Code 這類名稱。不顯示時，圖示仍會標出是哪個程式。',
+  tailcatOnly: "只用 Tailcat", tailcatOnlyDetail: "只透過 Tailcat 連線到電腦：不經過 relay，也不在區域網路上直連。可能會慢一些。",
   alerts: '提醒', agentNeedsYou: 'Agent 在等你', agentNeedsYouDetail: '它在等你回答或核准。',
   // Android's notification while the app stays connected in the background.
   keepAliveTitle: '已連線到你的電腦',

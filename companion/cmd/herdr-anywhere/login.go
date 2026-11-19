@@ -52,9 +52,10 @@ const (
 
 // foregroundTip is for a serve run in a terminal: the start that keeps the same serve running. Loopback --listen
 // addresses are left out: start listens on this computer itself already.
-func foregroundTip(lan bool, listen []string) string {
-	o := serveOpts{lan: lan}
-	for _, l := range listen {
+func foregroundTip(serving serveOpts) string {
+	o := serving
+	o.listen = nil
+	for _, l := range serving.listen {
 		host, _, err := net.SplitHostPort(l)
 		if ip, perr := netip.ParseAddr(host); err == nil && perr == nil && ip.IsLoopback() {
 			continue

@@ -56,9 +56,6 @@ func pairJSON(st *store.Store, name string, ttl time.Duration, stdout io.Writer)
 		return reportJSON(stdout, err.Error())
 	}
 	invite := reply.Invite
-	if reply.Invite2 != "" {
-		invite = reply.Invite2
-	}
 	matrix, err := qr.Encode(invite, qr.L)
 	if err != nil {
 		return reportJSON(stdout, err.Error())
@@ -74,7 +71,7 @@ func pairJSON(st *store.Store, name string, ttl time.Duration, stdout io.Writer)
 		}
 		rows[y] = string(row)
 	}
-	return json.NewEncoder(stdout).Encode(map[string]any{"invite": invite, "expires": reply.Expires, "qr": rows})
+	return json.NewEncoder(stdout).Encode(map[string]any{"invite": invite, "id": reply.ID, "expires": reply.Expires, "qr": rows})
 }
 
 func devicesJSON(ds []store.Device, stdout io.Writer) error {
@@ -98,11 +95,13 @@ const serveLogFile = "serve.log"
 // startWait is how long start waits for serve to answer.
 var startWait = execLimit
 
-// serveOpts are what start was given for serve beyond Tailcat: --lan, --listen. Only this start's go into the login
-// entry; nothing is kept from an earlier one.
+// serveOpts are what start was given for serve beyond Tailcat: --lan, --listen, --no-lan, --tailcat-only. Only this
+// start's go into the login entry; nothing is kept from an earlier one.
 type serveOpts struct {
-	lan    bool
-	listen []string
+	lan         bool
+	noLAN       bool
+	tailcatOnly bool
+	listen      []string
 }
 
 // flags is opts as start's own flags, to tell the person the command that applies them.
@@ -113,6 +112,12 @@ func (o serveOpts) flags() string {
 	}
 	if o.lan {
 		b.WriteString(" --lan")
+	}
+	if o.noLAN {
+		b.WriteString(" --no-lan")
+	}
+	if o.tailcatOnly {
+		b.WriteString(" --tailcat-only")
 	}
 	return b.String()
 }
@@ -130,6 +135,12 @@ func startedServeArgs(dir string, o serveOpts) []string {
 	}
 	if o.lan {
 		args = append(args, "--lan")
+	}
+	if o.noLAN {
+		args = append(args, "--no-lan")
+	}
+	if o.tailcatOnly {
+		args = append(args, "--tailcat-only")
 	}
 	return append(args, "--state", dir)
 }
@@ -159,14 +170,19 @@ func start(args []string, stdout, stderr io.Writer) error {
 	fs, state := newFlags("start", stderr)
 	var listen listFlag
 	fs.Var(&listen, "listen", "also listen on this address, as serve --listen (repeatable); kept for each login")
-	withLAN := fs.Bool("lan", false, "also let phones on this computer's local network reach it directly, end-to-end encrypted, as serve --lan; kept for each login")
+	withLAN := fs.Bool("lan", false, "also let phones on this computer's local network reach it on port 7682, and phones paired before 0.3 for up to 3 days, as serve --lan; kept for each login")
+	noLAN := fs.Bool("no-lan", false, "not directly on this computer's local network, as serve --no-lan; kept for each login")
+	tailcatOnly := fs.Bool("tailcat-only", false, "through Tailcat alone, no local network and no relay, as serve --tailcat-only; kept for each login")
 	if err := parse(fs, args); err != nil {
 		return err
 	}
 	if fs.NArg() > 0 {
 		return usageError{fmt.Errorf("unexpected argument %q", fs.Arg(0))}
 	}
-	o := serveOpts{lan: *withLAN, listen: listen}
+	o := serveOpts{lan: *withLAN, noLAN: *noLAN, tailcatOnly: *tailcatOnly, listen: listen}
+	if err := routeFlags(true, o.lan, o.noLAN, o.tailcatOnly, false); err != nil {
+		return usageError{err}
+	}
 	// What serve would refuse fails here, not later in the background, at every login.
 	if _, err := listenAddrs(o.listen, false, nil); err != nil {
 		return usageError{err}

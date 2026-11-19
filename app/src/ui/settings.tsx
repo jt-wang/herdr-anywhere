@@ -418,6 +418,12 @@ export function SettingsScreen(props: { updates?: Updates; store: Store; prefs: 
         <Fact label={t('computerName')} value={props.link.name} />
         <Fact label={t('connectionStatus')} value={status().word} dot={status().dot} testID="connection-status" />
         <Fact label={t('connection')} value={how()} under={under()} testID="connection" />
+        <If when={props.link.via === 'tailpocket'}>
+          <Row label={t('tailcatOnly')} detail={t('tailcatOnlyDetail')}>
+            {/* The app tells TailPocket (ui/root.tsx); the open tunnel closes, and the connection comes back on a new one. */}
+            <Toggle label={t('tailcatOnly')} testID="tailcat-only" on={p().tailcatOnly} onChange={(on) => props.prefs.set({ tailcatOnly: on })} />
+          </Row>
+        </If>
         <If when={(rev(), props.store.hello)}><Fact label={t('coreVersion')} value={props.store.hello?.version ?? ''} /></If>
         <If when={companion()}><Fact label={t('companionVersion')} value={companion()} /></If>
         <If when={props.updates}><UpdateRows updates={props.updates!} /></If>

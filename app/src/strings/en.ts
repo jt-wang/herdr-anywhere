@@ -54,6 +54,7 @@ export const en = {
   tunnelUnreachable: "Can't reach the computer. Is Companion running there (herdr-anywhere start), and is this phone online?",
   inviteInvalid: "That isn't an invite from herdr-anywhere pair. Scan its QR code again.",
   tunnelDenied: 'The computer refused this phone. Run herdr-anywhere pair again.',
+  emojiCheck: "Check that your computer shows these same four emoji, then confirm there.", pairNotConfirmed: "The computer did not confirm this phone, or the code was already used. Run herdr-anywhere pair again.",
   tunnelFailed: 'Pairing through TailPocket failed ({code}).',
   noToken: 'The computer paired, but gave no token. Run herdr-anywhere pair again.',
   notPaired: 'This phone is not paired with a computer.',
@@ -63,6 +64,7 @@ export const en = {
   settings: 'Settings', back: 'Back', look: 'Look', appearance: 'Appearance', system: 'System', light: 'Light', dark: 'Dark',
   terminalTextSize: 'Terminal text size', points: '{n} pt', smaller: 'Smaller', larger: 'Larger',
   showAgentNames: 'Show agent names', showAgentNamesDetail: 'Names like Claude Code before each title. The icon shows the program either way.',
+  tailcatOnly: "Tailcat only", tailcatOnlyDetail: "Reach the computer only through Tailcat: no relay and not directly on the local network. It may be slower.",
   alerts: 'Alerts', agentNeedsYou: 'An agent needs you', agentNeedsYouDetail: 'It is waiting for an answer or an approval.',
   // Android's notification while the app stays connected in the background.
   keepAliveTitle: 'Connected to your computer',

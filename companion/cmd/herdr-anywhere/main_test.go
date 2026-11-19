@@ -173,7 +173,7 @@ func fakeTailcatServeInvite(t *testing.T, dir string, urls []string, invite stri
 		*got = code
 		return tailcat.Window{Invite: invite, Expires: time.Now().Add(2 * time.Minute)}, nil
 	}
-	srv := &http.Server{Handler: tailcat.ControlHandler(open, urls)}
+	srv := &http.Server{Handler: tailcat.ControlHandler(open, nil, urls)}
 	go srv.Serve(ln)
 	t.Cleanup(func() { srv.Close() })
 	return got

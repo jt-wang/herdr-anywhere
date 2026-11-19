@@ -117,7 +117,7 @@ invite() { tr -d '\r\n' <"$secret/frame-invite" 2>/dev/null || true; }
 mask() { echo "::add-mask::$1"; }
 check_invite() {
   i=$(invite)
-  [ "$qr" = 1 ] && printf %s "$i" | grep -qE '^herdr1:[A-Za-z0-9_-]+$' || fail "the frame's QR code did not decode to an invite ($qr codes)"
+  [ "$qr" = 1 ] && printf %s "$i" | grep -qE '^herdr[12]:[A-Za-z0-9_-]+$' || fail "the frame's QR code did not decode to an invite ($qr codes)"
   mask "$i"
 }
 
@@ -268,8 +268,11 @@ fi
 if [ "$phase" = phone ]; then
   typed="$project/hm-typed"
   end=$(($(date +%s) + 600)); paired=""
+  asked=""
   while [ "$(date +%s)" -lt "$end" ]; do
     frame
+    # A companion with the emoji check (0.3.1 and later) asks here first, with the four emoji the phone shows.
+    if [ -z "$asked" ] && says "wants to pair"; then asked=yes; keep 4-emoji.png; press Pair; fi
     says "is paired" && paired=yes
     [ -n "$paired" ] && [ -f "$typed" ] && break
     sleep 3

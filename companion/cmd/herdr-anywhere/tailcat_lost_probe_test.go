@@ -21,10 +21,7 @@ import (
 	tc "github.com/tailscale/tailcat"
 	"tailscale.com/types/key"
 
-	"github.com/jt-wang/tailpocket/connectinvite"
 	"github.com/jt-wang/tailpocket/connectphone"
-
-	"herdr-anywhere/companion/internal/tailcat"
 )
 
 // stoppableServe runs serve until the returned func is called, and waits for it to end.
@@ -101,23 +98,11 @@ func TestProbeWhatAPhoneSeesWhenItCannotConnect(t *testing.T) {
 	}
 	hc := isolatedHC(t)
 	dir := shortStateDir(t)
-	args := []string{"--tailcat", "--listen", "127.0.0.1:0", "--hc", hc, "--state", dir}
+	// --no-lan: this measures Tailcat, which a phone on this computer's own network would not take.
+	args := []string{"--tailcat", "--no-lan", "--listen", "127.0.0.1:0", "--hc", hc, "--state", dir}
 	stop, logs := stoppableServe(t, args...)
 
-	out, errs, code := runCLI(t, "pair", "--state", dir)
-	if code != 0 {
-		t.Fatalf("pair exit %d: %s\nserve:\n%s", code, errs, logs)
-	}
-	inv, err := connectinvite.Decode(regexp.MustCompile(regexp.QuoteMeta(tailcat.Prefix)+`[A-Za-z0-9_-]+`).FindString(out), tailcat.Prefix)
-	if err != nil {
-		t.Fatalf("invite: %v", err)
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
-	link, err := connectphone.Pair(ctx, inv, connectphone.NewKey(), connectphone.Options{Device: "probe phone"})
-	cancel()
-	if err != nil {
-		t.Fatalf("pair: %v\nserve:\n%s", err, logs)
-	}
+	link := pairLive(t, dir, "probe phone", logs)
 	var reply struct{ Device string }
 	json.Unmarshal([]byte(link.Payload), &reply)
 

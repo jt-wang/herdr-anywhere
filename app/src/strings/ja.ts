@@ -52,6 +52,7 @@ export const ja: Table = {
   tunnelUnreachable: "パソコンに接続できません。コンパニオン（herdr-anywhere start）は動いていますか？この端末はオンラインですか？",
   inviteInvalid: 'herdr-anywhere pair の招待ではありません。QR コードをもう一度スキャンしてください。',
   tunnelDenied: 'パソコンにこの端末を拒否されました。herdr-anywhere pair をもう一度実行してください。',
+  emojiCheck: "パソコンに同じ 4 つの絵文字が表示されていることを確かめてから、パソコンで確定してください。", pairNotConfirmed: "パソコンでこの端末が確定されなかったか、コードはもう使われています。herdr-anywhere pair をもう一度実行してください。",
   tunnelFailed: 'TailPocket 経由のペアリングに失敗しました（{code}）。',
   noToken: 'ペアリングしましたが、パソコンからトークンが返りませんでした。herdr-anywhere pair をもう一度実行してください。',
   notPaired: 'この端末はまだパソコンとペアリングしていません。',
@@ -60,6 +61,7 @@ export const ja: Table = {
   settings: '設定', back: '戻る', look: '見た目', appearance: '外観', system: 'システム', light: 'ライト', dark: 'ダーク',
   terminalTextSize: 'ターミナルの文字サイズ', points: '{n}pt', smaller: '小さく', larger: '大きく',
   showAgentNames: 'エージェント名を表示', showAgentNamesDetail: '各タイトルの前に Claude Code などの名前を表示します。オフでもアイコンでプログラムがわかります。',
+  tailcatOnly: "Tailcat のみ", tailcatOnlyDetail: "パソコンには Tailcat だけで接続します。relay は使わず、ローカルネットワークでの直接接続もしません。遅くなることがあります。",
   alerts: '通知', agentNeedsYou: 'エージェントが対応待ちのとき', agentNeedsYouDetail: '回答や承認を待っています。',
   // Android's notification while the app stays connected in the background.
   keepAliveTitle: 'コンピュータに接続中',

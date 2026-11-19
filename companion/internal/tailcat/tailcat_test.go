@@ -279,7 +279,7 @@ func TestPairRequestReachesServe(t *testing.T) {
 		got = code
 		return Window{Invite: Prefix + "abc", Expires: time.Unix(1_900_000_000, 0)}, nil
 	}
-	serveControl(t, st.Dir(), ControlHandler(open, []string{"http://192.168.1.5:7681"}))
+	serveControl(t, st.Dir(), ControlHandler(open, nil, []string{"http://192.168.1.5:7681"}))
 	fi, err := os.Stat(filepath.Join(st.Dir(), SocketName))
 	if err != nil {
 		t.Fatal(err)
@@ -300,7 +300,7 @@ func TestPairRequestReachesServe(t *testing.T) {
 func TestPairRequestCarriesServesError(t *testing.T) {
 	st := newStore(t)
 	open := func(context.Context, string) (Window, error) { return Window{}, errors.New("no relay reachable") }
-	serveControl(t, st.Dir(), ControlHandler(open, nil))
+	serveControl(t, st.Dir(), ControlHandler(open, nil, nil))
 	_, err := RequestPair(context.Background(), st.Dir(), "c")
 	if err == nil || errors.Is(err, ErrNoServe) || !strings.Contains(err.Error(), "no relay reachable") {
 		t.Fatalf("err = %v", err)

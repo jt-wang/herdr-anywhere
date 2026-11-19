@@ -386,8 +386,18 @@ const pipe = (l: Linker) => () => {
 
 const routes = (params.routes ?? 'direct').split(',')
 let updatePosts = 0
+// `host.params.emoji` ("🐶 🌵 🔑 🚲"): pairing shows these, as a computer with the emoji check asks its user to compare
+// them, and waits for the test's `fake.confirm` event ({ approve }); a no fails as TailPocket's does (unauthorized).
+const confirmed = (emoji: string, onEmoji?: (e: string[]) => void) => new Promise<void>((resolve, reject) => {
+  const off = host.on('fake.confirm', (d: any) => { off(); if (d?.approve) resolve(); else reject(Object.assign(new Error('unauthorized'), { code: 'unauthorized' })) })
+  onEmoji?.(emoji.split(' '))
+})
 const fakeTunnel: Tunnel = {
-  pair: async () => JSON.stringify({ token: 'new-token', device: 'd2', name: 'studio' }), scan: async () => '', forget: () => {},
+  pair: async (_invite, _device, onEmoji) => {
+    if (params.emoji) await confirmed(params.emoji, onEmoji)
+    return JSON.stringify({ token: 'new-token', device: 'd2', name: 'studio' })
+  },
+  scan: async () => '', forget: () => {},
   connect: async () => ({
     baseUrl: 'http://127.0.0.1:1', close: () => {},
     path: async () => {

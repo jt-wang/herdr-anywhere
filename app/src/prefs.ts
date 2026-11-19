@@ -24,8 +24,10 @@ export type Prefs = { appearance: Appearance; typeIn: TypeIn; fontSize: number; 
   /** An agent's pane opens in its chat view (ui/chat.tsx) rather than its terminal: the view picked last. */
   chatFirst: boolean
   /** The agents whose chat setup the phone has asked about once by itself (ui/chat.tsx); it doesn't ask them again. */
-  chatSetupAsked: string[] }
-export const DEFAULTS: Prefs = { appearance: 'system', typeIn: 'composer', fontSize: 13, alertBlocked: true, alertDone: true, stayConnected: true, dismissedUpdate: '', toldUpdate: '', askedNotifications: false, showAgentNames: true, progressFirst: false, progressAgent: '', progressLang: '', homeView: 'progress', progressFolded: [], opened: 0, chatFirst: false, chatSetupAsked: [] }
+  chatSetupAsked: string[]
+  /** TailPocket keeps this phone on Tailcat alone: no relay, no local network route (Settings › Computer). */
+  tailcatOnly: boolean }
+export const DEFAULTS: Prefs = { appearance: 'system', typeIn: 'composer', fontSize: 13, alertBlocked: true, alertDone: true, stayConnected: true, dismissedUpdate: '', toldUpdate: '', askedNotifications: false, showAgentNames: true, progressFirst: false, progressAgent: '', progressLang: '', homeView: 'progress', progressFolded: [], opened: 0, chatFirst: false, chatSetupAsked: [], tailcatOnly: false }
 import { FONT_MAX, FONT_MIN } from './ui/terminal-page.ts'
 export { FONT_MAX, FONT_MIN }
 
@@ -69,5 +71,6 @@ function clean(p: Prefs): Prefs {
     opened: Math.max(0, Math.floor(Number(p.opened) || 0)),
     chatFirst: p.chatFirst === true,
     chatSetupAsked: Array.isArray(p.chatSetupAsked) ? p.chatSetupAsked.filter((x): x is string => typeof x === 'string') : [],
+    tailcatOnly: p.tailcatOnly === true,
   }
 }

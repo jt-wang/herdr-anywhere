@@ -8,8 +8,20 @@ const { LANGS, STRINGS } = await import('./strings.js')
 
 const CODE = (seconds = 120) => ({
   code: 0, stderr: '',
-  stdout: JSON.stringify({ invite: 'herdr1:X', expires: new Date(Date.now() + seconds * 1000).toISOString(), qr: ['101', '010', '101'] }),
+  stdout: JSON.stringify({ invite: 'herdr2:X', expires: new Date(Date.now() + seconds * 1000).toISOString(), qr: ['101', '010', '101'] }),
 })
+// A companion with the emoji check: pair --json names the window; pair --json --window says what it is doing.
+const WINDOW = (state, seconds = 120) => {
+  const code = CODE(seconds)
+  code.stdout = JSON.stringify({ ...JSON.parse(code.stdout), invite: 'herdr2:X', id: 'w1' })
+  return (args) => {
+    if (!args.includes('--window')) return code
+    const answer = args[args.indexOf('--answer') + 1]
+    const st = args.includes('--answer') ? (answer === 'yes' ? { state: 'paired', device: 'Pixel' } : { state: 'ended' }) : state()
+    return { code: 0, stderr: '', stdout: JSON.stringify(st) }
+  }
+}
+const ASKING = { state: 'asking', request: { device: 'Pixel', emoji: ['🐶', '🌵', '🔑', '🚲'], route: 'lan' } }
 const NOT_RUNNING = { code: 1, stdout: '{"error":"not-running"}', stderr: '' }
 const DEVICES = (...names) => ({ code: 0, stderr: '', stdout: JSON.stringify(names.map((name) => ({ id: name.toLowerCase(), name }))) })
 
@@ -130,6 +142,42 @@ test('Escape closes the dialog', async () => {
   assert.deepEqual(closed, ['the-overlay'])
 })
 
+test('a phone asking is shown with its emoji, and only Pair lets it in', async () => {
+  let state = { state: 'waiting' }
+  const d = await open(WINDOW(() => state))
+  await fire(d, 1000)
+  assert.match(d.words(), /scan this code/)
+  state = ASKING
+  await fire(d, 1000)
+  assert.ok(calls.includes('herdr-anywhere pair --state /state --json --window w1'), calls.join('; '))
+  assert.match(d.words(), /Pixel wants to pair/)
+  assert.match(d.words(), /🐶  🌵  🔑  🚲/)
+  await press(d, 'enter')
+  assert.ok(!calls.some((c) => c.includes('--answer')), 'Enter answered')
+  await click(d, 'ap-approve')
+  assert.ok(calls.includes('herdr-anywhere pair --state /state --json --window w1 --answer yes'))
+  assert.match(d.words(), /Pixel is paired/)
+})
+
+test("Don't pair spends the code, and a new one can be asked for", async () => {
+  const d = await open(WINDOW(() => ASKING))
+  await fire(d, 1000)
+  await click(d, 'ap-deny')
+  assert.ok(calls.includes('herdr-anywhere pair --state /state --json --window w1 --answer no'))
+  assert.match(d.words(), /no longer works/)
+  await click(d, 'ap-new')
+  assert.ok(calls.filter((c) => c === 'herdr-anywhere pair --state /state --json').length === 2)
+})
+
+test('a phone that gives up, or a window that ends, shows the code is spent', async () => {
+  let state = ASKING
+  const d = await open(WINDOW(() => state))
+  await fire(d, 1000)
+  state = { state: 'ended' }
+  await fire(d, 1000)
+  assert.match(d.words(), /no longer works/)
+})
+
 // --- the computer's language ----------------------------------------------
 
 const never = new Promise(() => {})
@@ -173,6 +221,11 @@ async function everyState(lang) {
   shown.unreadable = d.words()
   d = await open(new Error('no such file'), new Error('no such file'), L)
   shown.cantRun = d.words()
+  d = await open(WINDOW(() => ASKING), DEVICES(), L)
+  await fire(d, 1000)
+  shown.asking = d.words()
+  await click(d, 'ap-deny')
+  shown.ended = d.words()
   return shown
 }
 
@@ -182,7 +235,7 @@ const english = Object.entries(STRINGS.en).filter(([k]) => k !== 'units')
 
 test('in Japanese no state shows an English sentence of the dialog', async () => {
   const shown = await everyState('ja')
-  assert.equal(Object.keys(shown).length, 12)
+  assert.equal(Object.keys(shown).length, 14)
   for (const [state, words] of Object.entries(shown)) {
     for (const piece of english) assert.ok(!words.includes(piece), `${state} shows "${piece}": ${words}`)
   }
@@ -199,6 +252,8 @@ test('every language draws its own words in every state', async () => {
     assert.ok(shown.code.includes(s.scan), lang)
     assert.ok(shown.notRunning.includes(s.notRunning), lang)
     assert.ok(shown.paired.includes(s.paired.replace('{name}', 'Pixel')), lang)
+    assert.ok(shown.asking.includes(s.asks.replace('{name}', 'Pixel')) && shown.asking.includes(s.compare), lang)
+    assert.ok(shown.ended.includes(s.ended), lang)
   }
 })
 

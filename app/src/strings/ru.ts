@@ -52,6 +52,7 @@ export const ru: Table = {
   tunnelUnreachable: "Не удаётся связаться с компьютером. Запущен ли на нём компаньон (herdr-anywhere start) и есть ли у телефона интернет?",
   inviteInvalid: 'Это не приглашение от herdr-anywhere pair. Отсканируйте его QR-код ещё раз.',
   tunnelDenied: 'Компьютер отказал этому телефону. Снова выполните herdr-anywhere pair.',
+  emojiCheck: "Проверьте, что компьютер показывает эти же четыре эмодзи, и подтвердите на нём.", pairNotConfirmed: "Компьютер не подтвердил этот телефон, или код уже использован. Снова выполните herdr-anywhere pair.",
   tunnelFailed: 'Не удалось выполнить сопряжение через TailPocket ({code}).',
   noToken: 'Сопряжение выполнено, но компьютер не вернул токен. Снова выполните herdr-anywhere pair.',
   notPaired: 'Этот телефон не сопряжён с компьютером.',
@@ -60,6 +61,7 @@ export const ru: Table = {
   settings: 'Настройки', back: 'Назад', look: 'Вид', appearance: 'Оформление', system: 'Как в системе', light: 'Светлое', dark: 'Тёмное',
   terminalTextSize: 'Размер текста в терминале', points: '{n} пт', smaller: 'Меньше', larger: 'Больше',
   showAgentNames: 'Показывать имена агентов', showAgentNamesDetail: 'Названия вроде Claude Code перед каждым заголовком. Значок в любом случае показывает программу.',
+  tailcatOnly: "Только Tailcat", tailcatOnlyDetail: "Подключаться к компьютеру только через Tailcat: без relay и без прямого подключения в локальной сети. Может быть медленнее.",
   alerts: 'Оповещения', agentNeedsYou: 'Агент ждёт вас', agentNeedsYouDetail: 'Он ждёт ответа или подтверждения.',
   // Android's notification while the app stays connected in the background.
   keepAliveTitle: 'Подключено к компьютеру',

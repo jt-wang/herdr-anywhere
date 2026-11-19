@@ -11,6 +11,7 @@
 # Needs the internet, go, nsh, hc, idb, xcodegen and Xcode.
 set -eu
 . "$(dirname "$0")/autostart-guard.sh"; autostart_guard ios-tailcat # a login entry of its own, never the person's
+. "$(dirname "$0")/tailcat-invite.sh" # the invite pair shows, and the y its emoji check asks for
 : "${SIM_UDID:?set SIM_UDID to the simulator to use}"
 app=$(cd "$(dirname "$0")/.." && pwd)
 shot=${1:-}
@@ -59,7 +60,7 @@ store="$(xcrun simctl get_app_container "$SIM_UDID" "$id" data)/Library/Applicat
   export GIT_CONFIG_GLOBAL="$work/home/.gitconfig"
   "$hc" run --bg --keep --cwd "$work/home/src/acme-api" --label herdr.space=sptc --label herdr.tab=tbtc >/dev/null
   [ "${HM_E2E_ROUTE:-direct}" = relay ] && export TS_DEBUG_ALWAYS_USE_DERP=1
-  exec "$work/herdr-anywhere" serve --tailcat --listen "127.0.0.1:$port" --hc "$hc" --state "$state" > "$work/serve.log" 2>&1
+  exec "$work/herdr-anywhere" serve --tailcat $(tailcat_no_lan "$work/herdr-anywhere") --listen "127.0.0.1:$port" --hc "$hc" --state "$state" > "$work/serve.log" 2>&1
 ) &
 serve_pid=$!
 i=0
@@ -67,7 +68,7 @@ until grep -q "listening on Tailcat" "$work/serve.log" 2>/dev/null; do
   i=$((i + 1)); [ $i -gt 300 ] && { echo "FAIL: serve --tailcat did not start"; tail -5 "$work/serve.log"; exit 1; }
   sleep 0.1
 done
-invite=$("$work/herdr-anywhere" pair --state "$state" 2>/dev/null | grep -o 'herdr1:[A-Za-z0-9_-]*' | head -1)
+invite=$(tailcat_invite "$work/herdr-anywhere" "$state" "$work/pair.out")
 [ -n "$invite" ] || { echo "FAIL: pair printed no invite"; exit 1; }
 # NSH's Storage, as the app finds it on its first launch; the third launch opens on Settings.
 mkdir -p "$(dirname "$store")"

@@ -52,6 +52,7 @@ export const es: Table = {
   tunnelUnreachable: "No se puede llegar a la computadora. ¿Está en marcha el programa complementario (herdr-anywhere start) y este teléfono tiene internet?",
   inviteInvalid: 'Esa no es una invitación de herdr-anywhere pair. Vuelve a escanear su código QR.',
   tunnelDenied: 'La computadora rechazó este teléfono. Vuelve a ejecutar herdr-anywhere pair.',
+  emojiCheck: "Comprueba que la computadora muestra estos mismos cuatro emojis y confírmalo allí.", pairNotConfirmed: "La computadora no confirmó este teléfono, o el código ya se usó. Vuelve a ejecutar herdr-anywhere pair.",
   tunnelFailed: 'No se pudo emparejar por TailPocket ({code}).',
   noToken: 'La computadora se emparejó, pero no devolvió ningún token. Vuelve a ejecutar herdr-anywhere pair.',
   notPaired: 'Este teléfono no está emparejado con ninguna computadora.',
@@ -60,6 +61,7 @@ export const es: Table = {
   settings: 'Ajustes', back: 'Atrás', look: 'Aspecto', appearance: 'Apariencia', system: 'Sistema', light: 'Claro', dark: 'Oscuro',
   terminalTextSize: 'Tamaño del texto de la terminal', points: '{n} pt', smaller: 'Más pequeño', larger: 'Más grande',
   showAgentNames: 'Mostrar el nombre del agente', showAgentNamesDetail: 'Nombres como Claude Code antes de cada título. El icono indica el programa en cualquier caso.',
+  tailcatOnly: "Solo Tailcat", tailcatOnlyDetail: "Conectar con la computadora solo a través de Tailcat: sin relay y no directamente en la red local. Puede ser más lento.",
   alerts: 'Avisos', agentNeedsYou: 'Un agente te necesita', agentNeedsYouDetail: 'Está esperando una respuesta o una aprobación.',
   // Android's notification while the app stays connected in the background.
   keepAliveTitle: 'Conectado a tu ordenador',

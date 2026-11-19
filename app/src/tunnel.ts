@@ -1,7 +1,7 @@
 // TailPocket on a phone: the native bridge the app's host project attaches (ios/Sources/App.swift, android
-// MainActivity), through TailPocket's NSH client (third_party/tailpocket-81f6f8b/sdk/js). It keeps the computer's
+// MainActivity), through TailPocket's NSH client (third_party/tailpocket-342ebe5/sdk/js). It keeps the computer's
 // link, which holds the phone's private key, in the Keychain / Android Keystore under one slot.
-import { tailPocket } from '../../third_party/tailpocket-81f6f8b/sdk/js/nsh.ts'
+import { tailPocket } from '../../third_party/tailpocket-342ebe5/sdk/js/nsh.ts'
 import type { Tunnel } from './link.ts'
 
 /** What `herdr-anywhere pair` starts its invites with (companion/internal/tailcat Prefix); TailPocket's own differs. */
@@ -11,12 +11,13 @@ export const PREFIX2 = 'herdr2:'
 const SLOT = 'herdr'
 
 export const nativeTunnel: Tunnel = {
-  async pair(invite, device) {
+  async pair(invite, device, onEmoji) {
     const decoded = invite.startsWith(PREFIX2) ? await tailPocket.decodeInvite2(invite, PREFIX2) : await tailPocket.decodeInvite(invite, PREFIX)
-    const link = await tailPocket.pair(decoded, { device, save: true, slot: SLOT })
+    const link = await tailPocket.pair(decoded, { device, save: true, slot: SLOT, onEmoji: onEmoji ?? (() => {}) })
     return link.payload ?? ''
   },
   scan: () => tailPocket.scan(PREFIX, PREFIX2),
+  setTailcatOnly: (on) => tailPocket.setTailcatOnly(on),
   async connect() {
     const c = await tailPocket.connect({ slot: SLOT })
     // A link paired over Tailcat before v0.3 has no `pk`: sync registers this phone's end-to-end key and saves the link

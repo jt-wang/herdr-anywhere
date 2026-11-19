@@ -313,7 +313,7 @@ if ($Phase -eq "dialog") {
     Ok "$how brought up the companion and a code"
 
     $invite = Invite
-    if ($script:qr -ne 1 -or $invite -notmatch '^herdr1:[A-Za-z0-9_-]+$') { Fail "the frame's QR code did not decode to an invite ($($script:qr) codes)" }
+    if ($script:qr -ne 1 -or $invite -notmatch '^herdr[12]:[A-Za-z0-9_-]+$') { Fail "the frame's QR code did not decode to an invite ($($script:qr) codes)" }
     Mask $invite
     Ok "the code on screen decodes to an invite, $($invite.Length) characters"
     # The check itself first: it must find the invite where it is.
@@ -352,7 +352,7 @@ if ($Phase -eq "code") {
     Ok "ctrl-shift-m opens the dialog"
     WaitFor "scan this code"
     $invite = Invite
-    if ($script:qr -ne 1 -or $invite -notmatch '^herdr1:[A-Za-z0-9_-]+$') { Fail "the new code did not decode to an invite" }
+    if ($script:qr -ne 1 -or $invite -notmatch '^herdr[12]:[A-Za-z0-9_-]+$') { Fail "the new code did not decode to an invite" }
     Mask $invite
     Copy-Item (Join-Path $secret "frame-invite") (Join-Path $secret "invite")
     Keep "3-code-for-the-phone.png"

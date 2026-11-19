@@ -1,7 +1,7 @@
 // Run with: node --test
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { addedSince, ago, parseDevices, parsePair, remaining, runs } from './logic.js'
+import { addedSince, ago, parseDevices, parsePair, parseWindow, remaining, runs } from './logic.js'
 import { STRINGS } from './strings.js'
 
 const ok = (stdout) => ({ code: 0, stdout, stderr: '' })
@@ -10,6 +10,23 @@ const failed = (stdout, stderr = '') => ({ code: 1, stdout, stderr })
 test('a pair reply becomes a code to show', () => {
   const r = parsePair(ok(JSON.stringify({ invite: 'herdr1:X', expires: '2026-11-03T10:00:00Z', qr: ['10', '01'] })))
   assert.deepEqual(r, { kind: 'code', expires: Date.parse('2026-11-03T10:00:00Z'), rows: ['10', '01'] })
+})
+
+test('a companion with the emoji check names its window', () => {
+  const r = parsePair(ok(JSON.stringify({ invite: 'herdr2:X', id: 'w1', expires: '2026-11-03T10:00:00Z', qr: ['10'] })))
+  assert.equal(r.id, 'w1')
+})
+
+test("the window's state becomes what to show", () => {
+  const code = { kind: 'code', id: 'w1', expires: 5, rows: ['1'] }
+  const asking = parseWindow(ok('{"state":"asking","request":{"device":"Pixel","emoji":["a","b","c","d"]}}'), code)
+  assert.deepEqual(asking, { kind: 'asking', id: 'w1', expires: 5, rows: ['1'], device: 'Pixel', emoji: ['a', 'b', 'c', 'd'] })
+  assert.deepEqual(parseWindow(ok('{"state":"waiting"}'), asking), code)
+  assert.equal(parseWindow(ok('{"state":"waiting"}'), code), undefined)
+  assert.deepEqual(parseWindow(ok('{"state":"paired","device":"Pixel"}'), code), { kind: 'paired', name: 'Pixel' })
+  assert.deepEqual(parseWindow(ok('{"state":"ended"}'), code), { kind: 'ended' })
+  assert.equal(parseWindow(failed('{"error":"no-window"}'), code), undefined)
+  assert.equal(parseWindow(ok('nope'), code), undefined)
 })
 
 test('no companion is its own state, so the dialog can offer Start', () => {

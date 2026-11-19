@@ -124,3 +124,58 @@ test('the pairing screen asks for a herdr1: or herdr2: invite, not a #pair= link
   expect(app.texts()).toContain('Scan the QR code that herdr-anywhere pair shows, or paste its herdr1: or herdr2: invite.')
   expect(app.texts().some((t) => t.includes('#pair='))).toBe(false)
 })
+
+// TailPocket v0.3's emoji check: the phone shows the four emoji the computer asks its user to compare, and pairs once
+// the computer's user confirms there.
+const PAIRED = { address: 'nodekey:00', port: 1, name: 'studio', key: 'synthetic-key', pk: 'host-pk', payload: JSON.stringify({ token: 'synthetic-token', device: 'd1', name: 'studio' }) }
+// (The host fake cannot hold TailPocket's pair call open, so this pairs through the fixture's tunnel.)
+for (const approve of [true, false]) {
+  test(`pairing shows the emoji the computer asks about, and ${approve ? 'pairs once it confirms' : 'says to start again on a no'}`, async () => {
+    const app = await open('./fixtures/fake.tsx', { host: { params: { scene: 'unpaired', tunnel: 'on', emoji: '🐶 🌵 🔑 🚲' } } })
+    await app.waitFor('id:pair-link')
+    expect(app.shows('id:pair-emoji')).toBe(false)
+    await app.type('id:pair-link', INVITE2)
+    await app.press('id:pair')
+    await app.waitFor('id:pair-emoji')
+    expect(app.shows('text:🐶 🌵 🔑 🚲')).toBe(true)
+    expect(app.shows('text:Check that your computer shows these same four emoji, then confirm there.')).toBe(true)
+    await app.host.send('fake.confirm', { approve })
+    if (approve) {
+      await app.waitUntil(() => !app.shows('id:pair-link'))
+    } else {
+      await app.waitFor('text:The computer did not confirm this phone, or the code was already used. Run herdr-anywhere pair again.')
+      expect(app.shows('id:pair-emoji')).toBe(false)
+    }
+  })
+}
+
+test('a pairing the computer did not confirm says to start again', async () => {
+  const refused = () => { throw new Error('unauthorized') }
+  const app = await open('./App.tsx', { platform: 'ios', host: { handlers: handlers({ 'tailPocket.decodeInvite2': DECODED2, 'tailPocket.pair': refused }) }, network: { '*': { error: 'offline' } } })
+  await app.waitFor('id:pair-link')
+  await app.type('id:pair-link', INVITE2)
+  await app.press('id:pair')
+  await app.waitFor('text:The computer did not confirm this phone, or the code was already used. Run herdr-anywhere pair again.')
+  expect(app.shows('id:pair-emoji')).toBe(false)
+  expect(app.shows('id:pair')).toBe(true)
+})
+
+// Settings › Computer › Tailcat only: TailPocket is told, and a phone that has it on is told before it pairs or connects.
+test('Tailcat only in Settings is told to TailPocket, and kept for the next launch', async () => {
+  const more = { 'tailPocket.link': NEW_LINK, 'tailPocket.setTailcatOnly': null, 'tailPocket.path': { route: 'direct' } }
+  const app = await open('./App.tsx', { platform: 'ios', host: { handlers: handlers(more) }, network: { '*': { error: 'offline' } } })
+  await pairAndConnect(app)
+  expect(calls(app, 'tailPocket.setTailcatOnly')).toEqual([])
+  await app.waitFor('id:settings')
+  await app.press('id:settings')
+  await app.waitFor('id:tailcat-only')
+  await app.press('id:tailcat-only')
+  await app.waitUntil(() => calls(app, 'tailPocket.setTailcatOnly').length > 0)
+  expect(calls(app, 'tailPocket.setTailcatOnly')).toEqual([{ on: true }])
+  expect(JSON.parse(app.storage()['prefs']).tailcatOnly).toBe(true)
+
+  const again = await open('./App.tsx', { platform: 'ios', storage: { prefs: JSON.stringify({ tailcatOnly: true }) }, host: { handlers: handlers(more) }, network: { '*': { error: 'offline' } } })
+  await pairAndConnect(again)
+  const order = again.host.calls().map((c: any) => c.name).filter((n: string) => n === 'tailPocket.setTailcatOnly' || n === 'tailPocket.pair')
+  expect(order).toEqual(['tailPocket.setTailcatOnly', 'tailPocket.pair'])
+})

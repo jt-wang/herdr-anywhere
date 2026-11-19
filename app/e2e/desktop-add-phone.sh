@@ -173,7 +173,7 @@ if [ -n "$clicks" ]; then press Start; else
 fi
 wait_for "scan this code"
 echo "ok: the companion is up and the dialog shows a code"
-grep -q '^qr herdr1:' "$work/f.txt" || fail "the frame's QR code did not decode to an invite"
+grep -qE '^qr herdr[12]:' "$work/f.txt" || fail "the frame's QR code did not decode to an invite"
 ( umask 077; sed -n 's/^qr //p' "$work/f.txt" >"$work/invite" )
 echo "ok: the code on screen decodes to an invite, $(wc -c <"$work/invite" | tr -d ' ') characters"
 
@@ -209,7 +209,15 @@ fi
 [ "$(overlays)" = 1 ] || fail "the dialog did not open again"
 wait_for "scan this code"
 sed -n 's/^qr //p' "$work/f.txt" >"$work/invite"
-(cd "$companion" && HM_SCREEN_INVITE="$work/invite" go test ./cmd/herdr-anywhere -run TestPairFromScreen -count=1 >"$work/pair.log" 2>&1) || { cat "$work/pair.log"; fail "pairing with the decoded invite"; }
+# The phone waits for the dialog's Pair, which shows the four emoji it shows (a companion from 0.3.1 on).
+(cd "$companion" && HM_SCREEN_INVITE="$work/invite" go test ./cmd/herdr-anywhere -run TestPairFromScreen -count=1 >"$work/pair.log" 2>&1) &
+phone=$!
+wait_for "wants to pair"
+if [ -n "$clicks" ]; then press Pair; else
+  echo "not checked: Pair in the dialog, $why_cli (main.test.mjs presses it under node)"
+  kill "$phone" 2>/dev/null; fail "the dialog asks about the emoji, and only a click on Pair answers it: run with HM_DESKTOP_FOCUS=1"
+fi
+wait "$phone" || { cat "$work/pair.log"; fail "pairing with the decoded invite"; }
 hm devices --json | grep -q '"Test Pixel"' || fail "no device after pairing"
 wait_for "Test Pixel is paired"
 grep -qF 'Paired phones' "$work/f.txt" || fail "no list of phones"

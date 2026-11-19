@@ -7,6 +7,7 @@
 # Needs the internet, go, hc and the Android SDK.
 set -eu
 . "$(dirname "$0")/autostart-guard.sh"; autostart_guard android-quiet # a login entry of its own, never the person's
+. "$(dirname "$0")/tailcat-invite.sh" # the invite pair shows, and the y its emoji check asks for
 : "${ANDROID_SERIAL:?set ANDROID_SERIAL to the device to use}"
 app=$(cd "$(dirname "$0")/.." && pwd)
 apk=${1:-$app/android/build/Herdr.apk}
@@ -62,14 +63,14 @@ if [ "${HM_QUIET_ROUTE:-tailpocket}" = direct ]; then
   sleep 1
   invite=$("$work/herdr-anywhere" pair --url "http://10.0.2.2:$port" --state "$state" 2>/dev/null | grep -o 'http://[^ ]*#pair=[A-Za-z0-9_-]*' | head -1)
 else
-  "$work/herdr-anywhere" serve --tailcat --listen "127.0.0.1:$port" --hc "$hc" --state "$state" > "$work/serve.log" 2>&1 &
+  "$work/herdr-anywhere" serve --tailcat $(tailcat_no_lan "$work/herdr-anywhere") --listen "127.0.0.1:$port" --hc "$hc" --state "$state" > "$work/serve.log" 2>&1 &
   serve_pid=$!
   i=0
   until grep -q "listening on Tailcat" "$work/serve.log" 2>/dev/null; do
     i=$((i + 1)); [ $i -gt 300 ] && { echo "FAIL: serve --tailcat did not start"; tail -5 "$work/serve.log"; exit 1; }
     sleep 0.1
   done
-  invite=$("$work/herdr-anywhere" pair --state "$state" 2>/dev/null | grep -o 'herdr1:[A-Za-z0-9_-]*' | head -1)
+  invite=$(tailcat_invite "$work/herdr-anywhere" "$state" "$work/pair.out")
 fi
 [ -n "$invite" ] || { echo "FAIL: pair printed no invite"; exit 1; }
 

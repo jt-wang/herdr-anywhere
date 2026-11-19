@@ -43,8 +43,11 @@ export async function pairWith(p: PairLink, device: string, fetcher: typeof fetc
 export type Route = { route: 'direct' } | { route: 'relay'; relay?: string } | { route: 'lan' } | { route: 'unknown' }
 
 export type Tunnel = {
-  /** Pairs with the computer that showed `invite` and keeps its link; resolves with the computer's answer. */
-  pair: (invite: string, device: string) => Promise<string>
+  /** Pairs with the computer that showed `invite` and keeps its link; resolves with the computer's answer. A computer
+   *  with the emoji check (TailPocket v0.3) calls `onEmoji` with the four emoji it asks its user to compare. */
+  pair: (invite: string, device: string, onEmoji?: (emoji: string[]) => void) => Promise<string>
+  /** Keeps pairing and every tunnel opened after it on Tailcat alone: no relay, no local network route. */
+  setTailcatOnly?: (on: boolean) => Promise<void>
   /** The text of a QR code, from the camera. */
   scan: () => Promise<string>
   /** Opens the tunnel to the paired computer: `baseUrl` is `http://127.0.0.1:<port>`, which ends at the companion. */
@@ -75,13 +78,15 @@ const TUNNEL_REFUSED: Record<string, Key> = {
   unreachable: 'tunnelUnreachable',
   'invalid-invite': 'inviteInvalid',
   denied: 'tunnelDenied',
+  // After the emoji: the computer's user said no, did not answer in time, or the code was spent.
+  unauthorized: 'pairNotConfirmed',
 }
 
 /** Pairs through TailPocket: the companion's answer (its Payload) is what `POST /api/pair` returns. */
-export async function pairThrough(tunnel: Tunnel, invite: string, device: string): Promise<Link> {
+export async function pairThrough(tunnel: Tunnel, invite: string, device: string, onEmoji?: (emoji: string[]) => void): Promise<Link> {
   let answer: string
   try {
-    answer = await tunnel.pair(invite, device)
+    answer = await tunnel.pair(invite, device, onEmoji)
   } catch (e) {
     const code = tunnelCode(e)
     throw new Error(TUNNEL_REFUSED[code] ? tr(TUNNEL_REFUSED[code]) : tr('tunnelFailed', { code }))
@@ -130,6 +135,17 @@ export class Linker {
     this.io.save('link', JSON.stringify(l))
     this.link.set(l)
   }
+
+  /** Tailcat only, or every route: tunnels opened from now on take it; the open one is closed, so the next pipe opens
+   *  one that does. */
+  async setTailcatOnly(on: boolean) {
+    if (!this.io.tunnel?.setTailcatOnly || on === this.tailcatOnly) return
+    this.tailcatOnly = on
+    await this.io.tunnel.setTailcatOnly(on)
+    this.dropTunnel(this.tunnel)
+  }
+  /** As TailPocket was last told; it starts with every route. */
+  private tailcatOnly = false
 
   forget() {
     this.dropTunnel(this.tunnel)

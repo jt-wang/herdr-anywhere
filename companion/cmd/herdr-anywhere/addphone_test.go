@@ -97,7 +97,7 @@ func TestPairJSONReportsWhatServeSaid(t *testing.T) {
 	open := func(context.Context, string) (tailcat.Window, error) {
 		return tailcat.Window{}, errors.New("relay down")
 	}
-	srv := &http.Server{Handler: tailcat.ControlHandler(open, nil)}
+	srv := &http.Server{Handler: tailcat.ControlHandler(open, nil, nil)}
 	go srv.Serve(ln)
 	t.Cleanup(func() { srv.Close() })
 	out, _, code := runCLI(t, "pair", "--json", "--state", dir)

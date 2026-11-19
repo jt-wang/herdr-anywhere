@@ -52,6 +52,7 @@ export const zhHans: Table = {
   tunnelUnreachable: "连不上电脑。电脑上的配套程序在运行吗（herdr-anywhere start）？手机联网了吗？",
   inviteInvalid: '这不是 herdr-anywhere pair 生成的邀请，请重新扫描二维码。',
   tunnelDenied: '电脑拒绝了这部手机。请重新运行 herdr-anywhere pair。',
+  emojiCheck: "请确认电脑上显示的是同样这四个表情，然后在电脑上确认。", pairNotConfirmed: "电脑没有确认这部手机，或者这个配对码已经用过了。请重新运行 herdr-anywhere pair。",
   tunnelFailed: '通过 TailPocket 配对失败（{code}）。',
   noToken: '电脑已配对，但没有返回令牌。请重新运行 herdr-anywhere pair。',
   notPaired: '这部手机还没有和电脑配对。',
@@ -60,6 +61,7 @@ export const zhHans: Table = {
   settings: '设置', back: '返回', look: '外观', appearance: '外观模式', system: '跟随系统', light: '浅色', dark: '深色',
   terminalTextSize: '终端字号', points: '{n} 磅', smaller: '缩小', larger: '放大',
   showAgentNames: '显示 agent 名称', showAgentNamesDetail: '在每个标题前显示 Claude Code 这类名称。不显示时，图标仍会标出是哪个程序。',
+  tailcatOnly: "只用 Tailcat", tailcatOnlyDetail: "只通过 Tailcat 连接电脑：不经过 relay，也不在局域网上直连。可能会慢一些。",
   alerts: '提醒', agentNeedsYou: 'Agent 在等你', agentNeedsYouDetail: '它在等你回答或批准。',
   // Android's notification while the app stays connected in the background.
   keepAliveTitle: '已连接到你的电脑',

@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.3.1
+
+TestFlight candidate (36), Android test APK and test Companion, not a public Release or Latest update.
+
+- Build on the public TailPocket v0.3.0-pre.6 (jt-wang/tailpocket@342ebe5): the Go module from the Go proxy, the phone library from its release (checked by SHA-256).
+- Emoji check when a phone pairs: the phone shows four emoji; `herdr-anywhere pair` (y/N) and the Add phone dialog (Pair / Don't pair) show the phone's name and the same four, and the phone pairs only on a yes. A no, no answer within 55 s or a phone that gives up spends the code.
+- `pair` shows only `herdr2:` invites. A phone on 0.3.0 (35) or older cannot pair with this Companion: update the phone and the computer together. Phones already paired keep working without a new QR code.
+- `serve --tailcat` and `start` reach phones on this computer's own network by default, end-to-end encrypted. `--no-lan` turns that off; `--tailcat-only` keeps phones on Tailcat alone (no local network, no relay). Both are kept for each login.
+- Settings › Computer › Tailcat only keeps the phone on Tailcat alone.
+
 ## v0.3.0
 
 TestFlight candidate (35) and Android test APK, not a public Release or Latest update.

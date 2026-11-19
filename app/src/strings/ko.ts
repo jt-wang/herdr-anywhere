@@ -52,6 +52,7 @@ export const ko: Table = {
   tunnelUnreachable: "컴퓨터에 연결할 수 없어요. 컴패니언(herdr-anywhere start)이 실행 중이고 이 휴대폰이 온라인인가요?",
   inviteInvalid: 'herdr-anywhere pair에서 만든 초대가 아니에요. QR 코드를 다시 스캔하세요.',
   tunnelDenied: '컴퓨터가 이 휴대폰을 거부했어요. herdr-anywhere pair를 다시 실행하세요.',
+  emojiCheck: "컴퓨터에 같은 이모지 네 개가 보이는지 확인한 뒤 컴퓨터에서 확인하세요.", pairNotConfirmed: "컴퓨터가 이 휴대폰을 확인하지 않았거나 이미 사용한 코드예요. herdr-anywhere pair를 다시 실행하세요.",
   tunnelFailed: 'TailPocket으로 페어링하지 못했어요({code}).',
   noToken: '컴퓨터와 페어링했지만 토큰을 받지 못했어요. herdr-anywhere pair를 다시 실행하세요.',
   notPaired: '이 휴대폰은 아직 컴퓨터와 페어링되지 않았어요.',
@@ -60,6 +61,7 @@ export const ko: Table = {
   settings: '설정', back: '뒤로', look: '모양', appearance: '화면 모드', system: '시스템', light: '라이트', dark: '다크',
   terminalTextSize: '터미널 글자 크기', points: '{n}pt', smaller: '작게', larger: '크게',
   showAgentNames: '에이전트 이름 표시', showAgentNamesDetail: '각 제목 앞에 Claude Code 같은 이름을 표시해요. 꺼도 아이콘으로 프로그램을 알 수 있어요.',
+  tailcatOnly: "Tailcat만 사용", tailcatOnlyDetail: "Tailcat으로만 컴퓨터에 연결해요. relay를 거치지 않고 로컬 네트워크에서 직접 연결하지도 않아요. 더 느릴 수 있어요.",
   alerts: '알림', agentNeedsYou: '에이전트가 응답을 기다릴 때', agentNeedsYouDetail: '답변이나 승인을 기다리고 있어요.',
   // Android's notification while the app stays connected in the background.
   keepAliveTitle: '컴퓨터에 연결됨',

@@ -24,10 +24,10 @@ import (
 	"herdr-anywhere/companion/internal/store"
 )
 
-// Prefix starts every Herdr invite, so the app's scanner takes ours and no
-// other app's (Tailcat's own default is "tcc1:", connectinvite/invite.go:23).
-// Prefix2 starts a v2 invite (TailPocket v0.3): every route and the computer's
-// end-to-end key; app versions before 0.3 do not read it.
+// Prefix started every Herdr invite before TailPocket v0.3, so the app's scanner takes ours and no other app's
+// (Tailcat's own default is "tcc1:", connectinvite/invite.go:23). Prefix2 starts a v2 invite, the only kind serve
+// shows now: every route, the computer's end-to-end key, and the emoji check (confirm.go). App versions before 0.3
+// do not read it, and 0.3.0 (35) cannot pair with it: phone and computer are upgraded together.
 const (
 	Prefix  = "herdr1:"
 	Prefix2 = "herdr2:"
@@ -39,10 +39,9 @@ const stateName = "tailcat.json"
 
 // Window is one open pairing window as pair shows it.
 type Window struct {
-	Invite string `json:"invite"`
-	// Invite2 is the same window as a v2 invite, when serve has routes beyond Tailcat (a relay, the local
-	// network); show it instead of Invite.
-	Invite2 string    `json:"invite2,omitempty"`
+	Invite string `json:"invite"` // a v2 invite (Prefix2)
+	// ID names the window for Status and Answer.
+	ID      string    `json:"id,omitempty"`
 	Expires time.Time `json:"expires"`
 }
 
@@ -50,8 +49,13 @@ type Window struct {
 type Options struct {
 	// Relays are tailpocket-relay servers to register with.
 	Relays []connecthost.Relay
-	// Listen are local network addresses ("192.168.1.5:7682") phones reach directly.
+	// Listen are local network addresses ("192.168.1.5:7682") phones reach directly. Empty: TailPocket's own
+	// choice, every private address of this computer, unless NoLAN.
 	Listen []string
+	// NoLAN: no local network route at all.
+	NoLAN bool
+	// TailcatOnly: Tailcat alone, as before v0.3: no local network, no relay.
+	TailcatOnly bool
 }
 
 // Service is serve's Tailcat side.
@@ -60,7 +64,8 @@ type Service struct {
 	store *store.Store
 	name  string
 	log   *log.Logger
-	v2    bool // routes beyond Tailcat: windows carry a v2 invite
+
+	windows windows
 
 	mu   sync.Mutex
 	last connecthost.State // as last saved
@@ -72,7 +77,7 @@ func Open(st *store.Store, name string, logger *log.Logger, opts Options) (*Serv
 	if logger == nil {
 		logger = log.New(io.Discard, "", 0)
 	}
-	s := &Service{store: st, name: name, log: logger, v2: len(opts.Relays) > 0 || len(opts.Listen) > 0}
+	s := &Service{store: st, name: name, log: logger}
 	var saved connecthost.State
 	b, err := os.ReadFile(s.statePath())
 	switch {
@@ -97,7 +102,7 @@ func Open(st *store.Store, name string, logger *log.Logger, opts Options) (*Serv
 	// Keys are the phones' end-to-end keys: without them, a phone that has its key would be turned away as unpaired
 	// on the relay and the local network after a restart.
 	h, err := connecthost.New(connecthost.Config{Name: name, Identity: saved.Identity, Allowed: allowed, Keys: saved.Keys,
-		Save: s.save, Relays: opts.Relays, Listen: opts.Listen})
+		Save: s.save, Relays: opts.Relays, Listen: opts.Listen, NoLAN: opts.NoLAN, TailcatOnly: opts.TailcatOnly})
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", s.statePath(), err)
 	}
@@ -165,35 +170,35 @@ func (s *Service) Unsynced() int {
 func (s *Service) Close() error { return s.host.Close() }
 
 // Pair opens a pairing window (Tailcat's default length) whose phone gets a
-// device token from the single-use pairing code. The code is the same one
-// the LAN link carries, so whichever path redeems it first pairs.
+// device token from the single-use pairing code, once this computer's user
+// confirmed it (Answer). Only its v2 invite leaves serve: a v1 one would let a
+// phone pair over Tailcat without the emoji.
 func (s *Service) Pair(ctx context.Context, code string) (Window, error) {
 	iss := &issuer{store: s.store, code: code, name: s.name}
-	p, err := s.host.Pair(ctx, connecthost.PairOptions{Payload: iss.payload})
+	id, w := s.windows.add()
+	p, err := s.host.Pair(ctx, connecthost.PairOptions{Payload: iss.payload, Confirm: w.confirm})
 	if err != nil {
+		s.windows.forget(id)
 		return Window{}, err
 	}
-	text, err := p.QR(Prefix)
+	text, err := p.QR2(Prefix2)
 	if err != nil {
 		p.Close()
+		s.windows.forget(id)
 		return Window{}, err
-	}
-	win := Window{Invite: text, Expires: p.Expires()}
-	if s.v2 {
-		if win.Invite2, err = p.QR2(Prefix2); err != nil {
-			p.Close()
-			return Window{}, err
-		}
 	}
 	go func() {
 		phone, err := p.Wait(context.Background())
 		if err != nil {
 			iss.undo()
-			return
+			w.end("")
+		} else {
+			w.end(phone.Device)
+			s.log.Printf("paired %q over %s", phone.Device, phone.Route)
 		}
-		s.log.Printf("paired %q over %s", phone.Device, phone.Route)
+		time.AfterFunc(keepEnded, func() { s.windows.forget(id) })
 	}()
-	return win, nil
+	return Window{Invite: text, ID: id, Expires: p.Expires()}, nil
 }
 
 // Watch keeps the host's allowlist in step with the device list, so

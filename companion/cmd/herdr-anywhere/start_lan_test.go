@@ -38,6 +38,8 @@ func TestStartedServeArgs(t *testing.T) {
 		{"lan", serveOpts{lan: true}, "serve --tailcat --lan --state /s"},
 		{"listen", serveOpts{listen: []string{"100.64.0.5:7681", "127.0.0.1:7681"}}, "serve --tailcat --listen 100.64.0.5:7681 --listen 127.0.0.1:7681 --state /s"},
 		{"lan and listen", serveOpts{lan: true, listen: []string{"127.0.0.1:9000"}}, "serve --tailcat --listen 127.0.0.1:9000 --lan --state /s"},
+		{"no lan", serveOpts{noLAN: true}, "serve --tailcat --listen 127.0.0.1:0 --no-lan --state /s"},
+		{"tailcat only", serveOpts{tailcatOnly: true}, "serve --tailcat --listen 127.0.0.1:0 --tailcat-only --state /s"},
 	}
 	for _, c := range cases {
 		if got := strings.Join(startedServeArgs("/s", c.o), " "); got != c.want {
@@ -148,18 +150,19 @@ func TestStartRefusesWhatServeWouldRefuse(t *testing.T) {
 // could use (start listens on this computer itself already).
 func TestForegroundTipNamesTheSameStart(t *testing.T) {
 	for _, c := range []struct {
-		lan    bool
-		listen []string
-		want   string
+		o    serveOpts
+		want string
 	}{
-		{false, nil, "herdr-anywhere start\n"},
-		{true, nil, "herdr-anywhere start --lan\n"},
-		{false, []string{"127.0.0.1:7681"}, "herdr-anywhere start\n"},
-		{false, []string{"127.0.0.1:7681", "100.64.0.5:7681"}, "herdr-anywhere start --listen 100.64.0.5:7681\n"},
+		{serveOpts{}, "herdr-anywhere start\n"},
+		{serveOpts{lan: true}, "herdr-anywhere start --lan\n"},
+		{serveOpts{noLAN: true}, "herdr-anywhere start --no-lan\n"},
+		{serveOpts{tailcatOnly: true}, "herdr-anywhere start --tailcat-only\n"},
+		{serveOpts{listen: []string{"127.0.0.1:7681"}}, "herdr-anywhere start\n"},
+		{serveOpts{listen: []string{"127.0.0.1:7681", "100.64.0.5:7681"}}, "herdr-anywhere start --listen 100.64.0.5:7681\n"},
 	} {
-		got := foregroundTip(c.lan, c.listen)
+		got := foregroundTip(c.o)
 		if !strings.HasSuffix(got+"\n", ": "+c.want) || !strings.Contains(got, "closes") {
-			t.Errorf("lan %v listen %v: %q, want it to end with %q", c.lan, c.listen, got, c.want)
+			t.Errorf("%+v: %q, want it to end with %q", c.o, got, c.want)
 		}
 	}
 }

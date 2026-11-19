@@ -16,9 +16,30 @@ export function parsePair({ code, stdout, stderr }) {
   if (reply?.error === "not-running") return { kind: "not-running" };
   if (reply?.error) return { kind: "error", message: reply.error };
   if (code === 0 && Array.isArray(reply?.qr) && reply.expires) {
-    return { kind: "code", expires: Date.parse(reply.expires), rows: reply.qr };
+    // id: a companion with the emoji check (0.3.1 and later) names the window, to follow and answer it.
+    return { kind: "code", expires: Date.parse(reply.expires), rows: reply.qr, ...(reply.id ? { id: reply.id } : {}) };
   }
   return { kind: "error", message: stderr?.trim() || "" };
+}
+
+// What `pair --json --window ID` says about the window `view` shows, as what to show next: a phone asking (its name
+// and the four emoji it shows), paired, or a code that no longer works. undefined: keep showing what is shown.
+export function parseWindow({ code, stdout }, view) {
+  const reply = json(stdout);
+  if (code !== 0 || !reply?.state) return undefined;
+  const base = { id: view.id, expires: view.expires, rows: view.rows };
+  switch (reply.state) {
+    case "asking":
+      if (!reply.request || !Array.isArray(reply.request.emoji)) return undefined;
+      return { kind: "asking", ...base, device: reply.request.device ?? "", emoji: reply.request.emoji };
+    case "paired":
+      return { kind: "paired", name: reply.device ?? "" };
+    case "ended":
+      return { kind: "ended" };
+    case "waiting":
+      return view.kind === "asking" ? { kind: "code", ...base } : undefined;
+  }
+  return undefined;
 }
 
 // null when the list could not be read: that is not the same as no phones.

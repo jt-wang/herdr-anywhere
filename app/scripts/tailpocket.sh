@@ -1,47 +1,43 @@
 #!/bin/sh
-# Builds TailPocket's phone library (its connectmobile package, with gomobile) from the copy of its commit 81f6f8b (v0.3.0-pre.3) in
-# third_party, into that copy's build/, where its Swift package and Gradle modules look for it:
+# Puts TailPocket's phone library, as its public release v0.3.0-pre.6 (jt-wang/tailpocket@342ebe543f77322036f15aa93132e02078e9e478)
+# ships it, into the copy of its SDKs in third_party, where its Swift package and Gradle modules look for it:
 #   apple   → build/apple/TailPocketMobile.xcframework (ios/build.sh)
-#   android → build/android/m2, a local Maven repository holding tailpocket-mobile 0.3.0-pre.3 (android/build.sh)
-# A target already built is kept; FORCE=1 builds it again. Usage: scripts/tailpocket.sh [apple] [android]
-# Needs Go; apple needs Xcode, android the Android SDK and NDK.
+#   android → build/android/m2, a local Maven repository holding tailpocket-mobile 0.3.0-pre.6 (android/build.sh)
+# Each file is checked against the SHA-256 below, from the release's SHA256SUMS, before it is unpacked.
+# A target already in place is kept; FORCE=1 fetches it again. Usage: scripts/tailpocket.sh [apple] [android]
+# Needs curl, unzip and shasum or sha256sum.
 set -eu
-tp=$(cd "$(dirname "$0")/../../third_party/tailpocket-81f6f8b" && pwd -P)
-cd "$tp"
-mkdir -p build/bin build/apple build/android
-go build -o build/bin/gomobile golang.org/x/mobile/cmd/gomobile
-go build -o build/bin/gobind golang.org/x/mobile/cmd/gobind
-PATH="$tp/build/bin:$PATH"
-# gomobile records the module's directory in the library (-trimpath does not remove it), so it builds through a
-# fixed path that names no user or machine, as TailPocket's scripts/build-mobile.sh does.
-src=/tmp/herdr-tailpocket-src
-ln -sfn "$tp" "$src"
-trap 'rm -f "$src"' EXIT
-cd "$src"
+release=https://github.com/jt-wang/tailpocket/releases/download/v0.3.0-pre.6
+tp=$(cd "$(dirname "$0")/../../third_party/tailpocket-342ebe5" && pwd -P)
+mkdir -p "$tp/build/download"
+sha256() { if command -v sha256sum >/dev/null; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d' ' -f1; }
+fetch() { # file, sha256
+  f="$tp/build/download/$1"
+  [ -f "$f" ] && [ "$(sha256 "$f")" = "$2" ] && return 0
+  curl -fsSL --retry 5 --retry-delay 5 -o "$f.part" "$release/$1"
+  got=$(sha256 "$f.part")
+  [ "$got" = "$2" ] || { rm -f "$f.part"; echo "tailpocket.sh: $1 has SHA-256 $got, want $2" >&2; exit 1; }
+  mv "$f.part" "$f"
+}
 for target in ${*:-apple android}; do
   case "$target" in
   apple)
-    out=build/apple/TailPocketMobile.xcframework
+    out="$tp/build/apple/TailPocketMobile.xcframework"
     [ -z "${FORCE:-}" ] && [ -d "$out" ] && continue
-    rm -rf "$out"
-    gomobile bind -target=ios,iossimulator -iosversion=15 -trimpath -ldflags="-s -w" -tags ts_omit_ssh -o "$out" ./connectmobile
+    fetch TailPocketMobile.xcframework.zip 47b8bda90bed1536e259681099cdc9324cf3fe5218c61ad8b2a5e982f9bc884c
+    rm -rf "$out"; mkdir -p "$tp/build/apple"
+    unzip -q "$tp/build/download/TailPocketMobile.xcframework.zip" -d "$tp/build/apple"
+    [ -d "$out" ] || { echo "tailpocket.sh: no TailPocketMobile.xcframework in the release's zip" >&2; exit 1; }
     ;;
   android)
-    m2=build/android/m2/io/jingtao/tailpocket/tailpocket-mobile/0.3.0-pre.3
-    [ -z "${FORCE:-}" ] && [ -f "$m2/tailpocket-mobile-0.3.0-pre.3.aar" ] && continue
-    export ANDROID_HOME="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
-    export JAVA_HOME="${JAVA_HOME:-/Applications/Android Studio.app/Contents/jbr/Contents/Home}" # gomobile runs javac
-    PATH="$JAVA_HOME/bin:$PATH"
-    gomobile bind -target=android -androidapi 26 -javapkg io.jingtao.tailpocket -trimpath -ldflags="-s -w" \
-      -tags ts_omit_ssh -o build/android/tailpocket-mobile.aar ./connectmobile
-    mkdir -p "$m2"
-    cp build/android/tailpocket-mobile.aar "$m2/tailpocket-mobile-0.3.0-pre.3.aar"
-    printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>' \
-      '<project xmlns="http://maven.apache.org/POM/4.0.0"><modelVersion>4.0.0</modelVersion>' \
-      '<groupId>io.jingtao.tailpocket</groupId><artifactId>tailpocket-mobile</artifactId><version>0.3.0-pre.3</version>' \
-      '<packaging>aar</packaging></project>' > "$m2/tailpocket-mobile-0.3.0-pre.3.pom"
+    aar="$tp/build/android/m2/io/jingtao/tailpocket/tailpocket-mobile/0.3.0-pre.6/tailpocket-mobile-0.3.0-pre.6.aar"
+    [ -z "${FORCE:-}" ] && [ -f "$aar" ] && continue
+    fetch tailpocket-android-m2.zip 2c574501bf39f6316a472c166b47cabff37b6d845616bba320e0b2913c60d3c0
+    rm -rf "$tp/build/android/m2"; mkdir -p "$tp/build/android"
+    unzip -q "$tp/build/download/tailpocket-android-m2.zip" -d "$tp/build/android"
+    [ -f "$aar" ] || { echo "tailpocket.sh: no tailpocket-mobile 0.3.0-pre.6 in the release's zip" >&2; exit 1; }
     ;;
   *) echo "unknown target $target" >&2; exit 2 ;;
   esac
-  echo "built TailPocket for $target"
+  echo "put TailPocket's library in place for $target"
 done

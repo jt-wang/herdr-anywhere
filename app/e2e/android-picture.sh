@@ -6,6 +6,7 @@
 # Usage: ANDROID_SERIAL=emulator-5554 [HM_PICTURE_IMAGE=alpine:latest] e2e/android-picture.sh APK COMPANION [folder for screenshots]
 set -eu
 . "$(dirname "$0")/autostart-guard.sh"; autostart_guard android-picture # a login entry of its own, never the person's
+. "$(dirname "$0")/tailcat-invite.sh" # the invite pair shows, and the y its emoji check asks for
 : "${ANDROID_SERIAL:?set ANDROID_SERIAL to the device to use}"
 apk=$1; bin=$2; shots=${3:-}
 app=$(cd "$(dirname "$0")/.." && pwd)
@@ -46,10 +47,10 @@ if [ "${HM_PICTURE_VIA:-}" = tailcat ]; then
   # HM_PICTURE_ROUTE=relay: the companion sends only through Tailcat's relay (as android-tailcat.sh does); else
   # Tailcat goes direct when it can, which it can between an emulator and this computer.
   [ "${HM_PICTURE_ROUTE:-}" = relay ] && export TS_DEBUG_ALWAYS_USE_DERP=1
-  "$bin" serve --tailcat --listen "127.0.0.1:$port" --hc "$hc" --state "$state" > "$work/serve.log" 2>&1 &
+  "$bin" serve --tailcat $(tailcat_no_lan "$bin") --listen "127.0.0.1:$port" --hc "$hc" --state "$state" > "$work/serve.log" 2>&1 &
   serve_pid=$!
   i=0; until grep -q "listening on Tailcat" "$work/serve.log" 2>/dev/null; do i=$((i + 1)); [ $i -gt 300 ] && { echo "FAIL: serve --tailcat did not start"; exit 1; }; sleep 0.1; done
-  invite=$("$bin" pair --state "$state" 2>/dev/null | grep -o 'herdr1:[A-Za-z0-9_-]*' | head -1)
+  invite=$(tailcat_invite "$bin" "$state" "$work/pair.out")
 else
   "$bin" serve --listen "127.0.0.1:$port" --hc "$hc" --state "$state" > "$work/serve.log" 2>&1 &
   serve_pid=$!

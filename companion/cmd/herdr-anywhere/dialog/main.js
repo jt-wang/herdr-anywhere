@@ -8,7 +8,7 @@ import { View, div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { exec, theme, props, closeOverlay } from "herdr";
 import { BIN, STATE } from "./config.js";
-import { addedSince, ago, parseDevices, parsePair, remaining, runs } from "./logic.js";
+import { addedSince, ago, parseDevices, parsePair, parseWindow, remaining, runs } from "./logic.js";
 import { fill, wordsFor } from "./strings.js";
 
 const MODULE = 5; // points per module: a 528-character invite is 81 modules across
@@ -32,6 +32,36 @@ export default class AddPhone extends View {
     cx.timer.every(1000, (cx) => {
       if (this.view.kind !== "code") return;
       if (Date.now() >= this.view.expires) this.view = { kind: "expired" };
+      cx.notify();
+    });
+    cx.timer.every(1000, (cx) => this.pollWindow(cx));
+  }
+
+  // A phone pairing waits for this computer's user to compare its emoji: the window says when one asks.
+  pollWindow(cx) {
+    const v = this.view;
+    if ((v.kind !== "code" && v.kind !== "asking") || !v.id || this.polling) return;
+    this.polling = true;
+    cx.spawn(async (cx) => {
+      const r = await this.run(["pair", "--json", "--window", v.id]).catch(() => ({ code: 1 }));
+      this.polling = false;
+      if (this.view !== v) return;
+      const next = parseWindow(r, v);
+      if (!next) return;
+      this.view = next;
+      cx.notify();
+    });
+  }
+
+  answer(approve, cx) {
+    const v = this.view;
+    if (v.kind !== "asking") return;
+    this.view = { kind: "answering" };
+    cx.notify();
+    cx.spawn(async (cx) => {
+      const r = await this.run(["pair", "--json", "--window", v.id, "--answer", approve ? "yes" : "no"]).catch(() => ({ code: 1 }));
+      this.view = parseWindow(r, v) ?? { kind: "ended" };
+      if (this.view.kind === "code" || this.view.kind === "asking") this.view = approve ? { kind: "answering" } : { kind: "ended" };
       cx.notify();
     });
   }
@@ -91,7 +121,8 @@ export default class AddPhone extends View {
   primary(cx) {
     const k = this.view.kind;
     if (k === "not-running" || k === "start-failed") this.start(cx);
-    else if (k === "expired" || k === "paired" || k === "error" || k === "cant-run" || k === "remove-failed") this.getCode(cx);
+    else if (k === "expired" || k === "ended" || k === "paired" || k === "error" || k === "cant-run" || k === "remove-failed") this.getCode(cx);
+    // Enter never says yes to a phone: the person picks Pair or Don't pair.
   }
 
   key(e, cx) {
@@ -151,6 +182,24 @@ export default class AddPhone extends View {
           .child(this.code(v.rows))
           .child(div().text_size(13).text_color(t.foreground).child(s.scan))
           .child(div().text_size(12).text_color(t.muted).child(fill(s.expires, { time: remaining(v.expires, Date.now()) })));
+      case "asking":
+        return v_flex()
+          .items_center()
+          .gap(12)
+          .py(16)
+          .child(div().text_size(13).font_medium().text_color(t.foreground).child(fill(s.asks, { name: v.device })))
+          .child(div().id("ap-emoji").text_size(34).child(v.emoji.join("  ")))
+          .child(div().text_size(12).text_color(t.muted).child(s.compare))
+          .child(
+            h_flex()
+              .gap(10)
+              .child(this.button(t, "ap-deny", s.deny, (cx) => this.answer(false, cx), false))
+              .child(this.button(t, "ap-approve", s.approve, (cx) => this.answer(true, cx))),
+          );
+      case "answering":
+        return this.message(t, s.loading);
+      case "ended":
+        return this.message(t, s.ended, this.button(t, "ap-new", s.newCode, (cx) => this.getCode(cx)));
       case "loading":
         return this.message(t, s.loading);
       case "starting":

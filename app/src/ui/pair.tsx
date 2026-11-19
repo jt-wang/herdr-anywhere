@@ -15,6 +15,8 @@ export function PairScreen(props: { onPaired: (l: Link) => void; device: string;
   const text = signal(props.initial ?? '')
   const busy = signal(false)
   const error = signal(props.message ?? '')
+  // The four emoji the computer asks its user to compare, while it waits for them (TailPocket v0.3).
+  const emoji = signal<string[]>([])
   const { origin, tunnel } = props
   const pair = async () => {
     const typed = text().trim()
@@ -27,12 +29,14 @@ export function PairScreen(props: { onPaired: (l: Link) => void; device: string;
     }
     busy.set(true)
     error.set('')
+    emoji.set([])
     try {
-      const l = invite ? await pairThrough(tunnel!, invite, props.device) : await pairWith(p!, props.device, props.fetcher)
+      const l = invite ? await pairThrough(tunnel!, invite, props.device, (e) => emoji.set(e)) : await pairWith(p!, props.device, props.fetcher)
       await keyboardGone()
       props.onPaired(l)
     } catch (e: any) {
       error.set(e?.message ?? String(e))
+      emoji.set([])
       busy.set(false)
     }
   }
@@ -75,6 +79,12 @@ export function PairScreen(props: { onPaired: (l: Link) => void; device: string;
         autoCapitalize="none" autoCorrect={false} keyboardType="url" submitBehavior="blurAndSubmit" onSubmit={() => void pair()}
         class="mt-2 rounded-(--radius) border border-input bg-card px-3 py-3 text-[14px] font-mono text-foreground placeholder:text-sidebar-foreground" />
       <Button label={busy() ? t('pairing') : t('pair')} testID="pair" disabled={busy()} onPress={() => void pair()} />
+      <If when={busy() && emoji().length > 0}>
+        <View testID="pair-emoji" class="items-center gap-2 rounded-(--radius) border border-border bg-card p-4">
+          <Text class="text-[36px] tracking-[6px]">{emoji().join(' ')}</Text>
+          <Text class="text-[14px] leading-5 text-foreground text-center">{t('emojiCheck')}</Text>
+        </View>
+      </If>
       <If when={error()}><Text testID="pair-error" class="text-[14px] leading-5 text-destructive">{error()}</Text></If>
       <If when={props.onTry}>
         <View class="mt-3 gap-2 border-t border-border pt-4">

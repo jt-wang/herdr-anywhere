@@ -395,3 +395,26 @@ test('which paths are pictures the computer says for many at once; one too old t
   const offline = imageApi(l, (async () => { throw new Error('down') }) as any)
   expect(await offline.check('t1', ['a.png']).then(() => 'answered', (e) => e.message)).toBe("Can't reach the computer.")
 })
+
+// TailPocket v0.3's forward takes only requests under its token's path (baseUrl is http://127.0.0.1:<port>/_tailpocket/<token>):
+// every URL the app builds is that base with its path added, never a path that replaces it.
+test('through TailPocket, the socket and the http calls keep the forward token path of baseUrl', async () => {
+  const base = 'http://127.0.0.1:40001/_tailpocket/fwd-token'
+  const t: Tunnel = {
+    pair: async () => JSON.stringify({ token: 'tk', device: 'd1', name: 'studio' }),
+    scan: async () => INVITE, forget: () => {},
+    connect: async () => ({ baseUrl: base, close: () => {} }),
+  }
+  const made: string[] = []
+  const socket = (url: string) => { made.push(url); return { send() {}, close() {} } as any }
+  const l = new Linker({ load: async () => null, save() {}, remove() {}, socket: socket as any, tunnel: t })
+  l.set(await pairThrough(t, INVITE, 'iPhone'))
+  l.pipe()
+  await settle()
+  expect(made).toEqual(['ws://127.0.0.1:40001/_tailpocket/fwd-token/hc?token=tk'])
+  expect(await l.baseUrl()).toBe(base)
+  const asked: string[] = []
+  const fetcher = (async (u: string) => { asked.push(u); return { ok: true, json: async () => ({ version: '0.3.1' }) } }) as any
+  expect(await companionVersion(l, fetcher)).toBe('0.3.1')
+  expect(asked).toEqual([`${base}/api/info`])
+})

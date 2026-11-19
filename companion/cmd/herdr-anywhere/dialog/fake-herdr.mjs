@@ -49,7 +49,8 @@ globalThis.fakeHerdr = {
   herdr: {
     exec: async (bin, args) => {
       calls.push([bin, ...args].join(' '))
-      const reply = replies[args[0]]
+      // A reply may be a function of the arguments: pair --json and pair --json --window answer differently.
+      const reply = typeof replies[args[0]] === 'function' ? replies[args[0]](args) : replies[args[0]]
       if (reply instanceof Error) throw reply
       return reply ?? { code: 0, stdout: '', stderr: '' }
     },

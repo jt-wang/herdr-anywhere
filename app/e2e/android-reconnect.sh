@@ -14,6 +14,7 @@
 # Needs the internet, go, hc and the Android SDK.
 set -eu
 . "$(dirname "$0")/autostart-guard.sh"; autostart_guard android-reconnect # a login entry of its own, never the person's
+. "$(dirname "$0")/tailcat-invite.sh" # the invite pair shows, and the y its emoji check asks for
 : "${ANDROID_SERIAL:?set ANDROID_SERIAL to the device to use}"
 app=$(cd "$(dirname "$0")/.." && pwd)
 apk=${1:?apk}
@@ -57,7 +58,7 @@ trap 'exit 130' INT; trap 'exit 143' TERM
 "$adb" shell pm grant "$id" android.permission.POST_NOTIFICATIONS >/dev/null 2>&1 || true
 
 serve() {
-  "$work/herdr-anywhere" serve --tailcat --listen "127.0.0.1:$port" --hc "$hc" --state "$state" >> "$work/serve.log" 2>&1 &
+  "$work/herdr-anywhere" serve --tailcat $(tailcat_no_lan "$work/herdr-anywhere") --listen "127.0.0.1:$port" --hc "$hc" --state "$state" >> "$work/serve.log" 2>&1 &
   serve_pid=$!
   i=0
   until [ "$(grep -c "listening on Tailcat" "$work/serve.log" 2>/dev/null)" -ge "$1" ]; do
@@ -65,7 +66,7 @@ serve() {
     sleep 0.1
   done
 }
-invite() { "$work/herdr-anywhere" pair --state "$state" 2>/dev/null | grep -o 'herdr1:[A-Za-z0-9_-]*' | head -1; }
+invite() { tailcat_invite "$work/herdr-anywhere" "$state" "$work/pair.out"; }
 dump() { "$adb" shell uiautomator dump /sdcard/hm.xml >/dev/null 2>&1; "$adb" shell cat /sdcard/hm.xml; }
 at() {
   dump | tr '>' '\n' | grep -F "resource-id=\"$1\"" | head -1 |

@@ -57,7 +57,7 @@ clip() { # set <file> | get
 # For a failure: the screen's ids and texts, any invite or pairing link masked.
 screen() {
   echo "--- on the phone's screen:"
-  xml | tr '>' '\n' | grep -oE '(resource-id|text)="[^"]+"' | head -40 | sed -E 's/herdr1:[A-Za-z0-9_-]+/herdr1:…/g; s/#pair=[A-Za-z0-9_-]+/#pair=…/g'
+  xml | tr '>' '\n' | grep -oE '(resource-id|text)="[^"]+"' | head -40 | sed -E 's/herdr([12]):[A-Za-z0-9_-]+/herdr\1:…/g; s/#pair=[A-Za-z0-9_-]+/#pair=…/g'
 }
 
 case "${1:-}" in
@@ -107,7 +107,7 @@ PY
     invite=$(cat "$2")
     shots=$3
     mkdir -p "$shots"
-    case $invite in herdr1:*) ;; *) fail "$2 holds no invite" ;; esac
+    case $invite in herdr1:* | herdr2:*) ;; *) fail "$2 holds no invite" ;; esac
     # The check that home lists the computer's project, seen failing: before pairing it doesn't.
     screen_has acme-api && fail "the screen shows acme-api before pairing"
     echo "ok: before pairing, the screen shows no acme-api"

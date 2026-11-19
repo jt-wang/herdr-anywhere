@@ -19,7 +19,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -93,15 +92,74 @@ func TestPairFromScreen(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	inv, err := connectinvite.Decode(strings.TrimSpace(string(text)), tailcat.Prefix)
+	inv, err := connectinvite.DecodeV2(strings.TrimSpace(string(text)), tailcat.Prefix2)
 	if err != nil {
 		t.Fatalf("the code on screen is not an invite: %v", err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	// The dialog asks about the emoji; the script presses its Pair button.
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
-	if _, err := connectphone.Pair(ctx, inv, connectphone.NewKey(), connectphone.Options{Device: "Test Pixel"}); err != nil {
+	onSAS := func(emoji []string) { t.Logf("the phone shows %s", strings.Join(emoji, " ")) }
+	if _, err := connectphone.PairV2(ctx, inv, connectphone.NewKey(), connectphone.Options{Device: "Test Pixel", OnSAS: onSAS}); err != nil {
 		t.Fatalf("pair: %v", err)
 	}
+}
+
+// pairLive pairs a phone (connectphone, in this process) with the serve on dir as the Add phone dialog does: pair
+// --json for the code, and, once the phone shows its emoji and the window asks with the same ones, --answer yes.
+func pairLive(t *testing.T, dir, device string, logs fmt.Stringer) connectphone.Link {
+	t.Helper()
+	out, errs, code := runCLI(t, "pair", "--json", "--state", dir)
+	var win struct{ Invite, ID string }
+	if code != 0 || json.Unmarshal([]byte(out), &win) != nil || win.ID == "" {
+		// CI logs are public: never print the invite or the output holding it.
+		t.Fatalf("pair --json exit %d (%d bytes): %s\nserve:\n%s", code, len(out), errs, logs)
+	}
+	inv, err := connectinvite.DecodeV2(win.Invite, tailcat.Prefix2)
+	if err != nil {
+		t.Fatalf("invite (%d chars) doesn't decode: %v", len(win.Invite), err)
+	}
+	answered := make(chan error, 1)
+	onSAS := func(emoji []string) {
+		go func() {
+			var st tailcat.Status
+			for range 50 {
+				out, _, _ := runCLI(t, "pair", "--json", "--window", win.ID, "--state", dir)
+				if json.Unmarshal([]byte(out), &st) == nil && st.State == tailcat.StateAsking {
+					break
+				}
+				time.Sleep(100 * time.Millisecond)
+			}
+			if st.Request == nil || strings.Join(st.Request.Emoji, " ") != strings.Join(emoji, " ") || st.Request.Device != device {
+				answered <- fmt.Errorf("the computer asks about %+v, the phone shows %q", st.Request, emoji)
+				runCLI(t, "pair", "--json", "--window", win.ID, "--answer", "no", "--state", dir)
+				return
+			}
+			out, errs, code := runCLI(t, "pair", "--json", "--window", win.ID, "--answer", "yes", "--state", dir)
+			if code != 0 {
+				answered <- fmt.Errorf("--answer yes: exit %d: %s %s", code, out, errs)
+				return
+			}
+			answered <- nil
+		}()
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+	link, err := connectphone.PairV2(ctx, inv, connectphone.NewKey(), connectphone.Options{Device: device, OnSAS: onSAS})
+	select {
+	case aerr := <-answered:
+		if aerr != nil {
+			t.Fatal(aerr)
+		}
+	default:
+		if err == nil {
+			t.Fatal("paired without the computer's answer")
+		}
+	}
+	if err != nil {
+		t.Fatalf("pair: %v\nserve:\n%s", err, logs)
+	}
+	return link
 }
 
 func TestLiveTailcat(t *testing.T) {
@@ -110,38 +168,20 @@ func TestLiveTailcat(t *testing.T) {
 	}
 	hc := isolatedHC(t)
 	dir := shortStateDir(t)
-	_, logs := startServe(t, "--tailcat", "--listen", "127.0.0.1:0", "--hc", hc, "--state", dir)
+	// --no-lan: this measures Tailcat, which a phone on this computer's own network would not take.
+	_, logs := startServe(t, "--tailcat", "--no-lan", "--listen", "127.0.0.1:0", "--hc", hc, "--state", dir)
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 	defer cancel()
 
 	started := time.Now()
-	out, errs, code := runCLI(t, "pair", "--state", dir)
-	if code != 0 {
-		t.Fatalf("pair exit %d: %s\nserve:\n%s", code, errs, logs)
-	}
-	text := regexp.MustCompile(regexp.QuoteMeta(tailcat.Prefix) + `[A-Za-z0-9_-]+`).FindString(out)
-	t.Logf("pairing window open after %v; invite %d chars", time.Since(started).Round(time.Millisecond), len(text))
-	inv, err := connectinvite.Decode(text, tailcat.Prefix)
-	if err != nil {
-		// CI logs are public: never print the invite or the output holding it.
-		t.Fatalf("invite (%d chars) doesn't decode: %v", len(text), err)
-	}
-
-	started = time.Now()
-	phoneKey := connectphone.NewKey()
-	pairCtx, pairCancel := context.WithTimeout(ctx, 90*time.Second)
-	link, err := connectphone.Pair(pairCtx, inv, phoneKey, connectphone.Options{Device: "live phone"})
-	pairCancel()
-	if err != nil {
-		t.Fatalf("pair: %v\nserve:\n%s", err, logs)
-	}
+	link := pairLive(t, dir, "live phone", logs)
 	t.Logf("paired after %v", time.Since(started).Round(time.Millisecond))
 	var reply struct{ Token, Device, Name string }
 	if err := json.Unmarshal([]byte(link.Payload), &reply); err != nil || reply.Token == "" {
 		t.Fatalf("payload %q: %v", link.Payload, err)
 	}
 	st, _ := store.Open(dir)
-	phonePub, _ := connectphone.PublicKey(phoneKey)
+	phonePub, _ := connectphone.PublicKey(link.Key)
 	if d, err := st.Authenticate(reply.Token); err != nil || d.ID != reply.Device || d.Name != "live phone" || d.TailcatKey != phonePub {
 		t.Fatalf("payload token gives %+v, %v", d, err)
 	}
