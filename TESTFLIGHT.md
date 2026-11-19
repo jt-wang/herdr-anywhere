@@ -19,6 +19,8 @@ Install the test Companion from the pre-release (its notes have the commands), c
 7. **Revoke.** `herdr-anywhere devices`, then `herdr-anywhere revoke <id>`, or Remove in the Add phone dialog: that phone's connections close within a second on every route, the app asks to pair again, and other phones keep working (their Tailcat connections may drop and reconnect once).
 8. **Same-Wi-Fi 6-digit pairing** (TailPocket's ServeLocal; after 3 abandoned or refused attempts a window ends with "too many attempts, start again"): Herdr Anywhere does not offer this pairing yet, so there is nothing to test in this build.
 
+**Known issue (TailPocket pre.6, fixed in a later TailPocket):** over Tailcat, a phone whose pairing the computer refuses (a no, 55 s without an answer, or a spent code) only shows that it was not confirmed about 70 seconds later; the computer's side ends at once. Wait for it before reporting step 2 as failing, and report it only if it takes much longer.
+
 The plain LAN port of 0.2 still behaves as in 0.3.0: open only with `--lan`, only while a phone paired by a `#pair=` link is left, for at most 3 days after the first 0.3 serve, never for a phone with an end-to-end key.
 
 Two availability checks, as for 0.3.0:

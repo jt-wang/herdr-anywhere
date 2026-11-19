@@ -64,12 +64,12 @@ func isolatedHC(t *testing.T) string {
 	return hc
 }
 
-// dialHC opens /hc through the forwarder, retrying while the tunnel comes up.
-func dialHC(ctx context.Context, addr, token string) (*websocket.Conn, error) {
+// dialHC opens /hc through the forwarder at base (its address and BasePath), retrying while the tunnel comes up.
+func dialHC(ctx context.Context, base, token string) (*websocket.Conn, error) {
 	var last error
 	for ctx.Err() == nil {
 		attempt, cancel := context.WithTimeout(ctx, 20*time.Second)
-		c, _, err := websocket.Dial(attempt, "ws://"+addr+"/hc?token="+token, nil)
+		c, _, err := websocket.Dial(attempt, "ws://"+base+"/hc?token="+token, nil)
 		cancel()
 		if err == nil {
 			return c, nil
@@ -197,7 +197,9 @@ func TestLiveTailcat(t *testing.T) {
 	}
 	defer fwd.Close()
 	started = time.Now()
-	ws, err := dialHC(ctx, fwd.Addr(), reply.Token)
+	// The forward takes only what carries its token: everything goes under its BasePath, as the app's baseUrl does.
+	base := fwd.Addr() + fwd.BasePath()
+	ws, err := dialHC(ctx, base, reply.Token)
 	if err != nil {
 		t.Fatalf("WebSocket through the forwarder: %v\nserve:\n%s", err, logs)
 	}
@@ -228,7 +230,7 @@ func TestLiveTailcat(t *testing.T) {
 	if !strings.Contains(logs.String(), "connected (binary,") {
 		t.Fatalf("serve did not log a binary connection:\n%s", logs)
 	}
-	if err := info(ctx, fwd.Addr(), 25*time.Second); err != nil {
+	if err := info(ctx, base, 25*time.Second); err != nil {
 		t.Fatalf("/api/info through the forwarder before the revoke: %v", err)
 	}
 
@@ -304,11 +306,11 @@ func reach(t *testing.T, ctx context.Context, sess *connectphone.Session) []byte
 	return b
 }
 
-// info GETs /api/info through the forwarder.
-func info(ctx context.Context, addr string, timeout time.Duration) error {
+// info GETs /api/info through the forwarder at base (its address and BasePath).
+func info(ctx context.Context, base string, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+addr+"/api/info", nil)
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+base+"/api/info", nil)
 	client := &http.Client{Transport: &http.Transport{DisableKeepAlives: true}}
 	resp, err := client.Do(req)
 	if err != nil {
