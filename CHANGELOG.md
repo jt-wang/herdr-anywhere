@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.3.0
+
+TestFlight candidate (35) and Android test APK, not a public Release or Latest update.
+
+- Build on TailPocket v0.3.0-pre.3 (jt-wang/tailpocket@81f6f8b): end-to-end encrypted (Noise, protocol 2) routes over the local network and tailpocket-relay besides Tailcat. `pair` shows a `herdr2:` invite carrying every route; Settings shows the route in use.
+- Phones paired over Tailcat before 0.3 register their end-to-end key on first connect, with no new QR code.
+- `serve --lan` keeps the old plain LAN port only for phones paired by a `#pair=` link before 0.3, and for at most 3 days; home tells such a phone until when and offers Pair again. A phone with an end-to-end key is never served there. `--relay wss://… --relay-token-file FILE` registers with a tailpocket-relay.
+- The browser page no longer pairs: it says to pair from the iOS or Android app by scanning the QR code `herdr-anywhere pair` shows.
+- Not compatible with earlier 0.3 test builds (TailPocket pre.1/pre.2): update the phone and the computer together.
+
 ## v0.2.2
 
 TestFlight candidate (34), not a public Release or Latest update.

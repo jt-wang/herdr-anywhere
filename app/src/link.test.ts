@@ -1,6 +1,6 @@
 // Pairing with the companion (`herdr-anywhere pair` prints `<url>/#pair=<code>`) and the saved link.
 import { expect, test } from 'nsh/test'
-import { chatApi, companionVersion, folderApi, imageApi, Linker, pairThrough, parseInvite, parsePairLink, pairWith, type Tunnel } from './link.ts'
+import { chatApi, companionVersion, folderApi, imageApi, Linker, pairThrough, parseInvite, parsePairLink, pairWith, plainLink, type Tunnel } from './link.ts'
 
 test('a pairing link names the computer and the code; anything else is not one', () => {
   expect(parsePairLink(' http://192.168.1.20:7681/#pair=K7QD-M2XP ')).toEqual({ url: 'http://192.168.1.20:7681', code: 'K7QD-M2XP' })
@@ -105,6 +105,32 @@ test('the route comes from the open tunnel, a tunnel that cannot say is unknown,
   expect(await plain.path()).toBe(null)
 })
 
+// TailPocket v0.3 also reaches the computer over the local network, through its own end-to-end encryption.
+test('a tunnel over the local network says lan', async () => {
+  const saved = new Map<string, string>()
+  const tunnel: Tunnel = { ...fakeTunnel().t, async connect() { return { baseUrl: 'http://127.0.0.1:1', close: () => {}, path: async () => ({ route: 'lan', relay: '' }) as any } } }
+  const l = new Linker({ load: async (k) => saved.get(k) ?? null, save: (k, v) => saved.set(k, v), remove: (k) => saved.delete(k), tunnel })
+  l.set({ url: 'tailpocket:', via: 'tailpocket', token: 't', device: 'd', name: 'studio', enc: 'bin' })
+  expect(await l.path()).toEqual({ route: 'lan' })
+})
+
+// Paired with a `#pair=` link on another machine's address: the companion's unencrypted port, which closes after
+// the move to TailPocket v0.3. The computer's own loopback (the web page on it), HTTPS, Tailcat and Try it are not it.
+test('a link to the companion\'s unencrypted port on the network is plain; loopback, https, TailPocket and Try it are not', () => {
+  const link = (url: string, via?: 'tailpocket' | 'demo') => ({ url, token: 't', device: 'd', name: 'n', enc: 'bin' as const, via })
+  expect(plainLink(link('http://192.168.1.20:7681'))).toBe(true)
+  expect(plainLink(link('http://192.0.2.10:7681'))).toBe(true)
+  expect(plainLink(link('http://mac.example:7681'))).toBe(true)
+  expect(plainLink(link('http://[fd7a:115c:a1e0::1]:7681'))).toBe(true)
+  expect(plainLink(link('http://127.0.0.1:7681'))).toBe(false)
+  expect(plainLink(link('http://127.0.0.2:7681'))).toBe(false)
+  expect(plainLink(link('http://localhost:7681'))).toBe(false)
+  expect(plainLink(link('http://[::1]:7681'))).toBe(false)
+  expect(plainLink(link('https://herdr.example'))).toBe(false)
+  expect(plainLink(link('tailpocket:', 'tailpocket'))).toBe(false)
+  expect(plainLink(link('demo:', 'demo'))).toBe(false)
+})
+
 test('a tunnel that cannot open has an unknown route', async () => {
   const saved = new Map<string, string>()
   const l = new Linker({ load: async (k) => saved.get(k) ?? null, save: (k, v) => saved.set(k, v), remove: (k) => saved.delete(k), tunnel: fakeTunnel({ connectFails: 1 }).t })
@@ -124,9 +150,15 @@ test('the companion says its version at /api/info; a failure or an odd answer is
   expect(await companionVersion(linker, (async () => ({ ok: true, json: async () => ({ version: 7 }) })) as any)).toBe('')
 })
 
-test('an invite is the herdr1: text, alone or inside what was scanned or pasted', () => {
+test('an invite is the herdr1: or herdr2: text, alone or inside what was scanned or pasted', () => {
   expect(parseInvite(` ${INVITE} `)).toBe(INVITE)
   expect(parseInvite(`Paste this invite into the Herdr app, or scan its QR code with the app:\n  ${INVITE}\n`)).toBe(INVITE)
+  // v2 (TailPocket v0.3): with a relay or the encrypted local network, `herdr-anywhere pair` shows herdr2:.
+  const INVITE2 = 'herdr2:eJyrVipTsjLSUcrMS0nNVbJSMjQyNjA0MDE1BABqHQcv'
+  expect(parseInvite(` ${INVITE2} `)).toBe(INVITE2)
+  expect(parseInvite(`Paste this invite into the Herdr app, or scan its QR code with the app:\n  ${INVITE2}\n`)).toBe(INVITE2)
+  expect(parseInvite('herdr3:eyJ2IjoxfQ')).toBe(null)
+  expect(parseInvite('tailpocket2:eyJ2IjoxfQ')).toBe(null)
   expect(parseInvite('tailpocket1:eyJ2IjoxfQ')).toBe(null)
   expect(parseInvite('http://192.168.1.20:7681/#pair=K7QD-M2XP')).toBe(null)
 })

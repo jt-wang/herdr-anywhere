@@ -8,13 +8,13 @@ companion also serves the PWA, so the page and its WebSocket share one origin.
 
 ```sh
 go build ./cmd/herdr-anywhere          # needs Go 1.27.1
-./herdr-anywhere serve --lan           # 127.0.0.1:7681 plus this Mac's private LAN address
-./herdr-anywhere serve --tailcat       # also reachable through Tailcat, from any network
+./herdr-anywhere serve --tailcat       # reachable through Tailcat, from any network
+./herdr-anywhere serve --tailcat --lan # also directly on this computer's LAN address, port 7682, end-to-end encrypted
 ./herdr-anywhere pair                  # prints a QR code and a link; scan it with the phone
 ./herdr-anywhere devices               # id, name, created, last seen
 ./herdr-anywhere revoke <id>           # the device's live connections close within a second
 ./herdr-anywhere start                 # serve --tailcat in the background, on any free local port, and again at each login
-./herdr-anywhere start --lan           # the same, also on this computer's LAN address at port 7681
+./herdr-anywhere start --lan           # the same, also directly on this computer's LAN address, end-to-end encrypted
 ./herdr-anywhere stop                  # stops it and takes it off login
 ./herdr-anywhere install-dialog        # adds the Add phone dialog and its key to the Herdr desktop app (start does too)
 ```
@@ -29,8 +29,16 @@ KillMode=process) that systemd also starts now, or on Windows the `Herdr Anywher
 replaces the file at the same path, so the entry stays right. `stop` removes the entry and ends a serve that answers on
 the state dir. With no serve running, `pair` (but not `pair --json` or `pair --url`) starts one as start does.
 
-`serve` options: `--listen ADDR` (repeatable), `--lan`, `--tailcat`, `--web DIR` (the PWA build), `--hc PATH`,
-`--state DIR`.
+`serve` options: `--listen ADDR` (repeatable), `--lan`, `--tailcat`, `--relay wss://… --relay-token-file FILE` (a
+tailpocket-relay), `--web DIR` (the PWA build), `--hc PATH`, `--state DIR`. `--lan` and `--relay` need `--tailcat`:
+TailPocket v0.3 carries them end to end encrypted (Noise), and `pair` then shows a v2 invite (`herdr2:…`) with every
+route. Phones paired through Tailcat before 0.3 get their key over Tailcat the first time the new app opens, with no
+new QR.
+
+Before 0.3, `--lan` served plain HTTP on port 7681 of the LAN address. Phones paired that way have no Tailcat key and
+must pair again: serve `--lan` keeps that plain port, which takes no new pairings, only while such a phone is paired
+and at most 3 days after the first serve of 0.3 (`lan-plain-until` in the state dir), and `/api/info` says until when
+(`plainUntil`), so the app tells the phone. Once closed it stays closed.
 
 With `serve --tailcat` running, `pair` asks it for a Tailcat invite (`herdr1:…`, valid 2 minutes) and prints that as
 the QR code for the Herdr Anywhere app, plus the `#pair=` link for the same single-use code when serve listens on the LAN.
@@ -64,7 +72,8 @@ at once.
 
 herdr-core's API can run any command as you, so whoever holds a device token can too.
 
-- `serve` binds to `127.0.0.1` by default; `--lan` adds only private RFC 1918 addresses, never `0.0.0.0`.
+- `serve` binds to `127.0.0.1` by default and never to `0.0.0.0`. `--lan` listens on private RFC 1918 addresses for
+  TailPocket's Noise sessions only; a `--listen` address off loopback is plain HTTP, for your own VPN.
 - Pairing codes are single use, 128-bit, and expire after 10 minutes. Device tokens are 256-bit. Only their SHA-256
   hashes are stored, in `~/.config/herdr-anywhere/state.json` (dir 0700, file 0600; `--state` or `HERDR_ANYWHERE_STATE`
   move it).
@@ -87,4 +96,4 @@ Tailcat's real relays and opens `/hc` through its forwarder; it needs the intern
 
 Dependencies: `github.com/coder/websocket` (ISC), `github.com/mdp/qrterminal/v3` (MIT) and its `rsc.io/qr` (BSD-3-Clause),
 TailPocket (`github.com/jt-wang/tailpocket`, MIT: its packages are copied into
-the repository's `third_party/tailpocket-8ae23dd`; it brings in `tailscale.com` and `github.com/tailscale/tailcat`).
+the repository's `third_party/tailpocket-81f6f8b`; it brings in `tailscale.com` and `github.com/tailscale/tailcat`).

@@ -32,6 +32,14 @@ test('a relay with no region it can name still says relay', async () => {
   await app.waitFor('text:Through a relay')
 })
 
+// TailPocket v0.3's local route: still TailPocket's own end-to-end encryption, never the companion's plain port.
+test('over the local network, end-to-end encrypted', async () => {
+  const app = await settings({ via: 'tailpocket', routes: 'lan' })
+  await app.waitFor('text:Over your local network, end-to-end encrypted')
+  expect(app.texts()).toContain(E2E)
+  expect(app.texts()).not.toContain('Direct to your computer')
+})
+
 test('a route the tunnel cannot tell yet is not guessed', async () => {
   const app = await settings({ via: 'tailpocket', routes: 'unknown' })
   await app.waitFor('text:Finding the route…')

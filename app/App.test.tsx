@@ -531,12 +531,13 @@ test('a computer that does not answer through the tunnel says to start Companion
 })
 
 // A phone paired over the LAN said Companion wasn't running, with nothing to run and no way to pair again; and
-// `start` (Tailcat only) wouldn't bring it back.
-test('a LAN-paired phone whose computer refuses says to run start --lan there, and offers pairing again', async () => {
+// `start` (Tailcat only) wouldn't bring it back. From TailPocket v0.3 `start --lan` opens only the encrypted local route,
+// which a phone paired by a `#pair=` link can't use, and the unencrypted port closes: a new QR code brings it back.
+test('a LAN-paired phone whose computer refuses says to pair again with a new QR code, not to run start --lan', async () => {
   const app = await open('./fixtures/fake.tsx', { host: { params: { scene: 'companion-refused', url: 'http://192.168.1.20:7681' } } })
-  await app.waitFor("text:Can't reach Companion on your computer. Run this on it:")
-  expect(app.shows('text:herdr-anywhere start --lan')).toBe(true)
-  expect(app.shows('text:herdr-anywhere start')).toBe(false)
+  await app.waitFor("text:Can't reach Companion on your computer. Run this on it, then tap Pair again and scan the new QR code:")
+  expect(app.shows('text:herdr-anywhere pair')).toBe(true)
+  expect(app.texts().some((t) => /start --lan|herdr-anywhere start/.test(t))).toBe(false)
   expect(app.texts().some((t) => /terminal open/.test(t))).toBe(false)
   // Unless it can be told apart, the words don't say the computer answered.
   expect(app.texts().some((t) => /answers/.test(t))).toBe(false)
@@ -544,6 +545,41 @@ test('a LAN-paired phone whose computer refuses says to run start --lan there, a
   await app.waitFor('id:pair-back')
   await app.press('id:pair-back')
   await app.waitFor('id:conn-banner')
+})
+
+// Paired by a `#pair=` link on the LAN before TailPocket v0.3: that port isn't encrypted and has no Tailcat identity to
+// sync a key with, so the computer closes it (at most 3 days after its upgrade) and says when, as `plainUntil` in
+// /api/info. Until then home says so, and how to pair again through TailPocket. `tunnel: "on"`: a phone app, which has
+// TailPocket to scan the new QR code with.
+// Two days on, to the minute: past its time the port is closed, and the notice is gone.
+const UNTIL = new Date(Math.floor(Date.now() / 60_000) * 60_000 + 2 * 86_400_000).toISOString()
+const untilShown = () => {
+  const d = new Date(UNTIL), two = (n: number) => String(n).padStart(2, '0')
+  return `${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getMonth()]} ${d.getDate()} ${two(d.getHours())}:${two(d.getMinutes())}`
+}
+const plain = (params: Record<string, string>) =>
+  open('./fixtures/fake.tsx', { host: { params: { scene: 'busy', url: 'http://192.168.1.20:7681', tunnel: 'on', info: JSON.stringify({ version: '0.3.0', plainUntil: UNTIL }), ...params } } })
+
+test('a phone on the unencrypted LAN port says when it stops, and pairs again from there', async () => {
+  const app = await plain({})
+  await app.waitFor('id:plain-notice')
+  expect(app.texts()).toContain(`This connection isn't encrypted, and it stops on ${untilShown()}. To keep using this phone, run this on the computer and scan the new QR code:`)
+  expect(app.shows('text:herdr-anywhere pair')).toBe(true)
+  await app.press('id:plain-pair')
+  await app.waitFor('id:pair-scan')
+  // Back keeps the link (the fake's one core doesn't take the reconnection that follows, as for the banner above).
+  await app.press('id:pair-back')
+  await app.waitFor('id:needs-t1')
+})
+
+test('no notice without a time from the computer, past it, over TailPocket, on the computer\'s own loopback, or on the web page', async () => {
+  const past = new Date(Date.now() - 60_000).toISOString()
+  for (const params of [{ info: JSON.stringify({ version: '0.2.2' }) }, { info: JSON.stringify({ version: '0.3.0', plainUntil: past }) }, { via: 'tailpocket' }, { url: 'http://127.0.0.1:7681' }, { tunnel: '' }] as Record<string, string>[]) {
+    const app = await plain(params)
+    await app.waitFor('id:needs-t1')
+    await app.wait(500)
+    expect(`${JSON.stringify(params)} ${app.shows('id:plain-notice')}`).toBe(`${JSON.stringify(params)} false`)
+  }
 })
 
 test('a phone that reaches the computer by a name says that name, since how serve listens there is unknown', async () => {

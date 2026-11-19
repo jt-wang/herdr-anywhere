@@ -108,7 +108,8 @@ key on Windows). `herdr-anywhere stop` undoes both.
 
 ## If the user wants their own network only
 
-This is not encrypted: anyone on that network can read it. Tell the user before choosing it.
+The phone reaches the computer directly on the same network, end-to-end encrypted. Tailcat is still how it pairs and
+how it reaches the computer from elsewhere.
 
 ```sh
 herdr-anywhere start --lan
@@ -116,12 +117,9 @@ curl -fsS http://127.0.0.1:7681/api/info    # passes when it prints JSON
 herdr-anywhere pair
 ```
 
-`start --lan` keeps the companion running in the background on port 7681 of the LAN address, also after the computer
-restarts, so the terminal can be closed. `herdr-anywhere stop` stops it. Give the user the printed link
-(`http://<LAN address>:7681/#pair=…`) to paste into the app. It works once and expires after 10 minutes. The companion
-also runs Tailcat: `pair` opens a Tailcat invite as well, which contacts a Tailcat relay, though a phone that pairs
-with the link never uses it. If the user wants no relay contacted at all, run `herdr-anywhere serve --lan` in place
-of `start --lan`; it stops when its terminal closes. If it says `--lan: this computer has no private IPv4 LAN address`, the computer is not on a Wi-Fi or Ethernet
+`start --lan` keeps the companion running in the background, also after the computer restarts, so the terminal can be
+closed. `herdr-anywhere stop` stops it. Have the user scan the printed QR code (`herdr2:…`) with Herdr Anywhere 0.3 or
+later. It works once and expires after 2 minutes. There is no unencrypted pairing link any more. If it says `--lan: this computer has no private IPv4 LAN address`, the computer is not on a Wi-Fi or Ethernet
 network the phone could share.
 
 ## If the user's agents run on a server they reach with ssh

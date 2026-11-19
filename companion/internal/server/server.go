@@ -38,6 +38,9 @@ type Config struct {
 	Logger    *log.Logger
 	// Updates answers about new versions; nil means this companion doesn't know of any.
 	Updates Updates
+	// PlainUntil is when the unencrypted LAN port of phones paired before 0.3 closes, zero when it is closed;
+	// /api/info says it as plainUntil, so the app can tell such a phone to pair again in time.
+	PlainUntil func() time.Time
 	// Chat answers /api/chat; nil answers that no terminal has a chat.
 	Chat *chat.Service
 	// ChatSetups are the small files some agents' chats need, by agent (/api/chat-setups; chat.Setup).
@@ -229,6 +232,11 @@ func (s *Server) info(w http.ResponseWriter, r *http.Request) {
 		hc = &s.cfg.HCVersion
 	}
 	info := map[string]any{"name": s.cfg.Name, "version": s.cfg.Version, "hc": hc}
+	if f := s.cfg.PlainUntil; f != nil {
+		if t := f(); !t.IsZero() {
+			info["plainUntil"] = t.UTC().Format(time.RFC3339)
+		}
+	}
 	if u := s.cfg.Updates; u != nil {
 		info["latest"] = u.Latest()
 		if a := u.App(); a.URL != "" {

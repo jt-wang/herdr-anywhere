@@ -13,7 +13,9 @@ export type AppFile = { url: string; digest: string; bytes: number }
 /** checks: whether the computer may ask GitHub each day, "ask" until someone answers; null from a computer before 0.1.7,
  *  which asked without a question. */
 export type CompanionInfo = { version: string; latest: string; knowsReleases: boolean; canUpdate: boolean; autoUpdate: boolean
-  checks: 'ask' | 'on' | 'off' | null; app: AppFile | null }
+  checks: 'ask' | 'on' | 'off' | null; app: AppFile | null
+  /** From TailPocket v0.3: when (RFC 3339) the computer closes its unencrypted local port at the latest; '' when it doesn't say. */
+  plainUntil: string }
 /** What the last Check found, or why it couldn't. */
 export type Checked = { latest: string } | { error: string }
 /** What the person can do now: one at a time, the computer first, so the app keeps its connection while that happens. */
@@ -52,6 +54,9 @@ export function installProblem(message: string): string {
   return message.includes('INSTALL_FAILED_UPDATE_INCOMPATIBLE') ? t('updateWrongKey') : message
 }
 
+const RFC3339 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/i
+const timeOf = (x: unknown) => (typeof x === 'string' && RFC3339.test(x) && !Number.isNaN(Date.parse(x)) ? x : '')
+
 function readInfo(body: any): CompanionInfo | null {
   if (typeof body?.version !== 'string' || !body.version) return null
   const a = body.app
@@ -63,6 +68,7 @@ function readInfo(body: any): CompanionInfo | null {
     autoUpdate: body.autoUpdate === true,
     checks: body.checks === 'ask' || body.checks === 'on' || body.checks === 'off' ? body.checks : null,
     app: typeof a?.url === 'string' && typeof a?.digest === 'string' ? { url: a.url, digest: a.digest, bytes: Number(a.bytes) || 0 } : null,
+    plainUntil: timeOf(body.plainUntil),
   }
 }
 

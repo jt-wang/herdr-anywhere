@@ -40,7 +40,7 @@ export async function pairWith(p: PairLink, device: string, fetcher: typeof fetc
 
 /** TailPocket on the phone (src/tunnel.ts; a fake in tests). Failures carry TailPocket's code (its docs/BRIDGE.md). */
 /** How the tunnel reaches the computer now, as Tailcat measured it; `unknown` when it could not tell. */
-export type Route = { route: 'direct' } | { route: 'relay'; relay?: string } | { route: 'unknown' }
+export type Route = { route: 'direct' } | { route: 'relay'; relay?: string } | { route: 'lan' } | { route: 'unknown' }
 
 export type Tunnel = {
   /** Pairs with the computer that showed `invite` and keeps its link; resolves with the computer's answer. */
@@ -52,9 +52,19 @@ export type Tunnel = {
   forget: () => void
 }
 
-/** The invite `herdr-anywhere pair` shows under `serve --tailcat` (companion/internal/tailcat Prefix), within `text`. */
+/** The invite `herdr-anywhere pair` shows under `serve --tailcat` (companion/internal/tailcat Prefix), within `text`:
+ *  `herdr1:`, or `herdr2:` (TailPocket v0.3) once the computer has a relay or the encrypted local network. */
 export function parseInvite(text: string): string | null {
-  return /(?:^|\s)(herdr1:[A-Za-z0-9_-]+)(?:\s|$)/.exec(text)?.[1] ?? null
+  return /(?:^|\s)(herdr[12]:[A-Za-z0-9_-]+)(?:\s|$)/.exec(text)?.[1] ?? null
+}
+
+/** A link to the companion's unencrypted port on another machine's address (paired by a `#pair=` link): it has no
+ *  Tailcat identity to sync a key with, and the computer closes that port after its move to TailPocket v0.3. Not the
+ *  computer's own loopback (the web page on it), HTTPS, TailPocket or Try it. */
+export function plainLink(l: Link): boolean {
+  if (l.via) return false
+  const h = /^http:\/\/(\[[^\]]+\]|[^/:?#]+)/.exec(l.url)?.[1]
+  return !!h && !/^(127\.\d+\.\d+\.\d+|localhost|\[::1\])$/i.test(h)
 }
 
 /** TailPocket's failure code: its `code`, or, from the native bridge through NSH's host.call, the message. */
@@ -92,7 +102,8 @@ export type LinkerIO = {
   tunnel?: Tunnel
 }
 
-type Opened = { baseUrl: string; close: () => void; path?: () => Promise<Route> }
+/** `path` answers as TailPocket does (any route name); Linker.path keeps the ones it knows. */
+type Opened = { baseUrl: string; close: () => void; path?: () => Promise<{ route: string; relay?: string }> }
 /** A tunnel being opened, and once open, the tunnel. */
 type Tunnelling = { opening: Promise<Opened>; open?: Opened }
 
@@ -214,6 +225,7 @@ export class Linker {
       const r = await (await t.opening).path?.()
       if (r?.route === 'direct') return { route: 'direct' }
       if (r?.route === 'relay') return r.relay ? { route: 'relay', relay: r.relay } : { route: 'relay' }
+      if (r?.route === 'lan') return { route: 'lan' }
     } catch {
       if (!t.open && this.tunnel === t) this.tunnel = undefined
     }

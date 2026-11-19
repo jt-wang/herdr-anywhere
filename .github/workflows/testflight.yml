@@ -94,10 +94,11 @@ jobs:
           args=()
           if [ "$TF_UPLOAD" = true ]; then args+=(--upload); fi
           python3 app/scripts/testflight.py --version "$TF_VERSION" --build "$TF_BUILD" --expected-sha "$TF_EXPECTED_SHA" --config-only "${args[@]}"
+      # third_party/tailpocket-81f6f8b is TailPocket v0.3.0-pre.3, jt-wang/tailpocket@81f6f8b4f2ac87b6800910bb2fe8087daf4d8ab6; Go comes from its go.mod.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: third_party/tailpocket-8ae23dd/go.mod
-          cache-dependency-path: third_party/tailpocket-8ae23dd/go.sum
+          go-version-file: third_party/tailpocket-81f6f8b/go.mod
+          cache-dependency-path: third_party/tailpocket-81f6f8b/go.sum
       - name: CLI cache key
         id: key
         run: echo "key=$(app/ios/nsh-patches/key.sh | tr ' ' '-')" >> "$GITHUB_OUTPUT"

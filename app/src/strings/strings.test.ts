@@ -1,7 +1,7 @@
 // Every word in all seven languages, with the same blanks, and the formats each language writes its own way.
 import { expect, test } from 'nsh/test'
 import { en } from './en.ts'
-import { formatsFor, LANGS, langFor, plural, TABLES, type Lang } from './index.ts'
+import { dayTime, formatsFor, LANGS, langFor, plural, TABLES, type Lang } from './index.ts'
 
 const blanks = (s: string) => [...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort()
 const FORMS: Record<Lang, string[]> = { en: ['one', 'other'], es: ['one', 'other'], ru: ['one', 'few', 'many'], 'zh-Hans': ['other'], 'zh-Hant': ['other'], ja: ['other'], ko: ['other'] }
@@ -68,4 +68,10 @@ test('dates, spans and lists are written as each language writes them', () => {
     expect([f.span('m', 0), f.span('m', 5), f.span('h', 3), f.span('d', 2)]).toEqual(span[l])
     expect(['a', 'b'].join(f.listSep)).toBe(list[l])
   }
+})
+
+test('a day and a time are written in the language, the time on a 24-hour clock', () => {
+  const at: Record<Lang, string> = { en: 'Nov 22 09:05', 'zh-Hans': '11月22日 09:05', 'zh-Hant': '11月22日 09:05', es: '22 nov 09:05', ko: '11월 22일 09:05', ja: '11月22日 09:05', ru: '22 нояб. 09:05' }
+  for (const l of LANGS) expect(`${l} ${dayTime(new Date(2026, 10, 22, 9, 5), l)}`).toBe(`${l} ${at[l]}`)
+  expect(dayTime(new Date(2026, 0, 3, 17, 40), 'en')).toBe('Jan 3 17:40')
 })

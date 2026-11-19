@@ -2,6 +2,9 @@ package tailcat
 
 import (
 	"context"
+	"crypto/ecdh"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -72,13 +75,38 @@ func TestOpenRestoresStateAndDropsRevokedPhones(t *testing.T) {
 	kept, revoked := phoneKey(), phoneKey()
 	pairTailcat(t, st, kept)
 	writeState(t, st, connecthost.State{Identity: identityText(t), Allowed: []string{kept, revoked}})
-	s, err := Open(st, "Mac", nil)
+	s, err := Open(st, "Mac", nil, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer s.Close()
 	if got := s.host.Allowed(); !slices.Equal(got, []string{kept}) {
 		t.Fatalf("allowed = %v, want only the phone that still has a device", got)
+	}
+}
+
+// The phones' end-to-end keys go back to TailPocket at each start, or a phone that has its key would be turned away
+// as unpaired on the relay and the local network. A key TailPocket cannot read is refused, which shows it got them.
+func TestOpenRestoresThePhonesEndToEndKeys(t *testing.T) {
+	st := newStore(t)
+	synced, old := phoneKey(), phoneKey()
+	pairTailcat(t, st, synced)
+	pairTailcat(t, st, old)
+	priv, _ := ecdh.X25519().GenerateKey(rand.Reader)
+	k := base64.RawURLEncoding.EncodeToString(priv.PublicKey().Bytes())
+	writeState(t, st, connecthost.State{Identity: identityText(t), Allowed: []string{synced, old}, Keys: map[string]string{synced: k}})
+	s, err := Open(st, "Mac", nil, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if n := s.Unsynced(); n != 1 {
+		t.Fatalf("unsynced = %d, want 1 (the phone without a key)", n)
+	}
+	writeState(t, st, connecthost.State{Identity: identityText(t), Allowed: []string{synced}, Keys: map[string]string{synced: "not-a-key"}})
+	if s2, err := Open(st, "Mac", nil, Options{}); err == nil {
+		s2.Close()
+		t.Fatal("the saved keys did not reach TailPocket")
 	}
 }
 
@@ -89,14 +117,14 @@ func TestOpenRefusesABrokenStateFile(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(st.Dir(), stateName), []byte("{"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Open(st, "Mac", nil); err == nil {
+	if _, err := Open(st, "Mac", nil, Options{}); err == nil {
 		t.Fatal("a broken state file was accepted")
 	}
 }
 
 func TestSaveWritesTheStateReadableOnlyByTheUser(t *testing.T) {
 	st := newStore(t)
-	s, err := Open(st, "Mac", nil)
+	s, err := Open(st, "Mac", nil, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

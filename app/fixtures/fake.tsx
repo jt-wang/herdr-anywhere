@@ -8,7 +8,8 @@
 // link, as e2e/ios-tailcat.sh's build opens every launch, and the computer forgets the phone right after).
 // For Settings › Computer: `via: "tailpocket"` with `routes` ("relay:tok,direct": what the tunnel answers in turn, the
 // last one for good; "throws": it fails), `url` (the link's address), `conn: "lost"` (the core stops answering) and
-// `info: "none"` (the companion gives no version).
+// `info: "none"` (the companion gives no version), or `info` as JSON (what /api/info answers, `plainUntil` too).
+// `tunnel: "on"`: TailPocket is there to pair again with, as in the phone apps, whatever the link.
 import { host, Keyboard, mount, Storage } from 'nsh'
 import { Linker, type Route, type Tunnel } from '../src/link.ts'
 import { PrefStore } from '../src/prefs.ts'
@@ -397,6 +398,7 @@ const fakeTunnel: Tunnel = {
     },
   }),
 }
+const tunnel = params.via === 'tailpocket' || params.tunnel === 'on' ? fakeTunnel : undefined
 if (params.conn === 'lost') setTimeout(() => core.drop('network'), 0)
 
 // How many times the key row's keys were drawn, where a test reads it (`app.storage()['fake-row-draws']`): each draw
@@ -427,13 +429,13 @@ function counted(store: Store) {
 
 mount(() => (
   <Root deps={{
-    linker: new Linker({ ...io, write: contentWrite, ...(params.via === 'tailpocket' ? { tunnel: fakeTunnel } : {}) }),
+    linker: new Linker({ ...io, write: contentWrite, ...(tunnel ? { tunnel } : {}) }),
     opensSettings: params.open === 'settings',
     prefs: new PrefStore(io),
     makeStore: (l) => tapPicture(counted(new Store({ pipe: pipe(l), content: l.content(), tunnelled: () => l.link.get()?.via === 'tailpocket', slowSendMs: params.slowSendMs ? Number(params.slowSendMs) : undefined }))),
     device: 'Test phone',
     updateEveryMs: params.updateEveryMs ? Number(params.updateEveryMs) : undefined,
-    tunnel: params.via === 'tailpocket' ? fakeTunnel : undefined,
+    tunnel,
     pairLink: opened || scene === 'relaunch-forgotten' ? String((host.params as any)?.link) : undefined,
     // Recorded where a test can read it: the app's own storage.
     pairLinkUsed: () => void Storage.setItem('pair-link-used', '1'),

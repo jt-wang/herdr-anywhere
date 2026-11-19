@@ -11,7 +11,7 @@ import { shownOrder, type Option } from '../model/menu.ts'
 import type { Space } from '../model/model.ts'
 import { addresses } from '../model/layout.ts'
 import { gitTail } from '../model/marks.ts'
-import { ChecksQuestion, UpdateBanner } from './update.tsx'
+import { ChecksQuestion, PlainNotice, UpdateBanner } from './update.tsx'
 import type { Updates } from '../updates.ts'
 import type { PrefStore } from '../prefs.ts'
 import { ChoiceRow, ConnBanner, Glyph, IconButton, ProgramIcon, SpaceBadge, StatusMark, useRev } from './kit.tsx'
@@ -405,7 +405,8 @@ function SpacesSection(props: { store: Store; actions: HomeActions }) {
   )
 }
 
-export function HomeScreen(props: { store: Store; actions: HomeActions; updates?: Updates; prefs?: PrefStore }) {
+/** `plain`: the link is to the companion's unencrypted LAN port, and this app can pair again through TailPocket. */
+export function HomeScreen(props: { store: Store; actions: HomeActions; updates?: Updates; prefs?: PrefStore; plain?: boolean }) {
   // While a Pinned row is held the list stands still (ui/pin-drag.ts), and scrolls itself when the finger nears an edge.
   const holding = signal(false)
   let list: YNode | undefined
@@ -440,6 +441,7 @@ export function HomeScreen(props: { store: Store; actions: HomeActions; updates?
       <Scroll class="flex-1" contentClass="pb-6" scrollable={!holding()} ref={(n: YNode) => { list = n }} scrollEventThrottle={16}
         onScroll={(e) => { at = e.offset.y; contentH = e.contentSize.height; viewH = e.size.height }} onLayout={(b) => { viewH = b.size.height }}>
         <View onLayout={(b) => { contentH = b.size.height }} style={shown() ? { transform: [{ translateY: -shown() }] } : AT_REST}>
+        <If when={props.updates && props.plain}><PlainNotice updates={props.updates!} store={props.store} /></If>
         <If when={props.updates && props.prefs}><ChecksQuestion updates={props.updates!} prefs={props.prefs!} /><UpdateBanner updates={props.updates!} prefs={props.prefs!} /></If>
         <If when={props.actions.leaveDemo}>
           <View testID="demo-notice" class="mx-3 mt-1 mb-1 flex-row items-center gap-3 rounded-(--radius) bg-muted pl-3 pr-1 py-1">

@@ -314,7 +314,8 @@ export function SettingsScreen(props: { updates?: Updates; store: Store; prefs: 
     if (props.link.via !== 'tailpocket') return props.link.url.startsWith('https:') ? t('httpsDetail', { host: address() }) : maybeTailnet(address()) ? t('tailnetDetail', { host: address() }) : t('notEncryptedDetail', { host: address() })
     if (conn() !== 'ready') return ''
     const r = route()
-    return r?.route === 'direct' ? t('pathDirect') : r?.route === 'relay' ? (r.relay ? t('pathRelay', { region: r.relay.toUpperCase() }) : t('pathRelayPlain')) : t('pathUnknown')
+    return r?.route === 'direct' ? t('pathDirect') : r?.route === 'relay' ? (r.relay ? t('pathRelay', { region: r.relay.toUpperCase() }) : t('pathRelayPlain'))
+      : r?.route === 'lan' ? t('pathLan') : t('pathUnknown')
   }
   const forget = async () => {
     const r = await AlertDialog.show({ title: t('forgetTitle', { name: props.link.name }), description: t('forgetDetail'),

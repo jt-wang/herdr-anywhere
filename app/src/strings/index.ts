@@ -72,5 +72,11 @@ const FORMATS: Record<Lang, Formats> = {
 export const formatsFor = (l: Lang): Formats => FORMATS[l]
 export const formats = (): Formats => FORMATS[lang()]
 
+/** A day and a time on this phone's clock, as the language writes the day; the time on a 24-hour clock. */
+export function dayTime(d: Date, l: Lang = lang()): string {
+  const two = (n: number) => String(n).padStart(2, '0')
+  return `${FORMATS[l].monthDay(d.getMonth(), d.getDate())} ${two(d.getHours())}:${two(d.getMinutes())}`
+}
+
 /** Parts of a screen reader's sentence, in the phone's language. */
 export const listOf = (...parts: string[]): string => parts.filter(Boolean).join(formats().listSep)

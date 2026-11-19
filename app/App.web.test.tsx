@@ -25,9 +25,12 @@ test('on a page of the computer, the code alone pairs with that computer', async
     host: { handlers: { 'page.address': { href: `${PAGE}/`, origin: PAGE }, 'page.dropPair': null } },
   })
   await app.waitFor('id:pair-link')
-  // start --lan keeps the LAN serve running, also after a restart; serve --lan stops with its terminal.
-  expect(app.shows('text:herdr-anywhere start --lan')).toBe(true)
-  expect(app.shows('text:herdr-anywhere serve --lan')).toBe(false)
+  // Browsers no longer pair (the plain port closes): the screen sends the person to the phone app and its QR code.
+  expect(app.shows('text:Browsers can no longer pair with your computer. Pair from the Herdr Anywhere app for iOS or Android: scan the QR code that herdr-anywhere pair shows.')).toBe(true)
+  expect(app.shows('text:2. Show a pairing QR code, then scan it with the Herdr Anywhere app on your iPhone or Android phone:')).toBe(true)
+  expect(app.shows('text:herdr-anywhere start')).toBe(true)
+  expect(app.shows('text:herdr-anywhere pair')).toBe(true)
+  expect(app.texts().some((t) => /--lan|#pair=/.test(t))).toBe(false)
   await app.type('id:pair-link', 'GOOD-CODE')
   await app.press('id:pair')
   await app.waitUntil(() => app.requests().some((r) => r.url === `${PAGE}/api/pair`))

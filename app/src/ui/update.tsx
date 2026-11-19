@@ -1,9 +1,10 @@
 // The notice on home, and the rows in Settings: a new version, and installing it.
 import { Clipboard, cleanup, openUrl, signal, Text, View } from 'nsh'
 import { AlertDialog } from 'nsh/base'
-import { t } from '../strings/index.ts'
+import { dayTime, t } from '../strings/index.ts'
 import { sameUpdate, updateKey, type Notice, type Updates } from '../updates.ts'
 import type { PrefStore } from '../prefs.ts'
+import type { Store } from '../store.ts'
 import { useSignal } from './kit.tsx'
 
 // Rebuild by hand for a Mac the phone can't update: the file INSTALL.md downloads for its processor.
@@ -87,6 +88,32 @@ export function UpdateBanner(props: { updates: Updates; prefs: PrefStore }) {
             <Text class="text-[13px] font-medium text-foreground">{t('updateNow')}</Text>
           </View>
         </If>
+      </View>
+    </If>
+  )
+}
+
+/** A phone paired by a `#pair=` link on the LAN (link.ts plainLink), once the computer says until when it keeps that
+ *  unencrypted port open (`plainUntil` in /api/info): when it stops, and pairing again through TailPocket. Past that
+ *  time the port is closed, and the banner says so instead (kit.tsx ConnBanner). */
+export function PlainNotice(props: { updates: Updates; store: Store }) {
+  const state = useUpdates(props.updates)
+  const until = () => {
+    const at = Date.parse(state().info?.plainUntil ?? '')
+    return Number.isNaN(at) || at <= Date.now() ? '' : dayTime(new Date(at))
+  }
+  return (
+    <If when={until()}>
+      <View testID="plain-notice" class="mx-3 mt-1 mb-1 rounded-(--radius) bg-muted pl-3 pr-1.5 py-2 gap-1">
+        <Text class="text-[13px] leading-[18px] text-foreground pr-1.5">{t('plainNotice', { when: until() })}</Text>
+        <View class="flex-row items-center gap-2 mt-1">
+          <Text selectable class="flex-1 text-[12.5px] font-mono text-foreground">herdr-anywhere pair</Text>
+          <If when={props.store.pairAgain}>
+            <View role="button" testID="plain-pair" onPress={() => props.store.pairAgain?.()} class="px-3 py-2 rounded-[6px] bg-background active:bg-accent">
+              <Text class="text-[13px] font-medium text-foreground">{t('pairAgain')}</Text>
+            </View>
+          </If>
+        </View>
       </View>
     </If>
   )

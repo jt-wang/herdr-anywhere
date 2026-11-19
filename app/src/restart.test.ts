@@ -8,12 +8,12 @@ test('through Tailcat, start: it runs serve --tailcat and keeps it running', () 
   expect(restartFor(link('tailpocket:', 'tailpocket'))).toEqual({ command: 'herdr-anywhere start' })
 })
 
-test("on the LAN (a private IPv4 address), start --lan: it listens there again whatever this computer's address is now, also after a restart", () => {
-  expect(restartFor(link('http://192.168.1.20:7681'))).toEqual({ command: 'herdr-anywhere start --lan' })
-  expect(restartFor(link('http://10.0.0.7:7681'))).toEqual({ command: 'herdr-anywhere start --lan' })
-  expect(restartFor(link('http://172.20.1.2:7681'))).toEqual({ command: 'herdr-anywhere start --lan' })
-  // --lan takes its port from the first --listen (start_lan_test.go: start --lan --listen 127.0.0.1:9000).
-  expect(restartFor(link('http://192.168.1.5:7690'))).toEqual({ command: 'herdr-anywhere start --lan --listen 127.0.0.1:7690' })
+// From TailPocket v0.3 `--lan` opens only the encrypted local route, which a phone paired by a `#pair=` link can't
+// use: what brings it back is a new QR code, scanned by Pair again.
+test('on the LAN (a private IPv4 address), pair again: the unencrypted LAN port is gone, so a new QR code, not start --lan', () => {
+  for (const url of ['http://192.168.1.20:7681', 'http://10.0.0.7:7681', 'http://172.20.1.2:7681', 'http://192.168.1.5:7690']) {
+    expect(restartFor(link(url))).toEqual({ command: 'herdr-anywhere pair', pair: true })
+  }
 })
 
 test('on another address (a Tailscale 100.x, an IPv6 one), start --listen on that address', () => {

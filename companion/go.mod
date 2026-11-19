@@ -2,7 +2,7 @@ module herdr-anywhere/companion
 
 go 1.27.1
 
-toolchain go1.27.3
+toolchain go1.27.4
 
 require (
 	github.com/coder/websocket v1.8.15
@@ -10,8 +10,8 @@ require (
 	github.com/makiuchi-d/gozxing v0.1.1
 	github.com/mdp/qrterminal/v3 v3.2.1
 	github.com/tailscale/tailcat v0.6.0
-	golang.org/x/sys v0.49.0
-	golang.org/x/term v0.47.0
+	golang.org/x/sys v0.50.0
+	golang.org/x/term v0.48.0
 	modernc.org/sqlite v1.61.0
 	rsc.io/qr v0.2.0
 	tailscale.com v1.103.0-pre.0.20260904030409-31d8badb3bfb
@@ -25,6 +25,7 @@ require (
 	github.com/creack/pty v1.1.24 // indirect
 	github.com/dblohm7/wingoes v0.0.0-20240119213807-a09d6be7affa // indirect
 	github.com/dustin/go-humanize v1.1.0 // indirect
+	github.com/flynn/noise v1.1.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.0 // indirect
 	github.com/gaissmai/bart v0.26.1 // indirect
 	github.com/go-json-experiment/json v0.0.0-20260623181947-01eb4420fa68 // indirect
@@ -35,7 +36,7 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/hdevalence/ed25519consensus v0.2.0 // indirect
 	github.com/jsimonetti/rtnetlink v1.4.1 // indirect
-	github.com/klauspost/compress v1.19.1 // indirect
+	github.com/klauspost/compress v1.20.2 // indirect
 	github.com/kr/fs v0.1.0 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/mdlayher/netlink v1.7.3-0.20250113171957-fbb4dce95f42 // indirect
@@ -57,11 +58,11 @@ require (
 	github.com/x448/float16 v0.8.4 // indirect
 	go4.org/mem v0.0.0-20240501181205-ae6ca9944745 // indirect
 	go4.org/netipx v0.0.0-20260823151212-3075585bcbeb // indirect
-	golang.org/x/crypto v0.58.0 // indirect
+	golang.org/x/crypto v0.59.0 // indirect
 	golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f // indirect
-	golang.org/x/net v0.61.0 // indirect
-	golang.org/x/sync v0.24.0 // indirect
-	golang.org/x/text v0.43.0 // indirect
+	golang.org/x/net v0.62.0 // indirect
+	golang.org/x/sync v0.25.0 // indirect
+	golang.org/x/text v0.44.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240716161551-93cc26a95ae9 // indirect
 	golang.zx2c4.com/wintun v0.0.0-20230126152724-0fa3db229ce2 // indirect
@@ -72,7 +73,6 @@ require (
 	modernc.org/memory v1.12.1 // indirect
 )
 
-// ../third_party holds what Herdr Anywhere builds of its commit 8ae23dd (MIT, see its
-// LICENSE and NOTICE), Go test files left out, plus the route call Settings shows (connectphone.Session.Path, connectmobile.Path
-// and their bridges). Replace it with a version of github.com/jt-wang/tailpocket that has that call.
-replace github.com/jt-wang/tailpocket => ../third_party/tailpocket-8ae23dd
+// ../third_party holds TailPocket v0.3 as Herdr Anywhere builds it: v0.3.0-pre.3, the public
+// jt-wang/tailpocket@81f6f8b4f2ac87b6800910bb2fe8087daf4d8ab6 (MIT, see its LICENSE and NOTICE), unchanged, Go test files left out.
+replace github.com/jt-wang/tailpocket => ../third_party/tailpocket-81f6f8b

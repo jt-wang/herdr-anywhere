@@ -77,6 +77,14 @@ for (const locale of LOCALES) {
 }
 
 for (const locale of LOCALES) {
+  test(`${locale}: the notice that the unencrypted LAN port stops has no English words left`, async () => {
+    const app = await open('./fixtures/fake.tsx', { locale, host: { params: { scene: 'busy', url: 'http://192.168.1.20:7681', tunnel: 'on', info: JSON.stringify({ version: '0.3.0', plainUntil: new Date(Date.now() + 2 * 86_400_000).toISOString() }) } } })
+    await app.waitFor('id:plain-notice')
+    expect(english(app.texts(), locale)).toEqual([])
+  })
+}
+
+for (const locale of LOCALES) {
   test(`${locale}: a computer that doesn't answer, and pairing again from there, have no English words left`, async () => {
     const app = await open('./fixtures/fake.tsx', { locale, host: { params: { scene: 'companion-off', via: 'tailpocket' } } })
     await app.waitFor('id:pair-again')

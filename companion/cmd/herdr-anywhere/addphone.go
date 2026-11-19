@@ -55,7 +55,11 @@ func pairJSON(st *store.Store, name string, ttl time.Duration, stdout io.Writer)
 	if err != nil {
 		return reportJSON(stdout, err.Error())
 	}
-	matrix, err := qr.Encode(reply.Invite, qr.L)
+	invite := reply.Invite
+	if reply.Invite2 != "" {
+		invite = reply.Invite2
+	}
+	matrix, err := qr.Encode(invite, qr.L)
 	if err != nil {
 		return reportJSON(stdout, err.Error())
 	}
@@ -70,7 +74,7 @@ func pairJSON(st *store.Store, name string, ttl time.Duration, stdout io.Writer)
 		}
 		rows[y] = string(row)
 	}
-	return json.NewEncoder(stdout).Encode(map[string]any{"invite": reply.Invite, "expires": reply.Expires, "qr": rows})
+	return json.NewEncoder(stdout).Encode(map[string]any{"invite": invite, "expires": reply.Expires, "qr": rows})
 }
 
 func devicesJSON(ds []store.Device, stdout io.Writer) error {
@@ -155,7 +159,7 @@ func start(args []string, stdout, stderr io.Writer) error {
 	fs, state := newFlags("start", stderr)
 	var listen listFlag
 	fs.Var(&listen, "listen", "also listen on this address, as serve --listen (repeatable); kept for each login")
-	withLAN := fs.Bool("lan", false, "also listen on this computer's private LAN address(es) on serve's port (7681, or the first --listen's), as serve --lan; kept for each login")
+	withLAN := fs.Bool("lan", false, "also let phones on this computer's local network reach it directly, end-to-end encrypted, as serve --lan; kept for each login")
 	if err := parse(fs, args); err != nil {
 		return err
 	}

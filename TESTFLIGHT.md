@@ -2,6 +2,26 @@
 
 A cloud coding agent can request an iOS build through GitHub Actions. Apple signing credentials stay in the repository's `testflight` environment; the agent needs a GitHub token with **Actions: write** and **Contents: read**.
 
+## 0.3.0 (35) test candidate
+
+First stage-3 device build on TailPocket v0.3.0-pre.3 (public jt-wang/tailpocket@81f6f8b4f2ac87b6800910bb2fe8087daf4d8ab6): phones reach the computer end to end encrypted (Noise) over Tailcat, the local network (port 7682) and a tailpocket-relay. It includes everything in 0.2.2 (34). This is an Internal TestFlight and Android test APK only, not a public Release, Latest update or website change. The phone and the computer must both run 0.3.0: build the test Companion from the same commit (`cd companion && go build ./cmd/herdr-anywhere`).
+
+Check on device:
+
+- **Upgrade without a new QR code.** A phone paired over Tailcat with 0.2.x, upgraded to this build while the computer runs the 0.3.0 Companion, connects without scanning again; it registers its end-to-end key by itself on first connect. Settings then shows its route.
+- **Plain LAN port closes.** A phone paired before 0.3 by a `#pair=` link on the LAN is served on the old plain port 7681 only while such a phone is paired and for at most 3 days after the first 0.3 serve. Home shows until when, with Pair again. After the deadline the port stays closed and the phone must pair again with a QR code. A phone that has an end-to-end key is never served on the plain port. The browser page no longer pairs: it tells the person to scan the QR code from `herdr-anywhere pair` with the iOS or Android app.
+- **pre.1/pre.2 do not interoperate.** Protocol 2 (ChaCha20-Poly1305 with rekeying) differs from TailPocket pre.1 and pre.2: a phone or computer from an earlier 0.3 test build cannot talk to this one on lan or relay. Update both sides; do not mix builds when reporting failures.
+- **Local network.** `herdr-anywhere start --lan` (or `serve --tailcat --lan`), then `herdr-anywhere pair`: the QR code is a `herdr2:` invite. On the same Wi-Fi, Settings should show the lan route; leaving the network falls back to Tailcat or relay without pairing again.
+- **Relay.** `herdr-anywhere serve --tailcat --relay wss://… --relay-token-file FILE` (`start` has no relay option), then pair. With the phone on cellular, Settings shows relay until a direct path is found. Messages are at most 64 KiB; large uploads must still complete.
+- **Revoke.** `herdr-anywhere devices`, then `herdr-anywhere revoke <id>`: that phone's connections close within a second on every route, it cannot reconnect over lan or relay, and other phones keep working (Tailcat connections may drop and reconnect once).
+
+Two availability checks:
+
+- **Slow uplink over relay.** On a cellular network with a limited uplink, connected through relay, upload several tens of MB in a row (attach large files). The session must not be declared silent and dropped after about 5 seconds (the phone's stall check, 2 × 3 s) while the upload is still moving. Note the network, the size and when it failed if it does.
+- **Many streams, slow reader.** Open 4 or more terminals at once while the computer keeps printing large amounts of output (for example `yes` or a long build log in each) and the app reads slowly (background it briefly, or scroll a busy pane). The session must not be closed by the 16 MiB unread limit (flow-control error); hidden terminals pause instead.
+
+Report anything that fails with the diagnostics export (Settings), the Companion's `serve.log`, and which route Settings showed.
+
 ## 0.2.2 (34) test candidate
 
 This candidate combines paired home/recent-chat persistence, pending-text recovery, reduced background polling and hidden-terminal backpressure with opt-in local diagnostics. Diagnostics are off by default; exports use the name **Herder Anywhere Diagnostics** and require preview before the system share sheet. Nothing is uploaded automatically.

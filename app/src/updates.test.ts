@@ -64,6 +64,21 @@ test('nothing is shown before the computer answers, or when everything is curren
   expect(b.u.notice()).toBe(null)
 })
 
+// From TailPocket v0.3 the computer says until when its unencrypted local port stays open, for phones paired through it.
+test('the computer says until when its unencrypted port stays open; without a time it says nothing', async () => {
+  const a = setup({ info: { version: '0.3.0', plainUntil: '2026-11-22T09:30:00Z' } })
+  await a.u.refresh()
+  expect(a.u.info.get()?.plainUntil).toBe('2026-11-22T09:30:00Z')
+  const offset = setup({ info: { version: '0.3.0', plainUntil: '2026-11-22T17:30:00+08:00' } })
+  await offset.u.refresh()
+  expect(offset.u.info.get()?.plainUntil).toBe('2026-11-22T17:30:00+08:00')
+  for (const odd of [undefined, '', 'soon', 7, null]) {
+    const b = setup({ info: { version: '0.3.0', ...(odd === undefined ? {} : { plainUntil: odd }) } })
+    await b.u.refresh()
+    expect(`${JSON.stringify(odd)} ${b.u.info.get()?.plainUntil}`).toBe(`${JSON.stringify(odd)} `)
+  }
+})
+
 test('the computer first: the app keeps its connection while it updates, and then the app', async () => {
   const { u, box } = setup({ info: { version: '0.1.5', latest: '0.1.6', canUpdate: true, app: APP } })
   await u.refresh()

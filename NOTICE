@@ -59,8 +59,8 @@ Copyright (c) 2024 Mitchell Hashimoto, Ghostty contributors
   - the KITTY_MARKS table in app/src/model/kitty.ts: the combining marks that number a Kitty graphics placeholder's
     row and column, in Ghostty's order (from src/terminal/kitty/graphics_unicode.zig)
 
-The Android and iOS apps include TailPocket at commit 8ae23dd (MIT License, see above), copied into
-third_party/tailpocket-8ae23dd: its phone library (connectmobile, built with gomobile), its Swift package and NSH
+The Android and iOS apps include TailPocket v0.3.0-pre.3 (jt-wang/tailpocket@81f6f8b; MIT License, see above), copied into
+third_party/tailpocket-81f6f8b: its phone library (connectmobile, built with gomobile), its Swift package and NSH
 adapter (sdk/apple), its Android modules (sdk/android) and its JavaScript client (sdk/js). The library is built from
 the Go modules listed below for serve --tailcat, and golang.org/x/mobile (BSD 3-Clause License, Copyright 2009 The Go
 Authors). Its Android modules bring AndroidX, Jetpack Compose,
@@ -75,8 +75,8 @@ The companion (companion/) is built with these Go modules:
     (SQLite is in the public domain), with modernc.org/libc (BSD 3-Clause License, Copyright (c) 2017 The Libc
     Authors, which carries musl libc, MIT License) and the modules they depend on, listed with their licenses in its
     LICENSE-3RD-PARTY.md; the chat view reads OpenCode's database with it
-  - TailPocket at commit 8ae23dd, MIT License, Copyright (c) 2026 Jingtao Wang;
-    its Go packages are copied into third_party/tailpocket-8ae23dd with its LICENSE and NOTICE
+  - TailPocket v0.3.0-pre.3 (commit 81f6f8b), MIT License, Copyright (c) 2026 Jingtao Wang;
+    its Go packages are copied into third_party/tailpocket-81f6f8b with its LICENSE and NOTICE
   - for serve --tailcat, tailscale.com and github.com/tailscale/tailcat (BSD 3-Clause License, Copyright (c) 2020
     Tailscale Inc & contributors), github.com/tailscale/wireguard-go (MIT License) and gvisor.dev/gvisor
     (Apache License 2.0), with the modules they depend on; each module's license is in its source

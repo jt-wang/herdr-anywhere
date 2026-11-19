@@ -78,21 +78,21 @@ The phone and the computer can be on different networks from then on. Paired pho
 
 ### Over your own network only
 
-This uses no relay. It is also not encrypted, so use it on a network you trust. The phone and the computer must be on the same network.
+On the same network the phone can reach the computer directly, end-to-end encrypted, with no relay in between.
 
 ```sh
-~/.local/bin/herdr-anywhere serve --lan         # keep it running
-~/.local/bin/herdr-anywhere pair                # prints a link like http://192.168.1.20:7681/#pair=…
+~/.local/bin/herdr-anywhere start --lan         # keeps running, also after a restart
+~/.local/bin/herdr-anywhere pair                # prints a QR code (herdr2:…)
 ```
 
-Paste the link into the app. It works once, for 10 minutes.
+Scan it with the app. It works once, for 2 minutes.
 
 ### In a browser
 
-The companion can serve the web build (see below) over your network. Start it like this and open the link `pair` prints. The page posts a system notification when an agent needs you while it's in the background; Settings › Alerts asks the browser for permission.
+The companion can serve the web build (see below). A browser cannot run TailPocket, so over the network this is plain HTTP: listen on an address only you can reach, such as your own VPN's, and open the link `pair` prints. The page posts a system notification when an agent needs you while it's in the background; Settings › Alerts asks the browser for permission.
 
 ```sh
-herdr-anywhere serve --lan --web "app/dist/web/Herdr Anywhere"
+herdr-anywhere serve --listen 127.0.0.1:7681 --listen <your VPN address>:7681 --web "app/dist/web/Herdr Anywhere"
 ```
 
 ## iPhone and other agents
@@ -105,13 +105,13 @@ herdr-anywhere serve --lan --web "app/dist/web/Herdr Anywhere"
 
 herdr-core can run any command as you, and so can a paired phone. The companion:
 
-- listens on `127.0.0.1` unless you pass `--lan`, which adds the computer's private LAN address (never `0.0.0.0`);
+- listens on `127.0.0.1` only, never `0.0.0.0`; `--lan` adds the computer's private LAN address for end-to-end encrypted sessions only;
 - accepts only paired phones; a pairing code works once and expires after 10 minutes;
 - closes a revoked phone's connections at once.
 
 Through [Tailcat](https://github.com/tailscale/tailcat), which the dialog and `serve --tailcat` use, traffic is end-to-end encrypted with WireGuard. It goes straight to the computer when it can, otherwise through Tailcat's public relays, which see only encrypted packets. Settings › Computer shows which one it is using.
 
-Over `--lan`, traffic is plain `ws://`, which anyone on that network can read.
+Over `--lan` (0.3 and later), traffic is end-to-end encrypted too (TailPocket's Noise session, pinned to the computer's key from the QR code): someone on the same Wi-Fi can neither read it nor pose as the computer. Phones paired over the plain LAN link before 0.3 must pair again within 3 days; the app says so. An address you add with `--listen` off loopback is plain HTTP.
 
 Updates install only what the release's signed list says: the computer checks the list against a key built into it, then each file's SHA-256 and size, and Android also requires the app to carry the same signing key as the installed one.
 

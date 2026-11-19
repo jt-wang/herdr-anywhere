@@ -50,7 +50,8 @@ export function ConnBanner(props: { store: Store }) {
       <View testID="conn-banner" class="flex-row gap-2 px-4 py-2 bg-popover border-b border-border">
         <View class="w-1.5 h-1.5 mt-[7px] rounded-full bg-chart-2" />
         <View class="flex-1 gap-[1px]">
-          <Text class="text-[12.5px] text-foreground">{connecting() ? t('connecting') : atAddress() ? t('lostRefusedAt', { address: atAddress() }) : error() || t('notConnected')}</Text>
+          <Text class="text-[12.5px] text-foreground">{connecting() ? t('connecting') : atAddress() ? t('lostRefusedAt', { address: atAddress() })
+            : why() === 'refused' && s.restart?.pair ? t('lostRefusedPair') : error() || t('notConnected')}</Text>
           <If when={!connecting() && toDo()}>
             <View class="mt-1 flex-row items-center gap-2">
               <If when={s.restart?.command} else={<View class="flex-1" />}>

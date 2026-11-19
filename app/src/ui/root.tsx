@@ -4,7 +4,7 @@ import { cleanup, colorScheme, computed, createAnimatedValue, effect, Keyboard, 
 import { createNavStack, NavPage, NavStack } from 'nsh/base'
 import type { ViewSwitchProps } from './view-switch.tsx'
 import type { Store } from '../store.ts'
-import { chatApi, fileApi, folderApi, imageApi, parseInvite, type Link, type Linker, type Tunnel } from '../link.ts'
+import { chatApi, fileApi, folderApi, imageApi, parseInvite, plainLink, type Link, type Linker, type Tunnel } from '../link.ts'
 import type { PrefStore } from '../prefs.ts'
 import { Alerts, type AlertKind } from '../alerts.ts'
 import { followInstallFailures, installApp, allowNotifications, followPage, keepAlive, notifications, notifyFromPage, wantsKeepAlive } from '../page.ts'
@@ -233,7 +233,7 @@ function Connected(props: { deps: RootDeps; store: Store; link: Link; unpaired: 
           <SettingsScreen updates={updates} store={store} prefs={deps.prefs} link={props.link} linker={deps.linker} fetcher={deps.fetcher} back={() => nav.pop()} forget={() => { if (props.leaveDemo) props.leaveDemo(); else deps.linker.forget() }} />
         </NavPage>
       : <NavPage headerVisible={false} class="bg-sidebar">
-          <HomeScreen updates={updates} prefs={deps.prefs} store={store} actions={{
+          <HomeScreen updates={updates} prefs={deps.prefs} store={store} plain={!!deps.tunnel && plainLink(props.link)} actions={{
             // A swipe can expose home before native reports the old page's dismissal. A home tap must reopen it,
             // not take openSpace's same-page shortcut (which still preserves state for the in-page switcher).
             openSpace: (id) => { nav.popToRoot(); openSpace(id) },

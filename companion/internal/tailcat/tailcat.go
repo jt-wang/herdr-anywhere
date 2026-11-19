@@ -26,7 +26,12 @@ import (
 
 // Prefix starts every Herdr invite, so the app's scanner takes ours and no
 // other app's (Tailcat's own default is "tcc1:", connectinvite/invite.go:23).
-const Prefix = "herdr1:"
+// Prefix2 starts a v2 invite (TailPocket v0.3): every route and the computer's
+// end-to-end key; app versions before 0.3 do not read it.
+const (
+	Prefix  = "herdr1:"
+	Prefix2 = "herdr2:"
+)
 
 // stateName holds the host's identity (its private keys) and the paired
 // phones' Tailcat keys, next to state.json in the 0700 state dir.
@@ -34,8 +39,19 @@ const stateName = "tailcat.json"
 
 // Window is one open pairing window as pair shows it.
 type Window struct {
-	Invite  string    `json:"invite"`
+	Invite string `json:"invite"`
+	// Invite2 is the same window as a v2 invite, when serve has routes beyond Tailcat (a relay, the local
+	// network); show it instead of Invite.
+	Invite2 string    `json:"invite2,omitempty"`
 	Expires time.Time `json:"expires"`
+}
+
+// Options are serve's routes beyond Tailcat, each end-to-end encrypted by TailPocket (Noise).
+type Options struct {
+	// Relays are tailpocket-relay servers to register with.
+	Relays []connecthost.Relay
+	// Listen are local network addresses ("192.168.1.5:7682") phones reach directly.
+	Listen []string
 }
 
 // Service is serve's Tailcat side.
@@ -44,15 +60,19 @@ type Service struct {
 	store *store.Store
 	name  string
 	log   *log.Logger
+	v2    bool // routes beyond Tailcat: windows carry a v2 invite
+
+	mu   sync.Mutex
+	last connecthost.State // as last saved
 }
 
 // Open restores the host from the state dir, or makes a new identity. Phones
 // whose device was revoked while serve was not running are left out.
-func Open(st *store.Store, name string, logger *log.Logger) (*Service, error) {
+func Open(st *store.Store, name string, logger *log.Logger, opts Options) (*Service, error) {
 	if logger == nil {
 		logger = log.New(io.Discard, "", 0)
 	}
-	s := &Service{store: st, name: name, log: logger}
+	s := &Service{store: st, name: name, log: logger, v2: len(opts.Relays) > 0 || len(opts.Listen) > 0}
 	var saved connecthost.State
 	b, err := os.ReadFile(s.statePath())
 	switch {
@@ -74,11 +94,15 @@ func Open(st *store.Store, name string, logger *log.Logger) (*Service, error) {
 			allowed = append(allowed, k)
 		}
 	}
-	h, err := connecthost.New(connecthost.Config{Name: name, Identity: saved.Identity, Allowed: allowed, Save: s.save})
+	// Keys are the phones' end-to-end keys: without them, a phone that has its key would be turned away as unpaired
+	// on the relay and the local network after a restart.
+	h, err := connecthost.New(connecthost.Config{Name: name, Identity: saved.Identity, Allowed: allowed, Keys: saved.Keys,
+		Save: s.save, Relays: opts.Relays, Listen: opts.Listen})
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", s.statePath(), err)
 	}
 	s.host = h
+	s.last = connecthost.State{Allowed: allowed, Keys: saved.Keys}
 	return s, nil
 }
 
@@ -107,7 +131,13 @@ func (s *Service) save(st connecthost.State) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmp.Name(), s.statePath())
+	if err := os.Rename(tmp.Name(), s.statePath()); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.last = st
+	s.mu.Unlock()
+	return nil
 }
 
 // Start brings up the host's node when a phone is paired; with none it runs
@@ -116,6 +146,20 @@ func (s *Service) Start(ctx context.Context) error { return s.host.Start(ctx) }
 
 // Listener yields connections from paired phones, and none from a phone revoked since (admit).
 func (s *Service) Listener() net.Listener { return admit(s.host.Listener(), s.store, s.log) }
+
+// Unsynced counts paired phones without an end-to-end key: they run an app from before 0.3, and reach this
+// computer only through Tailcat until they open the new one.
+func (s *Service) Unsynced() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := 0
+	for _, k := range s.last.Allowed {
+		if s.last.Keys[k] == "" {
+			n++
+		}
+	}
+	return n
+}
 
 // Close stops the node, every pairing window and the listener.
 func (s *Service) Close() error { return s.host.Close() }
@@ -134,15 +178,22 @@ func (s *Service) Pair(ctx context.Context, code string) (Window, error) {
 		p.Close()
 		return Window{}, err
 	}
+	win := Window{Invite: text, Expires: p.Expires()}
+	if s.v2 {
+		if win.Invite2, err = p.QR2(Prefix2); err != nil {
+			p.Close()
+			return Window{}, err
+		}
+	}
 	go func() {
 		phone, err := p.Wait(context.Background())
 		if err != nil {
 			iss.undo()
 			return
 		}
-		s.log.Printf("paired %q through Tailcat", phone.Device)
+		s.log.Printf("paired %q over %s", phone.Device, phone.Route)
 	}()
-	return Window{Invite: text, Expires: p.Expires()}, nil
+	return win, nil
 }
 
 // Watch keeps the host's allowlist in step with the device list, so

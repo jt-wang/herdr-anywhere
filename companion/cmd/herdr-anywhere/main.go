@@ -18,6 +18,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"text/tabwriter"
@@ -38,7 +39,7 @@ import (
 )
 
 // A var so a test can build two versions of this program.
-var version = "0.2.2"
+var version = "0.3.0"
 
 const defaultPort = "7681"
 
@@ -238,8 +239,10 @@ func serve(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	fs, state := newFlags("serve", stderr)
 	var listen listFlag
 	fs.Var(&listen, "listen", "address to listen on (repeatable; default 127.0.0.1:7681)")
-	withLAN := fs.Bool("lan", false, "also listen on this computer's private LAN IPv4 address(es)")
+	withLAN := fs.Bool("lan", false, "also let paired phones reach this computer on its private LAN IPv4 address(es), end-to-end encrypted (needs --tailcat)")
 	withTailcat := fs.Bool("tailcat", false, "also let paired phones reach this computer through Tailcat, from any network")
+	relayURL := fs.String("relay", "", "also register with this tailpocket-relay (wss://…), end-to-end encrypted (needs --tailcat and --relay-token-file)")
+	relayTokenFile := fs.String("relay-token-file", "", "file holding the relay's token")
 	web := fs.String("web", "", "serve the PWA from this directory")
 	logTo := fs.String("log", "", "append what serve prints to this file (start's entry on Windows, which has no console)")
 	hcFlag := fs.String("hc", "", "path to herdr-core's hc (default: hc or herdr-core on PATH, else in ~/.local/bin, on Windows in %LOCALAPPDATA%\\Programs\\herdr-core)")
@@ -274,15 +277,35 @@ func serve(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	if *withTailcat && tailcat.ServeRunning(st.Dir()) {
 		return fmt.Errorf("--tailcat: Companion is already running on %s (herdr-anywhere stop stops it)", st.Dir())
 	}
+	if *withLAN && !*withTailcat {
+		return usageError{errors.New("--lan needs --tailcat: the local network is end-to-end encrypted through TailPocket (herdr-anywhere start runs both)")}
+	}
+	relays, err := relayOption(*relayURL, *relayTokenFile, *withTailcat)
+	if err != nil {
+		return usageError{err}
+	}
 	var lanAddrs []netip.Addr
 	if *withLAN {
 		if lanAddrs, err = lan.SystemAddresses(); err != nil {
 			return err
 		}
+		if len(lanAddrs) == 0 {
+			return usageError{errors.New("--lan: this computer has no private IPv4 LAN address (Wi-Fi or Ethernet)")}
+		}
 	}
-	addrs, err := listenAddrs(listen, *withLAN, lanAddrs)
+	addrs, err := listenAddrs(listen, false, nil)
 	if err != nil {
 		return usageError{err}
+	}
+	for _, a := range addrs {
+		host, _, _ := net.SplitHostPort(a)
+		if ip, err := netip.ParseAddr(host); host != "localhost" && (err != nil || !ip.IsLoopback()) {
+			fmt.Fprintf(stderr, "warning: --listen %s is plain HTTP: anyone who can reach it sees the traffic and device tokens. Use it only on your own VPN; --lan is end-to-end encrypted\n", a)
+		}
+	}
+	plain, err := openPlainLAN(st, *withLAN, listen, lanAddrs, addrs, time.Now())
+	if err != nil {
+		return err
 	}
 	logger := log.New(stderr, "", log.LstdFlags)
 
@@ -312,7 +335,7 @@ func serve(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	srv := server.New(server.Config{
 		Store: st, HC: hcPath, HCVersion: hcVersion,
 		Name: computerName(), Version: version, WebDir: *web, Logger: logger,
-		Updates: updates,
+		Updates: updates, PlainUntil: plain.Until,
 		// The chat view's readers, by the app name each agent reports to herdr-core.
 		// Ctx: OpenCode 2 says which session it shows only while it works; from its first chat the Service keeps
 		// what it said, until serve ends.
@@ -347,8 +370,17 @@ func serve(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 	defer os.Remove(filepath.Join(st.Dir(), serveURLsFile))
+	if err := plain.serve(ctx, srv.Handler(), stdout, logger); err != nil {
+		httpSrv.Close()
+		return err
+	}
+	defer plain.close()
 	if *withTailcat {
-		closeTailcat, err := serveTailcat(ctx, st, httpSrv, srv.Revoking, urls, errc, logger)
+		opts := tailcat.Options{Relays: relays}
+		for _, a := range lanAddrs {
+			opts.Listen = append(opts.Listen, net.JoinHostPort(a.String(), strconv.Itoa(secureLANPort)))
+		}
+		closeTailcat, err := serveTailcat(ctx, st, httpSrv, srv.Revoking, urls, errc, logger, opts)
 		if err != nil {
 			httpSrv.Close()
 			return fmt.Errorf("--tailcat: %w", err)
@@ -390,14 +422,23 @@ func serve(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 // socket pair talks to, and keeps the host's allowlist in step with the
 // device list, once a revoked phone's socket has closed (revoking). The
 // returned func stops all of it.
-func serveTailcat(ctx context.Context, st *store.Store, httpSrv *http.Server, revoking func() bool, urls []string, errc chan<- error, logger *log.Logger) (func(), error) {
-	tc, err := tailcat.Open(st, computerName(), logger)
+func serveTailcat(ctx context.Context, st *store.Store, httpSrv *http.Server, revoking func() bool, urls []string, errc chan<- error, logger *log.Logger, opts tailcat.Options) (func(), error) {
+	tc, err := tailcat.Open(st, computerName(), logger, opts)
 	if err != nil {
 		return nil, err
 	}
 	if err := tc.Start(ctx); err != nil {
 		tc.Close()
 		return nil, err
+	}
+	for _, a := range opts.Listen {
+		logger.Printf("listening on %s for phones on this network, end-to-end encrypted", a)
+	}
+	for _, r := range opts.Relays {
+		logger.Printf("registering with relay %s, end-to-end encrypted", r.URL)
+	}
+	if n := tc.Unsynced(); n > 0 && (len(opts.Listen) > 0 || len(opts.Relays) > 0) {
+		logger.Printf("%d phone(s) paired before 0.3 reach this computer only through Tailcat until they open Herdr Anywhere 0.3 or later: ask their owners to open the new app soon", n)
 	}
 	ctl, err := tailcat.Listen(st.Dir())
 	if err != nil {
@@ -504,7 +545,7 @@ func pairHint(urls []string, urlGiven bool) string {
 
 // start runs serve --tailcat and keeps it running, also after a restart; serve itself stops with its terminal.
 const serveWays = `  herdr-anywhere start                              from any network, end-to-end encrypted; also starts at login
-  herdr-anywhere start --lan                        also on the same Wi-Fi or Ethernet
+  herdr-anywhere start --lan                        also directly on the same Wi-Fi or Ethernet, end-to-end encrypted
   herdr-anywhere start --listen <VPN address>:7681  also over your own VPN (a Tailscale 100.x address, say)`
 
 // startForPair: with no serve at all, a link pair printed would open nothing (after a restart, the phone got
@@ -529,7 +570,11 @@ func printQR(w io.Writer, text string) {
 // address serve listens on: --lan), the http link for the same code; then the invite's QR code, last, so the lines
 // after it don't push its top off the screen. dir is where an image of the code goes when the terminal is too small.
 func printTailcatPair(w io.Writer, r tailcat.PairReply, base, code string, ttl time.Duration, dir string) {
-	fmt.Fprintf(w, "Paste this invite into the Herdr app, or scan its QR code with the app:\n  %s\n", r.Invite)
+	invite := r.Invite
+	if r.Invite2 != "" { // every route; an app before 0.3 cannot read it, and is told to update
+		invite = r.Invite2
+	}
+	fmt.Fprintf(w, "Paste this invite into the Herdr app, or scan its QR code with the app:\n  %s\n", invite)
 	if base == "" {
 		base = reachableURL(r.URLs)
 	}
@@ -538,7 +583,7 @@ func printTailcatPair(w io.Writer, r tailcat.PairReply, base, code string, ttl t
 			pairLink(base, code), ttl, time.Now().Add(ttl).Format("15:04"))
 	}
 	fmt.Fprintln(w)
-	showQR(w, r.Invite, dir, 2) // the line below, and the shell's prompt
+	showQR(w, invite, dir, 2) // the line below, and the shell's prompt
 	fmt.Fprintf(w, "Single use; expires in %s (at %s).\n", time.Until(r.Expires).Round(time.Second), r.Expires.Local().Format("15:04"))
 }
 

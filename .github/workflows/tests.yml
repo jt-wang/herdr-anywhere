@@ -197,10 +197,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # third_party/tailpocket-81f6f8b is TailPocket v0.3.0-pre.3, jt-wang/tailpocket@81f6f8b4f2ac87b6800910bb2fe8087daf4d8ab6; Go comes from its go.mod.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: third_party/tailpocket-8ae23dd/go.mod
-          cache-dependency-path: third_party/tailpocket-8ae23dd/go.sum
+          go-version-file: third_party/tailpocket-81f6f8b/go.mod
+          cache-dependency-path: third_party/tailpocket-81f6f8b/go.sum
       - name: Install nsh and xcodegen
         run: |
           curl -sfL -o nsh.tar.gz "https://github.com/longbridge/nsh/releases/download/$NSH_VERSION/nsh-macos-arm64.tar.gz"

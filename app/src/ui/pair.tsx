@@ -7,7 +7,10 @@ import { t } from '../strings/index.ts'
 import { keyboardGone } from './keyboard.ts'
 
 /** `origin`: on the web, the computer that serves the page, where a `#pair=` link opens and the code alone is enough.
- *  `tunnel`: in the phone apps, TailPocket, which pairs by the invite `serve --tailcat` shows, scanned or pasted. */
+ *  `tunnel`: in the phone apps, TailPocket, which pairs by the invite `serve --tailcat` shows, scanned or pasted. A
+ *  `#pair=` link from a computer before TailPocket v0.3 still pairs there, but the screen asks only for invites: that
+ *  link's port isn't encrypted, and closes. Without a tunnel (a browser, served from the computer's plain port, which
+ *  closes too) the screen says to pair from the iOS or Android app instead. */
 export function PairScreen(props: { onPaired: (l: Link) => void; device: string; fetcher?: typeof fetch; initial?: string; message?: string; origin?: string; tunnel?: Tunnel; onTry?: () => void; onBack?: () => void }) {
   const text = signal(props.initial ?? '')
   const busy = signal(false)
@@ -56,19 +59,19 @@ export function PairScreen(props: { onPaired: (l: Link) => void; device: string;
       <Text class="text-[15px] leading-[22px] text-muted-foreground">
         {tunnel
           ? t('pairIntroTunnel')
-          : t('pairIntroLan')}
+          : t('pairIntroWeb')}
       </Text>
       <View class="mt-3 gap-2 rounded-(--radius) bg-muted p-4">
         <Text class="text-[13px] text-foreground font-medium">{t('onTheComputer')}</Text>
         <Text class="text-[13px] text-muted-foreground">{t('startCompanion')}</Text>
-        <Text selectable class="text-[12.5px] font-mono text-foreground">{tunnel ? 'herdr-anywhere start' : 'herdr-anywhere start --lan'}</Text>
-        <Text class="text-[13px] text-muted-foreground">{tunnel ? t('showQr') : t('makeLink')}</Text>
+        <Text selectable class="text-[12.5px] font-mono text-foreground">herdr-anywhere start</Text>
+        <Text class="text-[13px] text-muted-foreground">{tunnel ? t('showQr') : t('scanInApp')}</Text>
         <Text selectable class="text-[12.5px] font-mono text-foreground">herdr-anywhere pair</Text>
       </View>
       <If when={tunnel}>
         <Button label={t('scanQr')} testID="pair-scan" disabled={busy()} onPress={() => void scan()} />
       </If>
-      <Input testID="pair-link" placeholder={tunnel ? 'herdr1:… / http://…/#pair=…' : origin ? t('linkOrCode') : 'http://…/#pair=…'} value={text()} onChange={(t) => text.set(t)}
+      <Input testID="pair-link" placeholder={tunnel ? 'herdr1:… / herdr2:…' : origin ? t('linkOrCode') : 'http://…/#pair=…'} value={text()} onChange={(t) => text.set(t)}
         autoCapitalize="none" autoCorrect={false} keyboardType="url" submitBehavior="blurAndSubmit" onSubmit={() => void pair()}
         class="mt-2 rounded-(--radius) border border-input bg-card px-3 py-3 text-[14px] font-mono text-foreground placeholder:text-sidebar-foreground" />
       <Button label={busy() ? t('pairing') : t('pair')} testID="pair" disabled={busy()} onPress={() => void pair()} />
