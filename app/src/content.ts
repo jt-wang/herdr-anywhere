@@ -33,7 +33,10 @@ export class Content {
       const v = JSON.parse(text)
       if (v.version !== 1 || !Array.isArray(v.chats) || !Array.isArray(v.pending) || !Array.isArray(v.sending)) return
       this.home = v.home
-      this.chats = new Map(v.chats)
+      // Cursors are leases from a Companion process, not durable evidence of earlier messages. This also drops
+      // speculative cursors saved by older apps; the first live page must be allowed to replace them.
+      this.chats = new Map(v.chats.map(([address, answer]: [string, CachedChat]) =>
+        [address, { ...answer, before: undefined, historyLoaded: false }]))
       this.pending = v.pending
       this.sending = v.sending
       this.present = true
@@ -55,9 +58,7 @@ export class Content {
     for (const [address, answer] of [...this.chats].reverse()) {
       const turns = answer.turns?.slice(-40) ?? []
       while (turns.length && JSON.stringify([address, { ...answer, turns }]).length + 1 > left) turns.shift()
-      const trimmed = turns.length !== (answer.turns?.length ?? 0)
-      const a = { ...answer, turns: answer.turns ? turns : undefined, before: trimmed ? undefined : answer.before,
-        historyLoaded: trimmed ? false : answer.historyLoaded }
+      const a = { ...answer, turns: answer.turns ? turns : undefined, before: undefined, historyLoaded: false }
       const size = JSON.stringify([address, a]).length + 1
       if (size <= left) { chats.unshift([address, a]); left -= size }
     }

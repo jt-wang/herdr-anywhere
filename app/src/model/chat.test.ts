@@ -35,9 +35,12 @@ test('an agent that says its conversation only while it works: the view says so 
 
 test('the HTTP transcript stays live while working and uses a 30 s idle fallback', () => {
   expect(refreshEvery('working')).toBe(3000)
-  expect(refreshEvery('blocked')).toBe(30_000)
+  expect(refreshEvery('blocked')).toBe(3000)
   expect(refreshEvery('done')).toBe(30_000)
   expect(refreshEvery('idle')).toBe(30_000)
+  expect(refreshEvery('done', true)).toBe(3000)
+  expect(refreshEvery('idle', true)).toBe(3000)
+  expect(refreshEvery('error', true)).toBe(3000)
   // An agent that reports no status (OpenCode 1) never says when its record grows: asked every 3 s.
   expect(refreshEvery(undefined)).toBe(3000)
 })

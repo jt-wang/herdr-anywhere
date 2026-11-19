@@ -9,7 +9,68 @@ import (
 	"testing"
 
 	"herdr-anywhere/companion/internal/chat"
+	"herdr-anywhere/companion/internal/testfake"
 )
+
+type historyPane struct {
+	Reader
+	path string
+}
+
+func (r *historyPane) Find(int) (string, string, error) { return r.path, "2.1.325", nil }
+
+func TestHistoryButtonBoundaries(t *testing.T) {
+	hc := testfake.HC(t, t.TempDir(), "hc", testfake.Spec{On: map[string][]testfake.Reply{
+		"get": {{Print: `{"status":{"app":"claude-code","state":"working"},"foreground":{"pid":4242}}`}},
+	}})
+	for _, n := range []int{1, 4, 30, 31, 60, 61} {
+		t.Run(fmt.Sprint(n), func(t *testing.T) {
+			var ls []string
+			for i := 0; i < n; i++ {
+				ls = append(ls, prompt(fmt.Sprintf("u%d", i), fmt.Sprintf("Inspect cedar row %d", i)))
+				if i < n-1 {
+					ls = append(ls, say(fmt.Sprintf("a%d", i), fmt.Sprintf("m%d", i), "Ready", "end_turn"))
+				} else {
+					for j := 0; j < 5; j++ {
+						ls = append(ls, use(fmt.Sprintf("c%d", j), fmt.Sprintf("m%d", j), fmt.Sprintf("call%d", j), "Bash", `{"command":"echo cedar"}`))
+					}
+				}
+			}
+			r := &historyPane{path: write(t, ls...)}
+			s := &chat.Service{HC: hc, Readers: map[string]chat.Reader{"claude-code": r}}
+			a, err := s.ChatPage("t1", "")
+			if err != nil || len(a.Turns) != min(n, 30) || (a.Before != "") != (n > 30) {
+				t.Fatalf("initial: turns=%d before=%q err=%v", len(a.Turns), a.Before, err)
+			}
+			last := a.Turns[len(a.Turns)-1]
+			if last.End != "open" || len(last.Steps) != 5 {
+				t.Fatalf("working turn: %+v", last)
+			}
+			seen := len(a.Turns)
+			for a.Before != "" {
+				a, err = s.ChatPage("t1", a.Before)
+				if err != nil || len(a.Turns) == 0 {
+					t.Fatalf("empty offered page: %+v %v", a, err)
+				}
+				seen += len(a.Turns)
+			}
+			if seen != n {
+				t.Fatalf("recovered %d of %d", seen, n)
+			}
+		})
+	}
+	t.Run("oversize earlier record preserves latest work", func(t *testing.T) {
+		r := &historyPane{path: write(t, longTurn(chat.MaxBack>>20+2)...)}
+		s := &chat.Service{HC: hc, Readers: map[string]chat.Reader{"claude-code": r}}
+		a, err := s.ChatPage("t1", "")
+		if err != nil || len(a.Turns) != 1 || a.Turns[0].End != "open" || len(a.Turns[0].Steps) == 0 {
+			t.Fatalf("latest working turn lost to history probe: %+v %v", a, err)
+		}
+		if a.Before != "" || a.HistoryError != "history-limit" {
+			t.Fatalf("unreadable older history must explain its limit, not offer an empty page: %+v", a)
+		}
+	})
+}
 
 func TestHistoryLongSession(t *testing.T) {
 	for _, large := range []bool{false, true} {

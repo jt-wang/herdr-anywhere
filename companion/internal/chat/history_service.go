@@ -20,6 +20,27 @@ type historyCursor struct {
 	Before  string
 }
 
+type historyStart struct {
+	session, first, before string
+	err                    error
+}
+
+// Readers supply candidate cursors without counting a whole session. Confirm that a candidate actually has
+// something to show; Pi can cross a window containing only an abandoned branch before reaching an ancestor.
+func confirmedBefore(r HistoryReader, path, before string) (string, error) {
+	for before != "" {
+		p, err := r.History(path, before)
+		if err != nil {
+			return "", err
+		}
+		if len(p.Turns) > 0 {
+			return before, nil
+		}
+		before = p.Before
+	}
+	return "", nil
+}
+
 func (s *Service) sign(b []byte) []byte {
 	s.historyKey.Do(func() {
 		if _, err := rand.Read(s.cursorKey[:]); err != nil {
@@ -31,8 +52,8 @@ func (s *Service) sign(b []byte) []byte {
 	return h.Sum(nil)
 }
 
-// ChatPage always checks the current foreground/session and the LATEST turn's screen agreement, never the
-// completed turn at the end of an older page. Signed cursors cannot select a path or another terminal/session.
+// ChatPage always checks the current foreground/session. Signed cursors cannot select a path or another
+// terminal/session; a terminal status change alone cannot invalidate an already read history page.
 func (s *Service) ChatPage(addr, before string) (Answer, error) {
 	var cursor historyCursor
 	if before != "" {
@@ -51,7 +72,7 @@ func (s *Service) ChatPage(addr, before string) (Answer, error) {
 	}
 	app, r, path, version, state, msg, err := s.findMsg(addr)
 	a := s.chatFound(app, r, path, version, state, msg, err)
-	if err != nil || r == nil || (a.Unknown != "" && a.Unknown != Behind) {
+	if err != nil || r == nil || a.Unknown != "" {
 		if before != "" {
 			return Answer{}, ErrCursor
 		}
@@ -75,17 +96,45 @@ func (s *Service) ChatPage(addr, before string) (Answer, error) {
 		if len(a.Turns) == 0 {
 			return a, nil
 		}
-		next, err = hr.Before(path, a.Turns[0].ID)
-		if err != nil {
-			return Answer{}, err
+		first := a.Turns[0].ID
+		s.mu.Lock()
+		start, ok := s.historyStarts[addr]
+		s.mu.Unlock()
+		if ok && start.session == a.Session && start.first == first {
+			next, err = start.before, start.err
+		} else {
+			next, err = hr.Before(path, first)
+			if err == nil {
+				next, err = confirmedBefore(hr, path, next)
+			}
+			// Appends after this boundary cannot create earlier turns. Do not reparse history at every 3 s poll.
+			// A read failure can recover; only the fixed size limit is stable for an unchanged boundary.
+			if err == nil || errors.Is(err, ErrHistoryLimit) {
+				s.mu.Lock()
+				if s.historyStarts == nil {
+					s.historyStarts = map[string]historyStart{}
+				}
+				s.historyStarts[addr] = historyStart{session: a.Session, first: first, before: next, err: err}
+				s.mu.Unlock()
+			}
 		}
 	} else {
-		p, err := hr.History(path, cursor.Before)
+		var p HistoryPage
+		p, err = hr.History(path, cursor.Before)
 		if err != nil {
 			return Answer{}, err
 		}
 		a.Turns = p.Turns
-		next = p.Before
+		next, err = confirmedBefore(hr, path, p.Before)
+	}
+	// A look-ahead failure must not hide the successfully read page, including an open turn larger than MaxBack.
+	if err != nil {
+		a.HistoryError = "history-unavailable"
+		if errors.Is(err, ErrHistoryLimit) {
+			a.HistoryError = "history-limit"
+		}
+		s.once("history "+a.Session, "chat history: %v", err)
+		return a, nil
 	}
 	if next != "" {
 		b, _ := json.Marshal(historyCursor{Session: a.Session, Before: next})

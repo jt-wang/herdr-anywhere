@@ -23,12 +23,14 @@ type Answer struct {
 	Turns []Turn `json:"turns,omitempty"`
 	// Session is opaque and stable across appends, but changes when this terminal shows another record.
 	Session string `json:"session,omitempty"`
-	// Before requests an older chronological page. A page can be empty; continue while it supplies Before.
+	// Before requests an older chronological page, confirmed to contain turns.
 	Before string `json:"before,omitempty"`
+	// HistoryError concerns only earlier content; Turns remain usable when the look-ahead cannot read it.
+	HistoryError string `json:"historyError,omitempty"`
 }
 
-// Service answers for a terminal of the local herdr-core: one `hc get`, the reader of the agent it reports, and a
-// check that the record agrees with the screen.
+// Service answers for a terminal of the local herdr-core: one `hc get` identifies the agent and its reader reads
+// the session. Terminal activity and the record's completion events are independent observations.
 type Service struct {
 	// HC is the hc binary; its environment (HC_SESSION, XDG_*) is this process's, as for `hc connect`.
 	HC string
@@ -45,10 +47,11 @@ type Service struct {
 	hcTimeout time.Duration                     // how long `hc get` may take (0: 5 s); tests shorten it
 	logged    sync.Map
 
-	mu         sync.Mutex
-	sessions   map[string]seen // by terminal address: the session id an agent last reported (Follow)
-	historyKey sync.Once
-	cursorKey  [32]byte
+	mu            sync.Mutex
+	sessions      map[string]seen // by terminal address: the session id an agent last reported (Follow)
+	historyKey    sync.Once
+	cursorKey     [32]byte
+	historyStarts map[string]historyStart // one confirmed initial boundary per terminal, not the growing tail
 }
 
 // A local address as herdr-core gives them (t7, t1b) or a terminal's name. One with "/" is on another machine.
@@ -201,22 +204,10 @@ func (s *Service) chatFound(app string, r Reader, path, version, state, msg stri
 		return Answer{Chat: true, Unknown: NoMatch}
 	}
 	open := len(turns) > 0 && turns[len(turns)-1].End == "open"
-	// Behind: the screen and the record disagree on whether a turn runs. What the record has still goes with it, so
-	// the phone shows the turns, marked as updating, and never an empty page while an agent works long.
-	switch state {
-	case unreported:
-		// Nothing on the screen to check the record against: the record says whether the turn is open.
-	case "working", "blocked":
-		if !open {
-			return Answer{Chat: true, Unknown: Behind, Turns: turns}
-		}
-	case "done", "idle", "error":
-		if open {
-			return Answer{Chat: true, Unknown: Behind, Turns: turns}
-		}
-	default:
-		return Answer{Chat: true, Unknown: NoStatus}
-	}
+	// A successful read has consumed the available record, even when terminal activity differs: its last status may
+	// outlive an interrupted process, and the final record write can follow a done status. Re-reading the same bytes
+	// cannot make those observations agree. Never turn that disagreement into an unfinishable "behind" state or
+	// rewrite the agent-specific completion the reader found. Discovery and read failures above remain unknown.
 	// A permission prompt is only on the screen, not in the record (seen with Claude Code 2.1.319): the open turn asks it.
 	if state == "blocked" && msg != "" && open && turns[len(turns)-1].Ask == nil {
 		turns = append([]Turn(nil), turns...)

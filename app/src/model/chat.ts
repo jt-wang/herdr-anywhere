@@ -30,7 +30,7 @@ export type ChatQuestion = { header?: string; text: string; multi?: boolean; opt
 /** `chat` false: no chat button. `unknown`: nothing sure to show, and why (the companion's chat.go lists them). */
 /** `setup`: with unknown "setup-needed" or "setup-not-loaded", the agent whose chat setup (ChatSetup) is missing or
  *  not yet used. */
-export type ChatAnswer = { chat: boolean; unknown?: string; setup?: string; turns?: ChatTurn[]; session?: string; before?: string }
+export type ChatAnswer = { chat: boolean; unknown?: string; setup?: string; turns?: ChatTurn[]; session?: string; before?: string; historyError?: string }
 /** A small file some agents' chats need in the agent's own folder (companion/internal/chat/setup.go): the phone shows
  *  what the computer says of it, by agent, and knows no agent by name. `reload`: what to type in an agent already
  *  running for it to use the file. */
@@ -154,9 +154,10 @@ export function workPreview(turn: ChatTurn): { note?: ChatStep; step?: ChatStep;
   return { note: note?.title.trim() === turn.reply.trim() ? undefined : note, step, failures }
 }
 
-/** The transcript is HTTP, not the terminal's byte stream: keep it live while working, with a slow idle fallback. */
-export function refreshEvery(status: string | undefined): number {
-  return status === undefined || status === 'working' ? 3000 : 30_000
+/** The transcript is HTTP, not the terminal's byte stream. A blocked turn can still write, and its final write can
+ *  follow the terminal's done status. Only a closed record and an inactive terminal use the slow idle fallback. */
+export function refreshEvery(status: string | undefined, open = false): number {
+  return open || status === undefined || status === 'working' || status === 'blocked' ? 3000 : 30_000
 }
 
 /** What the view says when the computer isn't sure. `agent`: the program's name, for a reason that names it. */

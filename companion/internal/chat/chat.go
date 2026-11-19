@@ -1,6 +1,6 @@
 // Package chat turns an agent's own session record into turns for the phone's chat view. One Reader per agent
-// answers two questions: which session file belongs to a process, and what that file says. The Service checks the
-// record against what herdr-core says on screen, and answers "unknown" whenever it is not sure.
+// answers two questions: which session file belongs to a process, and what that file says. The Service uses
+// herdr-core to identify the process, not to infer how much of its record has been read.
 package chat
 
 import (
@@ -178,9 +178,7 @@ const (
 	NoRecordYet = "no-record-yet" // the agent writes its record at the first prompt
 	NoRecord    = "no-record"     // the agent runs with its record turned off: none will come
 	Ambiguous   = "ambiguous"
-	Behind      = "behind" // the record says something else than the screen
 	Format      = "format" // a format the reader doesn't know
-	NoStatus    = "no-status"
 	// NotReported: an agent that says which conversation it shows only while it works hasn't said it yet to this
 	// Companion; its next turn will.
 	NotReported = "not-reported"

@@ -48,7 +48,7 @@ export function ChatView(props: { store: Store; address: string; status: () => s
         earlierError.set('')
         prepend = undefined
       }
-      if (!historyLoaded) before.set(a.before)
+      if (!historyLoaded) { before.set(a.before); earlierError.set(a.historyError ?? '') }
       if (a.turns) lastTurns = historyLoaded ? merge(lastTurns ?? [], a.turns) : a.turns
       if (!a.turns && a.unknown !== 'behind') lastTurns = undefined
       answer.set(a.turns ? { ...a, turns: lastTurns } : a)
@@ -57,7 +57,7 @@ export function ChatView(props: { store: Store; address: string; status: () => s
       offline.set(false)
     } catch {
       if (alive && n >= shown) { shown = n; offline.set(true) }
-    }
+    } finally { if (alive && n === asked) schedule() }
   }
   // What was opened, a turn's steps or a step's details, by id while the view is up: a moment of doubt takes the
   // turns down, and they come back as they were.
@@ -66,7 +66,7 @@ export function ChatView(props: { store: Store; address: string; status: () => s
   const schedule = () => {
     clearTimeout(timer)
     if (!s.appActive) return
-    const every = refreshEvery(props.status())
+    const every = refreshEvery(props.status(), lastTurns?.at(-1)?.end === 'open')
     if (every) timer = setTimeout(() => { void ask(); if (alive) schedule() }, every)
   }
   // Notifications follow core events, not this screen's history. Resume with a fresh read, even if the agent finished.
@@ -99,15 +99,18 @@ export function ChatView(props: { store: Store; address: string; status: () => s
     if (!cursor || loadingEarlier()) return
     loadingEarlier.set(true)
     earlierError.set('')
-    pinned = false
     try {
       const a = await s.chat!.get(props.address, cursor)
       if (!alive || session !== fromSession) return
       if (a.session !== session) { void ask(); return }
       historyLoaded = true
       before.set(a.before)
+      earlierError.set(a.historyError ?? '')
       if (a.turns?.length) {
-        if (a.turns.some((x) => !lastTurns?.some((old) => old.id === x.id))) prepend = { height: content, y: offset }
+        if (a.turns.some((x) => !lastTurns?.some((old) => old.id === x.id))) {
+          pinned = false
+          prepend = { height: content, y: offset }
+        }
         lastTurns = merge(a.turns, lastTurns ?? [])
         answer.set({ ...answer()!, turns: lastTurns })
       }

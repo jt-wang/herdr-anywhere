@@ -2,9 +2,13 @@
 
 A cloud coding agent can request an iOS build through GitHub Actions. Apple signing credentials stay in the repository's `testflight` environment; the agent needs a GitHub token with **Actions: write** and **Contents: read**.
 
-## 0.2.2 (33) test candidate
+## 0.2.2 (34) test candidate
 
 This candidate combines paired home/recent-chat persistence, pending-text recovery, reduced background polling and hidden-terminal backpressure with opt-in local diagnostics. Diagnostics are off by default; exports use the name **Herder Anywhere Diagnostics** and require preview before the system share sheet. Nothing is uploaded automatically.
+
+Build 34 includes build 33 and two chat fixes. Earlier-message buttons require a confirmed nonempty older page; cached text never restores process-bound paging cursors. Check new, short, exactly one-page and longer conversations, including an offline restart followed by reconnection. Short conversations must not offer an empty older page.
+
+Successful reads no longer wait for the terminal's activity status to match the record's completion state. Check Claude Code, Codex, OpenCode and Pi: open a conversation, let it finish, submit another prompt and confirm the next reply appears without a persistent record-catch-up warning. A blocked agent or an unfinished record is checked every three seconds while visible; a completed record with inactive terminal activity returns to the 30-second fallback. Each agent retains its own record completion rules. Update the test Companion as well as the phone; this change does not alter the public Latest installer.
 
 Build 33 also fixes a home navigation race: swiping back can reveal home before the old space route is removed. A tap on the same agent or space during that interval now reopens it instead of being treated as already open. On the original iPhone, open an agent, swipe back from the left edge, then immediately tap that agent once; repeat with its space row. Both should open without a second tap. Check that a short, cancelled swipe stays in the pane and selecting the current tab keeps an unsent draft.
 

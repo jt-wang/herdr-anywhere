@@ -127,6 +127,24 @@ test('while the agent works the view asks again every 3 s, and shows what is new
   expect(asks(app).length).toBeGreaterThan(before)
 })
 
+test('blocked activity and an unfinished record after terminal done both read late replies without waiting 30 s', async () => {
+  for (const status of ['blocked', 'done']) {
+    const app = await pane({ status, chat: JSON.stringify({ chat: true, turns: ask }) })
+    await app.press('id:show-chat')
+    await app.waitFor('text:pick a color')
+    await app.host.send('fake.chat', { chat: true, turns: [{ ...ask[0], ask: undefined, end: 'done', reply: 'Blue it is.' }] })
+    await app.clock.runFor(4500)
+    expect(app.texts()).toContain('Blue it is.')
+    expect(app.count('id:chat-updating')).toBe(0)
+    expect(app.count('id:chat-behind')).toBe(0)
+    if (status === 'done') {
+      const after = asks(app).length
+      await app.clock.runFor(10_000)
+      expect(asks(app).length).toBe(after)
+    }
+  }
+})
+
 test('a background chat stops fetching and catches up on return, even when the agent finished while away', async () => {
   const app = await pane({ status: 'working', chat: JSON.stringify({ chat: true, turns: ask }) })
   await app.press('id:show-chat')
@@ -681,4 +699,51 @@ test('cached chat survives terminal switches and an offline cold launch, then yi
   expect(app.count('id:reply-u1')).toBe(0)
   expect(app.count('id:reply-new-grove')).toBe(1)
   expect(app.count('id:chat-offline')).toBe(0)
+})
+
+test('unreadable earlier history leaves the latest messages visible and explains its limit', async () => {
+  const app = await pane({ chat: JSON.stringify({ chat: true, turns, historyError: 'history-limit' }) })
+  await app.press('id:show-chat')
+  await app.waitFor('id:reply-u1')
+  expect(app.count('id:chat-earlier')).toBe(0)
+  expect(app.count('text:This part of the record is too large to load. Read it in the terminal.')).toBe(1)
+})
+
+test('a cold cached chat never restores a paging lease and its first fresh page decides whether earlier exists', async () => {
+  for (const more of [false, true]) {
+    const recorded = { chat: true, session: 'cedar-cache', before: 'expired-candidate', turns }
+    const app = await pane({ chat: JSON.stringify(recorded) })
+    await app.press('id:show-chat')
+    await app.waitFor('id:reply-u1')
+    const snapshot = JSON.parse(app.storage()['fake-content'])
+    // Include old-version disk metadata: it must not suppress the first live page or resurrect a false button.
+    const saved = JSON.parse(snapshot.value)
+    saved.chats[0][1].before = 'expired-candidate'
+    saved.chats[0][1].historyLoaded = true
+    snapshot.value = JSON.stringify(saved)
+    const cold = await open('./fixtures/fake.tsx', { host: { params: {
+      scene: 'single', argv: 'claude', status: 'working', content: JSON.stringify(snapshot),
+      chat: JSON.stringify({ offline: true }),
+    } }, clock: {} })
+    await cold.clock.runFor(100)
+    await cold.press('id:space-sp1')
+    await cold.press('id:show-chat')
+    await cold.clock.runFor(100)
+    expect(cold.count('id:reply-u1')).toBe(1)
+    expect(cold.count('id:chat-earlier')).toBe(0)
+    expect(asks(cold).some((x) => x.includes('?before='))).toBe(false)
+    await cold.host.send('fake.chat', { ...recorded, before: more ? 'confirmed' : undefined, pages: {
+      confirmed: { chat: true, session: recorded.session, turns: [{ ...turns[0], id: 'cedar-root', said: 'Plant cedar trees' }] },
+    } })
+    await cold.clock.runFor(3200)
+    expect(cold.count('id:chat-earlier')).toBe(more ? 1 : 0)
+    if (more) {
+      await cold.press('id:chat-earlier')
+      await cold.waitFor('text:Plant cedar trees')
+      expect(cold.count('id:chat-earlier')).toBe(0)
+      await cold.clock.runFor(3200)
+      expect(cold.count('id:chat-earlier')).toBe(0)
+      expect(asks(cold).filter((x) => x.includes('?before='))).toEqual(['/api/chat/t1?before=confirmed'])
+    }
+  }
 })

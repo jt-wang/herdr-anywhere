@@ -2,8 +2,10 @@
 
 ## v0.2.2
 
-TestFlight candidate (33), not a public Release or Latest update.
+TestFlight candidate (34), not a public Release or Latest update.
 
+- Only offer earlier chat messages after confirming that an older page contains messages. Restoring cached text no longer restores an expired history cursor.
+- Show successfully read Claude Code, Codex, OpenCode and Pi records without waiting for terminal activity to agree with the record's completion state. Keep checking unfinished records and blocked agents for late replies.
 - Fix reopening an agent or space immediately after swiping back to home: the old route no longer causes that tap to be ignored as already open.
 - Open the last successful home snapshot and recent chat text before connecting. Switching between chat and terminal keeps the conversation; recent text remains readable after an offline restart. Cached content belongs to one pairing and is cleared when it is forgotten or revoked. Images, files and TUI screens are not saved for offline viewing.
 - Keep unsent queued messages across app restarts. Messages already handed to the computer without confirmation return for review instead of being sent again automatically.
