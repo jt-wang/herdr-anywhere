@@ -121,6 +121,19 @@ tap_last() { # resource-id prefix, and a part of it
   [ -n "$xy" ] || fail "no $1${2:+…$2} on screen"
   "$adb" shell input tap $xy
 }
+# Expanding steps keeps the reading anchor, so their controls can now be below the viewport. Scroll as a user
+# would, stopping only when another swipe changes nothing. Also start each send at the end: the subsequent visible
+# prompt then checks that new messages follow, not that sending from the middle silently overrides an anchor.
+scroll_end() {
+  previous=$(xml)
+  for _ in $(seq 1 40); do
+    "$adb" shell input swipe $((w / 2)) $((h * 7 / 10)) $((w / 2)) $((h * 3 / 10)) 150
+    current=$(xml)
+    [ "$current" = "$previous" ] && return 0
+    previous=$current
+  done
+  fail "could not reach the end of the chat"
+}
 type_text() { rest=$1; while [ -n "$rest" ]; do "$adb" shell input text "'$(printf %s "$rest" | cut -c1-10 | sed 's/ /%s/g')'" < /dev/null; rest=$(printf %s "$rest" | cut -c11-); sleep 0.3; done; }
 # The composer's text: compose-input is the field's wrapper, the text its EditText child's (as android-type-link.sh
 # reads the link field). Read from a dump on stdin.
@@ -159,6 +172,7 @@ keys_down() {
 }
 # A prompt sent from the composer; the chat shows it as the newest turn, finished.
 sent() {
+  scroll_end
   tap_last compose-input; compose "$1"; tap_last 'compose-send"'; b=$backs; keys_down
   has 'resource-id="chat-view"' || fail "$2: the chat view is gone right after the prompt was sent, with $((backs - b)) Back(s) sent for the keyboard"
   wait_for "text=\"$1\"" "$2: the chat did not show '$1'" "${3:-40}"
@@ -198,7 +212,9 @@ for a in $agents; do
   # long
   sent "LIST the files here" "$a long"
   tap_last fold-
+  scroll_end
   tap_last step- fake_list
+  scroll_end
   wait_for 'Show all 500 lines' "$a long: the command's 500 lines are not offered" 20
   tap_last run-all-
   sleep 2; snap "$a-long"; alive "$a long"; echo "ok: $a long: Show all 500 lines"
@@ -207,7 +223,7 @@ for a in $agents; do
   images() { xml | tr '>' '\n' | grep -oE 'resource-id="image-[^"]+"' | grep -v 'image-source-' | sort -u; }
   before=$(images)
   if [ "$a" = claude-code ]; then sent "HELLO, what is in this picture?" "$a image"; else
-    sent "LOOK at shot.png" "$a image"; tap_last fold-; tap_last step- fake_look
+    sent "LOOK at shot.png" "$a image"; tap_last fold-; scroll_end; tap_last step- fake_look; scroll_end
   fi
   new=""; for _ in $(seq 1 20); do new=$(images | grep -vxF "$before" || true); [ -n "$new" ] && break; sleep 1; done
   [ -n "$new" ] || fail "$a image: no new picture showed"
