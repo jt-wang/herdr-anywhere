@@ -3,6 +3,7 @@ import type { Table } from './index.ts'
 
 export const es: Table = {
   diagnosticTitle: 'Diagnóstico en el dispositivo', diagnosticRecord: 'Grabar diagnóstico',
+  diagnosticOnState: 'Activado', diagnosticOffState: 'Desactivado', diagnosticUnsupportedState: 'No compatible',
   diagnosticInteraction: 'Interacción / ciclo de vida', diagnosticPerformance: 'Rendimiento', diagnosticNetwork: 'Red', diagnosticResources: 'Recursos / batería',
   diagnosticOff: 'Grabación desactivada: no se recopilan diagnósticos. Desactivada por defecto.', diagnosticRecording: '● Grabando las categorías seleccionadas', diagnosticNoCategories: 'Sin categorías seleccionadas: no se recopilan datos.',
   diagnosticContent: 'Sin seguimiento ni analíticas. Los informes excluyen el contenido de las sesiones: mensajes, salida de terminal, títulos, nombres, rutas, direcciones y credenciales. Confirma las categorías y el intervalo de tiempo antes de compartir.',

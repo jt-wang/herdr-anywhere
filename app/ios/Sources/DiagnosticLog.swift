@@ -20,7 +20,9 @@ final class DiagnosticLog {
     self.defaults = defaults
     enabled = defaults.bool(forKey: "diagnostics.enabled")
     let saved = defaults.dictionary(forKey: "diagnostics.categories") ?? [:]
-    categories = Dictionary(uniqueKeysWithValues: ["interaction", "performance", "network", "resources"].map { ($0, saved[$0] as? Bool ?? true) })
+    // Preserve an already-enabled installation's former implicit choices, never preselect for a new opt-in.
+    let legacyOn = enabled && saved.isEmpty
+    categories = Dictionary(uniqueKeysWithValues: ["interaction", "performance", "network", "resources"].map { ($0, saved[$0] as? Bool ?? legacyOn) })
   }
 
   func setCategories(_ changes: [String: Bool]) {
@@ -40,6 +42,7 @@ final class DiagnosticLog {
 
   func setEnabled(_ on: Bool) throws {
     lock.lock(); defer { lock.unlock() }
+    defaults.set(categories, forKey: "diagnostics.categories")
     if !on {
       if enabled { record("diagnostics.disabled") }
       enabled = false

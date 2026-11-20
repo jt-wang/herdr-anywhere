@@ -67,12 +67,13 @@ export function onFront(back: () => void): () => void {
 
 /** Follows whether the page is in front (`front`), and taps on its notifications: an agent's (`open`), a new
  *  version's (`home`). Returns the stop. */
-export function followPage(on: { front: (front: boolean) => void; open: (terminal: string) => void; home?: () => void }): () => void {
+export function followPage(on: { front: (front: boolean) => void; open: (terminal: string) => void; home?: () => void; network?: () => void }): () => void {
   if (!host.available()) return () => {}
   host.call('page.front').then((f) => { if (typeof f === 'boolean') on.front(f) }, () => {})
   const a = host.on('page.front', (d: any) => { if (typeof d?.front === 'boolean') on.front(d.front) })
   const b = host.on('page.open', (d: any) => { if (typeof d?.terminal === 'string') on.open(d.terminal); else if (d?.home === true) on.home?.() })
-  return () => { a(); b() }
+  const c = host.on('page.network', (d: any) => { if (d?.available === true) on.network?.() })
+  return () => { a(); b(); c() }
 }
 
 /** Android ends a phone's connection soon after the app leaves the screen, unless a foreground service keeps it running:

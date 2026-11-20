@@ -629,6 +629,48 @@ test('an open chat view whose pane stops being an agent says why for the diagnos
   expect(diags(app)).toEqual(['chat-closed addr=t1 agent=false program=program chat=true'])
 })
 
+test('reading an older turn survives a terminal switch and an offline cold launch, while the end still follows', async () => {
+  const history = Array.from({ length: 14 }, (_, n) => ({ id: `grove-${n}`, from: 'you',
+    said: `Inspect grove ${n}`, reply: `Grove ${n}: ${'The pear trees are healthy. '.repeat(18)}`, end: 'done', steps: [] }))
+  const recorded = { chat: true, session: 'grove', turns: history }
+  const app = await pane({ status: 'working', chat: JSON.stringify(recorded) })
+  await app.press('id:show-chat')
+  await app.scroll('id:chat-scroll', -100000)
+  await app.clock.runFor(300)
+  const position = (a: any) => JSON.parse(JSON.parse(a.storage()['fake-content']).value).chats.find(([address]: [string]) => address === 't1')[1].reading
+  expect(position(app).turn).toBe('grove-0')
+  expect(position(app).atEnd).toBe(false)
+  // A new latest-page window overlaps the old one but no longer includes the turn being read.
+  await app.host.send('fake.chat', { ...recorded, turns: history.slice(1) })
+  await app.clock.runFor(3200)
+  expect(app.count('id:reply-grove-0')).toBe(1)
+  await app.press('id:show-terminal')
+  await app.press('id:show-chat')
+  await app.clock.runFor(300)
+  expect(position(app).turn).toBe('grove-0')
+  expect(position(app).atEnd).toBe(false)
+  const cold = await open('./fixtures/fake.tsx', { host: { params: {
+    scene: 'companion-off', content: app.storage()['fake-content'], chat: JSON.stringify({ offline: true }),
+  } }, clock: {} })
+  await cold.clock.runFor(100)
+  await cold.press('id:space-sp1')
+  await cold.press('id:show-chat')
+  await cold.clock.runFor(300)
+  await cold.scroll('id:chat-scroll', 20)
+  await cold.clock.runFor(300)
+  expect(position(cold).turn).toBe('grove-0')
+  expect(position(cold).atEnd).toBe(false)
+  await app.scroll('id:chat-scroll', 100000)
+  await app.clock.runFor(300)
+  await app.press('id:show-terminal')
+  await app.press('id:show-chat')
+  await app.clock.runFor(300)
+  expect(position(app).atEnd).toBe(true)
+  await app.host.send('fake.chat', { ...recorded, turns: [...history, { ...history[0], id: 'grove-new', reply: 'A new grove.' }] })
+  await app.clock.runFor(3200)
+  expect(app.shows('id:reply-grove-new')).toBe(true)
+})
+
 test('older pages extend a long chat, survive polling and offline retries, and clear on a new session', async () => {
   const history = Array.from({ length: 65 }, (_, n) => ({ id: `orchard-${n + 1}`, from: 'you',
     said: `Inspect orchard row ${n + 1}`, reply: `Row ${n + 1} is healthy.`, end: 'done', steps: [] }))

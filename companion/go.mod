@@ -6,7 +6,7 @@ toolchain go1.27.4
 
 require (
 	github.com/coder/websocket v1.8.15
-	github.com/jt-wang/tailpocket v0.3.0-pre.6
+	github.com/jt-wang/tailpocket v0.3.1
 	github.com/makiuchi-d/gozxing v0.1.1
 	github.com/mdp/qrterminal/v3 v3.2.1
 	github.com/tailscale/tailcat v0.6.0

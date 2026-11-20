@@ -86,6 +86,10 @@ jobs:
         run: |
           python3 app/e2e/ios-pin-pair.test.py
           python3 app/e2e/ios-title-pair.test.py
+      - name: Native diagnostic consent and upgrade defaults
+        run: |
+          swiftc app/ios/Sources/DiagnosticLog.swift app/ios/Tests/DiagnosticLogTests.swift -o "$RUNNER_TEMP/diagnostic-consent-tests"
+          "$RUNNER_TEMP/diagnostic-consent-tests"
       # The filing agent's last evaluation (eval/filing/last-report.json) is for the rules and code as they are now and
       # passed. The evaluation itself needs an agent's login, so it runs where that is: run.sh.
       - run: companion/eval/filing/check.sh
@@ -197,9 +201,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # TailPocket is v0.3.0-pre.6, public jt-wang/tailpocket@342ebe543f77322036f15aa93132e02078e9e478: its Go module from the Go
+      # TailPocket is v0.3.1, public jt-wang/tailpocket@086e368148aac78dc7ad21eb18b3a98d69a0590a: its Go module from the Go
       # proxy (companion/go.mod), its phone library from that release (app/scripts/tailpocket.sh checks its SHA-256),
-      # its SDKs copied into third_party/tailpocket-342ebe5.
+      # its SDKs copied into third_party/tailpocket-086e368.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: companion/go.mod

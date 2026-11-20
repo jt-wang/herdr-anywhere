@@ -1,14 +1,23 @@
 package server
 
 import (
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"herdr-anywhere/companion/internal/chat"
+	"herdr-anywhere/companion/internal/chat/claude"
+	"herdr-anywhere/companion/internal/chat/codex"
+	"herdr-anywhere/companion/internal/chat/opencode"
+	"herdr-anywhere/companion/internal/chat/pi"
 	"herdr-anywhere/companion/internal/testfake"
+	"herdr-anywhere/companion/internal/testfake/replay"
 )
 
 type oneTurn struct{}
@@ -120,6 +129,12 @@ func TestNoChatService(t *testing.T) {
 	if code, body := getJSON(t, f, token, "/api/chat/t1"); code != 200 || body["chat"] != false {
 		t.Fatalf("%d %v", code, body)
 	}
+	res, body := chatGET(t, f, token, "/api/chat/t1")
+	tag := chatTag(t, res, body)
+	res, body = chatGET(t, f, token, "/api/chat/t1", tag)
+	if res.StatusCode != 304 || len(body) != 0 || res.Header.Get("ETag") != tag || res.Header.Get("Cache-Control") != "private, no-cache" {
+		t.Fatalf("unchanged absent service: %d %v %s", res.StatusCode, res.Header, body)
+	}
 }
 
 // An image goes to the phone as a data: URL, which the app's Image shows as it is.
@@ -134,5 +149,126 @@ func TestChatImage(t *testing.T) {
 	}
 	if code, _ := getJSON(t, f, "", "/api/chat/t1/images/toolu_1.0"); code != 401 {
 		t.Fatalf("no token: %d", code)
+	}
+}
+
+func chatGET(t *testing.T, f *fixture, token, path string, validators ...string) (*http.Response, []byte) {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodGet, f.srv.URL+path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	for _, v := range validators {
+		req.Header.Add("If-None-Match", v)
+	}
+	r, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Body.Close()
+	b, err := io.ReadAll(r.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r, b
+}
+
+func chatTag(t *testing.T, r *http.Response, body []byte) string {
+	t.Helper()
+	tag := r.Header.Get("ETag")
+	if want := fmt.Sprintf(`"%x"`, sha256.Sum256(body)); r.StatusCode != 200 || tag != want || r.Header.Get("Cache-Control") != "private, no-cache" || r.Header.Get("Content-Type") != "application/json" {
+		t.Fatalf("representation: status=%d headers=%v body=%s (want ETag %s)", r.StatusCode, r.Header, body, want)
+	}
+	return tag
+}
+
+// Only discovery is fixed; real replay records and all four production readers run behind the public HTTP route.
+type chatLocatedReader struct {
+	chat.Reader
+	chat.HistoryReader
+	path string
+}
+
+func (r *chatLocatedReader) Find(int) (string, string, error) { return r.path, "", nil }
+
+func TestChatConditionalGETReplay(t *testing.T) {
+	for _, c := range []struct {
+		agent, fixture string
+		reader         chat.Reader
+	}{
+		{"claude-code", "claude/testdata/claude-code/2.1.325/steps.jsonl", &claude.Reader{}},
+		{"codex", "codex/testdata/codex/0.167.1/steps.jsonl", &codex.Reader{}},
+		{"opencode", "opencode/testdata/opencode/2.2.0/steps.json", &opencode.Reader{}},
+		{"pi", "pi/testdata/pi/1.4.0/steps.jsonl", &pi.Reader{}},
+	} {
+		t.Run(c.agent, func(t *testing.T) {
+			script, err := replay.Load(c.agent, filepath.Join("..", "chat", c.fixture))
+			if err != nil {
+				t.Fatal(err)
+			}
+			dir := t.TempDir()
+			player, err := script.Start(replay.Options{Dir: dir, Cwd: "/work/meadow", Pid: 4242})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer player.Close()
+			if err := player.Play("Inspect the meadow", 0); err != nil {
+				t.Fatal(err)
+			}
+			core := filepath.Join(dir, "terminal.json")
+			b, _ := json.Marshal(map[string]any{"status": map[string]string{"app": c.agent, "state": "done"}, "foreground": map[string]int{"pid": 4242}})
+			if err := os.WriteFile(core, b, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			hc := testfake.HC(t, filepath.Join(dir, "bin"), "hc", testfake.Spec{On: map[string][]testfake.Reply{"get": {{Cat: core}}}})
+			r := &chatLocatedReader{Reader: c.reader, HistoryReader: c.reader.(chat.HistoryReader), path: player.Path()}
+			f := newFixture(t, func(cfg *Config) {
+				cfg.Chat = &chat.Service{HC: hc, Readers: map[string]chat.Reader{c.agent: r}}
+			})
+			_, token := f.pair(t)
+			res, body := chatGET(t, f, token, "/api/chat/t1")
+			tag := chatTag(t, res, body)
+			var first chat.Answer
+			if err := json.Unmarshal(body, &first); err != nil || !first.Chat || first.Unknown != "" || first.Session == "" || len(first.Turns) != 1 || first.Turns[0].End != "done" {
+				t.Fatalf("recorded first turn: %s %v", body, err)
+			}
+			res, body = chatGET(t, f, token, "/api/chat/t1", tag)
+			if res.StatusCode != 304 || len(body) != 0 || res.Header.Get("ETag") != tag {
+				t.Fatalf("unchanged replay: %d %v %s", res.StatusCode, res.Header, body)
+			}
+			if err := player.Play("Inspect the clearing", 0); err != nil {
+				t.Fatal(err)
+			}
+			res, body = chatGET(t, f, token, "/api/chat/t1", tag)
+			if next := chatTag(t, res, body); next == tag {
+				t.Fatal("appended record retained ETag")
+			}
+			var next chat.Answer
+			if err := json.Unmarshal(body, &next); err != nil || next.Session != first.Session || len(next.Turns) != 2 || next.Turns[1].Said != "Inspect the clearing" || next.Turns[1].End != "done" {
+				t.Fatalf("recorded append: %s %v", body, err)
+			}
+			if err := player.Preload(chat.MaxTurns + 2); err != nil {
+				t.Fatal(err)
+			}
+			res, body = chatGET(t, f, token, "/api/chat/t1")
+			tailTag := chatTag(t, res, body)
+			if err := json.Unmarshal(body, &next); err != nil || next.Before == "" {
+				t.Fatalf("recorded history boundary: %s %v", body, err)
+			}
+			history := "/api/chat/t1?before=" + url.QueryEscape(next.Before)
+			res, body = chatGET(t, f, token, history, tailTag)
+			historyTag := chatTag(t, res, body)
+			var older chat.Answer
+			if err := json.Unmarshal(body, &older); err != nil || older.Session != first.Session || len(older.Turns) == 0 || historyTag == tailTag {
+				t.Fatalf("recorded history: %s %v", body, err)
+			}
+			res, body = chatGET(t, f, token, history, historyTag)
+			if res.StatusCode != 304 || len(body) != 0 || res.Header.Get("ETag") != historyTag {
+				t.Fatalf("unchanged recorded history: %d %v %s", res.StatusCode, res.Header, body)
+			}
+		})
 	}
 }

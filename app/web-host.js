@@ -104,6 +104,9 @@ export function createHost(player) {
     document.addEventListener('visibilitychange', check)
     addEventListener('focus', check)
     addEventListener('blur', check)
+    // Events only: the initial browser state is not a network switch.
+    addEventListener('online', () => player.hostEvent('page.network', { available: true }))
+    addEventListener('offline', () => player.hostEvent('page.network', { available: false }))
   }
   return {
     call(name, args) {

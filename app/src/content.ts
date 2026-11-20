@@ -5,7 +5,8 @@ import type { Term } from './model/terminals.ts'
 import type { ChatAnswer } from './model/chat.ts'
 
 export type Draft = { address: string; text: string }
-export type CachedChat = ChatAnswer & { historyLoaded?: boolean }
+export type ChatPosition = { turn: string; offset: number; atEnd: boolean }
+export type CachedChat = ChatAnswer & { historyLoaded?: boolean; reading?: ChatPosition }
 export type HomeSnapshot = {
   at: number
   docs: [string | null, Document][]

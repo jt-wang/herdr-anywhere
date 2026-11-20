@@ -30,4 +30,6 @@ dependencies {
     // TailPocketNsh.attach answers the app's tailPocket.* host calls (src/tunnel.ts) on a coroutine scope of ours.
     implementation project(':tailpocket-nsh')
     implementation libs.kotlinx.coroutines.android
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.robolectric:robolectric:4.16.1'
 }

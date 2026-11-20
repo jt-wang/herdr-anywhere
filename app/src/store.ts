@@ -155,6 +155,7 @@ export class Store {
       this.sync()
       void this.refreshMachines()
     }
+    if (front) this.reconnectNow()
     this.polling()
   }
   setBackgroundWatch(on: boolean) { this.backgroundWatch.set(on); this.polling() }
@@ -458,6 +459,12 @@ export class Store {
     if (!this.wantConnected || this.hc) return
     this.retry = 0
     this.connect().catch(() => this.lost('retry failed'))
+  }
+
+  /** A new usable network can leave the old socket open but unreachable. Rebuild that line, not the pane. */
+  networkChanged() {
+    if (this.connected) this.hc?.close()
+    this.reconnectNow()
   }
 
   get connected() {
@@ -831,7 +838,14 @@ export class Store {
   cachedChat(address: string) { return this.content.chats.get(address) }
 
   rememberChat(address: string, answer: CachedChat) {
-    this.content.remember(address, answer)
+    this.content.remember(address, { ...answer, reading: this.cachedChat(address)?.reading })
+    void this.saveContent().catch((e) => this.cacheError(e))
+  }
+
+  rememberChatPosition(address: string, reading: CachedChat['reading']) {
+    const answer = this.cachedChat(address)
+    if (!answer) return
+    this.content.remember(address, { ...answer, reading })
     void this.saveContent().catch((e) => this.cacheError(e))
   }
 

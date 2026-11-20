@@ -88,6 +88,8 @@ export class HcClient {
   private line: Uint8Array = new Uint8Array(0)
   private nextId = 1
   private pending = new Map<number, Pending>()
+  /** An attach may have created a viewer even though its caller has stopped waiting. Detach on its late reply. */
+  private timedOutAttaches = new Set<number>()
   private channels = new Map<number, (kind: number, payload: Uint8Array) => void>()
   /** Frames on a channel whose reply is still being read (a first paint, the first events come in the same read). */
   private early = new Map<number, { kind: number; payload: Uint8Array }[]>()
@@ -134,6 +136,7 @@ export class HcClient {
     return new Promise<T>((resolve, reject) => {
       const timer = ms > 0 ? setTimeout(() => {
         this.pending.delete(id)
+        if (method === 'terminal.attach') this.timedOutAttaches.add(id)
         end('timeout')
         reject(new HcError(`${method} timed out`, 'timeout'))
       }, ms) : undefined
@@ -164,10 +167,14 @@ export class HcClient {
     return { seq: r.seq, terminals: r.terminals }
   }
 
+  /** Early output and CLOSE are delivered before this resolves. A stream already closed during that replay rejects
+   *  with its close reason as HcError.kind, after on.close received the full payload; it must not be installed as live. */
   async attach(params: AttachParams, on: StreamHandlers): Promise<Stream> {
     const r = await this.call<{ channel: number; terminal: any }>('terminal.attach', params)
+    if (this.closed) throw new HcError('connection lost', 'disconnected')
     const ch = r.channel
     let open = true
+    let ended = ''
     let paused = false
     // Without credit, hc sends at most its remaining 256 KiB window. Keeping those bytes preserves split escape
     // sequences; hc bounds its own backlog and replaces it with a repaint when the viewer falls too far behind.
@@ -184,12 +191,14 @@ export class HcClient {
         // final output when we resume. Agent notifications use the independent events channel.
         if (paused && reason.reason !== 'disconnected') { waiting.push({ kind, payload }); return }
         open = false
+        ended = reason.reason
         waiting = []
         this.channels.delete(ch)
         on.close(reason)
       }
     }
     this.listen(ch, receive)
+    if (!open) throw new HcError(`terminal.attach closed: ${ended}`, ended)
     const self = this
     return {
       channel: ch,
@@ -240,6 +249,7 @@ export class HcClient {
   }
 
   private bytes(b: Uint8Array) {
+    if (this.closed) return
     this.onHeard?.()
     if (this.framed) {
       this.parser.push(b)
@@ -291,7 +301,16 @@ export class HcClient {
     if (kind !== DATA) return
     const msg = JSON.parse(dec.decode(payload))
     const p = this.pending.get(msg.id)
-    if (!p) return
+    if (!p) {
+      if (!this.timedOutAttaches.delete(msg.id) || msg.error) return
+      const ch = msg.result?.channel
+      if (!Number.isInteger(ch) || ch <= 0 || ch > 0xffffffff) return
+      // Discard history already buffered before the reply, and ignore bytes in flight until CLOSE is acknowledged.
+      // listen drains earlyBytes too: otherwise orphan history can fill the shared early-frame limit and hide a retry.
+      this.listen(ch, (kind) => { if (kind === CLOSE) this.channels.delete(ch) })
+      this.send(ch, CLOSE, new Uint8Array(0))
+      return
+    }
     this.pending.delete(msg.id)
     clearTimeout(p.timer)
     if (msg.error) p.reject(new HcError(msg.error.message, msg.error.data?.kind, msg.error.data?.hint))
@@ -307,6 +326,7 @@ export class HcClient {
       p.reject(new HcError('connection lost', 'disconnected'))
     }
     this.pending.clear()
+    this.timedOutAttaches.clear()
     for (const h of this.channels.values()) h(CLOSE, enc.encode(JSON.stringify({ reason: 'disconnected' })))
     this.channels.clear()
     this.early.clear()

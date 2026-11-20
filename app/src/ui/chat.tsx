@@ -10,6 +10,7 @@ import { AskCard } from './ask-card.tsx'
 import { askCard } from '../model/ask.ts'
 import { t } from '../strings/index.ts'
 import { openFile, videoFrame, type VideoFrame } from '../page.ts'
+import type { ChatPosition } from '../content.ts'
 
 const closed = () => signal(false)
 type Opened = (id: string) => ReturnType<typeof closed>
@@ -34,6 +35,7 @@ export function ChatView(props: { store: Store; address: string; status: () => s
   // Asks overlap when the computer is slow (each 2 to 7.6 s in CI, six at once): an answer to an ask older than the
   // one shown is dropped, so the view never goes back to before.
   let asked = 0, shown = 0
+  let lastPage: ChatAnswer | undefined
   const ask = async () => {
     if (!s.appActive) return
     const n = ++asked
@@ -41,16 +43,24 @@ export function ChatView(props: { store: Store; address: string; status: () => s
       const a = await s.chat!.get(props.address)
       if (!alive || !s.appActive || n < shown) return
       shown = n
+      if (a === lastPage) { offline.set(false); return }
+      lastPage = a
       if (a.session !== session) {
         session = a.session
         historyLoaded = false
         lastTurns = undefined
         earlierError.set('')
-        prepend = undefined
       }
       if (!historyLoaded) { before.set(a.before); earlierError.set(a.historyError ?? '') }
+      // A moving latest-page window must not evict the turn being read. Only join overlapping pages of the same
+      // session (a session change cleared lastTurns above); otherwise the fresh page replaces the old record.
+      if (reading && !pinned && a.turns?.some((x) => lastTurns?.some((old) => old.id === x.id))) historyLoaded = true
       if (a.turns) lastTurns = historyLoaded ? merge(lastTurns ?? [], a.turns) : a.turns
       if (!a.turns && a.unknown !== 'behind') lastTurns = undefined
+      if (reading && a.turns && !lastTurns?.some((x) => x.id === reading!.turn)) {
+        reading = undefined; pinned = true
+        s.rememberChatPosition(props.address, undefined)
+      }
       answer.set(a.turns ? { ...a, turns: lastTurns } : a)
       s.rememberChat(props.address, { ...answer()!, before: before(), historyLoaded,
         ...(a.unknown === 'behind' && lastTurns ? { turns: lastTurns } : {}) })
@@ -83,17 +93,48 @@ export function ChatView(props: { store: Store; address: string; status: () => s
 
   let scroller: any
   const viewport = signal(0)
-  let pinned = true
+  let reading: ChatPosition | undefined = cached?.turns?.some((x) => x.id === cached.reading?.turn) ? cached.reading : undefined
+  let pinned = reading?.atEnd ?? true
   let content = 0
+  let contentTop = 0
   let offset = 0
-  let prepend: { height: number; y: number } | undefined
-  const toEnd = (height: number) => {
-    content = height
-    if (prepend && height > prepend.height) {
-      scroller?.scrollTo({ y: prepend.y + height - prepend.height, animated: false })
-      prepend = undefined
-    } else if (pinned) scroller?.scrollTo({ y: Math.max(0, height - viewport()), animated: false })
+  const rows = new Map<string, { y: number; height: number }>()
+  let layoutTimer: ReturnType<typeof setTimeout> | undefined
+  let saveTimer: ReturnType<typeof setTimeout> | undefined
+  let scrolling = false
+  // Restore a turn and its viewport offset, not an absolute scrollTop. Heights above it can change after a poll,
+  // image load, fold or prepend. Batch the layout callbacks so all row coordinates belong to the same layout.
+  const place = () => {
+    scrolling = false
+    clearTimeout(layoutTimer)
+    layoutTimer = setTimeout(() => {
+      if (!viewport() || !content) return
+      const row = reading && rows.get(reading.turn)
+      const y = pinned ? content + contentTop * 2 - viewport()
+        : row ? contentTop + row.y + Math.min(reading!.offset, row.height - 1) : offset
+      const target = Math.max(0, Math.min(y, Math.max(0, content + contentTop * 2 - viewport())))
+      scroller?.scrollTo({ y: target, animated: false })
+      offset = target
+    }, 0)
   }
+  const saveReading = () => {
+    clearTimeout(saveTimer)
+    if (reading) s.rememberChatPosition(props.address, reading)
+  }
+  const remember = () => {
+    for (const turn of lastTurns ?? []) {
+      const row = rows.get(turn.id)
+      if (!row || contentTop + row.y + row.height <= offset) continue
+      reading = { turn: turn.id, offset: offset - contentTop - row.y, atEnd: pinned }
+      clearTimeout(saveTimer)
+      saveTimer = setTimeout(saveReading, 250)
+      break
+    }
+  }
+  effect(() => { if (!active()) untracked(saveReading) })
+  cleanup(() => {
+    clearTimeout(layoutTimer); saveReading()
+  })
   const loadEarlier = async () => {
     const cursor = before(), fromSession = session
     if (!cursor || loadingEarlier()) return
@@ -109,7 +150,7 @@ export function ChatView(props: { store: Store; address: string; status: () => s
       if (a.turns?.length) {
         if (a.turns.some((x) => !lastTurns?.some((old) => old.id === x.id))) {
           pinned = false
-          prepend = { height: content, y: offset }
+          remember()
         }
         lastTurns = merge(a.turns, lastTurns ?? [])
         answer.set({ ...answer()!, turns: lastTurns })
@@ -166,9 +207,17 @@ export function ChatView(props: { store: Store; address: string; status: () => s
           /* A view at the end that gets smaller goes to the end again: on Android a pane that opens in its chat is laid
              out 49 points taller first, and the scroll to the end made then left it 49 short of the end onScroll counts,
              past its 40: no new turn was followed (measured on CI's emulator, Codex's pane). */
-          keyboardShouldPersistTaps="handled" onLayout={(b) => { viewport.set(b.size.height); toEnd(content) }}
-          scrollEventThrottle={64} onScroll={(e) => { offset = e?.offset?.y ?? 0; pinned = offset + viewport() >= content - 40 }}>
-          <View class="gap-4" onLayout={(b) => toEnd(b.size.height)}>
+          keyboardShouldPersistTaps="handled" onLayout={(b) => { viewport.set(b.size.height); place() }}
+          /* Native layout and scrollTo can report intermediate/clamped offsets before the final layout lands.
+             Only a user's drag (including its momentum) changes the reading intent, not those callbacks. */
+          onScrollDragStart={() => { scrolling = true }}
+          scrollEventThrottle={64} onScroll={(e) => {
+            if (!scrolling) return
+            const y = e?.offset?.y ?? 0
+            offset = y; pinned = offset + viewport() >= content + contentTop * 2 - 40
+            remember()
+          }}>
+          <View class="gap-4" onLayout={(b) => { content = b.size.height; contentTop = b.origin.y; place() }}>
             <If when={before()}>
               <View role="button" testID="chat-earlier" disabled={loadingEarlier()} onPress={() => void loadEarlier()} class="min-h-[44px] items-center justify-center rounded-[8px] bg-secondary active:bg-accent">
                 <Text class="text-[13px] text-foreground">{t(loadingEarlier() ? 'chatLoadingEarlier' : 'chatEarlier')}</Text>
@@ -176,7 +225,8 @@ export function ChatView(props: { store: Store; address: string; status: () => s
             </If>
             <If when={earlierError()}><Text testID="chat-earlier-error" class="text-[12.5px] text-muted-foreground">{t(earlierError() === 'history-limit' ? 'chatHistoryLimit' : 'chatEarlierFailed')}</Text></If>
             <If when={turns()?.length} else={<If when={answer()}><Text class="text-[13px] text-muted-foreground text-center py-6">{t('chatEmpty')}</Text></If>}>
-              <Each of={turns() ?? []} key={(x) => x.id}>{(x) => <TurnView store={s} address={props.address} turn={x()} carded={!!card()} back={props.back} opened={opened} inspect={() => { pinned = false }} />}</Each>
+              <Each of={turns() ?? []} key={(x) => x.id}>{(x) => <TurnView store={s} address={props.address} turn={x()} carded={!!card()} back={props.back} opened={opened}
+                layout={(y, height) => { rows.set(x().id, { y, height }); place() }} inspect={() => { pinned = false; remember() }} />}</Each>
               <If when={card()}>{(c) => <AskCard store={s} address={props.address} agent={s.program(props.address).name} card={c} back={props.back} />}</If>
               <If when={behind()}><Text testID="chat-updating" class="text-[12.5px] text-muted-foreground">{t('chatUpdating')}</Text></If>
             </If>
@@ -288,13 +338,13 @@ function SetupPage(props: { store: Store; address: string; agent: string; needed
   )
 }
 
-function TurnView(props: { store: Store; address: string; turn: ChatTurn; carded: boolean; back: () => void; opened: Opened; inspect: () => void }) {
+function TurnView(props: { store: Store; address: string; turn: ChatTurn; carded: boolean; back: () => void; opened: Opened; inspect: () => void; layout: (y: number, height: number) => void }) {
   const expanded = props.opened(`turn ${props.turn.id}`)
   const turn = () => props.turn
   const show = () => shows(turn(), expanded())
   const preview = () => workPreview(turn())
   return (
-    <View class="gap-2">
+    <View class="gap-2" onLayout={(b) => props.layout(b.origin.y, b.size.height)}>
       <If when={turn().from === 'you'} else={
         <View class="gap-1">
           <Text class="text-[11.5px] text-muted-foreground">{t('chatFromOther')}</Text>

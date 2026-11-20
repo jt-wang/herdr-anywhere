@@ -7,7 +7,7 @@
 // same, and the computer forgets the phone right after), "relaunch-forgotten" (paired before, opened again with that
 // link, as e2e/ios-tailcat.sh's build opens every launch, and the computer forgets the phone right after).
 // For Settings › Computer: `via: "tailpocket"` with `routes` ("relay:tok,direct": what the tunnel answers in turn, the
-// last one for good; "throws": it fails), `url` (the link's address), `conn: "lost"` (the core stops answering) and
+// last one for good; "throws": it fails; or a JSON array of TailPocket path objects), `url` (the link's address), `conn: "lost"` (the core stops answering) and
 // `info: "none"` (the companion gives no version), or `info` as JSON (what /api/info answers, `plainUntil` too).
 // `tunnel: "on"`: TailPocket is there to pair again with, as in the phone apps, whatever the link.
 import { host, Keyboard, mount, Storage } from 'nsh'
@@ -384,7 +384,7 @@ const pipe = (l: Linker) => () => {
   return core
 }
 
-const routes = (params.routes ?? 'direct').split(',')
+const routes: (string | Route)[] = params.routes?.startsWith('[') ? JSON.parse(params.routes) : (params.routes ?? 'direct').split(',')
 let updatePosts = 0
 // `host.params.emoji` ("🐶 🌵 🔑 🚲"): pairing shows these, as a computer with the emoji check asks its user to compare
 // them, and waits for the test's `fake.confirm` event ({ approve }); a no fails as TailPocket's does (unauthorized).
@@ -402,6 +402,7 @@ const fakeTunnel: Tunnel = {
     baseUrl: 'http://127.0.0.1:1', close: () => {},
     path: async () => {
       const next = routes.length > 1 ? routes.shift()! : routes[0]
+      if (typeof next !== 'string') return next
       if (next === 'throws') throw new Error('unreachable')
       const [route, relay] = next.split(':')
       return (route === 'relay' ? { route, relay } : { route }) as Route

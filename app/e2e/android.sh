@@ -592,4 +592,8 @@ screen_has 'text="Settings"' || { echo "FAIL: Settings did not open"; exit 1; }
 "$adb" shell input swipe 500 1800 500 300 200
 sleep 2
 [ -n "$shot" ] && "$adb" exec-out screencap -p > "${shot%.png}-settings-end.png"
+# Same paired emulator and live companion: exercise the real native recorder, consent, APK upgrades,
+# category isolation, preview/share and Clear. The reusable suite resets diagnostics only, never pairing.
+sh "$app/e2e/android-diagnostics.sh" --self-test
+sh "$app/e2e/android-diagnostics.sh" "$apk" "$shot"
 echo "PASS: notifications, and new spaces in a folder browsed to or made on the computer"

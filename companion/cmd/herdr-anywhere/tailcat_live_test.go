@@ -145,7 +145,7 @@ func pairLive(t *testing.T, dir, device string, logs fmt.Stringer) connectphone.
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
-	link, err := connectphone.PairV2(ctx, inv, connectphone.NewKey(), connectphone.Options{Device: device, OnSAS: onSAS})
+	link, err := connectphone.PairV2(ctx, inv, connectphone.NewKey(), connectphone.Options{Device: device, OnSAS: onSAS, TailcatOnly: true})
 	select {
 	case aerr := <-answered:
 		if aerr != nil {
@@ -168,8 +168,8 @@ func TestLiveTailcat(t *testing.T) {
 	}
 	hc := isolatedHC(t)
 	dir := shortStateDir(t)
-	// --no-lan: this measures Tailcat, which a phone on this computer's own network would not take.
-	_, logs := startServe(t, "--tailcat", "--no-lan", "--listen", "127.0.0.1:0", "--hc", hc, "--state", dir)
+	// Both sides use only Tailcat, never LAN or a configured tailpocket-relay.
+	_, logs := startServe(t, "--tailcat", "--tailcat-only", "--listen", "127.0.0.1:0", "--hc", hc, "--state", dir)
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 	defer cancel()
 
@@ -186,7 +186,7 @@ func TestLiveTailcat(t *testing.T) {
 		t.Fatalf("payload token gives %+v, %v", d, err)
 	}
 
-	sess, err := connectphone.Connect(link, connectphone.Options{})
+	sess, err := connectphone.Connect(link, connectphone.Options{TailcatOnly: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -234,18 +234,30 @@ func TestLiveTailcat(t *testing.T) {
 		t.Fatalf("/api/info through the forwarder before the revoke: %v", err)
 	}
 
-	// How the tunnel travels, as Settings shows it. HM_TAILCAT_ROUTE names what must come back, so one run
-	// expects direct, and one with TS_DEBUG_ALWAYS_USE_DERP=1 expects relay.
+	// HM_TAILCAT_ROUTE=relay requires a real non-DNS UDP firewall block on both sides, not a debug switch.
 	want := os.Getenv("HM_TAILCAT_ROUTE")
-	var route, relay string
+	var measured connectphone.Route
 	waitFor(t, 20*time.Second, func() bool {
 		pathCtx, pathCancel := context.WithTimeout(ctx, 3*time.Second)
 		defer pathCancel()
 		var perr error
-		route, relay, perr = sess.Path(pathCtx)
+		measured, perr = sess.Route(pathCtx)
+		route, _ := measured.Path()
 		return perr == nil && (want == "" || route == want)
 	}, "the route "+want, logs)
-	t.Logf("route %q relay %q", route, relay)
+	route, relay := measured.Path()
+	t.Logf("route %q relay %q kind %q DERP region %d code %q host %q", route, relay, measured.Kind, measured.DERPRegion, measured.DERPCode, measured.DERPHost)
+	if want == "relay" && (measured.Kind != connectphone.KindDERP || relay == "") {
+		t.Fatalf("Tailcat-only blocked-UDP connection did not report a named DERP route: %+v", measured)
+	}
+
+	// An idle connection has no Herdr token watcher to close it. Removing the host's last phone must close
+	// this connection too, not just the authenticated /hc socket (TailPocket v0.3.0 left it open).
+	idle, err := sess.Dial(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer idle.Close()
 
 	// Revoke from another "process": the live socket closes with 4401, and
 	// serve takes the phone off Tailcat, so it can no longer reach serve.
@@ -262,6 +274,13 @@ func TestLiveTailcat(t *testing.T) {
 	// 4401 when the token check closes it first; the node restart that the
 	// Tailcat revoke causes may cut the connection before that frame arrives.
 	t.Logf("socket closed %v after revoke: status %d (%v)", time.Since(started).Round(time.Millisecond), websocket.CloseStatus(err), err)
+	idle.SetReadDeadline(time.Now().Add(5 * time.Second))
+	if _, err := idle.Read(make([]byte, 1)); err == nil {
+		t.Fatal("revoked phone's idle connection received data")
+	} else if e, ok := err.(interface{ Timeout() bool }); ok && e.Timeout() {
+		t.Fatal("revoked last phone's idle connection stayed open")
+	}
+	t.Logf("idle connection closed %v after last-phone revoke", time.Since(started).Round(time.Millisecond))
 	// /api/info needs no token, so it tells whether Tailcat still carries the
 	// phone to serve at all (it did before the revoke, above). The device list
 	// is the revoke: from here on, before serve takes the phone off Tailcat,

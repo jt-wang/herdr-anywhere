@@ -39,8 +39,12 @@ export async function pairWith(p: PairLink, device: string, fetcher: typeof fetc
 }
 
 /** TailPocket on the phone (src/tunnel.ts; a fake in tests). Failures carry TailPocket's code (its docs/BRIDGE.md). */
-/** How the tunnel reaches the computer now, as Tailcat measured it; `unknown` when it could not tell. */
-export type Route = { route: 'direct' } | { route: 'relay'; relay?: string } | { route: 'lan' } | { route: 'unknown' }
+/** TailPocket's measured path; v0.3.1 `kind` distinguishes DERP from a custom relay. Older hosts only report `route`.
+ *  `unknown` when it could not tell. Names stay open to future SDK values, which the UI must not guess at. */
+export type Route = {
+  route: string; relay?: string; kind?: string
+  derpRegion?: number; derpCode?: string; derpHost?: string; relayHost?: string
+}
 
 export type Tunnel = {
   /** Pairs with the computer that showed `invite` and keeps its link; resolves with the computer's answer. A computer
@@ -108,7 +112,7 @@ export type LinkerIO = {
 }
 
 /** `path` answers as TailPocket does (any route name); Linker.path keeps the ones it knows. */
-type Opened = { baseUrl: string; close: () => void; path?: () => Promise<{ route: string; relay?: string }> }
+type Opened = { baseUrl: string; close: () => void; path?: () => Promise<Route> }
 /** A tunnel being opened, and once open, the tunnel. */
 type Tunnelling = { opening: Promise<Opened>; open?: Opened }
 
@@ -239,6 +243,7 @@ export class Linker {
     const t = (this.tunnel ??= this.tunnelling(this.io.tunnel))
     try {
       const r = await (await t.opening).path?.()
+      if (r?.kind) return ['lan', 'direct', 'derp', 'relay'].includes(r.kind) ? r : { route: 'unknown' }
       if (r?.route === 'direct') return { route: 'direct' }
       if (r?.route === 'relay') return r.relay ? { route: 'relay', relay: r.relay } : { route: 'relay' }
       if (r?.route === 'lan') return { route: 'lan' }
@@ -326,13 +331,33 @@ const pictures = (x: unknown): ChatPicture[] => !Array.isArray(x) ? [] : x.flatM
     : typeof p?.id === 'string' ? [{ id: p.id, ...(typeof p.source === 'string' && p.source ? { source: p.source } : {}) }] : [])
 
 export function chatApi(linker: Linker, fetcher: typeof fetch = fetch): ChatApi {
-  const call = async (path: string) => {
-    const r = await diagnosticFetch(fetcher, `${await linker.baseUrl()}${path}`, { headers: { authorization: `Bearer ${linker.link.get()?.token ?? ''}` } })
-    return { r, body: (await r.json().catch(() => ({}))) as any }
+  let paired = linker.link.get()
+  let sequence = 0
+  // Only newest pages, in this process and pairing. Never persist a validator without its exact unmerged body.
+  const pages = new Map<string, { etag: string; body: ChatAnswer; sequence: number }>()
+  const call = async (path: string, etag?: string) => {
+    const r = await diagnosticFetch(fetcher, `${await linker.baseUrl()}${path}`, { cache: 'no-store',
+      headers: { authorization: `Bearer ${linker.link.get()?.token ?? ''}`, ...(etag ? { 'if-none-match': etag } : {}) } })
+    return { r, body: r.status === 304 ? undefined : (await r.json().catch(() => ({}))) as any }
   }
   return {
     async get(address, before) {
-      const { r, body } = await call(`/api/chat/${encodeURIComponent(address)}${before ? `?before=${encodeURIComponent(before)}` : ''}`)
+      const pair = linker.link.get(), n = ++sequence
+      if (pair !== paired) { pages.clear(); paired = pair }
+      const previous = before ? undefined : pages.get(address)
+      const { r, body } = await call(`/api/chat/${encodeURIComponent(address)}${before ? `?before=${encodeURIComponent(before)}` : ''}`, previous?.etag)
+      if (r.status === 304) {
+        if (!previous) throw new Error('chat-not-modified-without-cache')
+        return previous.body
+      }
+      if (!before && pair === linker.link.get() && n >= (pages.get(address)?.sequence ?? 0)) {
+        pages.delete(address)
+        const etag = r.headers?.get('etag')
+        if (r.ok && typeof body?.chat === 'boolean' && etag) {
+          pages.set(address, { etag, body, sequence: n })
+          while (pages.size > 12) pages.delete(pages.keys().next().value!)
+        }
+      }
       if (before && !r.ok) throw new Error(body?.error ?? 'history-unavailable')
       if (!r.ok || !body || typeof body.chat !== 'boolean') return { chat: false }
       if (Array.isArray(body.turns)) for (const turn of body.turns) if (turn?.images) turn.images = pictures(turn.images)
