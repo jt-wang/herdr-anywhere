@@ -137,7 +137,7 @@ while :; do case "$1" in
 --on|--timeout) shift 2 ;;
 *) break ;;
 esac; done
-HOME=` + remote + ` exec "$@"
+HOME='` + strings.ReplaceAll(remote, "'", `'\''`) + `' exec "$@"
 `
 	if err := os.WriteFile(p, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
@@ -149,7 +149,11 @@ func TestFileForAnotherMachineGoesThereInPieces(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("the other machine runs the sh script hc exec sends; this fake runs it here, and Windows has no sh")
 	}
-	remote := t.TempDir()
+	// A home with a space, as an account name or a drive can have: the script hc exec runs there must quote it.
+	remote := filepath.Join(t.TempDir(), "remote home")
+	if err := os.Mkdir(remote, 0o700); err != nil {
+		t.Fatal(err)
+	}
 	f, home, token := folderFixture(t)
 	f.s.cfg.HC = fakeExecHC(t, remote)
 	f.s.machineChunk = 7 // pieces hc takes: it refuses more than 8 MB piped in at once

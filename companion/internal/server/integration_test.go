@@ -48,7 +48,9 @@ func realHC(t *testing.T) string {
 	b := make([]byte, 4)
 	rand.Read(b)
 	session := "hmtest-" + hex.EncodeToString(b)
-	scratch := t.TempDir()
+	// The core's state and config under /tmp, in a folder with a space: on macOS herdr-core starts itself through
+	// launchd, which cannot use a folder on an external drive (a $TMPDIR there) and falls back only after 10 s.
+	scratch := filepath.Join(testfake.ShortDir(t, "hm"), "core home")
 	// The core's sockets must fit macOS's 103-byte limit; t.TempDir() paths
 	// are too long, so the runtime dir is a short one.
 	run := testfake.ShortDir(t, "hm")
