@@ -62,7 +62,7 @@ trap 'exit 130' INT; trap 'exit 143' TERM
 # Android 13 and later post nothing until this is allowed, and the app asks on its first connection.
 "$adb" shell pm grant "$id" android.permission.POST_NOTIFICATIONS >/dev/null 2>&1 || true
 
-[ "${HM_E2E_ROUTE:-direct}" = relay ] && export TS_DEBUG_ALWAYS_USE_DERP=1
+# For HM_E2E_ROUTE=relay, block non-DNS UDP on the host and device network before this suite.
 "$work/herdr-anywhere" serve --tailcat $(tailcat_no_lan "$work/herdr-anywhere") --listen "127.0.0.1:$port" --hc "$hc" --state "$state" > "$work/serve.log" 2>&1 &
 serve_pid=$!
 i=0
@@ -110,8 +110,8 @@ fi
 if lsof -nP -a -p "$serve_pid" -iTCP:"$port" -sTCP:ESTABLISHED >/dev/null 2>&1; then
   echo "FAIL: the app reached the companion on the loopback, not through Tailcat"; exit 1
 fi
-# What Settings says about this tunnel: its name, and the route it measures. HM_E2E_ROUTE=relay makes the companion
-# send only through the relay (TS_DEBUG_ALWAYS_USE_DERP), so the other answer is seen too.
+# What Settings says about this tunnel: its name, and the route it measures. HM_E2E_ROUTE=relay requires a real
+# non-DNS UDP block on both sides; the measured relay route below must confirm it took effect.
 route_word='Direct to your computer'; [ "${HM_E2E_ROUTE:-direct}" = relay ] && route_word='Through a relay'
 tap settings
 # The tunnel's rows are in the Computer section, below the others; how far down depends on what Settings shows above

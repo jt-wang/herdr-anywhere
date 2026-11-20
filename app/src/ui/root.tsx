@@ -12,7 +12,7 @@ import { HomeScreen } from './home.tsx'
 import { ProgressData, ProgressHome, TaskScreen } from './progress.tsx'
 import { xtermTheme } from './terminal-page.ts'
 import { SpaceScreen } from './space.tsx'
-import { SettingsScreen } from './settings.tsx'
+import { DiagnosticsScreen, SettingsScreen } from './settings.tsx'
 import { PairScreen } from './pair.tsx'
 import { NewSheet, RenameSheet, type NewTarget, type RenameTarget } from './sheets.tsx'
 import { PeekSheet } from './peek.tsx'
@@ -25,7 +25,7 @@ import { APP_VERSION, installProblem, Updates } from '../updates.ts'
 import { CHANNEL } from '../channel.ts'
 import { t } from '../strings/index.ts'
 import { restartFor } from '../restart.ts'
-import { diag } from '../diag.ts'
+import { diag, diagnostics } from '../diag.ts'
 
 export type RootDeps = {
   linker: Linker
@@ -47,7 +47,7 @@ export type RootDeps = {
   updateEveryMs?: number
 }
 
-type Route = { name: 'home' } | { name: 'space'; id: string } | { name: 'settings' } | { name: 'progress' } | { name: 'task'; id: string }
+type Route = { name: 'home' } | { name: 'space'; id: string } | { name: 'settings' } | { name: 'diagnostics' } | { name: 'progress' } | { name: 'task'; id: string }
 
 /** Points up, or points a second up at the release, past which a pull on a toast takes it away. 24, as on an iPhone
  *  SE the toast sits 8 pt from the top and a finger has about 35 pt above the card's middle. */
@@ -104,6 +104,7 @@ function Connected(props: { deps: RootDeps; store: Store; link: Link; unpaired: 
   const startOn = props.deps.prefs.prefs.get()
   const first: Route = startOn.progressFirst && startOn.homeView !== 'agents' ? { name: 'progress' } : { name: 'home' }
   const nav = createNavStack<Route>(props.deps.opensSettings ? [first, { name: 'settings' }] : [first])
+  const diagnosticStatus = signal(diagnostics.status)
   const progress = new ProgressData(store, 30_000, { load: () => Storage.getItem('progress-alerts'), save: (v) => void Storage.setItem('progress-alerts', v).catch(() => {}) })
   progress.told = { get: () => deps.prefs.prefs.get().progressLang, set: (l) => deps.prefs.set({ progressLang: l }) }
   const newTarget = signal<NewTarget | null>(null)
@@ -230,7 +231,12 @@ function Connected(props: { deps: RootDeps; store: Store; link: Link; unpaired: 
         </NavPage>
       : r.name === 'settings'
       ? <NavPage headerVisible={false} class="bg-sidebar">
-          <SettingsScreen updates={updates} store={store} prefs={deps.prefs} link={props.link} linker={deps.linker} fetcher={deps.fetcher} back={() => nav.pop()} forget={() => { if (props.leaveDemo) props.leaveDemo(); else deps.linker.forget() }} />
+          <SettingsScreen updates={updates} store={store} prefs={deps.prefs} link={props.link} linker={deps.linker} fetcher={deps.fetcher} back={() => nav.pop()} forget={() => { if (props.leaveDemo) props.leaveDemo(); else deps.linker.forget() }}
+            openDiagnostics={() => nav.push({ name: 'diagnostics' })} diagnosticStatus={diagnosticStatus()} diagnosticChanged={(s) => diagnosticStatus.set(s)} />
+        </NavPage>
+      : r.name === 'diagnostics'
+      ? <NavPage headerVisible={false} class="bg-sidebar">
+          <DiagnosticsScreen back={() => nav.pop()} changed={(s) => diagnosticStatus.set(s)} />
         </NavPage>
       : <NavPage headerVisible={false} class="bg-sidebar">
           <HomeScreen updates={updates} prefs={deps.prefs} store={store} plain={!!deps.tunnel && plainLink(props.link)} actions={{

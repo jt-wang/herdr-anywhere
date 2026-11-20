@@ -56,7 +56,7 @@ trap 'exit 130' INT; trap 'exit 143' TERM
 # Android 13 and later post nothing until this is allowed, and the app asks on its first connection.
 "$adb" shell pm grant "$id" android.permission.POST_NOTIFICATIONS >/dev/null 2>&1 || true
 
-[ "${HM_E2E_ROUTE:-direct}" = relay ] && export TS_DEBUG_ALWAYS_USE_DERP=1
+# Relay-only runs require a real non-DNS UDP block on the host and device network, not a Tailcat debug switch.
 if [ "${HM_QUIET_ROUTE:-tailpocket}" = direct ]; then
   "$work/herdr-anywhere" serve --listen "127.0.0.1:$port" --hc "$hc" --state "$state" > "$work/serve.log" 2>&1 &
   serve_pid=$!

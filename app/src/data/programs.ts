@@ -72,6 +72,20 @@ export const PROGRAMS: { shells: string[]; interpreters: string[]; programs: Rec
    "tile": "#1c1d21",
    "color": "#ffffff"
   },
+  "omp": {
+   "name": "Oh My Pi",
+   "icon": "icons/omp.svg",
+   "run": [
+    "omp"
+   ],
+   "match": [
+    "oh-my-pi",
+    "oh-my-pi-pi-coding-agent"
+   ],
+   "tint": true,
+   "tile": "#1c1d21",
+   "color": "#ffffff"
+  },
   "opencode": {
    "name": "OpenCode",
    "icon": "icons/opencode.svg",

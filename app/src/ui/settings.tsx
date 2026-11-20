@@ -11,7 +11,7 @@ import { FONT_MAX, FONT_MIN, type Appearance, type PrefStore } from '../prefs.ts
 import { allowNotifications, notifications, notifyChannels, onFront, openChannel, type ChannelKind, type Channels, type ChannelState, type Permission } from '../page.ts'
 import { Glyph, IconButton, openPrivacy, SectionLabel, useRev, useSignal } from './kit.tsx'
 import { lang, t, type Key } from '../strings/index.ts'
-import { diagnostics, type DiagnosticCategory, type NativeDiagnostics } from '../diag.ts'
+import { diagnostics, type DiagnosticCategory, type DiagnosticStatus, type NativeDiagnostics } from '../diag.ts'
 
 function Row(props: { label: string; detail?: string; children?: any; testID?: string; onPress?: () => void }) {
   return (
@@ -163,30 +163,32 @@ function ChannelLine(props: { kind: ChannelKind; label: string; state: ChannelSt
   )
 }
 
-function Toggle(props: { on: boolean; label: string; testID: string; onChange: (on: boolean) => void }) {
+function Toggle(props: { on: boolean; disabled?: boolean; label: string; testID: string; onChange: (on: boolean) => void }) {
   return (
-    <View role="switch" accessibilityLabel={props.label} accessibilityState={{ checked: props.on }} testID={props.testID} onPress={() => props.onChange(!props.on)}
-      class={`w-11 h-[26px] rounded-full p-[3px] ${props.on ? 'bg-chart-3 items-end' : 'bg-input items-start'}`}>
+    <View role="switch" accessibilityLabel={props.label} accessibilityState={{ checked: props.on, disabled: props.disabled }} disabled={props.disabled} testID={props.testID} onPress={() => { if (!props.disabled) props.onChange(!props.on) }}
+      class={`w-11 h-[26px] rounded-full p-[3px] ${props.on ? 'bg-chart-3 items-end' : 'bg-input items-start'} ${props.disabled ? 'opacity-40' : ''}`}>
       <View class="w-5 h-5 rounded-full bg-white" />
     </View>
   )
 }
 
 /** Native owns consent, bounded retention and sharing; unsupported hosts never show a usable switch. */
-export function DiagnosticRows(props: { controller?: NativeDiagnostics }) {
+export function DiagnosticsScreen(props: { back: () => void; controller?: NativeDiagnostics; changed?: (s: DiagnosticStatus) => void }) {
   const controller = props.controller ?? diagnostics
   const state = signal(controller.status)
   const busy = signal(false)
   const note = signal('')
-  void controller.refresh().then((s) => state.set(s))
+  const update = (s: DiagnosticStatus) => { state.set(s); props.changed?.(s) }
+  void controller.refresh().then(update)
   const run = async (action: 'toggle' | 'export' | 'clear' | DiagnosticCategory) => {
-    if (busy()) return
+    if (busy() || !state().supported) return
+    if (action !== 'toggle' && action !== 'export' && action !== 'clear' && !state().enabled) return
     busy.set(true); note.set('')
     try {
       if (action === 'toggle') {
         const wanted = !state().enabled
         const next = await controller.set(wanted)
-        state.set(next)
+        update(next)
         if (!next.supported || next.enabled !== wanted) note.set(t('diagnosticFailed'))
       } else if (action === 'clear') {
         note.set(t(await controller.clear() ? 'diagnosticCleared' : 'diagnosticFailed'))
@@ -195,7 +197,7 @@ export function DiagnosticRows(props: { controller?: NativeDiagnostics }) {
       } else {
         const wanted = !state().categories[action]
         const next = await controller.setCategories({ [action]: wanted })
-        state.set(next)
+        update(next)
         if (!next.supported || next.categories[action] !== wanted) note.set(t('diagnosticFailed'))
       }
     } catch { note.set(t('diagnosticFailed')) }
@@ -209,42 +211,45 @@ export function DiagnosticRows(props: { controller?: NativeDiagnostics }) {
     { id: 'network', label: 'diagnosticNetwork' }, { id: 'resources', label: 'diagnosticResources' },
   ]
   return (
-    <View>
-      <SectionLabel label={t('diagnosticTitle')} />
-      <If when={state().supported} else={<Row label={t('diagnosticTitle')} detail={t('diagnosticUnsupported')} testID="diagnostic-unsupported" />}>
-        <Row label={t('diagnosticRecord')} detail={t('diagnosticInstructions')}>
-          <View pointerEvents={busy() ? 'none' : 'auto'}>
-            <Toggle label={t('diagnosticRecord')} testID="diagnostic-toggle" on={state().enabled} onChange={() => void run('toggle')} />
-          </View>
-        </Row>
-        <Text testID="diagnostic-recording" class={`px-4 py-2 text-[12px] ${state().enabled ? 'text-destructive' : 'text-sidebar-foreground'}`}>
-          {t(!state().enabled ? 'diagnosticOff' : Object.values(state().categories).some(Boolean) ? 'diagnosticRecording' : 'diagnosticNoCategories')}
-        </Text>
-        <Each of={categories} key={(c) => c.id}>{(c) => (
-          <Row label={t(c().label)}>
-            <View pointerEvents={busy() ? 'none' : 'auto'}>
-              <Toggle label={t(c().label)} testID={`diagnostic-${c().id}`} on={state().categories[c().id]} onChange={() => void run(c().id)} />
-            </View>
+    <View class="flex-1 bg-sidebar pt-[env(safe-area-inset-top)]">
+      <View class="flex-row items-center h-12 pl-1 pr-3">
+        <IconButton name="chevron-left" label={t('back')} testID="diagnostic-back" onPress={props.back} />
+        <Text class="text-[16px] font-semibold text-foreground ml-1">{t('diagnosticTitle')}</Text>
+      </View>
+      <Scroll class="flex-1" contentClass="pb-10">
+        <If when={state().supported} else={<Row label={t('diagnosticTitle')} detail={t('diagnosticUnsupported')} testID="diagnostic-unsupported" />}>
+          <Row label={t('diagnosticRecord')} detail={t('diagnosticInstructions')}>
+            <Toggle label={t('diagnosticRecord')} testID="diagnostic-toggle" on={state().enabled} disabled={busy()} onChange={() => void run('toggle')} />
           </Row>
-        )}</Each>
-        <View class="px-4 py-2"><Text class="text-[12px] leading-[17px] text-sidebar-foreground">{t('diagnosticContent')}</Text></View>
-        <View class="px-4 py-2"><Text class="text-[12px] leading-[17px] text-sidebar-foreground">{t('diagnosticPrivacy')}</Text></View>
-        <Each of={actions} key={(a) => a.id}>{(a) => (
-          <Row label={t(a().label)}>
-            <View role="button" testID={`diagnostic-${a().id}`} disabled={busy()} onPress={() => void run(a().id)} class="px-2.5 py-1 rounded-[6px] bg-muted active:bg-accent">
-              <Text class="text-[12px] text-foreground">{t(a().label)}</Text>
-            </View>
-          </Row>
-        )}</Each>
-        <If when={note()}><Text testID="diagnostic-note" class="px-4 py-2 text-[12px] text-sidebar-foreground">{note()}</Text></If>
-      </If>
+          <Text testID="diagnostic-recording" class={`px-4 py-2 text-[12px] ${state().enabled ? 'text-destructive' : 'text-sidebar-foreground'}`}>
+            {t(!state().enabled ? 'diagnosticOff' : Object.values(state().categories).some(Boolean) ? 'diagnosticRecording' : 'diagnosticNoCategories')}
+          </Text>
+          <Each of={categories} key={(c) => c.id}>{(c) => (
+            <Row label={t(c().label)}>
+              <Text class={`text-[13px] text-sidebar-foreground ${!state().enabled ? 'opacity-40' : ''}`}>{t(state().enabled && state().categories[c().id] ? 'diagnosticOnState' : 'diagnosticOffState')}</Text>
+              <Toggle label={t(c().label)} testID={`diagnostic-${c().id}`} on={state().enabled && state().categories[c().id]} disabled={busy() || !state().enabled} onChange={() => void run(c().id)} />
+            </Row>
+          )}</Each>
+          <View class="px-4 py-2"><Text class="text-[12px] leading-[17px] text-sidebar-foreground">{t('diagnosticContent')}</Text></View>
+          <View class="px-4 py-2"><Text class="text-[12px] leading-[17px] text-sidebar-foreground">{t('diagnosticPrivacy')}</Text></View>
+          <Each of={actions} key={(a) => a.id}>{(a) => (
+            <Row label={t(a().label)}>
+              <View role="button" testID={`diagnostic-${a().id}`} disabled={busy()} onPress={() => void run(a().id)} class="px-2.5 py-1 rounded-[6px] bg-muted active:bg-accent">
+                <Text class="text-[12px] text-foreground">{t(a().label)}</Text>
+              </View>
+            </Row>
+          )}</Each>
+          <If when={note()}><Text testID="diagnostic-note" class="px-4 py-2 text-[12px] text-sidebar-foreground">{note()}</Text></If>
+        </If>
+      </Scroll>
     </View>
   )
 }
 
-export function SettingsScreen(props: { updates?: Updates; store: Store; prefs: PrefStore; link: Link; linker: Linker; fetcher?: typeof fetch; back: () => void; forget: () => void }) {
+export function SettingsScreen(props: { updates?: Updates; store: Store; prefs: PrefStore; link: Link; linker: Linker; fetcher?: typeof fetch; back: () => void; forget: () => void; openDiagnostics: () => void; diagnosticStatus: DiagnosticStatus; diagnosticChanged: (s: DiagnosticStatus) => void }) {
   const rev = useRev(props.store)
   const p = useSignal(props.prefs.prefs)
+  void diagnostics.refresh().then(props.diagnosticChanged)
   // Turning the progress page on: the user picks which agent on the computer sorts what they say (the one choice in
   // version one); the page turns on once the computer has it.
   const picking = signal<AgentChoice[] | null>(null)
@@ -434,7 +439,10 @@ export function SettingsScreen(props: { updates?: Updates; store: Store; prefs: 
         }>
           <Row label={t('demoLeaveFull')} testID="settings-demo-leave" onPress={props.forget} />
         </If>
-        <DiagnosticRows />
+        <Row label={t('diagnosticTitle')} testID="settings-diagnostics" onPress={props.openDiagnostics}>
+          <Text testID="settings-diagnostics-state" class="text-[13px] text-sidebar-foreground">{t(!props.diagnosticStatus.supported ? 'diagnosticUnsupportedState' : props.diagnosticStatus.enabled ? 'diagnosticOnState' : 'diagnosticOffState')}</Text>
+          <Glyph name="chevron-right" size={16} />
+        </Row>
         <View class="mt-5 border-t border-border">
           <Row label={t('privacy')} testID="settings-privacy" onPress={openPrivacy} />
         </View>

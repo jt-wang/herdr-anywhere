@@ -59,7 +59,7 @@ store="$(xcrun simctl get_app_container "$SIM_UDID" "$id" data)/Library/Applicat
   export XDG_STATE_HOME="$work/state" XDG_CONFIG_HOME="$work/config" XDG_DATA_HOME="$work/data" XDG_RUNTIME_DIR="$run"
   export GIT_CONFIG_GLOBAL="$work/home/.gitconfig"
   "$hc" run --bg --keep --cwd "$work/home/src/acme-api" --label herdr.space=sptc --label herdr.tab=tbtc >/dev/null
-  [ "${HM_E2E_ROUTE:-direct}" = relay ] && export TS_DEBUG_ALWAYS_USE_DERP=1
+  # HM_E2E_ROUTE=relay requires a real non-DNS UDP block on the Mac; its simulator shares that network.
   exec "$work/herdr-anywhere" serve --tailcat $(tailcat_no_lan "$work/herdr-anywhere") --listen "127.0.0.1:$port" --hc "$hc" --state "$state" > "$work/serve.log" 2>&1
 ) &
 serve_pid=$!
@@ -106,8 +106,7 @@ for _ in $(seq 1 60); do
 done
 [ -n "$again" ] || { echo "FAIL: opened again, the app did not connect within 60 s"; exit 1; }
 # What Settings says about this tunnel: its name, and the route it measures. This third launch opens there
-# (ios-e2e.tsx). HM_E2E_ROUTE=relay makes the companion send only through the relay (TS_DEBUG_ALWAYS_USE_DERP), so the
-# other answer is seen too.
+# (ios-e2e.tsx). HM_E2E_ROUTE=relay requires a real non-DNS UDP block; the measured route must confirm relay use.
 route_word='Direct to your computer'; [ "${HM_E2E_ROUTE:-direct}" = relay ] && route_word='Through a relay'
 xcrun simctl terminate "$SIM_UDID" "$id" 2>/dev/null || true
 xcrun simctl launch "$SIM_UDID" "$id" >/dev/null

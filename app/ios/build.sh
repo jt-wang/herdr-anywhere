@@ -19,7 +19,7 @@ want=$("$ios/nsh-patches/key.sh")
   echo "ios/build.sh: no NativeShell built as '$want' in $embed; run app/ios/nsh-patches/build-nsh-ios.sh <nsh source> $embed" >&2; exit 1; }
 "$root/scripts/tailpocket.sh" apple >/dev/null
 # TailPocket's NSH package takes NativeShell from beside its Package.swift (left out of the repository).
-nshpkg="$root/../third_party/tailpocket-342ebe5/sdk/apple/NSH"
+nshpkg="$root/../third_party/tailpocket-e1aea0f/sdk/apple/NSH"
 rm -rf "$nshpkg/NativeShell.xcframework"
 cp -R "$embed/NativeShell.xcframework" "$nshpkg/"
 rm -rf "$ios/nsh"

@@ -1,7 +1,7 @@
 // TailPocket on a phone: the native bridge the app's host project attaches (ios/Sources/App.swift, android
-// MainActivity), through TailPocket's NSH client (third_party/tailpocket-342ebe5/sdk/js). It keeps the computer's
+// MainActivity), through TailPocket's NSH client (third_party/tailpocket-e1aea0f/sdk/js). It keeps the computer's
 // link, which holds the phone's private key, in the Keychain / Android Keystore under one slot.
-import { tailPocket } from '../../third_party/tailpocket-342ebe5/sdk/js/nsh.ts'
+import { tailPocket } from '../../third_party/tailpocket-e1aea0f/sdk/js/nsh.ts'
 import type { Tunnel } from './link.ts'
 
 /** What `herdr-anywhere pair` starts its invites with (companion/internal/tailcat Prefix); TailPocket's own differs. */

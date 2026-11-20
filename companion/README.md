@@ -95,5 +95,5 @@ own scratch session (`HC_SESSION=hmtest-<random>`, scratch XDG dirs, stopped wit
 Tailcat's real relays and opens `/hc` through its forwarder; it needs the internet and `hc`.
 
 Dependencies: `github.com/coder/websocket` (ISC), `github.com/mdp/qrterminal/v3` (MIT) and its `rsc.io/qr` (BSD-3-Clause),
-TailPocket (`github.com/jt-wang/tailpocket` v0.3.0-pre.6, MIT; its SDKs for the phone apps are copied into
-the repository's `third_party/tailpocket-342ebe5`; it brings in `tailscale.com` and `github.com/tailscale/tailcat`).
+TailPocket (`github.com/jt-wang/tailpocket` v0.3.0, MIT; its SDKs for the phone apps are copied into
+the repository's `third_party/tailpocket-e1aea0f`; it brings in `tailscale.com` and `github.com/tailscale/tailcat`).

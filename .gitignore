@@ -12,7 +12,7 @@ companion/herdr-anywhere-macos-*
 app/e2e/shots/
 .claude/
 # Built by app/scripts/tailpocket.sh and app/ios/build.sh
-third_party/tailpocket-342ebe5/sdk/apple/NSH/NativeShell.xcframework
+third_party/tailpocket-e1aea0f/sdk/apple/NSH/NativeShell.xcframework
 .dev/
 
 __pycache__/

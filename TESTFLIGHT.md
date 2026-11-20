@@ -2,6 +2,51 @@
 
 A cloud coding agent can request an iOS build through GitHub Actions. Apple signing credentials stay in the repository's `testflight` environment; the agent needs a GitHub token with **Actions: write** and **Contents: read**.
 
+## 0.3.2 (37) release candidate
+
+Currently built on TailPocket v0.3.0 (jt-wang/tailpocket@e1aea0fafe2341985b8a5cbd98f39d9949b0e544). Formal release waits for TailPocket v0.3.1 and real blocked-UDP acceptance. This candidate also preserves chat reading positions, revalidates unchanged chat with ETags, retries recoverable terminal attachments in place, and moves opt-in diagnostics into Settings › On-device diagnostics. Use the phone and Companion from the same release; check `herdr-anywhere --version` says `0.3.2`. Build 37 is reserved in source, not an upload receipt.
+
+**Update the phone and the computer together.** A phone on 0.3.0 (35) or older cannot pair with a 0.3.1 or 0.3.2 Companion: `pair` shows only `herdr2:` invites, which need the emoji check. Phones already paired keep connecting. A 0.3.1 (36) phone pairs with a 0.3.2 Companion, and a 0.3.2 phone with a 0.3.1 Companion. Only a 0.3.2 Companion sends a refusal at once, so report the timing in step 2 only with 0.3.2 on both sides. Mixed TailPocket test builds (pre.1–pre.5) are not supported.
+
+On device:
+
+1. **Upgrade without a new QR code.** Pair a phone on 0.2.1 (App Store), 0.3.0 (35) or 0.3.1 (36) with that version's Companion. Update the Companion to 0.3.2 and the phone to 0.3.2 (37), and open the app: it connects without scanning again. A phone paired before 0.3 registers its end-to-end key on that first connect: in the Companion's `tailcat.json` its key gets a `keys` entry, and the serve log no longer counts it among phones "paired before 0.3". Settings then shows lan or relay when those are on. Revoke it afterwards, so later steps start clean.
+2. **Emoji pairing.** Run `herdr-anywhere pair` and scan its QR code. The phone shows four emoji with "Check that your computer shows these same four emoji, then confirm there". `pair` shows the phone's name and four emoji and asks `[y/N]`; they must be the same four. `y` pairs. Then test each way of not pairing, with a new `pair` each time:
+   - **Answer no on the computer** (Enter at `[y/N]`, or Don't pair in the dialog): the phone says at once, within a second or two, that the computer did not confirm.
+   - **Close the app on the phone** while `pair` asks.
+   - **Wait over 55 s** without answering.
+
+   Each time, `pair` says the code no longer works, scanning that code again fails, and a new `pair` works. Also try the Herdr desktop Add phone dialog (cmd-shift-m): it shows the emoji with Pair and Don't pair, and Enter does not answer.
+3. **Local network only.** Run `herdr-anywhere start` (the local network is on by default). Put the phone on the same Wi-Fi with cellular off: Settings shows "Over your local network, end-to-end encrypted". Switch Wi-Fi off: it moves to Tailcat (direct or relay) without pairing again.
+4. **Relay only.** Test the two relay types separately. For a configured tailpocket-relay, use `herdr-anywhere serve --tailcat --no-lan --relay wss://… --relay-token-file FILE` (`start` has no relay option), with the phone on cellular, and confirm Settings measures relay. For Tailcat's DERP-only path, use `herdr-anywhere start --tailcat-only` with no configured relay and enable Tailcat only on the phone. Apply a real IPv4 and IPv6 firewall block of all non-DNS UDP on both sides (the iOS simulator shares its Mac's network; a real phone needs a router/network block). Verify a STUN query times out while HTTPS still works, then confirm Settings measures relay. Exercise refused pairing, revoke, reconnect, large uploads (messages are at most 64 KiB each), and prompt SIGTERM exit; always remove only the test firewall rules with a cleanup trap. Do not use Tailcat's force-DERP debug switch: it exercises an upstream shutdown bug rather than a real blocked-UDP network.
+5. **Tailcat only, on the computer.** Run `herdr-anywhere stop`, then `herdr-anywhere start --tailcat-only`.
+   - The serve log says "Tailcat only".
+   - Nothing listens on the local network: `lsof -iTCP -sTCP:LISTEN -P | grep herdr` shows no private address.
+   - A new `pair` QR code carries only Tailcat.
+   - Phones still connect, also after a restart (the login entry keeps the flag).
+   - `start --tailcat-only --lan` is refused.
+6. **Tailcat only, on the phone.** Keep the computer on the default `start` and turn on Settings › Computer › Tailcat only.
+   - The connection drops once and comes back.
+   - Settings shows Direct to your computer or Through a relay (Tailcat's), never the local network, also on the same Wi-Fi.
+   - The setting stays on after the app restarts.
+   - Pair a new phone with it on: it pairs over Tailcat.
+7. **Revoke.** Run `herdr-anywhere devices`, then `herdr-anywhere revoke <id>`, or use Remove in the Add phone dialog.
+   - That phone's connections close within a second on every route, and the app asks to pair again.
+   - Other phones keep working; their Tailcat connections may drop and reconnect once.
+8. **Same-Wi-Fi 6-digit pairing** (TailPocket's ServeLocal, where a window ends with "too many attempts, start again" after 3 abandoned or refused attempts): Herdr Anywhere does not offer this pairing yet, so there is nothing to test in this build.
+
+The plain LAN port of 0.2 still behaves as in 0.3.0:
+- it opens only with `--lan`;
+- it stays open only while a phone paired by a `#pair=` link is left, and for at most 3 days after the first 0.3 serve;
+- it never serves a phone that has an end-to-end key.
+
+Two availability checks, as for 0.3.0:
+
+- **Slow uplink over relay.** On a cellular network with a limited uplink, upload several tens of MB in a row through the relay. The session must not be declared silent and dropped after about 5 seconds (the phone's stall check, 2 × 3 s) while the upload still moves.
+- **Many streams, slow reader.** Open 4 or more terminals with the computer printing a lot in each (`yes`, a long build log) while the app reads slowly (background it briefly, scroll a busy pane). The 16 MiB unread limit must not close the session; hidden terminals pause instead.
+
+Report failures with the diagnostics export (Settings), the Companion's `serve.log`, and the route Settings showed.
+
 ## 0.3.1 (36) test candidate
 
 Stage-3 device build on the public TailPocket v0.3.0-pre.6 (jt-wang/tailpocket@342ebe543f77322036f15aa93132e02078e9e478): end-to-end encrypted routes over Tailcat, the local network and a tailpocket-relay, now with the emoji check on pairing and a Tailcat-only mode on both sides. Internal TestFlight, Android test APK and the test Companion pre-release `testflight-0.3.1-36` only: not a public Release, Latest update or website change.
@@ -13,7 +58,7 @@ Install the test Companion from the pre-release (its notes have the commands), c
 1. **Upgrade without a new QR code.** Pair a phone on 0.2.1 (App Store) or 0.3.0 (35) with the computer's old Companion. Update the Companion to 0.3.1 and the phone to 0.3.1 (36), and open the app: it connects without scanning again. A phone paired before 0.3 registers its end-to-end key on that first connect (in the Companion's `tailcat.json` its key gets a `keys` entry; the serve log no longer counts it among phones "paired before 0.3"), and Settings then shows lan or relay when those are on. Revoke it afterwards, so later steps start clean.
 2. **Emoji pairing.** `herdr-anywhere pair`, scan its QR code: the phone shows four emoji with "Check that your computer shows these same four emoji, then confirm there", and `pair` shows the phone's name and four emoji and asks `[y/N]`. They must be the same four. `y` pairs. Again with Enter (no), and again closing the app on the phone while `pair` asks, and again waiting over 55 s: each time the phone says the computer did not confirm, `pair` says the code no longer works, and scanning that code again fails; a new `pair` works. Also from the Herdr desktop Add phone dialog (cmd-shift-m): it shows the emoji with Pair and Don't pair; Enter does not answer.
 3. **Local network only.** `herdr-anywhere start` (the local network is on by default), phone on the same Wi-Fi with cellular off: Settings shows "Over your local network, end-to-end encrypted". Switch Wi-Fi off: it moves to Tailcat (direct or relay) without pairing again.
-4. **Relay only.** `herdr-anywhere serve --tailcat --no-lan --relay wss://… --relay-token-file FILE` (`start` has no relay option); phone on cellular. Settings shows relay until Tailcat finds a direct path; with `TS_DEBUG_ALWAYS_USE_DERP=1` on serve, Tailcat's own path is forced through its relays too. Large uploads (messages are at most 64 KiB each) must complete.
+4. **Relay only.** Test the two relay types separately. For a configured tailpocket-relay, use `herdr-anywhere serve --tailcat --no-lan --relay wss://… --relay-token-file FILE` (`start` has no relay option), with the phone on cellular, and confirm Settings measures relay. For Tailcat's DERP-only path, use `herdr-anywhere start --tailcat-only` with no configured relay and enable Tailcat only on the phone. Apply a real IPv4 and IPv6 firewall block of all non-DNS UDP on both sides (the iOS simulator shares its Mac's network; a real phone needs a router/network block). Verify a STUN query times out while HTTPS still works, then confirm Settings measures relay. Exercise refused pairing, revoke, reconnect, large uploads (messages are at most 64 KiB each), and prompt SIGTERM exit; always remove only the test firewall rules with a cleanup trap. Do not use Tailcat's force-DERP debug switch: it exercises an upstream shutdown bug rather than a real blocked-UDP network.
 5. **Tailcat only, on the computer.** `herdr-anywhere stop`, then `herdr-anywhere start --tailcat-only`: the serve log says "Tailcat only", nothing listens on the local network (`lsof -iTCP -sTCP:LISTEN -P | grep herdr` shows no private address), a new `pair` QR code carries only Tailcat, and phones still connect, also after a restart (the login entry keeps the flag). `start --tailcat-only --lan` is refused.
 6. **Tailcat only, on the phone.** With the computer on the default `start`, turn on Settings › Computer › Tailcat only: the connection drops once and comes back, Settings shows Direct to your computer or Through a relay (Tailcat's), never the local network, also on the same Wi-Fi; it stays on after the app restarts. Pair a new phone with it on: it pairs over Tailcat.
 7. **Revoke.** `herdr-anywhere devices`, then `herdr-anywhere revoke <id>`, or Remove in the Add phone dialog: that phone's connections close within a second on every route, the app asks to pair again, and other phones keep working (their Tailcat connections may drop and reconnect once).

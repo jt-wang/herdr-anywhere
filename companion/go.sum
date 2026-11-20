@@ -125,8 +125,8 @@ github.com/jmespath/go-jmespath v0.4.0 h1:BEgLn5cpjn8UN1mAw4NjwDrS35OdebyEtFe+9Y
 github.com/jmespath/go-jmespath v0.4.0/go.mod h1:T8mJZnbsbmF+m6zOOFylbeCJqk5+pHWvzYPziyZiYoo=
 github.com/jsimonetti/rtnetlink v1.4.1 h1:JfD4jthWBqZMEffc5RjgmlzpYttAVw1sdnmiNaPO3hE=
 github.com/jsimonetti/rtnetlink v1.4.1/go.mod h1:xJjT7t59UIZ62GLZbv6PLLo8VFrostJMPBAheR6OM8w=
-github.com/jt-wang/tailpocket v0.3.0-pre.6 h1:D4UwpA9Fon9XZW+rB3ICjEpI+dvHhvPN2PzW1/8H/1k=
-github.com/jt-wang/tailpocket v0.3.0-pre.6/go.mod h1:4gnfEuDLWIeDvymw6H62JjVd7hByySbn3WRKMjdxkpU=
+github.com/jt-wang/tailpocket v0.3.0 h1:hs8pxMVQbsm4IFxs+2A6qk588NVwIvp0BWs3SHofrpI=
+github.com/jt-wang/tailpocket v0.3.0/go.mod h1:4dszBmbpFUGu1IQwhuALbviFCsMwpZCoBYvOBLo0bY0=
 github.com/klauspost/compress v1.20.2 h1:v5tiZvm1KGLyg5d5oXdXe3lsSPrbEUiKoXGia//I7Qo=
 github.com/klauspost/compress v1.20.2/go.mod h1:LUdAzn7YLVvxLpc7y3V1m40wESHTgc1422pwwBSKYuI=
 github.com/kortschak/wol v0.0.0-20200729010619-da482cc4850a h1:+RR6SqnTkDLWyICxS1xpjCi/3dhyV+TgZwA6Ww3KncQ=

@@ -2,6 +2,7 @@
 // Herdr desktop has no translations, so its English words (Needs you, Working, space, tab, pane) are what these say.
 export const en = {
   diagnosticTitle: 'On-device diagnostics', diagnosticRecord: 'Record diagnostics',
+  diagnosticOnState: 'On', diagnosticOffState: 'Off', diagnosticUnsupportedState: 'Not supported',
   diagnosticInteraction: 'Interaction / lifecycle', diagnosticPerformance: 'Performance', diagnosticNetwork: 'Network', diagnosticResources: 'Resources / battery',
   diagnosticOff: 'Recording off — no diagnostic collection. Off by default.', diagnosticRecording: '● Recording selected categories', diagnosticNoCategories: 'No categories selected — not collecting.',
   diagnosticContent: 'No tracking or analytics. Reports exclude session content: messages, terminal output, titles, names, paths, addresses and credentials. Before sharing, confirm the selected categories and time range.',

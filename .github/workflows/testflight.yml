@@ -94,9 +94,9 @@ jobs:
           args=()
           if [ "$TF_UPLOAD" = true ]; then args+=(--upload); fi
           python3 app/scripts/testflight.py --version "$TF_VERSION" --build "$TF_BUILD" --expected-sha "$TF_EXPECTED_SHA" --config-only "${args[@]}"
-      # TailPocket is v0.3.0-pre.6, public jt-wang/tailpocket@342ebe543f77322036f15aa93132e02078e9e478: its Go module from the Go
+      # TailPocket is v0.3.0, public jt-wang/tailpocket@e1aea0fafe2341985b8a5cbd98f39d9949b0e544: its Go module from the Go
       # proxy (companion/go.mod), its phone library from that release (app/scripts/tailpocket.sh checks its SHA-256),
-      # its SDKs copied into third_party/tailpocket-342ebe5.
+      # its SDKs copied into third_party/tailpocket-e1aea0f.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: companion/go.mod
