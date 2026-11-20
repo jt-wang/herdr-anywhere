@@ -101,21 +101,20 @@ export function ChatView(props: { store: Store; address: string; status: () => s
   const rows = new Map<string, { y: number; height: number }>()
   let layoutTimer: ReturnType<typeof setTimeout> | undefined
   let saveTimer: ReturnType<typeof setTimeout> | undefined
-  let placing = true
-  let target = -1
+  let scrolling = false
   // Restore a turn and its viewport offset, not an absolute scrollTop. Heights above it can change after a poll,
   // image load, fold or prepend. Batch the layout callbacks so all row coordinates belong to the same layout.
   const place = () => {
+    scrolling = false
     clearTimeout(layoutTimer)
     layoutTimer = setTimeout(() => {
       if (!viewport() || !content) return
       const row = reading && rows.get(reading.turn)
       const y = pinned ? content + contentTop * 2 - viewport()
         : row ? contentTop + row.y + Math.min(reading!.offset, row.height - 1) : offset
-      target = Math.max(0, Math.min(y, Math.max(0, content + contentTop * 2 - viewport())))
+      const target = Math.max(0, Math.min(y, Math.max(0, content + contentTop * 2 - viewport())))
       scroller?.scrollTo({ y: target, animated: false })
       offset = target
-      placing = false
     }, 0)
   }
   const saveReading = () => {
@@ -209,12 +208,12 @@ export function ChatView(props: { store: Store; address: string; status: () => s
              out 49 points taller first, and the scroll to the end made then left it 49 short of the end onScroll counts,
              past its 40: no new turn was followed (measured on CI's emulator, Codex's pane). */
           keyboardShouldPersistTaps="handled" onLayout={(b) => { viewport.set(b.size.height); place() }}
+          /* Native layout and scrollTo can report intermediate/clamped offsets before the final layout lands.
+             Only a user's drag (including its momentum) changes the reading intent, not those callbacks. */
+          onScrollDragStart={() => { scrolling = true }}
           scrollEventThrottle={64} onScroll={(e) => {
-            if (placing) return
+            if (!scrolling) return
             const y = e?.offset?.y ?? 0
-            const restored = Math.abs(y - target) < 1
-            target = -1
-            if (restored) return
             offset = y; pinned = offset + viewport() >= content + contentTop * 2 - 40
             remember()
           }}>
