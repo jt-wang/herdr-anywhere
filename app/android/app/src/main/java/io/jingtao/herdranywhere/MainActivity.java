@@ -23,6 +23,8 @@ import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.media.AudioAttributes;
 import android.database.Cursor;
+import android.net.ConnectivityManager;
+import android.net.Network;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -79,6 +81,9 @@ public class MainActivity extends Activity {
   private NshHostReply asking, picking;
   private int pickLimit = 9;
   private boolean keepAlive;
+  private ConnectivityManager connectivity;
+  private ConnectivityManager.NetworkCallback networkCallback;
+  private Network defaultNetwork;
 
   @Override
   protected void onCreate(Bundle state) {
@@ -120,6 +125,38 @@ public class MainActivity extends Activity {
     // method's log showed onStartInput for the page and no show request). The page says when its field has the focus.
     view.handle("page.showKeyboard", (data, reply) -> runOnUiThread(() -> showKeyboard(reply, 0)));
     view.loadAssetBundle("nsh");
+    monitorNetwork();
+  }
+
+  /** Only changes of the default network, not capability updates on the same path, invalidate a ready transport. */
+  private void monitorNetwork() {
+    connectivity = getSystemService(ConnectivityManager.class);
+    // Seed the initial result without emitting it. Starting offline must still report the first later connection.
+    defaultNetwork = connectivity.getActiveNetwork();
+    networkCallback = new ConnectivityManager.NetworkCallback() {
+      @Override
+      public void onAvailable(Network network) {
+        runOnUiThread(() -> {
+          if (networkCallback != this) return;
+          setNetwork(network);
+        });
+      }
+
+      @Override
+      public void onLost(Network network) {
+        runOnUiThread(() -> {
+          if (networkCallback != this || !network.equals(defaultNetwork)) return;
+          setNetwork(null);
+        });
+      }
+    };
+    connectivity.registerDefaultNetworkCallback(networkCallback);
+  }
+
+  private void setNetwork(Network network) {
+    if (network == null ? defaultNetwork == null : network.equals(defaultNetwork)) return;
+    defaultNetwork = network;
+    view.send("page.network", Collections.singletonMap("available", network != null));
   }
 
   /** Asks for the keyboard for the terminal's page. Right after the key bar's button put the keyboard away, the input
@@ -528,6 +565,8 @@ public class MainActivity extends Activity {
 
   @Override
   protected void onDestroy() {
+    connectivity.unregisterNetworkCallback(networkCallback);
+    networkCallback = null;
     stopService(new Intent(this, KeepAlive.class));
     tailPocket.close();
     CoroutineScopeKt.cancel(scope, null);

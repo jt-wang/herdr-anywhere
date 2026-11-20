@@ -2,6 +2,7 @@
 //
 //	release-manifest keygen <key file>
 //	release-manifest sign -key <key file> -version 0.1.8 -out <dir> <file>...
+//	release-manifest verify <latest.json> <latest.json.sig>
 //
 // keygen writes the private key, readable only by you, and prints the public key that goes into
 // companion/internal/update/manifest.go. sign writes latest.json and latest.json.sig for the release; it refuses a key
@@ -35,7 +36,7 @@ func main() {
 
 func runMain(args []string, stdout io.Writer) error {
 	if len(args) == 0 {
-		return errors.New("usage: release-manifest keygen <key file> | sign -key <key file> -version X.Y.Z -out <dir> <file>...")
+		return errors.New("usage: release-manifest keygen <key file> | sign -key <key file> -version X.Y.Z -out <dir> <file>... | verify <latest.json> <latest.json.sig>")
 	}
 	switch args[0] {
 	case "keygen":
@@ -45,6 +46,24 @@ func runMain(args []string, stdout io.Writer) error {
 		return keygen(args[1], stdout)
 	case "sign":
 		return sign(args[1:], stdout)
+	case "verify":
+		if len(args) != 3 {
+			return errors.New("usage: release-manifest verify <latest.json> <latest.json.sig>")
+		}
+		body, err := os.ReadFile(args[1])
+		if err != nil {
+			return err
+		}
+		sig, err := os.ReadFile(args[2])
+		if err != nil {
+			return err
+		}
+		m, err := update.Verify(update.PublicKey, body, sig)
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprintf(stdout, "verified %s with %d files\n", m.Version, len(m.Files))
+		return err
 	}
 	return fmt.Errorf("unknown command %q", args[0])
 }

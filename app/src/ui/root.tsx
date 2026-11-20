@@ -143,7 +143,7 @@ function Connected(props: { deps: RootDeps; store: Store; link: Link; unpaired: 
     const terminal = progress.paneFor(a.task)
     alerts.ring(a.kind === 'wait' ? 'blocked' : 'done', { id: 0, title: a.title, body: a.body, level: 'info', action: terminal ? { terminal } : undefined }, store.appActive)
   }
-  const offPage = followPage({ front: (f) => { store.appActive = f; if (f) void updates.inFront() }, open: (a) => openTerminal(a), home: () => nav.popToRoot() })
+  const offPage = followPage({ front: (f) => { store.appActive = f; if (f) void updates.inFront() }, open: (a) => openTerminal(a), home: () => nav.popToRoot(), network: () => store.networkChanged() })
   const offConn = store.conn.sub((c) => { if (c === 'unpaired') props.unpaired() }, 'Root.unpaired')
   const conn = useSignal(store.conn)
   effect(() => store.setBackgroundWatch(prefs().stayConnected))

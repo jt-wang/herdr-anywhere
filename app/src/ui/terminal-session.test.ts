@@ -7,12 +7,12 @@ import { PAGE_READY_MS, TerminalSession, terminalNote } from './terminal-session
 import { t } from '../strings/index.ts'
 import { sinceLabel } from '../model/seen.ts'
 
-async function setup() {
+async function setup(callTimeoutMs?: number) {
   const cores = [new FakeCore(), new FakeCore()]
   let n = 0
   const timers: (() => void)[] = []
   const store = new Store({ pipe: () => cores[n++], setInterval: (() => 0) as any, clearInterval: (() => {}) as any,
-    setTimeout: ((f: () => void) => { timers.push(f); return 0 }) as any })
+    setTimeout: ((f: () => void) => { timers.push(f); return 0 }) as any, callTimeoutMs })
   await store.connect()
   const r = await store.newSpace({})
   const posted: any[] = []
@@ -133,6 +133,96 @@ test('after the line comes back the terminal attaches again as resumed', async (
   const again = cores[1].calls.find((c) => c.method === 'terminal.attach')
   expect(again?.params.resumed).toBe(true)
   expect(s.state.get()).toBe('live')
+})
+
+test('a page ready before the connection attaches when the connection becomes ready, without reopening', async () => {
+  const { cores, r, s, store, timers } = await setup()
+  cores[1].terms.set(r.terminal, { ...cores[0].terms.get(r.terminal)! })
+  cores[1].docs = cores[0].docs
+  cores[0].drop('network')
+  await settle()
+  s.page(JSON.stringify({ t: 'ready', cols: 48, rows: 31 }))
+  timers.shift()!()
+  await settle(30)
+  expect(s.state.get()).toBe('live')
+  s.dispose(); store.disconnect()
+})
+
+test('a usable network change replaces a silent socket and reattaches the same pane without clearing its screen', async () => {
+  const { cores, r, s, store, posted, timers } = await setup()
+  s.page(JSON.stringify({ t: 'ready', cols: 48, rows: 31 }))
+  await settle()
+  cores[1].terms.set(r.terminal, { ...cores[0].terms.get(r.terminal)! })
+  cores[1].docs = cores[0].docs
+  posted.length = 0
+  store.networkChanged()
+  expect(posted).toEqual([])
+  await settle()
+  expect(s.state.get()).toBe('lost')
+  timers.shift()!()
+  await settle(30)
+  expect(store.connected).toBe(true)
+  expect(s.state.get()).toBe('live')
+  expect(cores[1].viewers(r.terminal)).toBe(1)
+  expect(cores[1].calls.find((c) => c.method === 'terminal.attach')?.params.resumed).toBe(true)
+  s.dispose(); store.disconnect()
+})
+
+test('an attach timeout recovers on the same connection without reopening or clearing the screen while waiting', async () => {
+  const { core, r, s, store, posted } = await setup(20)
+  core.holding.add('terminal.attach')
+  s.page(JSON.stringify({ t: 'ready', cols: 48, rows: 31 }))
+  await new Promise((r) => setTimeout(r, 60))
+  expect(s.state.get()).toBe('lost')
+  expect(terminalNote(s.state.get(), false, 'ready', '').retry).toBe(true)
+  expect(posted).toEqual([])
+  core.holding.delete('terminal.attach'); core.release()
+  await new Promise((r) => setTimeout(r, 1100))
+  await settle()
+  expect(store.connected).toBe(true)
+  expect(s.state.get()).toBe('live')
+  expect(core.viewers(r.terminal)).toBe(1)
+  expect(posted.filter((m) => m.t === 'write').map((m) => m.data).join('')).toContain(`${r.terminal}$ `)
+  s.dispose(); store.disconnect()
+})
+
+test('foreground and Try again wake a failed attach, but a finished terminal and a disposed pane never retry', async () => {
+  const { core, r, s, store } = await setup(20)
+  core.holding.add('terminal.attach')
+  s.page(JSON.stringify({ t: 'ready', cols: 48, rows: 31 }))
+  await new Promise((r) => setTimeout(r, 60))
+  expect(s.state.get()).toBe('lost')
+  core.holding.delete('terminal.attach'); core.release()
+  store.appActive = false; store.appActive = true
+  await settle()
+  expect(s.state.get()).toBe('live')
+  core.finish(r.terminal, 'exited'); await settle()
+  const attempts = core.calls.filter((c) => c.method === 'terminal.attach').length
+  s.retry(); store.appActive = false; store.appActive = true
+  await new Promise((r) => setTimeout(r, 1100))
+  expect(s.state.get()).toBe('ended')
+  expect(core.calls.filter((c) => c.method === 'terminal.attach').length).toBe(attempts)
+  s.dispose(); store.disconnect()
+
+  const retry = await setup(20)
+  retry.core.holding.add('terminal.attach')
+  retry.s.page(JSON.stringify({ t: 'ready', cols: 48, rows: 31 }))
+  await new Promise((r) => setTimeout(r, 60))
+  retry.core.holding.delete('terminal.attach'); retry.core.release()
+  retry.s.retry(); await settle()
+  expect(retry.s.state.get()).toBe('live')
+  retry.s.dispose(); retry.store.disconnect()
+
+  const left = await setup(20)
+  left.core.holding.add('terminal.attach')
+  left.s.page(JSON.stringify({ t: 'ready', cols: 48, rows: 31 }))
+  await new Promise((r) => setTimeout(r, 60))
+  left.s.dispose()
+  left.core.holding.delete('terminal.attach'); left.core.release()
+  await new Promise((r) => setTimeout(r, 1100))
+  expect(left.core.viewers(left.r.terminal)).toBe(0)
+  expect(left.core.calls.filter((c) => c.method === 'terminal.attach').length).toBe(1)
+  left.store.disconnect()
 })
 
 // herdr-core, measured with two viewers: attaching as resumed leaves the size with the other viewer, and focus
@@ -404,7 +494,7 @@ test('the line under a slow terminal: loading once the computer is connected, co
   expect(terminalNote('waiting', false, 'ready', '')).toEqual({ text: t('connecting'), retry: false })
   expect(terminalNote('waiting', true, 'ready', '')).toEqual({ text: t('terminalLoading'), retry: true })
   expect(terminalNote('waiting', true, 'reconnecting', '')).toEqual({ text: t('connecting'), retry: true })
-  expect(terminalNote('lost', false, 'reconnecting', '')).toEqual({ text: t('reconnecting'), retry: false })
+  expect(terminalNote('lost', false, 'reconnecting', '')).toEqual({ text: t('reconnecting'), retry: true })
   expect(terminalNote('ended', false, 'ready', 'gone')).toEqual({ text: 'gone', retry: false })
 })
 

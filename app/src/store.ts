@@ -155,6 +155,7 @@ export class Store {
       this.sync()
       void this.refreshMachines()
     }
+    if (front) this.reconnectNow()
     this.polling()
   }
   setBackgroundWatch(on: boolean) { this.backgroundWatch.set(on); this.polling() }
@@ -458,6 +459,12 @@ export class Store {
     if (!this.wantConnected || this.hc) return
     this.retry = 0
     this.connect().catch(() => this.lost('retry failed'))
+  }
+
+  /** A new usable network can leave the old socket open but unreachable. Rebuild that line, not the pane. */
+  networkChanged() {
+    if (this.connected) this.hc?.close()
+    this.reconnectNow()
   }
 
   get connected() {

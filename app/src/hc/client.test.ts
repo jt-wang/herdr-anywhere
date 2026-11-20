@@ -12,9 +12,12 @@ class FakeCore implements Pipe {
   framed = false
   sent: { ch: number; kind: number; payload: Uint8Array }[] = []
   calls: any[] = []
+  /** Viewers allocated by a test's core; a CLOSE from the client releases one. */
+  viewers = new Set<number>()
   answer: (msg: any) => any = () => ({})
   private parser = new FrameParser((ch, kind, payload) => {
     this.sent.push({ ch, kind, payload })
+    if (kind === CLOSE) this.viewers.delete(ch)
     if (ch === 0 && kind === DATA) {
       const msg = JSON.parse(dec.decode(payload))
       this.calls.push(msg)
@@ -280,4 +283,134 @@ test('frames that came before the reply are credited once they are read', async 
   await tick()
   const total = core.sent.filter((f) => f.ch === 7 && f.kind === CREDIT).reduce((n, f) => n + new DataView(f.payload.buffer, f.payload.byteOffset).getUint32(0, true), 0)
   expect(total).toBe(30)
+})
+
+test('timed out attaches detach their late channels, freeing early bytes for a retry on the same pipe', async () => {
+  const core = new FakeCore()
+  const hc = new HcClient(core, { timeoutMs: 20 })
+  await hc.hello()
+  const got: string[] = []
+  const on = { data: (b: Uint8Array) => got.push(dec.decode(b)), close: () => {} }
+  core.answer = () => undefined
+  // The core has allocated two viewers and sent history, but their replies are delayed.
+  for (const ch of [7, 8]) {
+    core.viewers.add(ch)
+    const attempt = hc.attach({ terminal: 't', cols: 80, rows: 24 }, on).catch((e) => e)
+    const id = core.calls.at(-1).id
+    core.frame(ch, DATA, new Uint8Array(2 << 20))
+    const error = await attempt
+    expect(error instanceof HcError && error.kind).toBe('timeout')
+    core.reply(id, { channel: ch, terminal: { address: 't' } })
+    await tick()
+  }
+  const detached = core.sent.filter((f) => f.kind === CLOSE)
+  expect(detached.map((f) => f.ch)).toEqual([7, 8])
+  expect(detached.map((f) => f.payload.length)).toEqual([0, 0])
+  expect(core.viewers.size).toBe(0)
+  // Bytes already in flight after the late reply must not refill the early queue or reach the caller.
+  core.frame(7, DATA, new Uint8Array(2 << 20))
+  core.frame(8, DATA, new Uint8Array(2 << 20))
+  await tick()
+  core.answer = (m) => {
+    if (m.method !== 'terminal.attach') return { ok: true }
+    core.viewers.add(9)
+    core.frame(9, DATA, 'retry paint')
+    return { channel: 9, terminal: { address: 't' } }
+  }
+  const stream = await hc.attach({ terminal: 't', cols: 80, rows: 24 }, on)
+  expect(got).toEqual(['retry paint'])
+  expect(core.viewers.size).toBe(1)
+  expect(await hc.call('server.status')).toEqual({ ok: true })
+  expect(core.sent.filter((f) => (f.ch === 7 || f.ch === 8) && f.kind === CREDIT)).toEqual([])
+  stream.detach()
+  hc.close()
+})
+
+test('late successful replies to other RPCs never detach a channel', async () => {
+  const core = new FakeCore()
+  const hc = new HcClient(core, { timeoutMs: 20 })
+  await hc.hello()
+  core.answer = () => undefined
+  await expect(() => hc.call('events.subscribe')).rejects.toThrow('timed out')
+  core.reply(core.calls.at(-1).id, { channel: 12 })
+  core.reply(999, { channel: 13 }) // unknown id, not an attach timeout
+  await tick()
+  expect(core.sent.filter((f) => f.kind === CLOSE)).toEqual([])
+  hc.close()
+})
+
+for (const kind of ['not_found', 'finished']) {
+  test(`attach preserves ${kind}, including a late error after timeout, without detaching`, async () => {
+    const core = new FakeCore()
+    const hc = new HcClient(core, { timeoutMs: 20 })
+    await hc.hello()
+    core.answer = (m) => { core.fail(m.id, kind, 'terminal unavailable'); return undefined }
+    const on = { data: () => {}, close: () => {} }
+    const error = await hc.attach({ terminal: 't', cols: 80, rows: 24 }, on).catch((e) => e)
+    expect(error instanceof HcError && error.kind).toBe(kind)
+    expect(error.message).toBe('terminal unavailable')
+    core.answer = () => undefined
+    await expect(() => hc.attach({ terminal: 't', cols: 80, rows: 24 }, on)).rejects.toThrow('timed out')
+    core.fail(core.calls.at(-1).id, kind, 'terminal unavailable')
+    await tick()
+    expect(core.sent.filter((f) => f.kind === CLOSE)).toEqual([])
+    hc.close()
+  })
+}
+
+for (const reason of ['exited', 'finished', 'disconnected', 'detached']) {
+  test(`attach rejects an early ${reason} CLOSE with its real reason, after delivering final output`, async () => {
+    const core = new FakeCore()
+    const hc = new HcClient(core)
+    await hc.hello()
+    const seen: string[] = []
+    core.answer = (m) => {
+      queueMicrotask(() => core.onBytes?.(concatBytes(
+        encodeFrame(0, DATA, enc.encode(JSON.stringify({ jsonrpc: '2.0', id: m.id, result: { channel: 7, terminal: {} } }))),
+        concatBytes(encodeFrame(7, DATA, enc.encode('final')), encodeFrame(7, CLOSE,
+          reason === 'detached' ? new Uint8Array(0) : enc.encode(JSON.stringify({ reason, exit_code: 0 })))))))
+      return undefined
+    }
+    const error = await hc.attach({ terminal: 't', cols: 80, rows: 24 }, {
+      data: (b) => seen.push(dec.decode(b)), close: (r) => seen.push(r.reason),
+    }).catch((e) => e)
+    expect(error instanceof HcError && error.kind).toBe(reason)
+    expect(seen).toEqual(['final', reason])
+    hc.close()
+    expect(seen).toEqual(['final', reason]) // the dead channel no longer receives disconnect callbacks
+  })
+}
+
+test('attach rejects if the pipe closes between its reply and installing the stream', async () => {
+  const core = new FakeCore()
+  const hc = new HcClient(core)
+  await hc.hello()
+  core.answer = (m) => {
+    queueMicrotask(() => {
+      core.onBytes?.(encodeFrame(0, DATA, enc.encode(JSON.stringify({ jsonrpc: '2.0', id: m.id, result: { channel: 7, terminal: {} } }))))
+      core.close()
+    })
+    return undefined
+  }
+  const error = await hc.attach({ terminal: 't', cols: 80, rows: 24 }, { data: () => {}, close: () => {} }).catch((e) => e)
+  expect(error instanceof HcError && error.kind).toBe('disconnected')
+})
+
+test('pending attach disconnects rather than timing out; late bytes cannot revive the closed pipe', async () => {
+  const core = new FakeCore()
+  const hc = new HcClient(core, { timeoutMs: 20 })
+  await hc.hello()
+  core.answer = () => undefined
+  const on = { data: () => {}, close: () => {} }
+  const attempt = hc.attach({ terminal: 't', cols: 80, rows: 24 }, on).catch((e) => e)
+  const id = core.calls.at(-1).id
+  core.close()
+  const error = await attempt
+  expect(error instanceof HcError && error.kind).toBe('disconnected')
+  core.reply(id, { channel: 7, terminal: {} })
+  core.frame(7, DATA, 'late')
+  await tick()
+  expect(core.sent.filter((f) => f.kind === CLOSE)).toEqual([])
+  const again = await hc.attach({ terminal: 't', cols: 80, rows: 24 }, on).catch((e) => e)
+  expect(again instanceof HcError && again.kind).toBe('disconnected')
 })

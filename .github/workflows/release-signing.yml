@@ -1,0 +1,155 @@
+name: Sign release manifest
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: Full reviewed tagged commit included in the default branch (40 lowercase hex characters)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-signing
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  RELEASE_TAG: ${{ github.ref_name }}
+  RELEASE_EXPECTED_SHA: ${{ inputs.expected_sha }}
+  RELEASE_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+
+jobs:
+  preflight:
+    # No environment and no signing secret. A branch named vX.Y.Z is not a tag.
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'jt-wang/herdr-anywhere' && github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v') && github.workflow_sha == github.sha
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check reviewed source and stable tag
+        run: |
+          python3 - <<'PY_REQUEST'
+          import json, os, re, subprocess
+          from pathlib import Path
+          env = os.environ
+          repo = 'jt-wang/herdr-anywhere'
+          sha = env['RELEASE_EXPECTED_SHA']
+          tag = env.get('GITHUB_REF_NAME', '')
+          branch = env.get('RELEASE_DEFAULT_BRANCH', '')
+          ref = 'refs/tags/' + tag
+          if (not branch or env.get('GITHUB_EVENT_NAME') != 'workflow_dispatch'
+                  or env.get('GITHUB_REPOSITORY') != repo or env.get('GITHUB_REF') != ref
+                  or env.get('GITHUB_REF_TYPE') != 'tag' or env.get('RELEASE_TAG') != tag
+                  or not re.fullmatch('[0-9a-f]{40}', sha)
+                  or env.get('GITHUB_SHA') != sha or env.get('GITHUB_WORKFLOW_SHA') != sha
+                  or env.get('GITHUB_WORKFLOW_REF') != repo + '/.github/workflows/release-signing.yml@' + ref
+                  or not re.fullmatch(r'v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', tag)):
+              raise SystemExit('Trusted tag workflow, reviewed SHA and stable vX.Y.Z tag required')
+          if (subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip() != sha
+                  or subprocess.check_output(['git', 'rev-parse', '--verify', 'refs/tags/' + tag + '^{commit}'], text=True).strip() != sha):
+              raise SystemExit('Release tag must point to the checked-out reviewed commit')
+          subprocess.run(['git', 'diff', '--exit-code', 'HEAD'], check=True, capture_output=True)
+          config = json.loads(Path('app/nsh.json').read_text())
+          if config['version'] != tag[1:]:
+              raise SystemExit('Release tag differs from app/nsh.json version')
+          # Fetch only the public default branch; the tag's exact code must already be reviewed there.
+          default_ref = 'refs/remotes/origin/' + branch
+          subprocess.run(['git', 'fetch', '--no-tags', 'origin',
+                          '+refs/heads/' + branch + ':' + default_ref], check=True)
+          subprocess.run(['git', 'merge-base', '--is-ancestor', sha, default_ref], check=True)
+          PY_REQUEST
+
+  sign:
+    needs: preflight
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'jt-wang/herdr-anywhere' && github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v') && github.workflow_sha == github.sha
+    environment: release-signing
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Check the exact preflight-approved checkout
+        run: |
+          test "$(git rev-parse HEAD)" = "$RELEASE_EXPECTED_SHA"
+          git diff --exit-code HEAD
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: companion/go.mod
+          cache-dependency-path: companion/go.sum
+      - name: Build and test before introducing signing credentials
+        working-directory: companion
+        run: |
+          mkdir -m 700 "$RUNNER_TEMP/release-signing"
+          go test ./cmd/release-manifest ./internal/update
+          go build -o "$RUNNER_TEMP/release-signing/release-manifest" ./cmd/release-manifest
+      - name: Download existing release assets without signing credentials
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$RELEASE_TAG" --repo jt-wang/herdr-anywhere --json tagName,isDraft > "$RUNNER_TEMP/release-signing/release.json"
+          python3 - <<'PY_RELEASE'
+          import json, os
+          from pathlib import Path
+          release = json.loads((Path(os.environ['RUNNER_TEMP']) / 'release-signing/release.json').read_text())
+          # A normal-version release may stay prerelease while assets/signatures are checked.
+          # This workflow never promotes it to Latest or changes its prerelease state.
+          if release['tagName'] != os.environ['RELEASE_TAG'] or release['isDraft']:
+              raise SystemExit('An existing non-draft release for the stable version tag is required')
+          PY_RELEASE
+          mkdir -m 700 "$RUNNER_TEMP/release-signing/assets" "$RUNNER_TEMP/release-signing/output"
+          # All of update.ReleaseFiles: five companion binaries plus the Android APK.
+          gh release download "$RELEASE_TAG" --repo jt-wang/herdr-anywhere --dir "$RUNNER_TEMP/release-signing/assets" \
+            --pattern herdr-anywhere-macos-arm64 \
+            --pattern herdr-anywhere-macos-amd64 \
+            --pattern herdr-anywhere-windows-amd64.exe \
+            --pattern herdr-anywhere-linux-amd64 \
+            --pattern herdr-anywhere-linux-arm64 \
+            --pattern Herdr-Anywhere.apk
+      - name: Sign exact downloaded bytes
+        env:
+          HERDR_RELEASE_SIGNING_KEY: ${{ secrets.HERDR_RELEASE_SIGNING_KEY }}
+        run: |
+          set +x
+          umask 077
+          test -n "$HERDR_RELEASE_SIGNING_KEY"
+          keydir=$(mktemp -d "$RUNNER_TEMP/release-key.XXXXXX")
+          trap 'rm -rf "$keydir"' EXIT
+          trap 'exit 1' INT TERM
+          printf '%s\n' "$HERDR_RELEASE_SIGNING_KEY" > "$keydir/key"
+          unset HERDR_RELEASE_SIGNING_KEY
+          # Only the already-built signer sees the 0600 key file. No key override flags.
+          "$RUNNER_TEMP/release-signing/release-manifest" sign \
+            -key "$keydir/key" -version "${RELEASE_TAG#v}" \
+            -out "$RUNNER_TEMP/release-signing/output" "$RUNNER_TEMP/release-signing/assets/"*
+      - name: Verify with the companion's embedded public key
+        run: |
+          "$RUNNER_TEMP/release-signing/release-manifest" verify \
+            "$RUNNER_TEMP/release-signing/output/latest.json" \
+            "$RUNNER_TEMP/release-signing/output/latest.json.sig"
+      - name: Upload only the manifest and signature
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Fail if the target tag moved while building/signing; never move or create a tag here.
+          git fetch --force origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
+          test "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")" = "$RELEASE_EXPECTED_SHA"
+          gh release upload "$RELEASE_TAG" --repo jt-wang/herdr-anywhere --clobber \
+            "$RUNNER_TEMP/release-signing/output/latest.json" \
+            "$RUNNER_TEMP/release-signing/output/latest.json.sig"
+      - name: Remove ephemeral signing files
+        if: always()
+        run: rm -rf "$RUNNER_TEMP"/release-key.* "$RUNNER_TEMP/release-signing"
