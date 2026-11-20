@@ -18,6 +18,9 @@ func (s *Service) Path() string {
 
 func (s *Service) domain() string { return "gui/" + strconv.Itoa(os.Getuid()) }
 
+// StartedThis says whether launchd started this process as the job: launchd names it in XPC_SERVICE_NAME.
+func (s *Service) StartedThis() bool { return os.Getenv("XPC_SERVICE_NAME") == s.Name }
+
 // Install writes the LaunchAgent, replacing an older one; it runs from the next login, or from Start.
 func (s *Service) Install(e Entry) (bool, error) {
 	if s.refuse != nil {

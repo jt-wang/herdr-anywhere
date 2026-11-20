@@ -32,6 +32,9 @@ func (s *Service) Install(e Entry) (bool, error) {
 // Start: Windows has nothing that starts a Run entry now; the caller starts serve itself.
 func (s *Service) Start() error { return ErrNoManager }
 
+// StartedThis is false: the Run key starts it at login and never again.
+func (s *Service) StartedThis() bool { return false }
+
 // Remove deletes the Run key's value, and says whether there was one. A running serve is the caller's to stop.
 func (s *Service) Remove() (bool, error) {
 	k, err := registry.OpenKey(registry.CURRENT_USER, runKey, registry.SET_VALUE)

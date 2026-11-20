@@ -28,6 +28,7 @@ type fakeLogin struct {
 	startErr   error
 	onStart    func()
 	has        bool
+	startedUs  bool
 }
 
 func (f *fakeLogin) Install(e autostart.Entry) (bool, error) {
@@ -54,6 +55,8 @@ func (f *fakeLogin) Remove() (bool, error) {
 	f.has = false
 	return had, nil
 }
+
+func (f *fakeLogin) StartedThis() bool { return f.startedUs }
 
 func useLogin(t *testing.T, f *fakeLogin) {
 	t.Helper()
@@ -228,21 +231,27 @@ func TestServeInATerminalSaysHowToKeepItRunning(t *testing.T) {
 	}
 }
 
+// A second serve stops before listening. Started by hand that is a failure; started by the service manager it is
+// not, or the manager (KeepAlive SuccessfulExit false, Restart=on-failure) starts it again every few seconds for as
+// long as the other one runs.
 func TestASecondTailcatServeStopsBeforeListening(t *testing.T) {
-	dir := shortStateDir(t)
-	fakeTailcatServe(t, dir, nil)
-	var out, errb bytes.Buffer
-	done := make(chan int, 1)
-	go func() {
-		done <- run([]string{"serve", "--tailcat", "--listen", "127.0.0.1:0", "--state", dir}, &out, &errb)
-	}()
-	select {
-	case code := <-done:
-		if code == 0 || strings.Contains(out.String(), "listening on") || !strings.Contains(errb.String(), "already running") {
-			t.Fatalf("exit %d\nout %s\nerr %s", code, &out, &errb)
+	for _, byManager := range []bool{false, true} {
+		useLogin(t, &fakeLogin{startedUs: byManager})
+		dir := shortStateDir(t)
+		fakeTailcatServe(t, dir, nil)
+		var out, errb bytes.Buffer
+		done := make(chan int, 1)
+		go func() {
+			done <- run([]string{"serve", "--tailcat", "--listen", "127.0.0.1:0", "--state", dir}, &out, &errb)
+		}()
+		select {
+		case code := <-done:
+			if (code == 0) != byManager || strings.Contains(out.String(), "listening on") || !strings.Contains(errb.String(), "already running") {
+				t.Fatalf("by the service manager %v: exit %d\nout %s\nerr %s", byManager, code, &out, &errb)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("a second serve kept going")
 		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("a second serve kept going")
 	}
 }
 

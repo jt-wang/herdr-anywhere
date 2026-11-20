@@ -280,7 +280,14 @@ func serve(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	}
 	// Before anything listens: a second serve would start this computer's Tailcat node a second time.
 	if *withTailcat && tailcat.ServeRunning(st.Dir()) {
-		return fmt.Errorf("--tailcat: Companion is already running on %s (herdr-anywhere stop stops it)", st.Dir())
+		err := fmt.Errorf("--tailcat: Companion is already running on %s (herdr-anywhere stop stops it)", st.Dir())
+		if atLogin().StartedThis() {
+			// Not a failure to the service manager, which would otherwise start it again every few seconds for as
+			// long as the other one runs.
+			fmt.Fprintf(stderr, "herdr-anywhere serve: %v\n", err)
+			return nil
+		}
+		return err
 	}
 	if *withLAN && !*withTailcat {
 		return usageError{errors.New("--lan needs --tailcat: the local network is end-to-end encrypted through TailPocket (herdr-anywhere start runs both)")}

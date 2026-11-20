@@ -6,11 +6,26 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const defaultName = "herdr-anywhere"
 
 func (s *Service) unit() string { return s.Name + ".service" }
+
+// StartedThis says whether systemd started this process as the unit: it runs in the unit's cgroup.
+func (s *Service) StartedThis() bool {
+	b, err := os.ReadFile("/proc/self/cgroup")
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+		if strings.HasSuffix(line, "/"+s.unit()) {
+			return true
+		}
+	}
+	return false
+}
 
 // Path is the user unit, in systemd's user directory under XDG_CONFIG_HOME.
 func (s *Service) Path() string {

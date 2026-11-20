@@ -26,6 +26,7 @@ type loginStart interface {
 	Install(autostart.Entry) (bool, error)
 	Start() error
 	Remove() (bool, error)
+	StartedThis() bool
 }
 
 var atLogin = realLogin
