@@ -3,6 +3,7 @@ package io.jingtao.herdranywhere;
 import android.util.Log;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.MotionEvent;
 import android.view.inputmethod.InputMethodManager;
 import android.webkit.WebView;
 import android.Manifest;
@@ -84,6 +85,7 @@ public class MainActivity extends Activity {
   private ConnectivityManager connectivity;
   private ConnectivityManager.NetworkCallback networkCallback;
   private Network defaultNetwork;
+  private Diagnostics diagnostics;
 
   @Override
   protected void onCreate(Bundle state) {
@@ -93,6 +95,8 @@ public class MainActivity extends Activity {
     Standalone.limits(view);
     setContentView(view);
     tailPocket = TailPocketNsh.INSTANCE.attach(view, scope);
+    diagnostics = new Diagnostics(this);
+    diagnostics.attach(view);
     channels();
     opening = openedBy(getIntent());
     tookUpdate(opening);
@@ -157,6 +161,7 @@ public class MainActivity extends Activity {
     if (network == null ? defaultNetwork == null : network.equals(defaultNetwork)) return;
     defaultNetwork = network;
     view.send("page.network", Collections.singletonMap("available", network != null));
+    diagnostics.network();
   }
 
   /** Asks for the keyboard for the terminal's page. Right after the key bar's button put the keyboard away, the input
@@ -536,13 +541,21 @@ public class MainActivity extends Activity {
   protected void onResume() {
     super.onResume();
     setFront(true);
+    diagnostics.front(true);
     if (keepAlive) applyKeepAlive();
   }
 
   @Override
   protected void onPause() {
+    diagnostics.front(false);
     setFront(false);
     super.onPause();
+  }
+
+  @Override
+  public boolean dispatchTouchEvent(MotionEvent event) {
+    if (diagnostics != null) diagnostics.touch(event);
+    return super.dispatchTouchEvent(event);
   }
 
   private void setFront(boolean now) {
@@ -567,6 +580,7 @@ public class MainActivity extends Activity {
   protected void onDestroy() {
     connectivity.unregisterNetworkCallback(networkCallback);
     networkCallback = null;
+    diagnostics.close();
     stopService(new Intent(this, KeepAlive.class));
     tailPocket.close();
     CoroutineScopeKt.cancel(scope, null);

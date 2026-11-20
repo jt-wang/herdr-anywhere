@@ -592,31 +592,8 @@ screen_has 'text="Settings"' || { echo "FAIL: Settings did not open"; exit 1; }
 "$adb" shell input swipe 500 1800 500 300 200
 sleep 2
 [ -n "$shot" ] && "$adb" exec-out screencap -p > "${shot%.png}-settings-end.png"
-# Android has no diagnostic recorder host. Keep that truthful on fresh installs and after an in-place APK upgrade:
-# a dedicated subpage, no usable recording/category/export controls, and normal native Back navigation.
-for phase in fresh upgrade; do
-  if [ "$phase" = upgrade ]; then
-    "$adb" install -r "$apk" >/dev/null
-    "$adb" shell am start -W -n "$activity" >/dev/null
-    to_home
-    tap settings
-  fi
-  for _ in $(seq 1 8); do
-    [ -n "$(at settings-diagnostics)" ] && break
-    "$adb" shell input swipe 500 1500 500 500 200; sleep 1
-  done
-  [ -n "$(at settings-diagnostics)" ] || { echo "FAIL: $phase has no diagnostic subpage entry"; exit 1; }
-  screen_has 'text="Not supported"' || { echo "FAIL: $phase claims Android diagnostics are supported"; exit 1; }
-  screen_has 'resource-id="diagnostic-toggle"' && { echo "FAIL: inline diagnostic controls remain on Settings"; exit 1; }
-  tap settings-diagnostics
-  screen_has 'resource-id="diagnostic-unsupported"' || { echo "FAIL: $phase diagnostic subpage did not open"; exit 1; }
-  for action in toggle interaction performance network resources export clear; do
-    screen_has "resource-id=\"diagnostic-$action\"" && { echo "FAIL: $phase exposes unsupported diagnostic $action"; exit 1; }
-  done
-  [ -n "$shot" ] && "$adb" exec-out screencap -p > "${shot%.png}-diagnostics-$phase.png"
-  "$adb" shell input keyevent KEYCODE_BACK
-  sleep 1
-  screen_has 'resource-id="settings-diagnostics"' || { echo 'FAIL: diagnostic Back did not return to Settings'; exit 1; }
-done
-echo 'ok: diagnostic subpage remains unsupported and non-collecting on fresh install and APK upgrade'
+# Same paired emulator and live companion: exercise the real native recorder, consent, APK upgrades,
+# category isolation, preview/share and Clear. The reusable suite resets diagnostics only, never pairing.
+sh "$app/e2e/android-diagnostics.sh" --self-test
+sh "$app/e2e/android-diagnostics.sh" "$apk" "$shot"
 echo "PASS: notifications, and new spaces in a folder browsed to or made on the computer"

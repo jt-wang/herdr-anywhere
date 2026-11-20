@@ -176,6 +176,7 @@ jobs:
       - name: The APK and the companion, as computers.yml builds them
         run: |
           (cd app && android/build.sh)
+          (cd app/android && ./gradlew --no-daemon :app:testDebugUnitTest)
           mkdir -p "$RUNNER_TEMP/build"
           cp app/android/build/Herdr.apk "$RUNNER_TEMP/build/"
           (cd companion && CGO_ENABLED=0 go build -buildvcs=false -trimpath -ldflags="-s -w" -o "$RUNNER_TEMP/build/herdr-anywhere-linux-amd64" ./cmd/herdr-anywhere)
