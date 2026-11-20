@@ -3,6 +3,7 @@ import type { Table } from './index.ts'
 
 export const zhHans: Table = {
   diagnosticTitle: '设备本地诊断', diagnosticRecord: '记录诊断日志',
+  diagnosticOnState: '开', diagnosticOffState: '关', diagnosticUnsupportedState: '不支持',
   diagnosticInteraction: '交互／生命周期', diagnosticPerformance: '性能', diagnosticNetwork: '网络', diagnosticResources: '资源／电池',
   diagnosticOff: '记录已关闭，不采集诊断数据。默认关闭。', diagnosticRecording: '● 正在记录所选类别', diagnosticNoCategories: '未选择类别，不采集诊断数据。',
   diagnosticContent: '无跟踪、无分析统计。报告不含会话内容：消息、终端输出、标题、名称、路径、地址和凭据。分享前请确认所选类别及时间范围。',

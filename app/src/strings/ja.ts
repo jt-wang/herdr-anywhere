@@ -3,6 +3,7 @@ import type { Table } from './index.ts'
 
 export const ja: Table = {
   diagnosticTitle: '端末内の診断', diagnosticRecord: '診断を記録',
+  diagnosticOnState: 'オン', diagnosticOffState: 'オフ', diagnosticUnsupportedState: '未対応',
   diagnosticInteraction: '操作／ライフサイクル', diagnosticPerformance: 'パフォーマンス', diagnosticNetwork: 'ネットワーク', diagnosticResources: 'リソース／バッテリー',
   diagnosticOff: '記録は無効です。診断は収集しません。初期設定では無効です。', diagnosticRecording: '● 選択したカテゴリを記録中', diagnosticNoCategories: 'カテゴリ未選択のため収集していません。',
   diagnosticContent: '追跡や利用分析は行いません。レポートにはセッションの内容（メッセージ、端末出力、タイトル、名前、パス、アドレス、認証情報）を含めません。共有前にカテゴリと時間範囲を確認してください。',

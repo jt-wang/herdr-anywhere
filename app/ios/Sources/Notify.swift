@@ -3,6 +3,7 @@
 // background; once iOS suspends it, nothing is posted. page.front says whether the app is in front, as on Android;
 // a tap opens the agent's terminal or home (page.open), held until the page listens.
 // Laid out as Push.swift on the push branch, which answers page.front and taps the same way, so the two can merge.
+import Network
 import NativeShell
 import UIKit
 import UserNotifications
@@ -13,9 +14,14 @@ final class Notify: NSObject, UNUserNotificationCenterDelegate {
   weak var app: NshAppView?
   private var listening = false
   private var opening: [String: Any]?
+  private var pathMonitor: NWPathMonitor?
+  private var networkPath: NWPath?
+
+  deinit { pathMonitor?.cancel() }
 
   func attach(_ app: NshAppView) {
     self.app = app
+    monitorNetwork()
     UNUserNotificationCenter.current().delegate = self
     app.handle("page.front") { [weak self] _, reply in
       reply.resolve(UIApplication.shared.applicationState == .active)
@@ -42,6 +48,24 @@ final class Notify: NSObject, UNUserNotificationCenterDelegate {
     c.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
       MainActor.assumeIsolated { self?.app?.send("page.front", ["front": false]) }
     }
+  }
+
+  /** Independent of optional diagnostics: a new default path can leave an otherwise-ready transport stale. */
+  private func monitorNetwork() {
+    guard pathMonitor == nil else { return }
+    let monitor = NWPathMonitor()
+    monitor.pathUpdateHandler = { [weak self] path in
+      MainActor.assumeIsolated {
+        guard let self else { return }
+        let previous = self.networkPath
+        self.networkPath = path
+        // The first result describes startup, not a switch. Ignore duplicate path reports too.
+        guard let previous, previous != path else { return }
+        self.app?.send("page.network", ["available": path.status == .satisfied])
+      }
+    }
+    pathMonitor = monitor
+    monitor.start(queue: .main)
   }
 
   private func flushOpen() {

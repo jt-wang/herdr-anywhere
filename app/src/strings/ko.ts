@@ -3,6 +3,7 @@ import type { Table } from './index.ts'
 
 export const ko: Table = {
   diagnosticTitle: '기기 내 진단', diagnosticRecord: '진단 기록',
+  diagnosticOnState: '켜짐', diagnosticOffState: '꺼짐', diagnosticUnsupportedState: '지원 안 함',
   diagnosticInteraction: '상호작용 / 수명 주기', diagnosticPerformance: '성능', diagnosticNetwork: '네트워크', diagnosticResources: '리소스 / 배터리',
   diagnosticOff: '기록이 꺼져 있어 진단을 수집하지 않아요. 기본값은 꺼짐이에요.', diagnosticRecording: '● 선택한 범주 기록 중', diagnosticNoCategories: '선택한 범주가 없어 수집하지 않아요.',
   diagnosticContent: '추적이나 이용 분석이 없어요. 보고서에는 메시지, 터미널 출력, 제목, 이름, 경로, 주소, 인증 정보 등 세션 내용을 포함하지 않아요. 공유 전에 선택한 범주와 시간 범위를 확인해 주세요.',

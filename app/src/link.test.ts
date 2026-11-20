@@ -105,6 +105,19 @@ test('the route comes from the open tunnel, a tunnel that cannot say is unknown,
   expect(await plain.path()).toBe(null)
 })
 
+test('TailPocket v0.3.1 path metadata survives even when kind and the legacy route differ', async () => {
+  const answers = [
+    { route: 'direct', relay: 'legacy', kind: 'derp', derpRegion: 42, derpCode: 'qzx', derpHost: 'derp.example.test', relayHost: 'unused.example.test' },
+    { route: 'lan', relay: 'legacy', kind: 'relay', relayHost: 'relay.example.test' },
+    { route: 'relay', kind: 'direct' },
+    { route: 'direct', kind: 'lan' },
+  ]
+  const tunnel: Tunnel = { ...fakeTunnel().t, async connect() { return { baseUrl: 'http://127.0.0.1:1', close: () => {}, path: async () => answers.shift()! } } }
+  const l = new Linker({ load: async () => null, save: () => {}, remove: () => {}, tunnel })
+  l.set({ url: 'tailpocket:', via: 'tailpocket', token: 't', device: 'd', name: 'studio', enc: 'bin' })
+  for (const expected of [...answers]) expect(await l.path()).toEqual(expected)
+})
+
 // TailPocket v0.3 also reaches the computer over the local network, through its own end-to-end encryption.
 test('a tunnel over the local network says lan', async () => {
   const saved = new Map<string, string>()
@@ -336,6 +349,33 @@ test('through TailPocket, the folder calls go to the tunnel the pipes use', asyn
   l.pipe()
   await folderApi(l, fetch).list('~')
   expect(urls).toEqual(['http://127.0.0.1:40001/api/folders?path=~', 'http://127.0.0.1:40001/api/folders?path=~'])
+})
+
+test('chat revalidation reuses an unchanged page, keeps history separate, and drops validators on pairing changes', async () => {
+  const linker = new Linker({ load: async () => null, save: () => {}, remove: () => {} })
+  const link = { url: 'http://192.0.2.10:7681', token: 'grove', device: 'd', name: 'Grove', enc: 'bin' as const }
+  linker.set(link)
+  const requests: any[] = []
+  let body = { chat: true, session: 'grove', turns: [{ id: 'u1', reply: 'Pears.' }] }
+  let tag = '"one"'
+  let readBodies = 0
+  const api = chatApi(linker, (async (_url: string, init: any) => {
+    requests.push(init.headers)
+    const unchanged = init.headers['if-none-match'] === tag
+    return { ok: !unchanged, status: unchanged ? 304 : 200, headers: { get: () => tag },
+      json: async () => { readBodies++; if (unchanged) throw new Error('304 has no body'); return body } }
+  }) as any)
+  const first = await api.get('t1')
+  expect(await api.get('t1')).toBe(first)
+  expect(readBodies).toBe(1)
+  expect(requests[1]['if-none-match']).toBe('"one"')
+  await api.get('t1', 'older')
+  expect(requests[2]['if-none-match']).toBe(undefined)
+  body = { ...body, turns: [{ id: 'u1', reply: 'Pears and plums.' }] }; tag = '"two"'
+  expect((await api.get('t1')).turns![0].reply).toBe('Pears and plums.')
+  linker.set({ ...link, token: 'another-pairing' })
+  await api.get('t1')
+  expect(requests.at(-1)['if-none-match']).toBe(undefined)
 })
 
 test('the chat calls send the token and the address; an older companion without them has no chat', async () => {

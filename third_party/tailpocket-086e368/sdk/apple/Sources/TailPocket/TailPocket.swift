@@ -107,10 +107,17 @@ public struct TailPocketHostLink: Codable, Sendable, Equatable {
 }
 
 /// How a connection reaches its computer now: `route` is "direct" or "relay" (Tailcat), "relay" (your
-/// tailpocket-relay, `relay` its host name) or "lan".
+/// tailpocket-relay, `relay` its host name) or "lan". Since v0.3.1 `kind` tells them apart: "lan",
+/// "direct" (Tailcat peer to peer), "derp" (Tailcat through a DERP relay: `derpRegion`, and `derpCode`
+/// and `derpHost` when known) or "relay" (tailpocket-relay: `relayHost`).
 public struct TailPocketPath: Codable, Sendable, Equatable {
     public let route: String
     public let relay: String
+    public let kind: String?
+    public let derpRegion: Int?
+    public let derpCode: String?
+    public let derpHost: String?
+    public let relayHost: String?
 }
 
 /// A failure with a fixed code: invalid-invite, invalid-key, invalid-link, expired, unauthorized

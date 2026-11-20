@@ -20,7 +20,7 @@ const step = oneOf('start', 'hello-before', 'hello-after', 'subscribe-before', '
   'entry', 'stop-loops-before', 'stop-loops-after', 'clear-client-before', 'clear-client-after',
   'conn-before', 'conn-after', 'lost-why-before', 'lost-why-after', 'error-before', 'error-after')
 const errorName = oneOf('Error', 'TypeError', 'RangeError', 'ReferenceError', 'SyntaxError', 'URIError', 'EvalError', 'other')
-const route = oneOf('home', 'space', 'settings', 'progress', 'task', 'pair')
+const route = oneOf('home', 'space', 'settings', 'diagnostics', 'progress', 'task', 'pair')
 const request = {
   request: (value: string) => /^d[1-9]\d{0,14}$/.test(value),
   elapsed: number, status: number, timeout: number, requestBytes: number, responseBytes: number,

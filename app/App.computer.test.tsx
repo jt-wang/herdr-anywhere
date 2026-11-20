@@ -32,6 +32,29 @@ test('a relay with no region it can name still says relay', async () => {
   await app.waitFor('text:Through a relay')
 })
 
+test('v0.3.1 kind controls the route and only DERP region codes are uppercased', async () => {
+  const paths = [
+    { route: 'direct', relay: 'wrong', kind: 'derp', derpRegion: 42, derpCode: 'qzx', derpHost: 'derp.example.test', relayHost: 'wrong.example.test' },
+    { route: 'direct', relay: 'wrong', kind: 'derp', derpRegion: 42, derpHost: 'derp.example.test', relayHost: 'wrong.example.test' },
+    { route: 'lan', relay: 'wrong', kind: 'relay', relayHost: 'relay.example.test', derpCode: 'bad', derpHost: 'wrong.example.test' },
+    { route: 'direct', relay: 'wrong', kind: 'derp', derpRegion: 42 },
+    { route: 'relay', relay: 'wrong', kind: 'direct' },
+    { route: 'direct', kind: 'lan' },
+    { route: 'direct', kind: 'future-kind' },
+  ]
+  const app = await settings({ via: 'tailpocket', routes: JSON.stringify(paths) }, { clock: {} })
+  const words = ['Through a relay (QZX)', 'Through a relay (derp.example.test)', 'Through a relay (relay.example.test)',
+    'Through a relay', 'Direct to your computer', 'Over your local network, end-to-end encrypted', 'Finding the route…']
+  await app.clock.runFor(100)
+  for (let i = 0; i < words.length; i++) {
+    if (i) await app.clock.runFor(30_000)
+    await app.waitFor(`text:${words[i]}`)
+    const seen = app.texts()
+    for (const other of words.filter((w) => w !== words[i])) expect(seen).not.toContain(other)
+    expect(seen.some((w: string) => /wrong|DERP\.EXAMPLE|RELAY\.EXAMPLE/.test(w))).toBe(false)
+  }
+})
+
 // TailPocket v0.3's local route: still TailPocket's own end-to-end encryption, never the companion's plain port.
 test('over the local network, end-to-end encrypted', async () => {
   const app = await settings({ via: 'tailpocket', routes: 'lan' })

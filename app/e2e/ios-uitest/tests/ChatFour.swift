@@ -176,6 +176,19 @@ final class ChatFour: XCTestCase {
       note("\(agent) scroll: the oldest turns reached: \(top)")
       XCTAssertTrue(top, "\(agent) scroll: did not reach the oldest turns")
       shot("\(agent)-top"); alive("\(agent) scroll")
+      // Switching views must restore the turn at the same viewport offset, not merely keep it in the tree.
+      let anchor = starting("01").allElementsBoundByIndex.first { $0.isHittable }
+      guard let anchor = anchor else { XCTFail("\(agent): no reading anchor"); return }
+      let anchorLabel = anchor.label
+      let anchorY = anchor.frame.minY - el("chat-scroll").frame.minY
+      el("show-terminal").tap(); el("show-chat").tap()
+      let restored = until(15) {
+        let row = saying(anchorLabel)
+        return row.exists && abs(row.frame.minY - el("chat-scroll").frame.minY - anchorY) < 3
+      }
+      note("\(agent) reading anchor restored: \(restored)")
+      XCTAssertTrue(restored, "\(agent): switching to the terminal and back lost the reading position")
+      shot("\(agent)-reading-restored")
       var bottom = false
       for _ in 0..<40 { if saying("LOOK at shot.png").isHittable || saying("HELLO, what is in this picture?").isHittable { bottom = true; break }; el("chat-view").swipeUp() }
       note("\(agent) scroll: back to the newest: \(bottom)")

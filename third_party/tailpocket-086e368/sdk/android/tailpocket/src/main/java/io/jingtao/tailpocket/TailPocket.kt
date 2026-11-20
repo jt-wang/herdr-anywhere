@@ -50,9 +50,21 @@ data class TailPocketInvite2(
     val via: List<TailPocketRoute>,
 )
 
-/** How a connection reaches its computer now: `direct` or `relay` (Tailcat), `relay` (tailpocket-relay, [relay] its host name), or `lan`. */
+/**
+ * How a connection reaches its computer now: `direct` or `relay` (Tailcat), `relay` (tailpocket-relay, [relay] its host name), or `lan`.
+ * Since v0.3.1 [kind] tells them apart: `lan`, `direct` (Tailcat peer to peer), `derp` (Tailcat through a DERP relay: [derpRegion],
+ * and [derpCode] and [derpHost] when known) or `relay` (tailpocket-relay: [relayHost]).
+ */
 @Serializable
-data class TailPocketPath(val route: String, val relay: String = "")
+data class TailPocketPath(
+    val route: String,
+    val relay: String = "",
+    val kind: String = "",
+    val derpRegion: Int = 0,
+    val derpCode: String = "",
+    val derpHost: String = "",
+    val relayHost: String = "",
+)
 
 /**
  * Everything a paired phone needs to reach its computer. Holds the phone's private key: keep it in [TailPocketKeystoreStore].

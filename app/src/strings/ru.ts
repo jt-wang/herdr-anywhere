@@ -3,6 +3,7 @@ import type { Table } from './index.ts'
 
 export const ru: Table = {
   diagnosticTitle: 'Диагностика на устройстве', diagnosticRecord: 'Записывать диагностику',
+  diagnosticOnState: 'Вкл.', diagnosticOffState: 'Выкл.', diagnosticUnsupportedState: 'Не поддерживается',
   diagnosticInteraction: 'Действия / жизненный цикл', diagnosticPerformance: 'Производительность', diagnosticNetwork: 'Сеть', diagnosticResources: 'Ресурсы / батарея',
   diagnosticOff: 'Запись выключена — диагностика не собирается. По умолчанию выключена.', diagnosticRecording: '● Запись выбранных категорий', diagnosticNoCategories: 'Категории не выбраны — сбор выключен.',
   diagnosticContent: 'Без отслеживания и аналитики. Отчёты не содержат данные сеансов: сообщения, вывод терминала, заголовки, имена, пути, адреса и учётные данные. Перед отправкой подтвердите категории и временной диапазон.',

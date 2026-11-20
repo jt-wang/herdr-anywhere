@@ -44,9 +44,7 @@ cleanup() {
 trap 'adb_exit $? cleanup' EXIT; trap 'cleanup; exit 130' INT; trap 'cleanup; exit 143' TERM HUP
 picture_terminal
 if [ "${HM_PICTURE_VIA:-}" = tailcat ]; then
-  # HM_PICTURE_ROUTE=relay: the companion sends only through Tailcat's relay (as android-tailcat.sh does); else
-  # Tailcat goes direct when it can, which it can between an emulator and this computer.
-  [ "${HM_PICTURE_ROUTE:-}" = relay ] && export TS_DEBUG_ALWAYS_USE_DERP=1
+  # For relay-only coverage, block non-DNS UDP on both sides before running; Tailcat goes direct when it can.
   "$bin" serve --tailcat $(tailcat_no_lan "$bin") --listen "127.0.0.1:$port" --hc "$hc" --state "$state" > "$work/serve.log" 2>&1 &
   serve_pid=$!
   i=0; until grep -q "listening on Tailcat" "$work/serve.log" 2>/dev/null; do i=$((i + 1)); [ $i -gt 300 ] && { echo "FAIL: serve --tailcat did not start"; exit 1; }; sleep 0.1; done

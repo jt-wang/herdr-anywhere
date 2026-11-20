@@ -67,6 +67,19 @@ public class Opened extends ContentProvider {
     f.delete();
   }
 
+  /** Remove generated reports, including those from a previous process, without deleting other opened files. */
+  static void removeNamed(Context context, String name) throws IOException {
+    File[] folders = dir(context).listFiles();
+    if (folders == null) return;
+    for (File folder : folders) {
+      File report = new File(folder, name);
+      if (report.isFile()) {
+        java.nio.file.Files.delete(report.toPath());
+        java.nio.file.Files.delete(folder.toPath());
+      }
+    }
+  }
+
   /** The type Android knows a name by, else none. */
   static String typeOfName(String name) {
     int dot = name.lastIndexOf('.');

@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.3.2
+
+iOS build 37.
+
+- Build on TailPocket v0.3.1 (jt-wang/tailpocket@086e368): the Go module from the Go proxy, the phone library from its release (checked by SHA-256). Revoking a phone closes its open connections on every route immediately, shutdown is bounded, and new connections move to better routes without interrupting existing ones.
+- When the computer says no to a pairing (`pair`'s y/N or Don't pair in the Add phone dialog), the phone hears it at once and says the computer did not confirm, also over Tailcat. Before, it waited about 70 s.
+- Phones on 0.3.1 (36) and computers on 0.3.1 pair and connect with 0.3.2. A phone on 0.3.0 (35) or older still cannot pair with a 0.3.1 or newer Companion: update the phone and the computer together.
+- Keep the visible chat turn and its position when switching views, refreshing, or reopening recent cached text offline. Follow new replies only when already reading at the end.
+- Return HTTP 304 for unchanged chat pages instead of retransmitting and redrawing the same content.
+- Retry recoverable terminal attachment failures in the same pane, retain its last screen while reconnecting, and recover after foreground or network changes. A terminal that has exited stays ended.
+- Provide local recording, preview, export and clear in Settings › On-device diagnostics on iOS and Android. New and never-enabled installations start with every category off; turning on recording alone selects nothing. Keep existing choices across upgrades and show categories disabled while recording is off. Diagnostics never upload automatically.
+- Keep the publicly contributed Oh My Pi program entry and include its icon's MIT notice.
+
 ## v0.3.1
 
 TestFlight candidate (36), Android test APK and test Companion, not a public Release or Latest update.

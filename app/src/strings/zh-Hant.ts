@@ -3,6 +3,7 @@ import type { Table } from './index.ts'
 
 export const zhHant: Table = {
   diagnosticTitle: '裝置本機診斷', diagnosticRecord: '記錄診斷日誌',
+  diagnosticOnState: '開', diagnosticOffState: '關', diagnosticUnsupportedState: '不支援',
   diagnosticInteraction: '互動／生命週期', diagnosticPerformance: '效能', diagnosticNetwork: '網路', diagnosticResources: '資源／電池',
   diagnosticOff: '記錄已關閉，不收集診斷資料。預設關閉。', diagnosticRecording: '● 正在記錄所選類別', diagnosticNoCategories: '未選擇類別，不收集診斷資料。',
   diagnosticContent: '無追蹤、無分析統計。報告不含對話內容：訊息、終端機輸出、標題、名稱、路徑、位址和憑證。分享前請確認所選類別及時間範圍。',

@@ -32,7 +32,7 @@ const WHY: Record<string, Key> = {
  *  it), so the line says only what is true either way, and Try again works either way. */
 export function terminalNote(state: SessionState, slow: boolean, conn: Conn, why: string): { text: string; retry: boolean } {
   if (state === 'waiting') return { text: t(slow && conn === 'ready' ? 'terminalLoading' : 'connecting'), retry: slow }
-  return { text: state === 'lost' ? t('reconnecting') : why, retry: false }
+  return { text: state === 'lost' ? t('reconnecting') : why, retry: state === 'lost' }
 }
 
 /** How often a viewer in use tells herdr-core so. */
@@ -58,6 +58,9 @@ export class TerminalSession {
   private stream?: Stream
   private size?: { cols: number; rows: number }
   private attaching = false
+  private attempt = 0
+  private retryTimer?: ReturnType<typeof setTimeout>
+  private retryDelay = 1000
   /** The keyboard was asked for before the page could take it (a switch tapped as the pane opens): asked again on ready. */
   private focusLater = false
   private attachedOnce = false
@@ -82,9 +85,12 @@ export class TerminalSession {
     this.channel = new PageChannel(post, later, store.picturesOf?.(address))
     this.waitForPage()
     this.off = store.conn.sub((c) => {
-      if (c === 'ready' && this.state.get() === 'lost') void this.attach()
+      if (c === 'ready' && !this.stream && this.state.get() !== 'ended') void this.attach()
     }, 'TerminalSession')
-    this.offActivity = store.activity.sub((front) => this.stream?.pause(!front))
+    this.offActivity = store.activity.sub((front) => {
+      this.stream?.pause(!front)
+      if (front && !this.stream && this.state.get() !== 'ended') void this.attach()
+    })
   }
 
   /** A message from the page. */
@@ -140,10 +146,17 @@ export class TerminalSession {
     }
   }
 
-  /** Try again on a page that has not said ready: a new page in its place, with its own wait. A page that said ready
-   *  meanwhile (the button was still on screen) is kept. */
+  /** Retry the attachment without replacing a ready page or its screen. A page that never said ready is reloaded. */
   retry() {
-    if (this.pageReady || this.disposed) return
+    if (this.disposed) return
+    if (this.pageReady) {
+      if (this.state.get() === 'lost') {
+        this.retryDelay = 1000
+        this.store.reconnectNow()
+        void this.attach()
+      }
+      return
+    }
     this.slow.set(false)
     this.opts.reload?.()
     this.waitForPage()
@@ -222,6 +235,7 @@ export class TerminalSession {
 
   dispose() {
     this.disposed = true
+    clearTimeout(this.retryTimer)
     if (this.lines && !this.opts.observe) this.store.saw(this.address, tailOf(this.lines))
     this.off()
     this.offActivity()
@@ -235,16 +249,29 @@ export class TerminalSession {
   }
 
   private async attach() {
-    if (this.attaching || this.disposed || !this.size || !this.store.connected) return
+    if (this.attaching || this.stream || this.disposed || !this.pageReady || !this.size || !this.store.connected) return
+    clearTimeout(this.retryTimer)
+    this.retryTimer = undefined
     this.attaching = true
+    const attempt = ++this.attempt
+    let closed = false
+    let first = true
     try {
       const resumed = this.attachedOnce
-      this.channel.reset()
       const s = await this.store.attach(this.address, this.size, {
-        data: (b) => { if (!this.disposed) this.channel.write(b) },
-        close: (r) => this.closed(r),
+        // Leave the last screen up throughout retries. Reset only when a successful attachment brings its replay.
+        data: (b) => {
+          if (this.disposed || attempt !== this.attempt) return
+          if (first) { first = false; this.channel.reset() }
+          this.channel.write(b)
+        },
+        close: (r) => {
+          if (attempt !== this.attempt) return
+          closed = true
+          this.closed(r)
+        },
       }, { ...(resumed ? { resumed: true } : {}), ...(this.opts.observe ? { observe: true } : {}), ...(this.display() ? { display: this.display() } : {}) })
-      if (this.disposed) return s.detach()
+      if (this.disposed || closed) return s.detach()
       this.stream = s
       s.pause(!this.store.appActive)
       // Attached at the phone's size, it no longer needs the attachment it left behind.
@@ -255,18 +282,26 @@ export class TerminalSession {
       // was away stayed that narrow in the phone's history.
       if (resumed && !this.opts.observe) s.focus(true)
       this.attachedOnce = true
+      this.retryDelay = 1000
       this.state.set('live')
       this.why.set('')
     } catch (e: any) {
+      if (this.disposed || closed) return
       const kind = e?.kind ?? ''
-      if (kind === 'disconnected') this.state.set('lost')
-      else {
+      if (kind === 'not_found' || kind === 'finished' || WHY[kind]) {
         this.state.set('ended')
-        this.why.set(kind === 'not_found' ? t('terminalLost') : kind === 'finished' ? t('terminalFinished') : String(e?.message ?? e))
-      }
+        this.why.set(kind === 'not_found' ? t('terminalLost') : t(WHY[kind] ?? 'terminalFinished'))
+      } else this.state.set('lost')
     } finally {
       this.attaching = false
+      this.retryAttach()
     }
+  }
+
+  private retryAttach() {
+    if (this.disposed || this.retryTimer !== undefined || this.state.get() !== 'lost' || !this.store.connected) return
+    this.retryTimer = setTimeout(() => { this.retryTimer = undefined; void this.attach() }, this.retryDelay)
+    this.retryDelay = Math.min(this.retryDelay * 2, 30_000)
   }
 
   private display() {
@@ -276,13 +311,12 @@ export class TerminalSession {
   }
 
   private closed(r: CloseReason) {
-    // Only this session detaches, and it lets go of the stream first: a late close must not drop the next one.
-    if (r.reason === 'detached') return
     this.stream = undefined
     if (this.disposed) return this.store.release(this.address)
-    if (r.reason === 'disconnected') {
+    if (r.reason === 'disconnected' || r.reason === 'detached') {
       this.state.set('lost')
       this.why.set(t('reconnecting'))
+      this.retryAttach()
       return
     }
     this.state.set('ended')
