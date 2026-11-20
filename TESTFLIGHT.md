@@ -2,6 +2,10 @@
 
 A cloud coding agent can request an iOS build through GitHub Actions. Apple signing credentials stay in the repository's `testflight` environment; the agent needs a GitHub token with **Actions: write** and **Contents: read**.
 
+## 0.3.3 (38)
+
+The phone app is the same as 0.3.2 (37), and the steps below still apply. The Companion that starts at login no longer restarts every 10 seconds when another Companion is already running (see CHANGELOG.md).
+
 ## 0.3.2 (37) release candidate
 
 Built on TailPocket v0.3.1 (jt-wang/tailpocket@086e368148aac78dc7ad21eb18b3a98d69a0590a), with immediate revocation on every route and bounded shutdown. Formal release requires real blocked-UDP and Android diagnostic acceptance. This candidate also preserves chat reading positions, revalidates unchanged chat with ETags, retries recoverable terminal attachments in place, and provides opt-in diagnostics on iOS and Android in Settings › On-device diagnostics. Use the phone and Companion from the same release; check `herdr-anywhere --version` says `0.3.2`. Build 37 is reserved in source, not an upload receipt.

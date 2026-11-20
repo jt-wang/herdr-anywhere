@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.3.3
+
+iOS build 38. The phone app is the same as 0.3.2 (37).
+
+- When the Companion that starts at login finds another Companion already running on the computer (one started from a terminal, say), it now leaves it running and stops quietly. Before, launchd or systemd took that for a crash and started it again every 10 seconds for as long as the other one ran, adding a line to `serve.log` each time. Run by hand, `serve --tailcat` still exits with an error when one is already running.
+
 ## v0.3.2
 
 iOS build 37.
