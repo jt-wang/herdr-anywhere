@@ -1,5 +1,5 @@
-// herdr-anywhere.jingtao.io: the Worker that serves site/. A full release deploys it (.github/workflows/deploy-site.yml);
-// by hand: python3 site-src/build.py, then cd deploy/cloudflare && npx wrangler deploy.
+// herdr-anywhere.jingtao.io: the Worker that serves site/. After each full release:
+// python3 site-src/build.py, then cd deploy/cloudflare && npx wrangler deploy.
 {
   "name": "herdr-anywhere",
   "account_id": "07599df2ad7de4b13a0ebbecfd009ef1",
