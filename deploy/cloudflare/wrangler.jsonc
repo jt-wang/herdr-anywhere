@@ -1,0 +1,16 @@
+// herdr-anywhere.jingtao.io: the Worker that serves site/. A full release deploys it (.github/workflows/deploy-site.yml);
+// by hand: python3 site-src/build.py, then cd deploy/cloudflare && npx wrangler deploy.
+{
+  "name": "herdr-anywhere",
+  "account_id": "07599df2ad7de4b13a0ebbecfd009ef1",
+  "main": "worker.js",
+  "compatibility_date": "2026-11-01",
+  "routes": [{ "pattern": "herdr-anywhere.jingtao.io", "custom_domain": true }],
+  "assets": {
+    "directory": "../../site",
+    "binding": "ASSETS",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "404-page", // the nearest 404.html: /ja/x shows site/ja/404.html
+    "run_worker_first": true
+  }
+}

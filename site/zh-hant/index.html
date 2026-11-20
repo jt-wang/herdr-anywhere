@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="zh-Hant-TW" class="no-js">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#F6F6F6" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#171717" media="(prefers-color-scheme: dark)">
+  <title>Herdr Anywhere：在手機上使用你的 Herdr agent</title>
+  <meta name="description" content="在手機上使用你的 Herdr agent：選個資料夾就能開，在終端機裡打字，看每個 agent 在做什麼，誰停下來問你就直接回覆。完全開源。">
+  <link rel="canonical" href="https://herdr-anywhere.jingtao.io/zh-hant/">
+  <link rel="alternate" hreflang="en" href="https://herdr-anywhere.jingtao.io/">
+  <link rel="alternate" hreflang="zh-Hans" href="https://herdr-anywhere.jingtao.io/zh/">
+  <link rel="alternate" hreflang="zh-Hant" href="https://herdr-anywhere.jingtao.io/zh-hant/">
+  <link rel="alternate" hreflang="es" href="https://herdr-anywhere.jingtao.io/es/">
+  <link rel="alternate" hreflang="ja" href="https://herdr-anywhere.jingtao.io/ja/">
+  <link rel="alternate" hreflang="ko" href="https://herdr-anywhere.jingtao.io/ko/">
+  <link rel="alternate" hreflang="ru" href="https://herdr-anywhere.jingtao.io/ru/">
+  <link rel="alternate" hreflang="x-default" href="https://herdr-anywhere.jingtao.io/">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://herdr-anywhere.jingtao.io/zh-hant/">
+  <meta property="og:locale" content="zh_TW">
+  <meta property="og:locale:alternate" content="en_US">
+  <meta property="og:locale:alternate" content="zh_CN">
+  <meta property="og:locale:alternate" content="es_ES">
+  <meta property="og:locale:alternate" content="ja_JP">
+  <meta property="og:locale:alternate" content="ko_KR">
+  <meta property="og:locale:alternate" content="ru_RU">
+  <meta property="og:title" content="在手機上使用你的 agent。">
+  <meta property="og:description" content="在手機上使用你的 Herdr agent：選個資料夾就能開，在終端機裡打字，看每個 agent 在做什麼，誰停下來問你就直接回覆。完全開源。">
+  <meta property="og:image" content="https://herdr-anywhere.jingtao.io/share-card-zh-hant.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:site" content="@thejingtao">
+  <meta name="twitter:creator" content="@thejingtao">
+  <meta name="twitter:image" content="https://herdr-anywhere.jingtao.io/share-card-zh-hant.png">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/site.css">
+  <script>(function(r){r.classList.replace("no-js","js");try{var t=localStorage.getItem("theme");if(t==="light"||t==="dark")r.setAttribute("data-theme",t)}catch(e){}})(document.documentElement);</script>
+  <script src="/site.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">跳到主要內容</a>
+  <header class="site-header wrap">
+    <a class="brand" href="/zh-hant/" aria-label="Herdr Anywhere"><svg width="24" height="24" viewBox="64 64 896 896" aria-hidden="true" focusable="false"><defs><clipPath id="tile"><rect x="64" y="64" width="896" height="896" rx="192"/></clipPath></defs>
+  <rect x="64" y="64" width="896" height="896" rx="192" fill="#3C4046"/>
+  <path clip-path="url(#tile)" fill="#F2F3F5" d="M-160 1184 L-160 341 L64 341 A96 96 0 0 1 130 350 A90 90 0 0 1 270 255 A85 85 0 0 1 400 228 C470 225 530 255 590 295 C680 350 750 470 795 590 C820 655 800 720 745 732 C705 742 672 735 650 745 A60 60 0 0 1 670 860 A60 60 0 0 1 650 970 A60 60 0 0 1 640 1090 L630 1184 Z"/>
+  <path fill="#3C4046" d="M650 470 A175 175 0 0 0 300 470 A125 125 0 0 0 550 470 A60 60 0 0 0 430 470 A37.5 37.5 0 0 1 505 470 A75 75 0 0 1 355 470 A117.5 117.5 0 0 1 590 470 A30 30 0 0 0 650 470 Z"/>
+  <g fill="none" stroke="#3C4046" stroke-width="28" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M640 535 L685 565 L640 595"/>
+    <path d="M712 595 L760 595"/>
+  </g>
+  <g fill="none" stroke="#A7ACB3" stroke-width="40" stroke-linecap="round">
+    <path d="M716 300 A110 110 0 0 1 776 372"/>
+    <path d="M755 219 A200 200 0 0 1 863 348"/>
+  </g></svg><span>Herdr Anywhere</span></a>
+    <div class="tools">
+      <details class="lang">
+        <summary aria-label="語言: 繁體中文"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 3.8 5.7 3.8 9s-1.3 6.3-3.8 9c-2.5-2.7-3.8-5.7-3.8-9S9.5 5.7 12 3Z"/></g></svg><span class="lang-name">繁體中文</span></summary>
+        <ul>
+          <li><a href="/" hreflang="en" lang="en">English</a></li>
+          <li><a href="/zh/" hreflang="zh-Hans" lang="zh-Hans">简体中文</a></li>
+          <li><a href="/zh-hant/" hreflang="zh-Hant" lang="zh-Hant-TW" aria-current="page">繁體中文</a></li>
+          <li><a href="/es/" hreflang="es" lang="es">Español</a></li>
+          <li><a href="/ja/" hreflang="ja" lang="ja">日本語</a></li>
+          <li><a href="/ko/" hreflang="ko" lang="ko">한국어</a></li>
+          <li><a href="/ru/" hreflang="ru" lang="ru">Русский</a></li>
+        </ul>
+      </details>
+      <button type="button" class="theme js-only" data-label-dark="切換成深色模式" data-label-light="切換成淺色模式" aria-label="切換成深色模式"><svg class="i-sun" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/></g></svg><svg class="i-moon" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"/></svg></button>
+      <a class="btn btn-primary btn-small" href="#get">下載</a>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero wrap" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <h1 id="hero-title"><span class="h1-line">在手機上</span><span class="h1-line">使用你的 agent。</span></h1>
+        <p class="lede">選個資料夾就能開 Herdr agent，在它的終端機裡打字；哪個停下來問你，直接回覆它。</p>
+        <div class="cta">
+          <a class="btn btn-primary" href="#get">1. 先設定電腦</a>
+          <a class="btn btn-secondary" href="https://github.com/jt-wang/herdr-anywhere/releases/latest/download/Herdr-Anywhere.apk">2. 下載 Android 版</a>
+        </div>
+        <p class="version-line"><a class="version" href="https://github.com/jt-wang/herdr-anywhere/releases/latest">目前版本 0.3.2</a></p>
+      </div>
+      <figure class="film">
+        <video id="film" src="/herdr-anywhere-zh-hant-light.mp4" poster="/poster-zh-hant-light.jpg" data-light-src="/herdr-anywhere-zh-hant-light.mp4" data-dark-src="/herdr-anywhere-zh-hant-dark.mp4" data-light-poster="/poster-zh-hant-light.jpg" data-dark-poster="/poster-zh-hant-dark.jpg" autoplay muted loop playsinline preload="metadata" aria-label="手機上的 Herdr Anywhere，旁邊是電腦上的 Herdr"></video>
+        <script>(function(v,r){var t=r.getAttribute("data-theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");v.poster=v.getAttribute("data-"+t+"-poster");var s=v.getAttribute("data-"+t+"-src");if(v.getAttribute("src")!==s)v.src=s})(document.getElementById("film"),document.documentElement);</script>
+      </figure>
+    </section>
+
+    <section class="section wrap" aria-labelledby="use-title">
+      <h2 id="use-title" class="reveal">還是那個 Herdr，現在放進口袋。</h2>
+      <ul class="features">
+        <li class="feature reveal">
+          <figure class="shot tall"><picture><source srcset="/type-zh-hant-dark.jpg" media="(prefers-color-scheme: dark)" data-theme-source="dark"><img src="/type-zh-hant-light.jpg" alt="手機上 Pi 的終端機，正在處理剛在手機上輸入的一句話，下方是終端機按鍵" width="780" height="914"></picture></figure>
+          <h3>每個終端機都能打字</h3>
+        </li>
+        <li class="feature reveal">
+          <figure class="shot tall"><picture><source srcset="/agents-zh-hant-dark.jpg" media="(prefers-color-scheme: dark)" data-theme-source="dark"><img src="/agents-zh-hant-light.jpg" alt="手機首頁：四個空間裡有 Claude Code、Kimi 和 Pi，Claude Code 下方還有它派出的助手" width="780" height="1200"></picture></figure>
+          <h3>所有 agent 一覽無遺</h3>
+        </li>
+        <li class="feature reveal">
+          <figure class="shot tall"><picture><source srcset="/needs-zh-hant-dark.jpg" media="(prefers-color-scheme: dark)" data-theme-source="dark"><img src="/needs-zh-hant-light.jpg" alt="等你處理裡有兩個 agent：Kimi 問要不要信任一個資料夾，Claude Code 問要不要執行 npm test" width="780" height="1120"></picture></figure>
+          <h3>誰在問，就回誰</h3>
+        </li>
+      </ul>
+      <ul class="stats">
+        <li class="stat reveal"><b>任何 agent</b><span>只要能在 Herdr 裡執行</span></li>
+        <li class="stat reveal"><b>7 種語言</b><span>App 介面可選</span></li>
+      </ul>
+    </section>
+
+    <section class="section wrap" aria-labelledby="private-title">
+      <h2 id="private-title" class="reveal">從手機到電腦，全程加密。</h2>
+      <dl class="facts reveal">
+        <div class="fact"><dt>手機到電腦</dt><dd class="ok">端對端加密</dd></div>
+        <div class="fact"><dt>帳號</dt><dd>不用註冊</dd></div>
+        <div class="fact"><dt>伺服器</dt><dd>不用自己架</dd></div>
+        <div class="fact"><dt>原始碼</dt><dd>MIT 授權</dd></div>
+      </dl>
+    </section>
+
+    <section class="section wrap" aria-labelledby="setup-title">
+      <h2 id="setup-title" class="reveal">裝一次，掃一次 QR Code。</h2>
+      <ol class="steps">
+        <li class="step reveal">
+          <figure class="shot art" aria-hidden="true"><div class="chat"><p class="you">讀一下 …/herdr-anywhere/…/INSTALL.md，在這台電腦上安裝 Herdr Anywhere。</p><p class="done">companion 和「新增手機」對話框都裝好了</p></div></figure>
+          <span class="step-num">1</span><h3>請 coding agent 幫你裝</h3>
+        </li>
+        <li class="step reveal">
+          <figure class="shot"><picture><source srcset="/scan-zh-hant-dark.jpg" media="(prefers-color-scheme: dark)" data-theme-source="dark"><img src="/scan-zh-hant-light.jpg" alt="Herdr 的「新增手機」對話框顯示配對碼，手機正在掃描" width="1280" height="720"></picture></figure>
+          <span class="step-num">2</span><h3>按 <kbd>⌘⇧M</kbd>，掃描 QR Code</h3>
+        </li>
+        <li class="step reveal">
+          <figure class="shot art" aria-hidden="true"><ul class="rows"><li><b>billing · Kimi</b><span class="ask">等你處理</span></li><li><b>web-app · Pi</b><span>工作中</span></li><li><b>acme-api · Claude Code</b><span>已完成</span></li></ul></figure>
+          <span class="step-num">3</span><h3>開始使用你的 agent</h3>
+        </li>
+      </ol>
+    </section>
+
+    <section class="section wrap" id="get" aria-labelledby="get-title">
+      <div class="get reveal">
+        <h2 id="get-title">下載 Herdr Anywhere</h2>
+        <div class="ways">
+          <div class="way">
+            <h3>三個步驟就裝好</h3>
+            <ol class="get-steps">
+              <li><span class="step-num">1</span><div><p>把這段文字貼給電腦上的 coding agent。</p>
+                <div class="command-row">
+                  <pre class="command-box"><code id="setup-line">讀一下 https://raw.githubusercontent.com/jt-wang/herdr-anywhere/main/INSTALL.md，在這台電腦上安裝 Herdr Anywhere。</code></pre>
+                  <button type="button" class="btn btn-secondary js-only" data-copy-target="setup-line" data-copy-status="copy-status" data-copied="已複製，貼到你的 coding agent 就好。" data-copy-fail="請選取這行文字再複製。">複製</button>
+                </div>
+                <p id="copy-status" class="copy-status" role="status"></p></div></li>
+              <li><span class="step-num">2</span><div><p>在 Android 手機上安裝 App。</p><div class="links"><a class="btn btn-primary" href="https://github.com/jt-wang/herdr-anywhere/releases/latest/download/Herdr-Anywhere.apk">下載 Android 版</a><a class="version" href="https://github.com/jt-wang/herdr-anywhere/releases/latest">目前版本 0.3.2</a></div></div></li>
+              <li><span class="step-num">3</span><div><p>在 Herdr 裡按 <kbd>⌘⇧M</kbd>，掃描 QR Code。</p></div></li>
+            </ol>
+            <p class="ios-note">iPhone 版正在 TestFlight 測試中，公開邀請連結將在 X 公布。</p>
+            <div class="links">
+              <a class="btn btn-secondary" href="https://x.com/thejingtao"><svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M17.8 3h3.1l-6.8 7.7L22 21h-6.2l-4.9-6.3L5.3 21H2.2l7.2-8.3L1.8 3h6.4l4.4 5.8L17.8 3Zm-1.1 16.2h1.7L7.4 4.7H5.6l11.1 14.5Z"/></svg>追蹤 @thejingtao</a>
+            </div>
+          </div>
+          <div class="way">
+            <h3>自己編譯</h3>
+            <p>從原始碼編譯 App 和 companion。</p>
+            <div class="links">
+              <a class="btn btn-secondary" href="https://github.com/jt-wang/herdr-anywhere#build-from-source">看教學</a>
+              <a class="text-link" href="https://github.com/jt-wang/herdr-anywhere">GitHub 上的原始碼</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer wrap">
+    <a class="footer-x" href="https://x.com/thejingtao"><strong>@thejingtao</strong> 用 <svg width="14" height="14" viewBox="0 0 24 24" role="img" aria-label="心"><path fill="currentColor" d="M12 21s-7.5-4.6-10-9.3C.4 8.4 2.3 4.5 6 4.5c2.1 0 3.4 1.1 4.2 2.3h3.6c.8-1.2 2.1-2.3 4.2-2.3 3.7 0 5.6 3.9 4 7.2C19.5 16.4 12 21 12 21Z"/></svg> 打造</a>
+    <p class="footer-note">以 <a href="https://herdr.dev">Herdr</a> 和 <a href="https://github.com/tailscale/tailcat">Tailcat</a> 打造。這是非官方 App，不是 Herdr 團隊做的。</p>
+    <a class="footer-link" href="/zh-hant/privacy/">隱私權</a>
+  </footer>
+</body>
+</html>

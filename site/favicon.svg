@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="64 64 896 896"><defs><clipPath id="tile"><rect x="64" y="64" width="896" height="896" rx="192"/></clipPath></defs>
+  <rect x="64" y="64" width="896" height="896" rx="192" fill="#3C4046"/>
+  <path clip-path="url(#tile)" fill="#F2F3F5" d="M-160 1184 L-160 341 L64 341 A96 96 0 0 1 130 350 A90 90 0 0 1 270 255 A85 85 0 0 1 400 228 C470 225 530 255 590 295 C680 350 750 470 795 590 C820 655 800 720 745 732 C705 742 672 735 650 745 A60 60 0 0 1 670 860 A60 60 0 0 1 650 970 A60 60 0 0 1 640 1090 L630 1184 Z"/>
+  <path fill="#3C4046" d="M650 470 A175 175 0 0 0 300 470 A125 125 0 0 0 550 470 A60 60 0 0 0 430 470 A37.5 37.5 0 0 1 505 470 A75 75 0 0 1 355 470 A117.5 117.5 0 0 1 590 470 A30 30 0 0 0 650 470 Z"/>
+  <g fill="none" stroke="#3C4046" stroke-width="28" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M640 535 L685 565 L640 595"/>
+    <path d="M712 595 L760 595"/>
+  </g>
+  <g fill="none" stroke="#A7ACB3" stroke-width="40" stroke-linecap="round">
+    <path d="M716 300 A110 110 0 0 1 776 372"/>
+    <path d="M755 219 A200 200 0 0 1 863 348"/>
+  </g></svg>

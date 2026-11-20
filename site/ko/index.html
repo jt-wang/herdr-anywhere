@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="ko" class="no-js">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#F6F6F6" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#171717" media="(prefers-color-scheme: dark)">
+  <title>Herdr Anywhere: 휴대폰에서 Herdr 에이전트를</title>
+  <meta name="description" content="휴대폰에서 Herdr 에이전트를 쓰세요. 원하는 폴더에서 시작하고, 터미널에 입력하고, 각자 무엇을 하는지 보고, 물어보는 에이전트에 바로 답할 수 있어요. 완전한 오픈 소스입니다.">
+  <link rel="canonical" href="https://herdr-anywhere.jingtao.io/ko/">
+  <link rel="alternate" hreflang="en" href="https://herdr-anywhere.jingtao.io/">
+  <link rel="alternate" hreflang="zh-Hans" href="https://herdr-anywhere.jingtao.io/zh/">
+  <link rel="alternate" hreflang="zh-Hant" href="https://herdr-anywhere.jingtao.io/zh-hant/">
+  <link rel="alternate" hreflang="es" href="https://herdr-anywhere.jingtao.io/es/">
+  <link rel="alternate" hreflang="ja" href="https://herdr-anywhere.jingtao.io/ja/">
+  <link rel="alternate" hreflang="ko" href="https://herdr-anywhere.jingtao.io/ko/">
+  <link rel="alternate" hreflang="ru" href="https://herdr-anywhere.jingtao.io/ru/">
+  <link rel="alternate" hreflang="x-default" href="https://herdr-anywhere.jingtao.io/">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://herdr-anywhere.jingtao.io/ko/">
+  <meta property="og:locale" content="ko_KR">
+  <meta property="og:locale:alternate" content="en_US">
+  <meta property="og:locale:alternate" content="zh_CN">
+  <meta property="og:locale:alternate" content="zh_TW">
+  <meta property="og:locale:alternate" content="es_ES">
+  <meta property="og:locale:alternate" content="ja_JP">
+  <meta property="og:locale:alternate" content="ru_RU">
+  <meta property="og:title" content="에이전트를, 휴대폰에서.">
+  <meta property="og:description" content="휴대폰에서 Herdr 에이전트를 쓰세요. 원하는 폴더에서 시작하고, 터미널에 입력하고, 각자 무엇을 하는지 보고, 물어보는 에이전트에 바로 답할 수 있어요. 완전한 오픈 소스입니다.">
+  <meta property="og:image" content="https://herdr-anywhere.jingtao.io/share-card-ko.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:site" content="@thejingtao">
+  <meta name="twitter:creator" content="@thejingtao">
+  <meta name="twitter:image" content="https://herdr-anywhere.jingtao.io/share-card-ko.png">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/site.css">
+  <script>(function(r){r.classList.replace("no-js","js");try{var t=localStorage.getItem("theme");if(t==="light"||t==="dark")r.setAttribute("data-theme",t)}catch(e){}})(document.documentElement);</script>
+  <script src="/site.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">본문으로 건너뛰기</a>
+  <header class="site-header wrap">
+    <a class="brand" href="/ko/" aria-label="Herdr Anywhere"><svg width="24" height="24" viewBox="64 64 896 896" aria-hidden="true" focusable="false"><defs><clipPath id="tile"><rect x="64" y="64" width="896" height="896" rx="192"/></clipPath></defs>
+  <rect x="64" y="64" width="896" height="896" rx="192" fill="#3C4046"/>
+  <path clip-path="url(#tile)" fill="#F2F3F5" d="M-160 1184 L-160 341 L64 341 A96 96 0 0 1 130 350 A90 90 0 0 1 270 255 A85 85 0 0 1 400 228 C470 225 530 255 590 295 C680 350 750 470 795 590 C820 655 800 720 745 732 C705 742 672 735 650 745 A60 60 0 0 1 670 860 A60 60 0 0 1 650 970 A60 60 0 0 1 640 1090 L630 1184 Z"/>
+  <path fill="#3C4046" d="M650 470 A175 175 0 0 0 300 470 A125 125 0 0 0 550 470 A60 60 0 0 0 430 470 A37.5 37.5 0 0 1 505 470 A75 75 0 0 1 355 470 A117.5 117.5 0 0 1 590 470 A30 30 0 0 0 650 470 Z"/>
+  <g fill="none" stroke="#3C4046" stroke-width="28" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M640 535 L685 565 L640 595"/>
+    <path d="M712 595 L760 595"/>
+  </g>
+  <g fill="none" stroke="#A7ACB3" stroke-width="40" stroke-linecap="round">
+    <path d="M716 300 A110 110 0 0 1 776 372"/>
+    <path d="M755 219 A200 200 0 0 1 863 348"/>
+  </g></svg><span>Herdr Anywhere</span></a>
+    <div class="tools">
+      <details class="lang">
+        <summary aria-label="언어: 한국어"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 3.8 5.7 3.8 9s-1.3 6.3-3.8 9c-2.5-2.7-3.8-5.7-3.8-9S9.5 5.7 12 3Z"/></g></svg><span class="lang-name">한국어</span></summary>
+        <ul>
+          <li><a href="/" hreflang="en" lang="en">English</a></li>
+          <li><a href="/zh/" hreflang="zh-Hans" lang="zh-Hans">简体中文</a></li>
+          <li><a href="/zh-hant/" hreflang="zh-Hant" lang="zh-Hant-TW">繁體中文</a></li>
+          <li><a href="/es/" hreflang="es" lang="es">Español</a></li>
+          <li><a href="/ja/" hreflang="ja" lang="ja">日本語</a></li>
+          <li><a href="/ko/" hreflang="ko" lang="ko" aria-current="page">한국어</a></li>
+          <li><a href="/ru/" hreflang="ru" lang="ru">Русский</a></li>
+        </ul>
+      </details>
+      <button type="button" class="theme js-only" data-label-dark="다크 모드로 전환" data-label-light="라이트 모드로 전환" aria-label="다크 모드로 전환"><svg class="i-sun" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/></g></svg><svg class="i-moon" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"/></svg></button>
+      <a class="btn btn-primary btn-small" href="#get">받기</a>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero wrap" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <h1 id="hero-title"><span class="h1-line">에이전트를,</span><span class="h1-line">휴대폰에서.</span></h1>
+        <p class="lede">원하는 폴더에서 Herdr 에이전트를 시작하고, 터미널에 바로 입력하세요. 멈춰서 물어보는 에이전트에는 그 자리에서 답하면 돼요.</p>
+        <div class="cta">
+          <a class="btn btn-primary" href="#get">1. 컴퓨터 준비하기</a>
+          <a class="btn btn-secondary" href="https://github.com/jt-wang/herdr-anywhere/releases/latest/download/Herdr-Anywhere.apk">2. Android 앱 받기</a>
+        </div>
+        <p class="version-line"><a class="version" href="https://github.com/jt-wang/herdr-anywhere/releases/latest">버전 0.3.2</a></p>
+      </div>
+      <figure class="film">
+        <video id="film" src="/herdr-anywhere-ko-light.mp4" poster="/poster-ko-light.jpg" data-light-src="/herdr-anywhere-ko-light.mp4" data-dark-src="/herdr-anywhere-ko-dark.mp4" data-light-poster="/poster-ko-light.jpg" data-dark-poster="/poster-ko-dark.jpg" autoplay muted loop playsinline preload="metadata" aria-label="휴대폰의 Herdr Anywhere와 컴퓨터의 Herdr"></video>
+        <script>(function(v,r){var t=r.getAttribute("data-theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");v.poster=v.getAttribute("data-"+t+"-poster");var s=v.getAttribute("data-"+t+"-src");if(v.getAttribute("src")!==s)v.src=s})(document.getElementById("film"),document.documentElement);</script>
+      </figure>
+    </section>
+
+    <section class="section wrap" aria-labelledby="use-title">
+      <h2 id="use-title" class="reveal">익숙한 Herdr를 주머니 속에.</h2>
+      <ul class="features">
+        <li class="feature reveal">
+          <figure class="shot tall"><picture><source srcset="/type-ko-dark.jpg" media="(prefers-color-scheme: dark)" data-theme-source="dark"><img src="/type-ko-light.jpg" alt="휴대폰에 띄운 Pi의 터미널. 휴대폰에서 입력한 문장을 처리하고 있고, 아래에 터미널 키가 있다" width="780" height="1004"></picture></figure>
+          <h3>어떤 터미널에든 입력</h3>
+        </li>
+        <li class="feature reveal">
+          <figure class="shot tall"><picture><source srcset="/agents-ko-dark.jpg" media="(prefers-color-scheme: dark)" data-theme-source="dark"><img src="/agents-ko-light.jpg" alt="휴대폰 홈 화면. 네 개의 스페이스에 Claude Code, Kimi, Pi가 있고, Claude Code 아래에 그 도우미가 있다" width="780" height="1200"></picture></figure>
+          <h3>모든 에이전트를 한눈에</h3>
+        </li>
+        <li class="feature reveal">
+          <figure class="shot tall"><picture><source srcset="/needs-ko-dark.jpg" media="(prefers-color-scheme: dark)" data-theme-source="dark"><img src="/needs-ko-light.jpg" alt="응답 필요에 에이전트 두 개. Kimi는 폴더를 신뢰할지, Claude Code는 npm test를 실행할지 묻고 있다" width="780" height="1120"></picture></figure>
+          <h3>물어보면 바로 답하기</h3>
+        </li>
+      </ul>
+      <ul class="stats">
+        <li class="stat reveal"><b>어떤 에이전트든</b><span>Herdr에서 돌아가기만 하면</span></li>
+        <li class="stat reveal"><b>7개 언어</b><span>앱에서 지원</span></li>
+      </ul>
+    </section>
+
+    <section class="section wrap" aria-labelledby="private-title">
+      <h2 id="private-title" class="reveal">휴대폰부터 컴퓨터까지 암호화.</h2>
+      <dl class="facts reveal">
+        <div class="fact"><dt>휴대폰 ↔ 컴퓨터</dt><dd class="ok">종단 간 암호화</dd></div>
+        <div class="fact"><dt>계정</dt><dd>필요 없음</dd></div>
+        <div class="fact"><dt>직접 운영할 서버</dt><dd>없음</dd></div>
+        <div class="fact"><dt>소스 코드</dt><dd>MIT</dd></div>
+      </dl>
+    </section>
+
+    <section class="section wrap" aria-labelledby="setup-title">
+      <h2 id="setup-title" class="reveal">한 번 설치하고, 한 번 스캔하면 끝.</h2>
+      <ol class="steps">
+        <li class="step reveal">
+          <figure class="shot art" aria-hidden="true"><div class="chat"><p class="you">…/herdr-anywhere/…/INSTALL.md를 읽고 이 컴퓨터에 Herdr Anywhere를 설치해 줘.</p><p class="done">companion과 '휴대폰 추가' 대화상자를 설치했어요</p></div></figure>
+          <span class="step-num">1</span><h3>코딩 에이전트에게 맡기기</h3>
+        </li>
+        <li class="step reveal">
+          <figure class="shot"><picture><source srcset="/scan-ko-dark.jpg" media="(prefers-color-scheme: dark)" data-theme-source="dark"><img src="/scan-ko-light.jpg" alt="페어링 코드를 띄운 Herdr의 '휴대폰 추가' 대화상자와 그것을 스캔하는 휴대폰" width="1280" height="720"></picture></figure>
+          <span class="step-num">2</span><h3><kbd>⌘⇧M</kbd>을 누르고 스캔</h3>
+        </li>
+        <li class="step reveal">
+          <figure class="shot art" aria-hidden="true"><ul class="rows"><li><b>billing · Kimi</b><span class="ask">응답 필요</span></li><li><b>web-app · Pi</b><span>작업 중</span></li><li><b>acme-api · Claude Code</b><span>완료</span></li></ul></figure>
+          <span class="step-num">3</span><h3>에이전트 쓰기</h3>
+        </li>
+      </ol>
+    </section>
+
+    <section class="section wrap" id="get" aria-labelledby="get-title">
+      <div class="get reveal">
+        <h2 id="get-title">Herdr Anywhere 받기</h2>
+        <div class="ways">
+          <div class="way">
+            <h3>세 단계로 설정</h3>
+            <ol class="get-steps">
+              <li><span class="step-num">1</span><div><p>컴퓨터의 코딩 에이전트에 이 문장을 붙여 넣으세요.</p>
+                <div class="command-row">
+                  <pre class="command-box"><code id="setup-line">https://raw.githubusercontent.com/jt-wang/herdr-anywhere/main/INSTALL.md를 읽고 이 컴퓨터에 Herdr Anywhere를 설치해 줘.</code></pre>
+                  <button type="button" class="btn btn-secondary js-only" data-copy-target="setup-line" data-copy-status="copy-status" data-copied="복사했어요. 코딩 에이전트에 붙여 넣으세요." data-copy-fail="이 줄을 선택해서 복사하세요.">복사</button>
+                </div>
+                <p id="copy-status" class="copy-status" role="status"></p></div></li>
+              <li><span class="step-num">2</span><div><p>Android 휴대폰에 앱을 설치하세요.</p><div class="links"><a class="btn btn-primary" href="https://github.com/jt-wang/herdr-anywhere/releases/latest/download/Herdr-Anywhere.apk">Android용 다운로드</a><a class="version" href="https://github.com/jt-wang/herdr-anywhere/releases/latest">버전 0.3.2</a></div></div></li>
+              <li><span class="step-num">3</span><div><p>Herdr에서 <kbd>⌘⇧M</kbd>을 누르고 코드를 스캔하세요.</p></div></li>
+            </ol>
+            <p class="ios-note">iPhone 앱은 TestFlight에서 테스트 중이에요. 공개 초대 링크는 X에서 알려 드릴게요.</p>
+            <div class="links">
+              <a class="btn btn-secondary" href="https://x.com/thejingtao"><svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M17.8 3h3.1l-6.8 7.7L22 21h-6.2l-4.9-6.3L5.3 21H2.2l7.2-8.3L1.8 3h6.4l4.4 5.8L17.8 3Zm-1.1 16.2h1.7L7.4 4.7H5.6l11.1 14.5Z"/></svg>@thejingtao 팔로우</a>
+            </div>
+          </div>
+          <div class="way">
+            <h3>직접 빌드하기</h3>
+            <p>앱과 companion을 소스에서 빌드할 수 있어요.</p>
+            <div class="links">
+              <a class="btn btn-secondary" href="https://github.com/jt-wang/herdr-anywhere#build-from-source">가이드 보기</a>
+              <a class="text-link" href="https://github.com/jt-wang/herdr-anywhere">GitHub 소스 코드</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer wrap">
+    <a class="footer-x" href="https://x.com/thejingtao"><strong>@thejingtao</strong>가 <svg width="14" height="14" viewBox="0 0 24 24" role="img" aria-label="사랑"><path fill="currentColor" d="M12 21s-7.5-4.6-10-9.3C.4 8.4 2.3 4.5 6 4.5c2.1 0 3.4 1.1 4.2 2.3h3.6c.8-1.2 2.1-2.3 4.2-2.3 3.7 0 5.6 3.9 4 7.2C19.5 16.4 12 21 12 21Z"/></svg>을 담아 만들었어요</a>
+    <p class="footer-note"><a href="https://herdr.dev">Herdr</a>와 <a href="https://github.com/tailscale/tailcat">Tailcat</a>을 바탕으로 만들었어요. 비공식 앱이며, Herdr 팀이 만든 앱이 아닙니다.</p>
+    <a class="footer-link" href="/ko/privacy/">개인정보 보호</a>
+  </footer>
+</body>
+</html>

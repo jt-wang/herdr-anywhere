@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="ja" class="no-js">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#F6F6F6" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#171717" media="(prefers-color-scheme: dark)">
+  <title>Herdr Anywhere：Herdr のエージェントをスマホから</title>
+  <meta name="description" content="Herdr のエージェントをスマホから。好きなフォルダで起動し、ターミナルに入力し、それぞれの状況を確認して、質問にはその場で答えられます。完全オープンソースです。">
+  <link rel="canonical" href="https://herdr-anywhere.jingtao.io/ja/">
+  <link rel="alternate" hreflang="en" href="https://herdr-anywhere.jingtao.io/">
+  <link rel="alternate" hreflang="zh-Hans" href="https://herdr-anywhere.jingtao.io/zh/">
+  <link rel="alternate" hreflang="zh-Hant" href="https://herdr-anywhere.jingtao.io/zh-hant/">
+  <link rel="alternate" hreflang="es" href="https://herdr-anywhere.jingtao.io/es/">
+  <link rel="alternate" hreflang="ja" href="https://herdr-anywhere.jingtao.io/ja/">
+  <link rel="alternate" hreflang="ko" href="https://herdr-anywhere.jingtao.io/ko/">
+  <link rel="alternate" hreflang="ru" href="https://herdr-anywhere.jingtao.io/ru/">
+  <link rel="alternate" hreflang="x-default" href="https://herdr-anywhere.jingtao.io/">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://herdr-anywhere.jingtao.io/ja/">
+  <meta property="og:locale" content="ja_JP">
+  <meta property="og:locale:alternate" content="en_US">
+  <meta property="og:locale:alternate" content="zh_CN">
+  <meta property="og:locale:alternate" content="zh_TW">
+  <meta property="og:locale:alternate" content="es_ES">
+  <meta property="og:locale:alternate" content="ko_KR">
+  <meta property="og:locale:alternate" content="ru_RU">
+  <meta property="og:title" content="エージェントを、スマホから。">
+  <meta property="og:description" content="Herdr のエージェントをスマホから。好きなフォルダで起動し、ターミナルに入力し、それぞれの状況を確認して、質問にはその場で答えられます。完全オープンソースです。">
+  <meta property="og:image" content="https://herdr-anywhere.jingtao.io/share-card-ja.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:site" content="@thejingtao">
+  <meta name="twitter:creator" content="@thejingtao">
+  <meta name="twitter:image" content="https://herdr-anywhere.jingtao.io/share-card-ja.png">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/site.css">
+  <script>(function(r){r.classList.replace("no-js","js");try{var t=localStorage.getItem("theme");if(t==="light"||t==="dark")r.setAttribute("data-theme",t)}catch(e){}})(document.documentElement);</script>
+  <script src="/site.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">本文へ移動</a>
+  <header class="site-header wrap">
+    <a class="brand" href="/ja/" aria-label="Herdr Anywhere"><svg width="24" height="24" viewBox="64 64 896 896" aria-hidden="true" focusable="false"><defs><clipPath id="tile"><rect x="64" y="64" width="896" height="896" rx="192"/></clipPath></defs>
+  <rect x="64" y="64" width="896" height="896" rx="192" fill="#3C4046"/>
+  <path clip-path="url(#tile)" fill="#F2F3F5" d="M-160 1184 L-160 341 L64 341 A96 96 0 0 1 130 350 A90 90 0 0 1 270 255 A85 85 0 0 1 400 228 C470 225 530 255 590 295 C680 350 750 470 795 590 C820 655 800 720 745 732 C705 742 672 735 650 745 A60 60 0 0 1 670 860 A60 60 0 0 1 650 970 A60 60 0 0 1 640 1090 L630 1184 Z"/>
+  <path fill="#3C4046" d="M650 470 A175 175 0 0 0 300 470 A125 125 0 0 0 550 470 A60 60 0 0 0 430 470 A37.5 37.5 0 0 1 505 470 A75 75 0 0 1 355 470 A117.5 117.5 0 0 1 590 470 A30 30 0 0 0 650 470 Z"/>
+  <g fill="none" stroke="#3C4046" stroke-width="28" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M640 535 L685 565 L640 595"/>
+    <path d="M712 595 L760 595"/>
+  </g>
+  <g fill="none" stroke="#A7ACB3" stroke-width="40" stroke-linecap="round">
+    <path d="M716 300 A110 110 0 0 1 776 372"/>
+    <path d="M755 219 A200 200 0 0 1 863 348"/>
+  </g></svg><span>Herdr Anywhere</span></a>
+    <div class="tools">
+      <details class="lang">
+        <summary aria-label="言語: 日本語"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 3.8 5.7 3.8 9s-1.3 6.3-3.8 9c-2.5-2.7-3.8-5.7-3.8-9S9.5 5.7 12 3Z"/></g></svg><span class="lang-name">日本語</span></summary>
+        <ul>
+          <li><a href="/" hreflang="en" lang="en">English</a></li>
+          <li><a href="/zh/" hreflang="zh-Hans" lang="zh-Hans">简体中文</a></li>
+          <li><a href="/zh-hant/" hreflang="zh-Hant" lang="zh-Hant-TW">繁體中文</a></li>
+          <li><a href="/es/" hreflang="es" lang="es">Español</a></li>
+          <li><a href="/ja/" hreflang="ja" lang="ja" aria-current="page">日本語</a></li>
+          <li><a href="/ko/" hreflang="ko" lang="ko">한국어</a></li>
+          <li><a href="/ru/" hreflang="ru" lang="ru">Русский</a></li>
+        </ul>
+      </details>
+      <button type="button" class="theme js-only" data-label-dark="ダークモードに切り替え" data-label-light="ライトモードに切り替え" aria-label="ダークモードに切り替え"><svg class="i-sun" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/></g></svg><svg class="i-moon" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"/></svg></button>
+      <a class="btn btn-primary btn-small" href="#get">入手</a>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero wrap" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <h1 id="hero-title"><span class="h1-line">エージェントを、</span><span class="h1-line">スマホから。</span></h1>
+        <p class="lede">好きなフォルダで Herdr のエージェントを起動して、ターミナルに入力。手を止めて質問してきたら、その場で答えられます。</p>
+        <div class="cta">
+          <a class="btn btn-primary" href="#get">1. パソコンを準備</a>
+          <a class="btn btn-secondary" href="https://github.com/jt-wang/herdr-anywhere/releases/latest/download/Herdr-Anywhere.apk">2. Android アプリを入手</a>
+        </div>
+        <p class="version-line"><a class="version" href="https://github.com/jt-wang/herdr-anywhere/releases/latest">バージョン 0.3.2</a></p>
+      </div>
+      <figure class="film">
+        <video id="film" src="/herdr-anywhere-ja-light.mp4" poster="/poster-ja-light.jpg" data-light-src="/herdr-anywhere-ja-light.mp4" data-dark-src="/herdr-anywhere-ja-dark.mp4" data-light-poster="/poster-ja-light.jpg" data-dark-poster="/poster-ja-dark.jpg" autoplay muted loop playsinline preload="metadata" aria-label="スマホの Herdr Anywhere と、パソコンの Herdr"></video>
+        <script>(function(v,r){var t=r.getAttribute("data-theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");v.poster=v.getAttribute("data-"+t+"-poster");var s=v.getAttribute("data-"+t+"-src");if(v.getAttribute("src")!==s)v.src=s})(document.getElementById("film"),document.documentElement);</script>
+      </figure>
+    </section>
+
+    <section class="section wrap" aria-labelledby="use-title">
+      <h2 id="use-title" class="reveal">いつもの Herdr を、ポケットに。</h2>
+      <ul class="features">
+        <li class="feature reveal">
+          <figure class="shot tall"><picture><source srcset="/type-ja-dark.jpg" media="(prefers-color-scheme: dark)" data-theme-source="dark"><img src="/type-ja-light.jpg" alt="スマホに表示した Pi のターミナル。スマホから入力した一文を処理中で、下にターミナル用のキーがある" width="780" height="1004"></picture></figure>
+          <h3>どのターミナルにも入力</h3>
+        </li>
+        <li class="feature reveal">
+          <figure class="shot tall"><picture><source srcset="/agents-ja-dark.jpg" media="(prefers-color-scheme: dark)" data-theme-source="dark"><img src="/agents-ja-light.jpg" alt="スマホのホーム画面。4 つのスペースに Claude Code、Kimi、Pi があり、Claude Code の下にはそのヘルパーがいる" width="780" height="1200"></picture></figure>
+          <h3>すべてのエージェントがひと目で</h3>
+        </li>
+        <li class="feature reveal">
+          <figure class="shot tall"><picture><source srcset="/needs-ja-dark.jpg" media="(prefers-color-scheme: dark)" data-theme-source="dark"><img src="/needs-ja-light.jpg" alt="対応待ちに 2 つのエージェント。Kimi はフォルダを信頼するか、Claude Code は npm test を実行するかを聞いている" width="780" height="1120"></picture></figure>
+          <h3>質問にはその場で回答</h3>
+        </li>
+      </ul>
+      <ul class="stats">
+        <li class="stat reveal"><b>どのエージェントでも</b><span>Herdr で動くものなら</span></li>
+        <li class="stat reveal"><b>7 言語</b><span>アプリの表示言語</span></li>
+      </ul>
+    </section>
+
+    <section class="section wrap" aria-labelledby="private-title">
+      <h2 id="private-title" class="reveal">スマホからパソコンまで、暗号化。</h2>
+      <dl class="facts reveal">
+        <div class="fact"><dt>スマホ → パソコン</dt><dd class="ok">E2E 暗号化</dd></div>
+        <div class="fact"><dt>アカウント</dt><dd>不要</dd></div>
+        <div class="fact"><dt>用意するサーバー</dt><dd>なし</dd></div>
+        <div class="fact"><dt>ソースコード</dt><dd>MIT</dd></div>
+      </dl>
+    </section>
+
+    <section class="section wrap" aria-labelledby="setup-title">
+      <h2 id="setup-title" class="reveal">インストールも、スキャンも一度だけ。</h2>
+      <ol class="steps">
+        <li class="step reveal">
+          <figure class="shot art" aria-hidden="true"><div class="chat"><p class="you">…/herdr-anywhere/…/INSTALL.md を読んで、このパソコンに Herdr Anywhere をインストールして。</p><p class="done">companion と「端末を追加」ダイアログをインストールしました</p></div></figure>
+          <span class="step-num">1</span><h3>コーディングエージェントに頼む</h3>
+        </li>
+        <li class="step reveal">
+          <figure class="shot"><picture><source srcset="/scan-ja-dark.jpg" media="(prefers-color-scheme: dark)" data-theme-source="dark"><img src="/scan-ja-light.jpg" alt="ペアリングコードを表示した Herdr の「端末を追加」ダイアログと、それをスキャンするスマホ" width="1280" height="720"></picture></figure>
+          <span class="step-num">2</span><h3><kbd>⌘⇧M</kbd> を押してスキャン</h3>
+        </li>
+        <li class="step reveal">
+          <figure class="shot art" aria-hidden="true"><ul class="rows"><li><b>billing · Kimi</b><span class="ask">対応待ち</span></li><li><b>web-app · Pi</b><span>実行中</span></li><li><b>acme-api · Claude Code</b><span>完了</span></li></ul></figure>
+          <span class="step-num">3</span><h3>エージェントを使う</h3>
+        </li>
+      </ol>
+    </section>
+
+    <section class="section wrap" id="get" aria-labelledby="get-title">
+      <div class="get reveal">
+        <h2 id="get-title">Herdr Anywhere を入手</h2>
+        <div class="ways">
+          <div class="way">
+            <h3>3 ステップでセットアップ</h3>
+            <ol class="get-steps">
+              <li><span class="step-num">1</span><div><p>これをパソコンのコーディングエージェントに貼り付けます。</p>
+                <div class="command-row">
+                  <pre class="command-box"><code id="setup-line">https://raw.githubusercontent.com/jt-wang/herdr-anywhere/main/INSTALL.md を読んで、このパソコンに Herdr Anywhere をインストールして。</code></pre>
+                  <button type="button" class="btn btn-secondary js-only" data-copy-target="setup-line" data-copy-status="copy-status" data-copied="コピーしました。コーディングエージェントに貼り付けてください。" data-copy-fail="この行を選択してコピーしてください。">コピー</button>
+                </div>
+                <p id="copy-status" class="copy-status" role="status"></p></div></li>
+              <li><span class="step-num">2</span><div><p>Android スマホにアプリをインストールします。</p><div class="links"><a class="btn btn-primary" href="https://github.com/jt-wang/herdr-anywhere/releases/latest/download/Herdr-Anywhere.apk">Android 版を入手</a><a class="version" href="https://github.com/jt-wang/herdr-anywhere/releases/latest">バージョン 0.3.2</a></div></div></li>
+              <li><span class="step-num">3</span><div><p>Herdr で <kbd>⌘⇧M</kbd> を押し、コードをスキャンします。</p></div></li>
+            </ol>
+            <p class="ios-note">iPhone 版は TestFlight でテスト中です。公開招待リンクは X でお知らせします。</p>
+            <div class="links">
+              <a class="btn btn-secondary" href="https://x.com/thejingtao"><svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M17.8 3h3.1l-6.8 7.7L22 21h-6.2l-4.9-6.3L5.3 21H2.2l7.2-8.3L1.8 3h6.4l4.4 5.8L17.8 3Zm-1.1 16.2h1.7L7.4 4.7H5.6l11.1 14.5Z"/></svg>@thejingtao をフォロー</a>
+            </div>
+          </div>
+          <div class="way">
+            <h3>自分でビルド</h3>
+            <p>アプリと companion をソースからビルドできます。</p>
+            <div class="links">
+              <a class="btn btn-secondary" href="https://github.com/jt-wang/herdr-anywhere#build-from-source">ガイドを見る</a>
+              <a class="text-link" href="https://github.com/jt-wang/herdr-anywhere">GitHub のソースコード</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer wrap">
+    <a class="footer-x" href="https://x.com/thejingtao"><strong>@thejingtao</strong> が <svg width="14" height="14" viewBox="0 0 24 24" role="img" aria-label="愛"><path fill="currentColor" d="M12 21s-7.5-4.6-10-9.3C.4 8.4 2.3 4.5 6 4.5c2.1 0 3.4 1.1 4.2 2.3h3.6c.8-1.2 2.1-2.3 4.2-2.3 3.7 0 5.6 3.9 4 7.2C19.5 16.4 12 21 12 21Z"/></svg> を込めて作りました</a>
+    <p class="footer-note"><a href="https://herdr.dev">Herdr</a> と <a href="https://github.com/tailscale/tailcat">Tailcat</a> をもとに作っています。非公式アプリで、Herdr チームによるものではありません。</p>
+    <a class="footer-link" href="/ja/privacy/">プライバシー</a>
+  </footer>
+</body>
+</html>

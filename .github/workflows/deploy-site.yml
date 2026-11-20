@@ -1,0 +1,111 @@
+name: Deploy website
+
+# Builds herdr-anywhere.jingtao.io (site-src/build.py writes site/ from site-src/strings.py and app/nsh.json's version)
+# and deploys it with Wrangler to the Cloudflare Worker in deploy/cloudflare/wrangler.jsonc, then reads every page back.
+# It runs when a release becomes a full release: `released` fires both for a release published as one and for a
+# prerelease changed to one, which is how a signed release becomes Latest (release-signing.yml). It also runs by hand.
+# Either way it deploys only the Latest release's version: from that release's tag, or, by hand, from the default
+# branch when the branch contains that tag (a release whose tag predates this workflow).
+# Credentials: environment site-deploy, secret CLOUDFLARE_API_TOKEN (Account > Workers Scripts > Edit, and
+# Zone > Workers Routes > Read for the site's zone), optional variable CLOUDFLARE_ACCOUNT_ID. Without them, deploy
+# from a computer: python3 site-src/build.py, then cd deploy/cloudflare && npx wrangler deploy.
+on:
+  release:
+    types: [released]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-site
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  SITE_URL: https://herdr-anywhere.jingtao.io/
+  WRANGLER_VERSION: "4.158.0"
+  WRANGLER_SEND_METRICS: "false"
+
+jobs:
+  deploy:
+    # Never on a fork, a pull request or a prerelease; only from a vX.Y.Z tag or the default branch.
+    if: >-
+      github.repository == 'jt-wang/herdr-anywhere'
+      && (github.event_name == 'workflow_dispatch' || (github.event_name == 'release' && !github.event.release.prerelease && !github.event.release.draft))
+      && ((github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v'))
+          || (github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)))
+    environment: site-deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check this is the Latest release's source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import json, os, re, subprocess
+          env = os.environ
+          latest = subprocess.check_output(['gh', 'api', 'repos/jt-wang/herdr-anywhere/releases/latest', '--jq', '.tag_name'], text=True).strip()
+          if not re.fullmatch(r'v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', latest):
+              raise SystemExit(f'The Latest release {latest!r} is not a vX.Y.Z tag')
+          version = json.load(open('app/nsh.json'))['version']
+          if version != latest[1:]:
+              raise SystemExit(f'app/nsh.json here says {version}; the Latest release is {latest}')
+          subprocess.run(['git', 'fetch', '--force', 'origin', f'refs/tags/{latest}:refs/tags/{latest}'], check=True)
+          tagged = subprocess.check_output(['git', 'rev-parse', f'refs/tags/{latest}^{{commit}}'], text=True).strip()
+          head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+          if env['GITHUB_REF_TYPE'] == 'tag':
+              if env['GITHUB_REF_NAME'] != latest or head != tagged:
+                  raise SystemExit(f'{env["GITHUB_REF_NAME"]} is not the Latest release {latest}')
+          else:
+              subprocess.run(['git', 'merge-base', '--is-ancestor', tagged, head], check=True)
+          print(f'Deploying the site of {latest} from {head}')
+          PY
+      - name: Build the site
+        run: |
+          python3 site-src/build.py > /dev/null
+          # The committed site/ is what build.py writes: a difference means site/ was not rebuilt before the release.
+          git status --porcelain -- site | tee "$RUNNER_TEMP/site-diff"
+          test ! -s "$RUNNER_TEMP/site-diff"
+          version=$(python3 -c 'import json; print(json.load(open("app/nsh.json"))["version"])')
+          grep -qF ">Version $version<" site/index.html
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+      - name: Deploy with Wrangler
+        working-directory: deploy/cloudflare
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          SITE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::Add the secret CLOUDFLARE_API_TOKEN to the site-deploy environment"; exit 1; }
+          if [ -n "$SITE_ACCOUNT_ID" ]; then export CLOUDFLARE_ACCOUNT_ID=$SITE_ACCOUNT_ID; fi
+          npx --yes "wrangler@$WRANGLER_VERSION" deploy
+      - name: Read every page back
+        run: |
+          version=$(python3 -c 'import json; print(json.load(open("app/nsh.json"))["version"])')
+          for attempt in 1 2 3 4 5 6; do
+            bad=0
+            while IFS= read -r f; do
+              path=${f#site/}
+              case "$path" in index.html) path= ;; */index.html) path=${path%index.html} ;; esac
+              curl -fsSL -o "$RUNNER_TEMP/page" "$SITE_URL$path?deploy=$GITHUB_RUN_ID-$attempt" && cmp -s "$f" "$RUNNER_TEMP/page" || { echo "differs: /$path"; bad=1; }
+            done < <(find site -name '*.html' | sort)
+            if [ "$bad" = 0 ]; then
+              curl -fsSL "$SITE_URL?deploy=$GITHUB_RUN_ID" | grep -qF ">Version $version<"
+              echo "Every page matches the build; $SITE_URL shows version $version"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::The live site does not match the build"
+          exit 1
