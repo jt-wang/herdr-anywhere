@@ -1,11 +1,16 @@
 package server
 
 import (
+	"bytes"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"maps"
 	"net/http"
 	"slices"
+	"strings"
 
 	"herdr-anywhere/companion/internal/chat"
 )
@@ -21,7 +26,7 @@ func (s *Server) chat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.cfg.Chat == nil {
-		writeJSON(w, http.StatusOK, chat.Answer{})
+		writeChat(w, r, chat.Answer{})
 		return
 	}
 	a, err := s.cfg.Chat.ChatPage(r.PathValue("addr"), r.URL.Query().Get("before"))
@@ -35,8 +40,38 @@ func (s *Server) chat(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "history-unavailable"})
 	default:
-		writeJSON(w, http.StatusOK, a)
+		writeChat(w, r, a)
 	}
+}
+
+// Validate only after authentication and ChatPage: even unchanged turns may now belong to another session/page,
+// or discovery may have failed. Hash the complete JSON bytes we send, not the reader's turns alone. This saves
+// response traffic, not reading/parsing the agent's record.
+func writeChat(w http.ResponseWriter, r *http.Request, a chat.Answer) {
+	var body bytes.Buffer
+	_ = json.NewEncoder(&body).Encode(a)
+	tag := fmt.Sprintf(`"%x"`, sha256.Sum256(body.Bytes()))
+	w.Header().Set("ETag", tag)
+	w.Header().Set("Cache-Control", "private, no-cache")
+	if r.Method == http.MethodGet {
+		for _, line := range r.Header.Values("If-None-Match") {
+			// The wildcard is an alternative to a tag list, not a star inside an opaque quoted tag.
+			if strings.TrimSpace(line) == "*" {
+				w.WriteHeader(http.StatusNotModified)
+				return
+			}
+			for _, candidate := range strings.Split(line, ",") {
+				candidate = strings.TrimSpace(candidate)
+				if strings.TrimPrefix(candidate, "W/") == tag {
+					w.WriteHeader(http.StatusNotModified)
+					return
+				}
+			}
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(body.Bytes())
 }
 
 func (s *Server) chatStep(w http.ResponseWriter, r *http.Request) {

@@ -326,13 +326,33 @@ const pictures = (x: unknown): ChatPicture[] => !Array.isArray(x) ? [] : x.flatM
     : typeof p?.id === 'string' ? [{ id: p.id, ...(typeof p.source === 'string' && p.source ? { source: p.source } : {}) }] : [])
 
 export function chatApi(linker: Linker, fetcher: typeof fetch = fetch): ChatApi {
-  const call = async (path: string) => {
-    const r = await diagnosticFetch(fetcher, `${await linker.baseUrl()}${path}`, { headers: { authorization: `Bearer ${linker.link.get()?.token ?? ''}` } })
-    return { r, body: (await r.json().catch(() => ({}))) as any }
+  let paired = linker.link.get()
+  let sequence = 0
+  // Only newest pages, in this process and pairing. Never persist a validator without its exact unmerged body.
+  const pages = new Map<string, { etag: string; body: ChatAnswer; sequence: number }>()
+  const call = async (path: string, etag?: string) => {
+    const r = await diagnosticFetch(fetcher, `${await linker.baseUrl()}${path}`, { cache: 'no-store',
+      headers: { authorization: `Bearer ${linker.link.get()?.token ?? ''}`, ...(etag ? { 'if-none-match': etag } : {}) } })
+    return { r, body: r.status === 304 ? undefined : (await r.json().catch(() => ({}))) as any }
   }
   return {
     async get(address, before) {
-      const { r, body } = await call(`/api/chat/${encodeURIComponent(address)}${before ? `?before=${encodeURIComponent(before)}` : ''}`)
+      const pair = linker.link.get(), n = ++sequence
+      if (pair !== paired) { pages.clear(); paired = pair }
+      const previous = before ? undefined : pages.get(address)
+      const { r, body } = await call(`/api/chat/${encodeURIComponent(address)}${before ? `?before=${encodeURIComponent(before)}` : ''}`, previous?.etag)
+      if (r.status === 304) {
+        if (!previous) throw new Error('chat-not-modified-without-cache')
+        return previous.body
+      }
+      if (!before && pair === linker.link.get() && n >= (pages.get(address)?.sequence ?? 0)) {
+        pages.delete(address)
+        const etag = r.headers?.get('etag')
+        if (r.ok && typeof body?.chat === 'boolean' && etag) {
+          pages.set(address, { etag, body, sequence: n })
+          while (pages.size > 12) pages.delete(pages.keys().next().value!)
+        }
+      }
       if (before && !r.ok) throw new Error(body?.error ?? 'history-unavailable')
       if (!r.ok || !body || typeof body.chat !== 'boolean') return { chat: false }
       if (Array.isArray(body.turns)) for (const turn of body.turns) if (turn?.images) turn.images = pictures(turn.images)

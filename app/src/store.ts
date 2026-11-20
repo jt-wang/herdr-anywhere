@@ -831,7 +831,14 @@ export class Store {
   cachedChat(address: string) { return this.content.chats.get(address) }
 
   rememberChat(address: string, answer: CachedChat) {
-    this.content.remember(address, answer)
+    this.content.remember(address, { ...answer, reading: this.cachedChat(address)?.reading })
+    void this.saveContent().catch((e) => this.cacheError(e))
+  }
+
+  rememberChatPosition(address: string, reading: CachedChat['reading']) {
+    const answer = this.cachedChat(address)
+    if (!answer) return
+    this.content.remember(address, { ...answer, reading })
     void this.saveContent().catch((e) => this.cacheError(e))
   }
 

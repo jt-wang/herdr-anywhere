@@ -216,6 +216,26 @@ for a in $agents; do
   top=""; for _ in $(seq 1 40); do on_screen "01" && { top=1; break; }; "$adb" shell input swipe $((w / 2)) $((h * 3 / 10)) $((w / 2)) $((h * 7 / 10)) 150; done
   [ -n "$top" ] || fail "$a scroll: did not reach the oldest turns"
   snap "$a-top"; alive "$a scroll"
+  # Read an actual visible prompt and its screen y. A tree-only existence check also passes at the wrong end.
+  anchor=$(xml | python3 -c '
+import json,re,sys,xml.etree.ElementTree as ET
+height=int(sys.argv[1])
+for node in ET.fromstring(sys.stdin.read()).iter("node"):
+    text=node.get("text", "")
+    bounds=[int(x) for x in re.findall(r"\d+", node.get("bounds", ""))]
+    if text.startswith("01") and len(bounds)==4 and bounds[1]>height*.08 and bounds[3]<height*.9:
+        print(json.dumps([text,bounds[1]])); break
+else: raise SystemExit("no visible reading anchor")' "$h")
+  tap_last show-terminal; tap_last show-chat; sleep 1
+  xml | python3 -c '
+import json,re,sys,xml.etree.ElementTree as ET
+text,y=json.loads(sys.argv[1])
+for node in ET.fromstring(sys.stdin.read()).iter("node"):
+    if node.get("text")==text:
+        bounds=[int(x) for x in re.findall(r"\d+", node.get("bounds", ""))]
+        if len(bounds)==4 and abs(bounds[1]-y)<=6: break
+else: raise SystemExit("reading position moved after terminal switch")' "$anchor" || fail "$a reading anchor was not restored"
+  snap "$a-reading-restored"; echo "ok: $a reading anchor restored within 6 pixels"
   last="LOOK at shot.png"; [ "$a" = claude-code ] && last="HELLO, what is in this picture?"
   bottom=""; for _ in $(seq 1 40); do on_screen "$last" && { bottom=1; break; }; "$adb" shell input swipe $((w / 2)) $((h * 7 / 10)) $((w / 2)) $((h * 3 / 10)) 150; done
   [ -n "$bottom" ] || fail "$a scroll: did not get back to the newest turn"

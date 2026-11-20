@@ -338,6 +338,33 @@ test('through TailPocket, the folder calls go to the tunnel the pipes use', asyn
   expect(urls).toEqual(['http://127.0.0.1:40001/api/folders?path=~', 'http://127.0.0.1:40001/api/folders?path=~'])
 })
 
+test('chat revalidation reuses an unchanged page, keeps history separate, and drops validators on pairing changes', async () => {
+  const linker = new Linker({ load: async () => null, save: () => {}, remove: () => {} })
+  const link = { url: 'http://192.0.2.10:7681', token: 'grove', device: 'd', name: 'Grove', enc: 'bin' as const }
+  linker.set(link)
+  const requests: any[] = []
+  let body = { chat: true, session: 'grove', turns: [{ id: 'u1', reply: 'Pears.' }] }
+  let tag = '"one"'
+  let readBodies = 0
+  const api = chatApi(linker, (async (_url: string, init: any) => {
+    requests.push(init.headers)
+    const unchanged = init.headers['if-none-match'] === tag
+    return { ok: !unchanged, status: unchanged ? 304 : 200, headers: { get: () => tag },
+      json: async () => { readBodies++; if (unchanged) throw new Error('304 has no body'); return body } }
+  }) as any)
+  const first = await api.get('t1')
+  expect(await api.get('t1')).toBe(first)
+  expect(readBodies).toBe(1)
+  expect(requests[1]['if-none-match']).toBe('"one"')
+  await api.get('t1', 'older')
+  expect(requests[2]['if-none-match']).toBe(undefined)
+  body = { ...body, turns: [{ id: 'u1', reply: 'Pears and plums.' }] }; tag = '"two"'
+  expect((await api.get('t1')).turns![0].reply).toBe('Pears and plums.')
+  linker.set({ ...link, token: 'another-pairing' })
+  await api.get('t1')
+  expect(requests.at(-1)['if-none-match']).toBe(undefined)
+})
+
 test('the chat calls send the token and the address; an older companion without them has no chat', async () => {
   const linker = new Linker({ load: async () => null, save: () => {}, remove: () => {} })
   linker.set({ url: 'http://192.0.2.10:7681', token: 'tk', device: 'd', name: 'studio', enc: 'bin' })
