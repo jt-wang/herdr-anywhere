@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.3.4
+
+iOS build 39. The Companion is the same as 0.3.3.
+
+- The phone app no longer reconnects every few seconds on some Wi-Fi networks. Since 0.3.2 it rebuilt its connection to the computer each time the phone reported a network change. iOS reports one for any change in the network's details, every 3 to 6 seconds on some Wi-Fi networks, even when the phone stays on the same one. Now the app first checks over the open connection and rebuilds it only when no answer comes, so a real network switch still reconnects.
+
 ## v0.3.3
 
 iOS build 38. The phone app is the same as 0.3.2 (37).

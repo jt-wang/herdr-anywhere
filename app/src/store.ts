@@ -461,10 +461,19 @@ export class Store {
     this.connect().catch(() => this.lost('retry failed'))
   }
 
-  /** A new usable network can leave the old socket open but unreachable. Rebuild that line, not the pane. */
+  /** The line a network report is checking, so a burst of reports asks once. */
+  private lineCheck?: HcClient
+
+  /** A new usable network can leave the old socket open but unreachable: ask over it, and rebuild that line, not the
+   *  pane, only when the answer does not come. iOS reports any change in a path's details as a new path, every few
+   *  seconds on some Wi-Fi networks, so a line that still answers stays. */
   networkChanged() {
-    if (this.connected) this.hc?.close()
-    this.reconnectNow()
+    const hc = this.hc
+    if (!this.connected || !hc) return this.reconnectNow()
+    if (this.lineCheck === hc) return
+    this.lineCheck = hc
+    hc.call('server.status').then(() => {}, (e) => { if (this.hc === hc && e instanceof HcError && e.kind === 'timeout') hc.close() })
+      .finally(() => { if (this.lineCheck === hc) this.lineCheck = undefined })
   }
 
   get connected() {

@@ -149,14 +149,16 @@ test('a page ready before the connection attaches when the connection becomes re
 })
 
 test('a usable network change replaces a silent socket and reattaches the same pane without clearing its screen', async () => {
-  const { cores, r, s, store, posted, timers } = await setup()
+  const { cores, r, s, store, posted, timers } = await setup(20)
   s.page(JSON.stringify({ t: 'ready', cols: 48, rows: 31 }))
   await settle()
   cores[1].terms.set(r.terminal, { ...cores[0].terms.get(r.terminal)! })
   cores[1].docs = cores[0].docs
   posted.length = 0
+  cores[0].mute = true
   store.networkChanged()
   expect(posted).toEqual([])
+  await new Promise((r) => setTimeout(r, 60))
   await settle()
   expect(s.state.get()).toBe('lost')
   timers.shift()!()
@@ -165,6 +167,24 @@ test('a usable network change replaces a silent socket and reattaches the same p
   expect(s.state.get()).toBe('live')
   expect(cores[1].viewers(r.terminal)).toBe(1)
   expect(cores[1].calls.find((c) => c.method === 'terminal.attach')?.params.resumed).toBe(true)
+  s.dispose(); store.disconnect()
+})
+
+// iOS reports a new path for any change in its details: on one Wi-Fi, every few seconds on some networks (0.3.3's
+// diagnostics, a phone reconnecting 32 times). A line that still answers stays, and so does the pane on it.
+test('a network report while the line answers keeps the line and the pane', async () => {
+  const { cores, r, s, store, timers } = await setup(20)
+  s.page(JSON.stringify({ t: 'ready', cols: 48, rows: 31 }))
+  await settle()
+  for (let i = 0; i < 3; i++) store.networkChanged()
+  await new Promise((r) => setTimeout(r, 60))
+  await settle()
+  expect(store.connected).toBe(true)
+  expect(s.state.get()).toBe('live')
+  expect(timers).toEqual([])
+  expect(cores[1].calls).toEqual([])
+  expect(cores[0].calls.filter((c) => c.method === 'server.status').length).toBe(1)
+  expect(cores[0].viewers(r.terminal)).toBe(1)
   s.dispose(); store.disconnect()
 })
 
