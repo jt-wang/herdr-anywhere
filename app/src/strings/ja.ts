@@ -60,6 +60,7 @@ export const ja: Table = {
   noTunnel: 'このアプリは TailPocket 経由でパソコンに接続できません。',
   cantReachComputer: 'パソコンに接続できません。',
   settings: '設定', back: '戻る', look: '見た目', appearance: '外観', system: 'システム', light: 'ライト', dark: 'ダーク',
+  language: '言語', followSystem: 'システムに従う',
   terminalTextSize: 'ターミナルの文字サイズ', points: '{n}pt', smaller: '小さく', larger: '大きく',
   showAgentNames: 'エージェント名を表示', showAgentNamesDetail: '各タイトルの前に Claude Code などの名前を表示します。オフでもアイコンでプログラムがわかります。',
   tailcatOnly: "Tailcat のみ", tailcatOnlyDetail: "パソコンには Tailcat だけで接続します。relay は使わず、ローカルネットワークでの直接接続もしません。遅くなることがあります。",

@@ -95,3 +95,80 @@ for (const locale of LOCALES) {
     expect(english(app.texts(), locale)).toEqual([])
   })
 }
+
+// Settings › Language: a pick shows at once on every screen and stays; Follow system goes back to the phone's.
+test('picking a language changes the words at once, stays after a restart, and Follow system follows the phone again', async () => {
+  const app = await open('./fixtures/fake.tsx', { locale: 'en-US', host: { params: { scene: 'busy' } } })
+  await app.waitFor('id:needs-t1')
+  await app.press('id:settings')
+  await app.waitFor('id:settings-language')
+  expect(app.texts()).toContain('Follow system')
+  await app.press('id:settings-language')
+  await app.waitFor('id:language-system')
+  for (const w of ['Follow system', 'English', 'Español', 'Русский', '简体中文', '繁體中文', '日本語', '한국어']) expect(app.texts()).toContain(w)
+  await app.press('id:language-zh-Hans')
+  await app.waitFor('text:语言')
+  expect(app.texts()).toContain('跟随系统')
+  await app.press('id:language-back')
+  await app.waitFor('id:settings-language-state')
+  expect(app.texts()).toContain('设置')
+  expect(app.texts()).toContain('简体中文')
+  await app.press('id:back')
+  await app.waitFor('text:等你处理')
+  expect(english(app.texts(), 'zh-CN')).toEqual([])
+  const saved = JSON.parse(app.storage()['fake-prefs'])
+  expect(saved.language).toBe('zh-Hans')
+
+  // Opened again with those settings: still Chinese on an English phone.
+  const again = await open('./fixtures/fake.tsx', { locale: 'en-US', host: { params: { scene: 'busy', prefs: JSON.stringify({ language: 'es' }) } } })
+  await again.waitFor('id:needs-t1')
+  await again.press('id:settings')
+  await again.waitFor('id:settings-language')
+  expect(again.texts()).toContain('Ajustes')
+  await again.press('id:settings-language')
+  await again.waitFor('id:language-system')
+  await again.press('id:language-system')
+  await again.waitFor('text:Language')
+  expect(JSON.parse(again.storage()['fake-prefs']).language).toBe('')
+})
+
+test('Follow system says the phone\'s language and reads in it', async () => {
+  const app = await open('./fixtures/fake.tsx', { locale: 'ja-JP', host: { params: { scene: 'busy' } } })
+  await app.waitFor('id:needs-t1')
+  await app.press('id:settings')
+  await app.press('id:settings-language')
+  await app.waitFor('id:language-system')
+  expect(app.texts()).toContain('システムに従う')
+  expect(app.texts()).toContain('日本語') // the language Follow system reads in now, and its own row
+  expect(app.count('text:日本語')).toBe(2)
+  await app.press('id:language-ko')
+  await app.waitFor('text:시스템 언어 사용')
+  expect(app.count('text:日本語')).toBe(2) // under Follow system still the phone's
+})
+
+// The phone's own setting for this app (Android 13+, iOS): read at the start and when the app comes back, set with each pick.
+test('the language the phone keeps for the app wins at the start, and a pick is set there too', async () => {
+  const set: unknown[] = []
+  let kept = { app: 'ru-RU', system: ['en-US'] }
+  const app = await open('./fixtures/fake.tsx', { locale: 'en-US', host: { params: { scene: 'busy', prefs: JSON.stringify({ language: 'zh-Hans' }) },
+    handlers: { 'page.language': () => kept, 'page.setLanguage': (d: any) => { set.push(d.tag); kept = { app: d.tag, system: ['en-US'] } } } } })
+  await app.waitFor('id:needs-t1')
+  await app.press('id:settings')
+  await app.waitFor('id:settings-language')
+  expect(app.texts()).toContain('Настройки')
+  await app.press('id:settings-language')
+  await app.waitFor('id:language-system')
+  // Follow system: the phone's languages under the app's own.
+  expect(app.count('text:English')).toBe(2)
+  await app.press('id:language-ja')
+  await app.waitFor('text:言語')
+  expect(set).toEqual(['ja'])
+  await app.press('id:language-system')
+  await app.waitFor('text:Language')
+  expect(set).toEqual(['ja', ''])
+  // Changed in the phone's settings while the app was away: it reads it again on the way back.
+  kept = { app: 'es', system: ['en-US'] }
+  await app.host.send('page.front', { front: false })
+  await app.host.send('page.front', { front: true })
+  await app.waitFor('text:Idioma')
+})

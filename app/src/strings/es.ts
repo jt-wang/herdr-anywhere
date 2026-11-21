@@ -60,6 +60,7 @@ export const es: Table = {
   noTunnel: 'Esta app no puede llegar a la computadora por TailPocket.',
   cantReachComputer: 'No se puede llegar a la computadora.',
   settings: 'Ajustes', back: 'Atrás', look: 'Aspecto', appearance: 'Apariencia', system: 'Sistema', light: 'Claro', dark: 'Oscuro',
+  language: 'Idioma', followSystem: 'Usar el del sistema',
   terminalTextSize: 'Tamaño del texto de la terminal', points: '{n} pt', smaller: 'Más pequeño', larger: 'Más grande',
   showAgentNames: 'Mostrar el nombre del agente', showAgentNamesDetail: 'Nombres como Claude Code antes de cada título. El icono indica el programa en cualquier caso.',
   tailcatOnly: "Solo Tailcat", tailcatOnlyDetail: "Conectar con la computadora solo a través de Tailcat: sin relay y no directamente en la red local. Puede ser más lento.",

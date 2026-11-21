@@ -69,12 +69,17 @@ export class ProgressData {
     return flat(t).some(({ task: x }) => x.pane_rows.some((p) => p.id === addr && !p.handed_on))
   }
 
+  /** Tells the computer the app's language when it changed since it was last told: what the sorting agent writes in. */
+  async tellLang() {
+    const l = lang()
+    if (!this.told || this.told.get() === l) return
+    const r = await this.store.exec(langLine(l), { timeout: 15 })
+    if (r.code === 0) this.told.set(l)
+  }
+
   async refresh() {
     try {
-      if (this.told && this.told.get() !== lang()) {
-        const r = await this.store.exec(langLine(lang()), { timeout: 15 })
-        if (r.code === 0) this.told.set(lang())
-      }
+      await this.tellLang()
       const r = await this.store.exec(trackLine(['tree', '--json']), { timeout: 15 })
       if (r.code !== 0) throw new Error(r.stderr.trim() || `exit ${r.code}`)
       const next = parseTree(r.stdout)

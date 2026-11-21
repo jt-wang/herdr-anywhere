@@ -2,6 +2,10 @@
 
 A cloud coding agent can request an iOS build through GitHub Actions. Apple signing credentials stay in the repository's `testflight` environment; the agent needs a GitHub token with **Actions: write** and **Contents: read**.
 
+## 0.3.5 (40)
+
+The Companion is the same as 0.3.4, and the steps below still apply. Settings › Language picks the app's language (Follow system, or one of the seven) and changes it at once; on iOS it is the same setting as Settings › Herdr Anywhere › Language (see CHANGELOG.md).
+
 ## 0.3.4 (39)
 
 The Companion is the same as 0.3.3, and the steps below still apply. The phone app no longer reconnects every few seconds on Wi-Fi networks where iOS keeps reporting network changes: it checks the open connection first and rebuilds it only when no answer comes (see CHANGELOG.md).

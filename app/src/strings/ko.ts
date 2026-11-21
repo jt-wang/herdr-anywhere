@@ -60,6 +60,7 @@ export const ko: Table = {
   noTunnel: '이 앱은 TailPocket으로 컴퓨터에 연결할 수 없어요.',
   cantReachComputer: '컴퓨터에 연결할 수 없어요.',
   settings: '설정', back: '뒤로', look: '모양', appearance: '화면 모드', system: '시스템', light: '라이트', dark: '다크',
+  language: '언어', followSystem: '시스템 언어 사용',
   terminalTextSize: '터미널 글자 크기', points: '{n}pt', smaller: '작게', larger: '크게',
   showAgentNames: '에이전트 이름 표시', showAgentNamesDetail: '각 제목 앞에 Claude Code 같은 이름을 표시해요. 꺼도 아이콘으로 프로그램을 알 수 있어요.',
   tailcatOnly: "Tailcat만 사용", tailcatOnlyDetail: "Tailcat으로만 컴퓨터에 연결해요. relay를 거치지 않고 로컬 네트워크에서 직접 연결하지도 않아요. 더 느릴 수 있어요.",

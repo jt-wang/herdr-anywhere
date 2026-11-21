@@ -60,6 +60,7 @@ export const ru: Table = {
   noTunnel: 'Это приложение не может связаться с компьютером через TailPocket.',
   cantReachComputer: 'Не удаётся связаться с компьютером.',
   settings: 'Настройки', back: 'Назад', look: 'Вид', appearance: 'Оформление', system: 'Как в системе', light: 'Светлое', dark: 'Тёмное',
+  language: 'Язык', followSystem: 'Как в системе',
   terminalTextSize: 'Размер текста в терминале', points: '{n} пт', smaller: 'Меньше', larger: 'Больше',
   showAgentNames: 'Показывать имена агентов', showAgentNamesDetail: 'Названия вроде Claude Code перед каждым заголовком. Значок в любом случае показывает программу.',
   tailcatOnly: "Только Tailcat", tailcatOnlyDetail: "Подключаться к компьютеру только через Tailcat: без relay и без прямого подключения в локальной сети. Может быть медленнее.",

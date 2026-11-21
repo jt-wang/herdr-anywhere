@@ -8,6 +8,7 @@ import android.view.inputmethod.InputMethodManager;
 import android.webkit.WebView;
 import android.Manifest;
 import android.app.Activity;
+import android.app.LocaleManager;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -29,6 +30,7 @@ import android.net.Network;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.LocaleList;
 import android.provider.OpenableColumns;
 import android.provider.Settings;
 import com.longbridge.nsh.NshHostReply;
@@ -115,6 +117,25 @@ public class MainActivity extends Activity {
     view.handle("page.videoFrame", this::videoFrame);
     view.handle("page.openFile", this::openFile);
     view.handle("page.installUpdate", this::installUpdate);
+    // Settings › Language (src/page.ts appLanguage): Android 13+'s own language for this app, which its settings set
+    // too (res/xml/locales_config.xml lists the seven), and the phone's languages under it. Older Android has none.
+    view.handle("page.language", (data, reply) -> {
+      if (Build.VERSION.SDK_INT < 33) { reply.reject("no per-app language"); return; }
+      LocaleManager locales = getSystemService(LocaleManager.class);
+      Map<String, Object> a = new HashMap<>();
+      a.put("app", locales.getApplicationLocales().toLanguageTags().split(",")[0]);
+      List<String> system = new ArrayList<>();
+      LocaleList all = locales.getSystemLocales();
+      for (int i = 0; i < all.size(); i++) system.add(all.get(i).toLanguageTag());
+      a.put("system", system);
+      reply.resolve(a);
+    });
+    view.handle("page.setLanguage", (data, reply) -> runOnUiThread(() -> {
+      if (Build.VERSION.SDK_INT < 33) { reply.reject("no per-app language"); return; }
+      Object tag = data instanceof Map ? ((Map<?, ?>) data).get("tag") : null;
+      getSystemService(LocaleManager.class).setApplicationLocales(LocaleList.forLanguageTags(tag instanceof String ? (String) tag : ""));
+      reply.resolve(true);
+    }));
     listenForInstall();
     view.handle("page.keepAlive", (data, reply) -> runOnUiThread(() -> {
       keepAlive = data instanceof Map && Boolean.TRUE.equals(((Map<?, ?>) data).get("on"));
@@ -568,6 +589,7 @@ public class MainActivity extends Activity {
   public void onConfigurationChanged(Configuration config) {
     super.onConfigurationChanged(config);
     Standalone.systemBars(this);
+    channels(); // a new language for the app (Settings › Language, or Android's): the channels' names in it
   }
 
   @Override

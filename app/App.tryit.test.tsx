@@ -81,3 +81,17 @@ test('the privacy policy opens from the pairing screen and from Settings', async
   await app.waitUntil(() => app.openedUrls().length === 2)
   expect(app.openedUrls()).toEqual([PRIVACY, PRIVACY])
 })
+
+test('in Try it a language picked in Settings renames the sample computer too', async () => {
+  const app = await phone()
+  await app.press('id:try-it')
+  await app.waitFor('id:needs-t1')
+  await app.press('id:settings')
+  await app.waitFor('text:Sample computer')
+  await app.press('id:settings-language')
+  await app.waitFor('id:language-ja')
+  await app.press('id:language-ja')
+  await app.press('id:language-back')
+  await app.waitFor('text:サンプルのパソコン')
+  expect(app.shows('text:Sample computer')).toBe(false)
+})

@@ -123,6 +123,20 @@ final class AppController: UIViewController, UIDocumentPickerDelegate, QLPreview
       let a = data as? [String: Any]
       Task { @MainActor in reply.resolve(await self?.openFile(a?["url"] as? String, name: a?["name"] as? String) ?? "failed") }
     }
+    // Settings › Language (src/page.ts appLanguage): the app's own language, which iOS's Settings › Herdr Anywhere ›
+    // Language sets too (AppleLanguages in the app's defaults), and the phone's languages under it.
+    app.handle("page.language") { _, reply in
+      let own = UserDefaults.standard.persistentDomain(forName: Bundle.main.bundleIdentifier ?? "")?["AppleLanguages"] as? [String]
+      // The phone's own list, past the app's: Locale.preferredLanguages starts with the app's (measured on an iOS 27
+      // simulator with the app set to Japanese: ["ja"], while this read ["en-US", "zh-Hans-US"]).
+      let system = CFPreferencesCopyAppValue("AppleLanguages" as CFString, kCFPreferencesAnyApplication) as? [String]
+      reply.resolve(["app": own?.first ?? "", "system": system ?? []])
+    }
+    app.handle("page.setLanguage") { data, reply in
+      let tag = (data as? [String: Any])?["tag"] as? String ?? ""
+      if tag.isEmpty { UserDefaults.standard.removeObject(forKey: "AppleLanguages") } else { UserDefaults.standard.set([tag], forKey: "AppleLanguages") }
+      reply.resolve(true)
+    }
     guard let url = Bundle.main.url(forResource: "bundle", withExtension: "nshc", subdirectory: "nsh") else {
       NSLog("nsh: no bundle in the app")
       return

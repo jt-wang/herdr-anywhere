@@ -1,7 +1,8 @@
-// The app's words in seven languages, picked by the phone's language. `t` reads NSH's `locale`, so it follows a change.
+// The app's words in seven languages: the one picked in Settings › Language, or the phone's. `t` reads both as
+// signals, so a screen follows a change at once.
 // Spans, dates and lists are written here: NSH's runtime has Intl.NumberFormat and DateTimeFormat only (measured
 // with `nsh test` on 0.3.0: no PluralRules, RelativeTimeFormat or ListFormat).
-import { locale } from 'nsh'
+import { locale, signal } from 'nsh'
 import { en } from './en.ts'
 import { es } from './es.ts'
 import { ja } from './ja.ts'
@@ -25,7 +26,24 @@ export function langFor(tag: string): Lang {
   return (['es', 'ko', 'ja', 'ru'] as Lang[]).includes(base) ? base : 'en'
 }
 
-export const lang = (): Lang => langFor(locale())
+/** Each language's name in its own words, in the order Settings › Language lists them. */
+export const LANG_NAMES: [Lang, string][] = [['en', 'English'], ['es', 'Español'], ['ru', 'Русский'], ['zh-Hans', '简体中文'], ['zh-Hant', '繁體中文'], ['ja', '日本語'], ['ko', '한국어']]
+export const langName = (l: Lang): string => LANG_NAMES.find(([x]) => x === l)![1]
+
+/** The table for the phone's languages in order: the first the app has, as the system picks one (English for none). */
+export function langForList(tags: string[]): Lang {
+  return langFor(tags.find((x) => langFor(x) !== 'en' || /^en(-|_|$)/i.test(x)) ?? 'en')
+}
+
+// Settings › Language: a language picked in the app ('' follows the phone), and the phone's own languages as the host
+// reads them, past the app's own language in the system's settings (null: none read, `locale()` is the phone's).
+const picked = signal<Lang | ''>('')
+const phone = signal<string[] | null>(null)
+export const setPicked = (l: Lang | '') => picked.set(l)
+export const setPhoneLanguages = (tags: string[] | null) => phone.set(tags?.length ? tags : null)
+/** The language "Follow system" reads in now. */
+export const systemLang = (): Lang => (phone() ? langForList(phone()!) : langFor(locale()))
+export const lang = (): Lang => picked() || systemLang()
 
 /** Which plural form a count takes. */
 export function plural(l: Lang, n: number): 'one' | 'few' | 'many' | 'other' {

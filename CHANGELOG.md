@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.3.5
+
+iOS build 40. The Companion is the same as 0.3.4.
+
+- Settings has a Language row. It opens a list: Follow system, the default, which names the language it reads in now, and the app's seven languages, each written in its own (English, Español, Русский, 简体中文, 繁體中文, 日本語, 한국어). A pick changes every screen at once, without a restart, and stays after one. The progress page's sorting agent is told at once and writes in the picked language. On Android 13+ and iOS the pick is the same setting as the app's language in the phone's own settings, so changing it either way shows in both.
+
 ## v0.3.4
 
 iOS build 39. The Companion is the same as 0.3.3.

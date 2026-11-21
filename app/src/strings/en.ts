@@ -63,6 +63,7 @@ export const en = {
   cantReachComputer: "Can't reach the computer.",
   // Settings
   settings: 'Settings', back: 'Back', look: 'Look', appearance: 'Appearance', system: 'System', light: 'Light', dark: 'Dark',
+  language: 'Language', followSystem: 'Follow system',
   terminalTextSize: 'Terminal text size', points: '{n} pt', smaller: 'Smaller', larger: 'Larger',
   showAgentNames: 'Show agent names', showAgentNamesDetail: 'Names like Claude Code before each title. The icon shows the program either way.',
   tailcatOnly: "Tailcat only", tailcatOnlyDetail: "Reach the computer only through Tailcat: no relay and not directly on the local network. It may be slower.",

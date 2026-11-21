@@ -288,3 +288,16 @@ test('what an agent said shows as paragraphs and list items, without Markdown ma
   expect(app.texts().filter((x) => x === '•').length).toBe(2)
   expect(app.texts().some((x) => /\*\*|^- |^## |`/.test(x))).toBe(false)
 }, 60000)
+
+test('a language picked in Settings is what the sorting agent writes in, told at once', async () => {
+  const app = await progress('en')
+  await app.waitFor('text:Needs you')
+  await app.waitUntil(() => ran(app).includes(`progress 'lang' 'en'`))
+  await app.press('id:view-agents')
+  await app.press('id:settings')
+  await app.press('id:settings-language')
+  await app.waitFor('id:language-es')
+  await app.press('id:language-es')
+  await app.waitUntil(() => ran(app).includes(`progress 'lang' 'es'`))
+  expect(JSON.parse(app.storage()['fake-prefs']).progressLang).toBe('es')
+}, 60000)

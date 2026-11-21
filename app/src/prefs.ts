@@ -1,5 +1,6 @@
 // This phone's own settings (herdr-app's Look and Alerts sections), kept in the app's storage.
 import { Signal } from './store.ts'
+import { LANGS, type Lang } from './strings/index.ts'
 
 export type Appearance = 'system' | 'light' | 'dark'
 /** Where typing goes in a pane: our input box, or the phone's own keyboard straight into the terminal. */
@@ -25,9 +26,11 @@ export type Prefs = { appearance: Appearance; typeIn: TypeIn; fontSize: number; 
   chatFirst: boolean
   /** The agents whose chat setup the phone has asked about once by itself (ui/chat.tsx); it doesn't ask them again. */
   chatSetupAsked: string[]
+  /** The language picked in Settings › Language; '' follows the phone's (ui/root.tsx keeps it and the phone's own setting for this app the same). */
+  language: Lang | ''
   /** TailPocket keeps this phone on Tailcat alone: no relay, no local network route (Settings › Computer). */
   tailcatOnly: boolean }
-export const DEFAULTS: Prefs = { appearance: 'system', typeIn: 'composer', fontSize: 13, alertBlocked: true, alertDone: true, stayConnected: true, dismissedUpdate: '', toldUpdate: '', askedNotifications: false, showAgentNames: true, progressFirst: false, progressAgent: '', progressLang: '', homeView: 'progress', progressFolded: [], opened: 0, chatFirst: false, chatSetupAsked: [], tailcatOnly: false }
+export const DEFAULTS: Prefs = { appearance: 'system', typeIn: 'composer', fontSize: 13, alertBlocked: true, alertDone: true, stayConnected: true, dismissedUpdate: '', toldUpdate: '', askedNotifications: false, showAgentNames: true, progressFirst: false, progressAgent: '', progressLang: '', homeView: 'progress', progressFolded: [], opened: 0, chatFirst: false, chatSetupAsked: [], language: '', tailcatOnly: false }
 import { FONT_MAX, FONT_MIN } from './ui/terminal-page.ts'
 export { FONT_MAX, FONT_MIN }
 
@@ -71,6 +74,7 @@ function clean(p: Prefs): Prefs {
     opened: Math.max(0, Math.floor(Number(p.opened) || 0)),
     chatFirst: p.chatFirst === true,
     chatSetupAsked: Array.isArray(p.chatSetupAsked) ? p.chatSetupAsked.filter((x): x is string => typeof x === 'string') : [],
+    language: LANGS.includes(p.language as Lang) ? p.language : '',
     tailcatOnly: p.tailcatOnly === true,
   }
 }

@@ -81,6 +81,23 @@ export function followPage(on: { front: (front: boolean) => void; open: (termina
 export function wantsKeepAlive(conn: string, on: boolean): boolean {
   return on && conn !== 'idle' && conn !== 'unpaired'
 }
+/** The app's own language in the phone's settings (Android 13+ and iOS keep one per app; MainActivity, App.swift):
+ *  `app` the one set there ('' none), `system` the phone's languages in order, past it. null where there is none. */
+export type AppLanguage = { app: string; system: string[] }
+export async function appLanguage(): Promise<AppLanguage | null> {
+  if (!host.available()) return null
+  try {
+    const a: any = await host.call('page.language')
+    return typeof a?.app === 'string' && Array.isArray(a.system) ? { app: a.app, system: a.system.filter((x: unknown) => typeof x === 'string') } : null
+  } catch {
+    return null
+  }
+}
+/** Sets the app's own language in the phone's settings to a BCP 47 tag, or '' to follow the phone's. */
+export function setAppLanguage(tag: string) {
+  if (host.available()) host.call('page.setLanguage', { tag }).catch(() => {})
+}
+
 export function keepAlive(on: boolean) {
   if (host.available()) host.call('page.keepAlive', { on }).catch(() => {})
 }

@@ -10,7 +10,7 @@ import { companionVersion, type Link, type Linker, type Route } from '../link.ts
 import { FONT_MAX, FONT_MIN, type Appearance, type PrefStore } from '../prefs.ts'
 import { allowNotifications, notifications, notifyChannels, onFront, openChannel, type ChannelKind, type Channels, type ChannelState, type Permission } from '../page.ts'
 import { Glyph, IconButton, openPrivacy, SectionLabel, useRev, useSignal } from './kit.tsx'
-import { lang, t, type Key } from '../strings/index.ts'
+import { LANG_NAMES, lang, langName, systemLang, t, type Key, type Lang } from '../strings/index.ts'
 import { diagnostics, type DiagnosticCategory, type DiagnosticStatus, type NativeDiagnostics } from '../diag.ts'
 
 function Row(props: { label: string; detail?: string; children?: any; testID?: string; onPress?: () => void }) {
@@ -246,7 +246,39 @@ export function DiagnosticsScreen(props: { back: () => void; controller?: Native
   )
 }
 
-export function SettingsScreen(props: { updates?: Updates; store: Store; prefs: PrefStore; link: Link; linker: Linker; fetcher?: typeof fetch; back: () => void; forget: () => void; openDiagnostics: () => void; diagnosticStatus: DiagnosticStatus; diagnosticChanged: (s: DiagnosticStatus) => void }) {
+/** Settings › Language: Follow system, which says the language it reads in now, or one of the app's seven, each
+ *  named in its own words. A pick shows at once; the screen stays, now in that language. */
+export function LanguageScreen(props: { prefs: PrefStore; back: () => void; choose: (l: Lang | '') => void }) {
+  const p = useSignal(props.prefs.prefs)
+  const options = (): { id: Lang | ''; label: string; detail?: string }[] => [
+    { id: '', label: t('followSystem'), detail: langName(systemLang()) },
+    ...LANG_NAMES.map(([id, label]) => ({ id, label })),
+  ]
+  return (
+    <View class="flex-1 bg-sidebar pt-[env(safe-area-inset-top)]">
+      <View class="flex-row items-center h-12 pl-1 pr-3">
+        <IconButton name="chevron-left" label={t('back')} testID="language-back" onPress={props.back} />
+        <Text class="text-[16px] font-semibold text-foreground ml-1">{t('language')}</Text>
+      </View>
+      <Scroll class="flex-1" contentClass="pb-10">
+        <View class="mt-3 border-t border-border">
+          <Each of={options()} key={(o) => o.id || 'system'}>{(o) => (
+            <View role="button" testID={`language-${o().id || 'system'}`} accessibilityState={{ selected: p().language === o().id }} onPress={() => props.choose(o().id)}
+              class="flex-row items-center min-h-12 px-4 gap-3 border-b border-border bg-card active:bg-sidebar-accent">
+              <View class="flex-1 py-2">
+                <Text class="text-[14px] text-foreground">{o().label}</Text>
+                <If when={o().detail}><Text class="text-[12px] text-sidebar-foreground mt-0.5">{o().detail}</Text></If>
+              </View>
+              <If when={p().language === o().id}><Glyph name="check" size={16} class="tint-chart-3" /></If>
+            </View>
+          )}</Each>
+        </View>
+      </Scroll>
+    </View>
+  )
+}
+
+export function SettingsScreen(props: { updates?: Updates; store: Store; prefs: PrefStore; link: Link; linker: Linker; fetcher?: typeof fetch; back: () => void; forget: () => void; openLanguage: () => void; openDiagnostics: () => void; diagnosticStatus: DiagnosticStatus; diagnosticChanged: (s: DiagnosticStatus) => void }) {
   const rev = useRev(props.store)
   const p = useSignal(props.prefs.prefs)
   void diagnostics.refresh().then(props.diagnosticChanged)
@@ -362,6 +394,10 @@ export function SettingsScreen(props: { updates?: Updates; store: Store; prefs: 
             ))}
           </View>
         </Row>
+        <Row label={t('language')} testID="settings-language" onPress={props.openLanguage}>
+          <Text testID="settings-language-state" class="text-[13px] text-sidebar-foreground">{p().language ? langName(p().language as Lang) : t('followSystem')}</Text>
+          <Glyph name="chevron-right" size={16} />
+        </Row>
         <Row label={t('terminalTextSize')} detail={t('points', { n: p().fontSize })}>
           <IconButton name="minus" label={t('smaller')} testID="font-smaller" disabled={p().fontSize <= FONT_MIN} onPress={() => props.prefs.set({ fontSize: p().fontSize - 1 })} />
           <IconButton name="plus" label={t('larger')} testID="font-larger" disabled={p().fontSize >= FONT_MAX} onPress={() => props.prefs.set({ fontSize: p().fontSize + 1 })} />
@@ -427,7 +463,7 @@ export function SettingsScreen(props: { updates?: Updates; store: Store; prefs: 
           </View>
         </If>
         <SectionLabel label={t('computer')} />
-        <Fact label={t('computerName')} value={props.link.name} />
+        <Fact label={t('computerName')} value={props.link.via === 'demo' ? t('demoComputer') : props.link.name} testID="computer-name" />
         <Fact label={t('connectionStatus')} value={status().word} dot={status().dot} testID="connection-status" />
         <Fact label={t('connection')} value={how()} under={under()} testID="connection" />
         <If when={props.link.via === 'tailpocket'}>

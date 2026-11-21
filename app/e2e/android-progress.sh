@@ -208,7 +208,8 @@ grep -q '"on":true' "$HERDR_ANYWHERE_STATE/progress.json" 2>/dev/null && { echo 
 tap settings
 tap progress-first
 # The switch's words follow the phone's language; the agents' names don't.
-wait_screen 'resource-id="agent-claude-code"' 20 || failed step4 "no agent to pick"
+# On a phone-sized screen the list opens under the bottom edge: the page scrolls to it.
+wait_screen 'resource-id="agent-claude-code"' 5 || { swipe_up; wait_screen 'resource-id="agent-claude-code"' 20; } || failed step4 "no agent to pick"
 sleep 1
 shot 0-pick-agent
 tap agent-claude-code

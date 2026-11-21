@@ -60,6 +60,7 @@ export const zhHant: Table = {
   noTunnel: '這個 App 無法透過 TailPocket 連上電腦。',
   cantReachComputer: '無法連上電腦。',
   settings: '設定', back: '返回', look: '外觀', appearance: '外觀模式', system: '跟隨系統', light: '淺色', dark: '深色',
+  language: '語言', followSystem: '跟隨系統',
   terminalTextSize: '終端機字級', points: '{n} 點', smaller: '縮小', larger: '放大',
   showAgentNames: '顯示 agent 名稱', showAgentNamesDetail: '在每個標題前顯示 Claude Code 這類名稱。不顯示時，圖示仍會標出是哪個程式。',
   tailcatOnly: "只用 Tailcat", tailcatOnlyDetail: "只透過 Tailcat 連線到電腦：不經過 relay，也不在區域網路上直連。可能會慢一些。",
