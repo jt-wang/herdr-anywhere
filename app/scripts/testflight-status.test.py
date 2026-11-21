@@ -544,7 +544,7 @@ class StatusTest(unittest.TestCase):
         self.assertEqual((receipt['added_to_group'], receipt['submitted'], receipt['beta_review_state']),
                          (True, True, 'WAITING_FOR_REVIEW'))
 
-    def test_writes_are_scoped_posts_to_two_routes_only(self):
+    def test_writes_are_unscoped_short_lived_posts_to_two_routes_only(self):
         generated = subprocess.run(['openssl', 'genpkey', '-algorithm', 'EC', '-pkeyopt', 'ec_paramgen_curve:P-256'],
                                    capture_output=True, check=True)
         self.env['ASC_PRIVATE_KEY_P8'] = generated.stdout.decode()
@@ -559,7 +559,10 @@ class StatusTest(unittest.TestCase):
             request = call.args[0]
             payload = request.get_header('Authorization').removeprefix('Bearer ').split('.')[1]
             claims = json.loads(base64.urlsafe_b64decode(payload + '=' * (-len(payload) % 4)))
-            self.assertEqual((request.get_method(), claims['scope']), ('POST', ['POST ' + path]))
+            # App Store Connect takes only GET in a token's scope (a POST-scoped token gets 405), so writes carry none.
+            self.assertEqual(request.get_method(), 'POST')
+            self.assertNotIn('scope', claims)
+            self.assertEqual(claims['exp'] - claims['iat'], 120)
             self.assertEqual(request.get_header('Content-type'), 'application/json')
         for method, url in (('POST', status.ORIGIN + '/v1/appStoreVersionSubmissions'),
                             ('POST', status.ORIGIN + '/v1/reviewSubmissions'),

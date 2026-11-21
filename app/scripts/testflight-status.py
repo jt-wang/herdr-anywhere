@@ -61,13 +61,16 @@ def raw_signature(der):
 
 def token(env, url, method='GET'):
     # https://developer.apple.com/documentation/appstoreconnectapi/generating-tokens-for-api-requests
-    # Team key, ES256, 2-minute life; one scope for this exact method and path/query.
+    # Team key, ES256, 2-minute life. A GET is scoped to its exact path and query. App Store Connect takes only GET
+    # entries in a scope and answers a POST-scoped token with 405, so a write's token has no scope; safe_url has
+    # already limited writes to the two allowlisted routes.
     parsed = urllib.parse.urlsplit(safe_url(url, method))
     target = parsed.path + ('?' + parsed.query if parsed.query else '')
     now = int(time.time())
     header = {'alg': 'ES256', 'kid': env['ASC_KEY_ID'], 'typ': 'JWT'}
-    payload = {'iss': env['ASC_ISSUER_ID'], 'iat': now, 'exp': now + 120,
-               'aud': 'appstoreconnect-v1', 'scope': [method + ' ' + target]}
+    payload = {'iss': env['ASC_ISSUER_ID'], 'iat': now, 'exp': now + 120, 'aud': 'appstoreconnect-v1'}
+    if method == 'GET':
+        payload['scope'] = ['GET ' + target]
     message = '.'.join(b64(json.dumps(p, separators=(',', ':')).encode()) for p in (header, payload))
     child_env = {k: v for k, v in env.items() if k != 'APPLE_TEAM_ID'
                  and k != 'API_PRIVATE_KEYS_DIR'
