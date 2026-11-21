@@ -21,6 +21,9 @@ from unittest.mock import Mock, patch
 spec = importlib.util.spec_from_file_location('status', Path(__file__).with_name('testflight-status.py'))
 status = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(status)
+beta_spec = importlib.util.spec_from_file_location('beta', Path(__file__).with_name('testflight-beta.py'))
+beta = importlib.util.module_from_spec(beta_spec)
+beta_spec.loader.exec_module(beta)
 
 
 def build_page(state='VALID', version='0.2.1', platform='IOS', number='29'):
@@ -458,8 +461,10 @@ class StatusTest(unittest.TestCase):
         archive_if = re.search(r'^    if: (.+)$', archive, re.M)[1]
         status_if = re.search(r'^    if: (.+)$', job, re.M)[1]
         # Evaluate these boolean workflow guards over a dispatch/outcome matrix.
-        def enabled(expression, run_id='', upload=False, request='success', result='skipped', cancelled=False):
-            values = {'inputs.status_run_id': run_id, 'inputs.upload': upload,
+        beta_if = re.search(r'^    if: (.+)$', workflow.split('\n  beta:', 1)[1], re.M)[1]
+        def enabled(expression, run_id='', upload=False, request='success', result='skipped', cancelled=False,
+                    submit=False):
+            values = {'inputs.status_run_id': run_id, 'inputs.upload': upload, 'inputs.submit_beta': submit,
                       'needs.request.result': request, 'needs.archive.result': result,
                       'github.repository': 'jt-wang/herdr-anywhere', 'github.ref': 'refs/heads/main',
                       'github.event.repository.default_branch': 'main',
@@ -474,6 +479,12 @@ class StatusTest(unittest.TestCase):
         for upload in (False, True):
             self.assertFalse(enabled(archive_if, run_id='12345', upload=upload))
             self.assertTrue(enabled(archive_if, upload=upload))
+            self.assertFalse(enabled(archive_if, upload=upload, submit=True))
+            self.assertFalse(enabled(beta_if, upload=upload))
+            self.assertFalse(enabled(beta_if, run_id='12345', upload=upload, submit=True))
+        self.assertTrue(enabled(beta_if, submit=True))
+        self.assertFalse(enabled(beta_if, upload=True, submit=True))
+        self.assertFalse(enabled(status_if, submit=True))
         self.assertTrue(enabled(status_if, run_id='12345'))
         self.assertTrue(enabled(status_if, upload=True, result='success'))
         self.assertFalse(enabled(status_if, result='success'))
@@ -497,6 +508,70 @@ class StatusTest(unittest.TestCase):
         self.assertIn('ref: ${{ github.sha }}', job)
         self.assertNotIn('ref: ${{ inputs.uploaded_sha }}', workflow)
         self.assertIn('--status-run-id "$TF_STATUS_RUN_ID" --uploaded-sha "$TF_UPLOADED_SHA"', job)
+
+    def test_beta_submits_only_a_ready_unreviewed_build_and_leaves_reviewed_builds_alone(self):
+        public = group('group-public', enabled=True, link='https://testflight.apple.com/join/abc')
+        public['attributes']['name'] = 'Public'
+        self.all_groups = [group('group-internal', internal=True, all_builds=True), public]
+        receipt = {}
+        def page(external, review):
+            items, included = build_page()
+            included[1]['attributes']['externalBuildState'] = external
+            if review is None:
+                del items[0]['relationships']['betaAppReviewSubmission']
+            else:
+                included[2]['attributes']['betaReviewState'] = review
+            return items, included
+        # Like builds 38 and 39: already in Public with a review, so nothing is written.
+        for external, review in (('IN_BETA_TESTING', 'APPROVED'), ('WAITING_FOR_BETA_REVIEW', 'WAITING_FOR_REVIEW'),
+                                 ('BETA_REJECTED', 'REJECTED')):
+            with self.subTest(review=review):
+                self.pages, self.assigned = [page(external, review)], [public]
+                beta.submit(self.client, '0.2.1', '29', receipt, time.monotonic() + 10)
+                self.client.send.assert_not_called()
+        self.pages, self.assigned = [page('MISSING_EXPORT_COMPLIANCE', None)], []
+        with self.assertRaisesRegex(beta.status.StatusError, 'MISSING_EXPORT_COMPLIANCE, not READY_FOR_BETA_SUBMISSION'):
+            beta.submit(self.client, '0.2.1', '29', {}, time.monotonic() + 10)
+        self.client.send.assert_not_called()
+        self.pages = [page('READY_FOR_BETA_SUBMISSION', None), page('WAITING_FOR_BETA_REVIEW', 'WAITING_FOR_REVIEW')]
+        receipt = {}
+        beta.submit(self.client, '0.2.1', '29', receipt, time.monotonic() + 10)
+        ref = {'type': 'builds', 'id': 'build-29'}
+        self.assertEqual(self.client.send.call_args_list, [
+            unittest.mock.call('POST', status.ORIGIN + '/v1/betaGroups/group-public/relationships/builds', {'data': [ref]}),
+            unittest.mock.call('POST', status.ORIGIN + '/v1/betaAppReviewSubmissions', {'data': {
+                'type': 'betaAppReviewSubmissions', 'relationships': {'build': {'data': ref}}}})])
+        self.assertEqual((receipt['added_to_group'], receipt['submitted'], receipt['beta_review_state']),
+                         (True, True, 'WAITING_FOR_REVIEW'))
+
+    def test_writes_are_scoped_posts_to_two_routes_only(self):
+        generated = subprocess.run(['openssl', 'genpkey', '-algorithm', 'EC', '-pkeyopt', 'ec_paramgen_curve:P-256'],
+                                   capture_output=True, check=True)
+        self.env['ASC_PRIVATE_KEY_P8'] = generated.stdout.decode()
+        client = status.Client(self.env, time.monotonic() + 10)
+        client.opener.open = Mock(side_effect=[contextlib.closing(io.BytesIO(b'')),
+                                               contextlib.closing(io.BytesIO(b'{"data":{"id":"review-1"}}'))])
+        self.assertIsNone(client.send('POST', status.ORIGIN + '/v1/betaGroups/group-1/relationships/builds', {'data': []}))
+        self.assertEqual(client.send('POST', status.ORIGIN + '/v1/betaAppReviewSubmissions', {'data': {}}),
+                         {'data': {'id': 'review-1'}})
+        for call, path in zip(client.opener.open.call_args_list,
+                              ('/v1/betaGroups/group-1/relationships/builds', '/v1/betaAppReviewSubmissions')):
+            request = call.args[0]
+            payload = request.get_header('Authorization').removeprefix('Bearer ').split('.')[1]
+            claims = json.loads(base64.urlsafe_b64decode(payload + '=' * (-len(payload) % 4)))
+            self.assertEqual((request.get_method(), claims['scope']), ('POST', ['POST ' + path]))
+            self.assertEqual(request.get_header('Content-type'), 'application/json')
+        for method, url in (('POST', status.ORIGIN + '/v1/appStoreVersionSubmissions'),
+                            ('POST', status.ORIGIN + '/v1/reviewSubmissions'),
+                            ('POST', status.ORIGIN + '/v1/betaGroups/group-1/relationships/betaTesters'),
+                            ('POST', status.ORIGIN + '/v1/betaAppReviewSubmissions?x=1'),
+                            ('POST', 'https://example.invalid/v1/betaAppReviewSubmissions'),
+                            ('DELETE', status.ORIGIN + '/v1/betaGroups/group-1/relationships/builds'),
+                            ('PATCH', status.ORIGIN + '/v1/builds')):
+            with self.subTest(method=method, url=url), patch.object(status, 'token') as token:
+                with self.assertRaisesRegex(status.StatusError, 'Unsafe'):
+                    client.send(method, url, {})
+                token.assert_not_called()
 
 
 if __name__ == '__main__':

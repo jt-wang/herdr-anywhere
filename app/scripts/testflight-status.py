@@ -22,8 +22,11 @@ ROUTES = ('/v1/apps', '/v1/builds')
 # Exact machine codes only: never echo arbitrary server strings or code suffixes.
 ERROR_CODES = frozenset(('FORBIDDEN_ERROR', 'NOT_AUTHORIZED', 'AUTHENTICATION_ERROR',
                          'PARAMETER_ERROR.INVALID', 'PARAMETER_ERROR.UNKNOWN',
-                         'PARAMETER_ERROR.INVALID_COMBINATION', 'PARAMETER_ERROR.INVALID_VALUE'))
+                         'PARAMETER_ERROR.INVALID_COMBINATION', 'PARAMETER_ERROR.INVALID_VALUE',
+                         'STATE_ERROR', 'ENTITY_ERROR.RELATIONSHIP.INVALID', 'ENTITY_ERROR.ATTRIBUTE.REQUIRED'))
 ERROR_PARAMETERS = frozenset(('filter[app]', 'filter[builds]', 'fields[betaGroups]'))
+# The only writes, used by testflight-beta.py: add a build to a group, submit a build for Beta App Review.
+WRITE_ROUTES = r'/v1/(?:betaAppReviewSubmissions|betaGroups/[A-Za-z0-9-]+/relationships/builds)'
 
 
 class StatusError(Exception):
@@ -56,15 +59,15 @@ def raw_signature(der):
     return b''.join(parts)
 
 
-def token(env, url):
+def token(env, url, method='GET'):
     # https://developer.apple.com/documentation/appstoreconnectapi/generating-tokens-for-api-requests
-    # Team key, ES256, 2-minute life; one scope for this exact GET path/query.
-    parsed = urllib.parse.urlsplit(safe_url(url))
+    # Team key, ES256, 2-minute life; one scope for this exact method and path/query.
+    parsed = urllib.parse.urlsplit(safe_url(url, method))
     target = parsed.path + ('?' + parsed.query if parsed.query else '')
     now = int(time.time())
     header = {'alg': 'ES256', 'kid': env['ASC_KEY_ID'], 'typ': 'JWT'}
     payload = {'iss': env['ASC_ISSUER_ID'], 'iat': now, 'exp': now + 120,
-               'aud': 'appstoreconnect-v1', 'scope': ['GET ' + target]}
+               'aud': 'appstoreconnect-v1', 'scope': [method + ' ' + target]}
     message = '.'.join(b64(json.dumps(p, separators=(',', ':')).encode()) for p in (header, payload))
     child_env = {k: v for k, v in env.items() if k != 'APPLE_TEAM_ID'
                  and k != 'API_PRIVATE_KEYS_DIR'
@@ -82,8 +85,15 @@ def token(env, url):
     return message + '.' + b64(signature)
 
 
-def safe_url(url):
+def safe_url(url, method='GET'):
     parsed = urllib.parse.urlsplit(url)
+    if method == 'POST':
+        if (parsed.scheme != 'https' or parsed.netloc != 'api.appstoreconnect.apple.com' or parsed.query
+                or parsed.fragment or not re.fullmatch(WRITE_ROUTES, parsed.path)):
+            raise StatusError('Unsafe ASC write URL rejected')
+        return url
+    if method != 'GET':
+        raise StatusError('Unsafe ASC method rejected')
     group_relation = re.fullmatch(r'/v1/(?:apps/[A-Za-z0-9-]+/betaGroups|betaGroups/[A-Za-z0-9-]+/relationships/builds)',
                                  parsed.path)
     if (parsed.scheme != 'https' or parsed.netloc != 'api.appstoreconnect.apple.com'
@@ -103,15 +113,23 @@ class Client:
         self.opener = urllib.request.build_opener(NoRedirect())
 
     def get(self, url):
-        safe_url(url)  # Validate before minting or attaching a bearer token.
+        return self.send('GET', url)
+
+    def send(self, method, url, body=None):
+        safe_url(url, method)  # Validate before minting or attaching a bearer token.
         remaining = self.deadline - time.monotonic()
         if remaining <= 0:
             raise StatusError('ASC observation timed out')
-        request = urllib.request.Request(url, headers={'Authorization': 'Bearer ' + token(self.env, url),
-                                                     'Accept': 'application/json'}, method='GET')
+        headers = {'Authorization': 'Bearer ' + token(self.env, url, method), 'Accept': 'application/json'}
+        data = None
+        if body is not None:
+            data = json.dumps(body).encode()
+            headers['Content-Type'] = 'application/json'
+        request = urllib.request.Request(url, data=data, headers=headers, method=method)
         try:
             with self.opener.open(request, timeout=min(30, remaining)) as response:
-                return json.load(response)
+                raw = response.read()
+                return json.loads(raw) if raw else None
         except urllib.error.HTTPError as exc:
             # Bounded parsing; only exact allowlisted machine codes may leave here.
             codes, parameters = set(), set()

@@ -1,0 +1,37 @@
+name: History
+
+# Every commit and tag in this repo comes from source-export: the public identity, 12:00:00 UTC and Source-Rev as
+# the only trailer, so the history shows no time zone, working hours or private identity. A push that did not
+# come from source-export fails here (.github/check-public-history.py, the same check as DSH Anywhere and Boop).
+on:
+  push:
+    branches: ["**"]
+    tags: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  history:
+    name: Commit and tag dates, identity, trailers
+    # The private repository's own history is not held to this.
+    if: github.repository == 'jt-wang/herdr-anywhere'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      # On a tag push, checkout writes the pushed tag as a lightweight ref; fetch the real tag objects again.
+      - name: Fetch the annotated tags as they are on GitHub
+        run: git fetch --quiet --force --tags origin
+      - run: python3 -I .github/check-public-history.test.py
+      - name: Check every branch, tag and pull request head
+        env:
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: >-
+          python3 -I .github/check-public-history.py
+          --author "Jingtao Wang <7776499+jt-wang@users.noreply.github.com>" ${PR_HEAD}
