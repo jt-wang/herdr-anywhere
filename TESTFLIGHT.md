@@ -180,6 +180,15 @@ Recovery keeps the request guard, skips the entire archive job and never validat
 
 The status receipt's `sha` identifies the original upload, `observer_sha` identifies the current executing code, and `status_run_id` records the recovery source run (null for a normal upload). HTTP failures expose only the HTTP status, allowlisted route and exact allowlisted machine codes (`FORBIDDEN_ERROR`, `NOT_AUTHORIZED`, `AUTHENTICATION_ERROR`), never response bodies, details, headers or arbitrary error strings. These codes help investigate authorization versus scope; a 403 alone does not establish which is responsible.
 
+### Submit a build for Beta App Review
+
+To give an already processed build to the Public group, dispatch from the default branch with `submit_beta=true`, `upload=false` and no `status_run_id`. The `beta` job finds the exact version and build. If the build has no beta review yet and its external state is `READY_FOR_BETA_SUBMISSION`, it adds the build to the external group named `Public` and creates a Beta App Review submission. It then reads the build back into the `testflight-beta-BUILD` artifact (groups, external state, beta review state). A build that already has a review (waiting, approved or rejected) is only read back. It never submits for App Store review and never changes other builds, groups or testers. Its only writes are POSTs to `/v1/betaGroups/{id}/relationships/builds` and `/v1/betaAppReviewSubmissions`, each with a token scoped to that method and path. These need an API key whose role may manage TestFlight external testing (Admin or App Manager). A `FORBIDDEN_ERROR` on either route means the key's role lacks it. It runs in its own concurrency group, so it never replaces a pending upload.
+
+```sh
+gh workflow run testflight.yml -R "$repo" --ref "$branch" \
+  -f expected_sha="$sha" -f version=0.3.5 -f build=40 -f upload=false -f submit_beta=true
+```
+
 ## Maintainer setup
 
 Create the **testflight** environment before adding credentials. Under **Deployment branches and tags**, choose **Selected branches and tags** and add only the repository's default **branch**, with its exact name. Do not add tag or pull-request patterns. Required reviewers are optional.
@@ -192,9 +201,9 @@ Store the following as **environment secrets**, rather than repository-wide secr
 | `IOS_DISTRIBUTION_P12_BASE64` | Base64 of the Apple Distribution certificate and its private key exported as p12 | Runner's temporary keychain |
 | `IOS_DISTRIBUTION_P12_PASSWORD` | Password protecting that p12 | Importing the certificate and key |
 | `IOS_PROVISION_PROFILE_BASE64` | Base64 of an unexpired App Store profile for `io.jingtao.herdranywhere` | Archive and export |
-| `ASC_KEY_ID` | App Store Connect API key ID | Upload and read-only status |
-| `ASC_ISSUER_ID` | App Store Connect API issuer ID | Upload and read-only status |
-| `ASC_PRIVATE_KEY_P8` | Complete p8 PEM text, including its newlines | Upload and read-only status; **not Base64** |
+| `ASC_KEY_ID` | App Store Connect API key ID | Upload, read-only status and Beta App Review submission |
+| `ASC_ISSUER_ID` | App Store Connect API issuer ID | Upload, read-only status and Beta App Review submission |
+| `ASC_PRIVATE_KEY_P8` | Complete p8 PEM text, including its newlines | Upload, read-only status and Beta App Review submission; **not Base64** |
 
 Use an existing App Store Connect app record with the bundle ID above. Exporting a p12 requires access to the certificate's private key; API authentication alone does not provide it.
 
