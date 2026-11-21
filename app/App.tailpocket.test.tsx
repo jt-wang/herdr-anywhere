@@ -211,8 +211,8 @@ test('a phone that had Tailcat only on keeps Tailcat alone after the update', as
 // With routes picked in Settings › Connection, a computer whose link holds none of them is said as such, with a way to
 // that setting: TailPocket opens the tunnel either way, and every connection through it ends unanswered. Otherwise
 // (Automatic, or a route in common) an unanswered tunnel stays the computer that doesn't answer.
-test('no route in common with the computer says so and opens Settings › Connection', async () => {
-  const NO_ROUTE = "text:The phone and the computer have no route in common: Settings › Connection leaves out the ones the computer offers. Pick another there, or start the computer with that route. Trying again…"
+test('no route in common with the computer says so, offers Automatic and opens Settings › Connection', async () => {
+  const NO_ROUTE = "text:This phone is set to connect in a way the computer hasn't turned on, so it can't connect."
   const NO_ANSWER = "text:Your computer doesn't answer. Run this on it:"
   // As on Android: each tunnel has its own handle, and a closed one can no longer be asked for its link.
   const tailcatLink = () => {
@@ -227,9 +227,19 @@ test('no route in common with the computer says so and opens Settings › Connec
   const lan = await open('./App.tsx', { platform: 'ios', storage: { prefs: JSON.stringify({ connection: 'lan' }) }, host: { handlers: handlers(tailcatLink()) }, network: { '*': { error: 'offline' } } })
   await pairAndConnect(lan)
   await lan.waitFor(NO_ROUTE)
+  // One status only: no age line while what the screen shows is current.
+  expect(lan.texts().some((x) => x.startsWith('Last updated'))).toBe(false)
   await lan.press('id:conn-open-connection')
   await lan.waitFor('id:connection-lan')
-  expect(lan.shows('id:connection-now')).toBe(true)
+  // The Connection page says the same, from the same state.
+  expect(lan.count(NO_ROUTE)).toBe(1)
+  await lan.press('id:connection-back')
+  await lan.press('id:conn-use-auto')
+  // Every route again: the computer answers or not, but no longer for want of a route.
+  await lan.waitFor(NO_ANSWER)
+  expect(JSON.parse(lan.storage()['prefs']).connection).toBe('auto')
+  expect(calls(lan, 'tailPocket.setRoutes').at(-1)).toEqual({ routes: null })
+  expect(lan.count(NO_ROUTE)).toBe(0)
 
   const auto = await open('./App.tsx', { platform: 'ios', host: { handlers: handlers(tailcatLink()) }, network: { '*': { error: 'offline' } } })
   await pairAndConnect(auto)

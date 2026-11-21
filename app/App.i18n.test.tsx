@@ -4,7 +4,7 @@ import { en } from './src/strings/en.ts'
 
 const LOCALES = ['zh-CN', 'zh-TW', 'es-ES', 'ko-KR', 'ja-JP', 'ru-RU']
 // What isn't the app's to translate: what the fake computer and agents say, commands, and names.
-const DATA = /^(Herdr|Claude Code|Codex|TailPocket|api|web|main|git|esc|tab|enter|ctrl|⇧tab|\^C|Documents|notes|src|clients|demo-app|studio|zsh|~.*|\/.*|http.*|herdr.*|<?\d.*|.*›.*|.*(fix login|login\.ts|npm test|Yes|No, |herdr-anywhere|herdr-core|herdr1|TailPocket|Claude Code|Codex|\{).*)$/
+const DATA = /^(Herdr|Herdr Anywhere|Claude Code|Codex|TailPocket|api|web|main|git|esc|tab|enter|ctrl|⇧tab|\^C|Documents|notes|src|clients|demo-app|studio|zsh|~.*|\/.*|http.*|herdr.*|<?\d.*|.*›.*|.*(fix login|login\.ts|npm test|Yes|No, |herdr-anywhere|herdr-core|herdr1|TailPocket|Claude Code|Codex|\{).*)$/
 
 // Spanish reads in the same letters, so its check is the English table itself: a word the app knows, still in English.
 const WORDS = Object.values(en).flatMap((v) => (typeof v === 'string' ? [v] : Object.values(v)))

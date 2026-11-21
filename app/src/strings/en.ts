@@ -14,8 +14,7 @@ export const en = {
   // Status
   needsYou: 'Needs you', done: 'Done', working: 'Working', idle: 'Idle', unknown: 'Unknown', pinned: 'Pinned', pinToTop: 'Pin to the top', unpin: 'Unpin', dragHint: 'Drag to where you want it, then let go', moveUp: 'Move up', moveDown: 'Move down',
   // Connection
-  notConnected: 'Not connected', notConnectedLower: 'not connected', connecting: 'Connecting…', reconnecting: 'Reconnecting…',
-  lastUpdatedNow: 'Last updated just now', lastUpdated: 'Last updated {age} ago',
+  notConnected: 'Not connected', notConnectedLower: 'not connected', connecting: 'Connecting…', reconnecting: 'Reconnecting…', lastUpdated: 'Last updated {age} ago',
   lostNoCore: "herdr-core isn't installed on the computer. Install it there; this reconnects by itself.",
   lostNetwork: 'Lost the computer. Reconnecting…',
   lostRefused: "Can't reach Companion on your computer. Run this on it:",
@@ -23,7 +22,7 @@ export const en = {
   lostRefusedPair: "Can't reach Companion on your computer. Run this on it, then tap Pair again and scan the new QR code:",
   lostUnreachable: "The computer doesn't answer: it may be asleep, off, or on another network. Trying again…",
   lostTunnel: "Can't reach the computer through TailPocket. Reconnecting…",
-  lostNoRoute: "The phone and the computer have no route in common: Settings › Connection leaves out the ones the computer offers. Pick another there, or start the computer with that route. Trying again…",
+  lostNoRoute: "This phone is set to connect in a way the computer hasn't turned on, so it can't connect.",
   lostNoAnswer: "Your computer doesn't answer. Run this on it:",
   pairAgain: "Pair again",
   lostSlower: 'Switching to a slower connection…',
@@ -67,7 +66,7 @@ export const en = {
   language: 'Language', followSystem: 'Follow system',
   terminalTextSize: 'Terminal text size', points: '{n} pt', smaller: 'Smaller', larger: 'Larger',
   showAgentNames: 'Show agent names', showAgentNamesDetail: 'Names like Claude Code before each title. The icon shows the program either way.',
-  connectionAuto: "Automatic", connectionAutoDetail: "The fastest way that answers: directly on the local network when the phone is on it, otherwise through Tailcat or the computer's relay. Works from anywhere.", connectionLan: "Local network only", connectionLanDetail: "Only when the phone is on the same network as the computer. Away from it, the phone doesn't connect. Nothing goes through Tailcat.", connectionNoTailcat: "Without Tailcat", connectionNoTailcatDetail: "The local network, and the computer's own relay if it has one. Without a relay, the phone connects only on the computer's network.", connectionTailcat: "Tailcat only", connectionTailcatDetail: "Only through Tailcat: no relay and not directly on the local network. Works from anywhere, but may be slower.", connectionComputerNote: "The computer picks its routes too (for example herdr-anywhere start --routes lan). If the phone and the computer have no route in common, the phone can't connect.",
+  connectionAuto: "Automatic", connectionAutoDetail: "The fastest way that answers: directly on the local network when the phone is on it, otherwise through Tailcat or the computer's relay. Works from anywhere.", connectionLan: "Local network only", connectionLanDetail: "Only when the phone is on the same network as the computer. Away from it, the phone doesn't connect. Nothing goes through Tailcat.", connectionNoTailcat: "Without Tailcat", connectionNoTailcatDetail: "The local network, and the computer's own relay if it has one. Without a relay, the phone connects only on the computer's network.", connectionTailcat: "Tailcat only", connectionTailcatDetail: "Only through Tailcat: no relay and not directly on the local network. Works from anywhere, but may be slower.", connectionComputerNote: "Your computer decides which of these ways it allows; that's set on the computer itself. If the one picked here isn't allowed there, this phone can't connect. Automatic uses whatever the computer allows.", connectionUseAuto: "Use Automatic",
   alerts: 'Alerts', agentNeedsYou: 'An agent needs you', agentNeedsYouDetail: 'It is waiting for an answer or an approval.',
   // Android's notification while the app stays connected in the background.
   keepAliveTitle: 'Connected to your computer',

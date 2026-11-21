@@ -430,7 +430,7 @@ export function HomeScreen(props: { store: Store; actions: HomeActions; updates?
       <View class={`flex-row items-center h-12 ${props.actions.view?.() ? 'pl-3' : 'pl-4'} pr-1.5 gap-2`}>
         <If when={props.actions.view?.()} else={<>
           <Image src={icon} accessibilityLabel="Herdr Anywhere" style={{ width: 22, height: 22 }} />
-          <Text class="text-[16px] font-semibold text-foreground flex-1" numberOfLines={1}>Herdr</Text>
+          <Text class="text-[16px] font-semibold text-foreground flex-1" numberOfLines={1}>Herdr Anywhere</Text>
         </>}>
           <View class="flex-1"><ViewSwitch {...props.actions.view!()!} /></View>
         </If>

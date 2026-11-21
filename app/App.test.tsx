@@ -85,7 +85,8 @@ test('a lost line says so on home and in the pane, with how old what you see is'
   await app.host.send('fake.drop', {})
   await app.waitFor('id:conn-banner')
   expect(app.texts()).toContain('Lost the computer. Reconnecting…')
-  expect(app.texts()).toContain('Last updated just now')
+  // The screen is current for its first minute: no age line beside the reason yet.
+  expect(app.texts().some((x) => x.startsWith('Last updated'))).toBe(false)
   await app.press('id:space-sp2')
   await app.waitFor('id:pane-header')
   expect(app.count('id:conn-banner')).toBe(1)

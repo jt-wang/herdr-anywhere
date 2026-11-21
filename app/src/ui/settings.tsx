@@ -334,6 +334,8 @@ const CONNECTION_TEXT: Record<Connection, [Key, Key]> = {
 export function ConnectionScreen(props: { prefs: PrefStore; store: Store; linker: Linker; back: () => void }) {
   const p = useSignal(props.prefs.prefs)
   const { conn, route, status } = useConnection(props.store, props.linker)
+  const why = useSignal(props.store.lostWhy)
+  const under = () => (conn() === 'ready' ? pathWord(route()) : why() === 'no-route' ? t('lostNoRoute') : '')
   return (
     <View class="flex-1 bg-sidebar pt-[env(safe-area-inset-top)]">
       <View class="flex-row items-center h-12 pl-1 pr-3">
@@ -354,7 +356,7 @@ export function ConnectionScreen(props: { prefs: PrefStore; store: Store; linker
           )}</Each>
         </View>
         <View class="mt-5 border-t border-border">
-          <Fact label={t('connectionStatus')} value={status().word} dot={status().dot} under={conn() === 'ready' ? pathWord(route()) : ''} testID="connection-now" />
+          <Fact label={t('connectionStatus')} value={status().word} dot={status().dot} under={under()} testID="connection-now" />
         </View>
         <Text testID="connection-computer-note" class="px-4 pt-2 text-[12px] leading-[17px] text-sidebar-foreground">{t('connectionComputerNote')}</Text>
       </Scroll>

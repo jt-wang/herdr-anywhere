@@ -134,6 +134,8 @@ export class Store {
   pairAgain?: () => void
   /** Opens Settings › Connection (set by the screens). */
   openConnection?: () => void
+  /** Sets Settings › Connection back to Automatic, which takes every route the computer offers (set by the screens). */
+  useAutomatic?: () => void
   /** What to run on the computer so this phone connects again, from how it was paired (restart.ts; set by the screens). */
   restart?: Restart
   readonly rev = new Signal(0)

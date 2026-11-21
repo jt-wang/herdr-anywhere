@@ -106,6 +106,7 @@ function Connected(props: { deps: RootDeps; store: Store; link: Link; unpaired: 
   const nav = createNavStack<Route>(props.deps.opensSettings ? [first, { name: 'settings' }] : [first])
   const diagnosticStatus = signal(diagnostics.status)
   store.openConnection = () => nav.push({ name: 'connection' })
+  store.useAutomatic = () => deps.prefs.set({ connection: 'auto' })
   const progress = new ProgressData(store, 30_000, { load: () => Storage.getItem('progress-alerts'), save: (v) => void Storage.setItem('progress-alerts', v).catch(() => {}) })
   progress.told = { get: () => deps.prefs.prefs.get().progressLang, set: (l) => deps.prefs.set({ progressLang: l }) }
   // A language picked in Settings reaches the sorting agent now, not at the page's next read.
