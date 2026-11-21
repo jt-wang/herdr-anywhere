@@ -22,6 +22,7 @@ export const es: Table = {
   lostRefusedPair: "No se puede conectar con el programa complementario de la computadora. Ejecuta esto en ella, toca Emparejar de nuevo y escanea el nuevo código QR:",
   lostUnreachable: 'La computadora no responde: puede estar suspendida, apagada o en otra red. Reintentando…',
   lostTunnel: 'No se puede llegar a la computadora por TailPocket. Reconectando…',
+  lostNoRoute: "El teléfono y la computadora no tienen ninguna ruta en común: Ajustes › Conexión deja fuera las que ofrece la computadora. Elige otra ahí o inicia la computadora con esa ruta. Reintentando…",
   lostNoAnswer: "La computadora no responde. Ejecuta esto en ella:",
   pairAgain: "Emparejar de nuevo",
   lostSlower: 'Cambiando a una conexión más lenta…',
@@ -63,7 +64,7 @@ export const es: Table = {
   language: 'Idioma', followSystem: 'Usar el del sistema',
   terminalTextSize: 'Tamaño del texto de la terminal', points: '{n} pt', smaller: 'Más pequeño', larger: 'Más grande',
   showAgentNames: 'Mostrar el nombre del agente', showAgentNamesDetail: 'Nombres como Claude Code antes de cada título. El icono indica el programa en cualquier caso.',
-  tailcatOnly: "Solo Tailcat", tailcatOnlyDetail: "Conectar con la computadora solo a través de Tailcat: sin relay y no directamente en la red local. Puede ser más lento.",
+  connectionAuto: "Automática", connectionAutoDetail: "La vía más rápida que responda: directamente por la red local cuando el teléfono está en ella; si no, por Tailcat o el relay de la computadora. Funciona desde cualquier lugar.", connectionLan: "Solo red local", connectionLanDetail: "Solo cuando el teléfono está en la misma red que la computadora. Fuera de ella, el teléfono no se conecta. Nada pasa por Tailcat.", connectionNoTailcat: "Sin Tailcat", connectionNoTailcatDetail: "La red local y el relay propio de la computadora, si tiene uno. Sin relay, el teléfono solo se conecta en la red de la computadora.", connectionTailcat: "Solo Tailcat", connectionTailcatDetail: "Solo a través de Tailcat: sin relay y no directamente en la red local. Funciona desde cualquier lugar, pero puede ser más lento.", connectionComputerNote: "La computadora también elige sus vías (por ejemplo, herdr-anywhere start --routes lan). Si el teléfono y la computadora no tienen ninguna vía en común, el teléfono no puede conectarse.",
   alerts: 'Avisos', agentNeedsYou: 'Un agente te necesita', agentNeedsYouDetail: 'Está esperando una respuesta o una aprobación.',
   // Android's notification while the app stays connected in the background.
   keepAliveTitle: 'Conectado a tu ordenador',

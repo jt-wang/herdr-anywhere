@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.3.6
+
+iOS build 41. Update the phone and the computer together.
+
+- Tailcat is now optional. Build on TailPocket v0.3.3 (jt-wang/tailpocket@32c50f3): the Go module from the Go proxy, the phone library from its release (checked by SHA-256). Its v0.3.2 audit found three fail-closed issues, fixed in v0.3.3: a phone keeps its routes when the computer sends none it can use, `setRoutes(null)` also ends Tailcat only, and a bridge call without a route list is refused instead of allowing every route.
+- On the computer, `herdr-anywhere start` and `serve` take `--routes`, any of `tailcat`, `lan` and `relay` (for example `start --routes lan` for the local network only, with no Tailcat traffic at all). `start` keeps the routes, `--relay` and `--relay-token-file` for every login. A combination that cannot work (`--routes lan,relay` without `--relay`, `--routes` with `--tailcat-only` or `--no-lan`, `--lan` without Tailcat or `--routes`, `--tailcat` with `--routes` that leave Tailcat out, an unknown or repeated route) stops at once with a message that names the fix. Pairing without Tailcat uses the emoji check, as before.
+- On the phone, Settings › Connection (for computers paired through TailPocket) picks Automatic, the default, Local network only, Without Tailcat or Tailcat only. Each choice says what it costs; a pick closes the open connection and it comes back at once on a route the pick allows, and the app tells TailPocket the pick at every launch, before it pairs or connects. When the phone and the computer have no route in common, the banner says so and opens Settings › Connection. A phone that had Settings › Tailcat only on keeps Tailcat alone.
+
 ## v0.3.5
 
 iOS build 40. The Companion is the same as 0.3.4.

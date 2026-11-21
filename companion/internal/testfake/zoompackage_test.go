@@ -42,7 +42,7 @@ func TestZoomPackageRuntime(t *testing.T) {
 			write("framework/nsh-build.txt", "patched-test-engine\n")
 			write("out/Herdr zoom check.app/runtime", "old CLI engine")
 			write("out/zoom.apk", "Android fixture")
-			if err := os.MkdirAll(filepath.Join(root, "third_party/tailpocket-086e368/sdk/apple/NSH"), 0o755); err != nil {
+			if err := os.MkdirAll(filepath.Join(root, "third_party/tailpocket-32c50f3/sdk/apple/NSH"), 0o755); err != nil {
 				t.Fatal(err)
 			}
 			HC(t, filepath.Join(app, "ios/nsh-patches"), "key.sh", Spec{On: map[string][]Reply{"": {{Print: "patched-test-engine"}}}})

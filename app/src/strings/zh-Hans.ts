@@ -22,6 +22,7 @@ export const zhHans: Table = {
   lostRefusedPair: "连不上电脑上的配套程序。在电脑上运行以下命令，然后点“重新配对”，扫描新的二维码：",
   lostUnreachable: '电脑没有响应：可能在睡眠、已关机，或不在同一网络。正在重试…',
   lostTunnel: '无法通过 TailPocket 连接电脑，正在重新连接…',
+  lostNoRoute: "手机和电脑没有共同的连接方式：设置 › 连接里选的方式，电脑都没有提供。换一种，或让电脑也开启这种方式。正在重试…",
   lostNoAnswer: "电脑没有响应。在电脑上运行：",
   pairAgain: "重新配对",
   lostSlower: '正在切换到较慢的连接…',
@@ -63,7 +64,7 @@ export const zhHans: Table = {
   language: '语言', followSystem: '跟随系统',
   terminalTextSize: '终端字号', points: '{n} 磅', smaller: '缩小', larger: '放大',
   showAgentNames: '显示 agent 名称', showAgentNamesDetail: '在每个标题前显示 Claude Code 这类名称。不显示时，图标仍会标出是哪个程序。',
-  tailcatOnly: "只用 Tailcat", tailcatOnlyDetail: "只通过 Tailcat 连接电脑：不经过 relay，也不在局域网上直连。可能会慢一些。",
+  connectionAuto: "自动", connectionAutoDetail: "用能连上的最快方式：手机在局域网里时直连，否则通过 Tailcat 或电脑的 relay。在哪里都能连。", connectionLan: "只用局域网", connectionLanDetail: "只在手机和电脑在同一个网络时连接。离开这个网络就连不上。不经过 Tailcat。", connectionNoTailcat: "不用 Tailcat", connectionNoTailcatDetail: "局域网，以及电脑自己的 relay（如果有）。没有 relay 时，只能在电脑所在的网络里连接。", connectionTailcat: "只用 Tailcat", connectionTailcatDetail: "只通过 Tailcat：不经过 relay，也不在局域网上直连。在哪里都能连，但可能会慢一些。", connectionComputerNote: "电脑也要选它的连接方式（例如 herdr-anywhere start --routes lan）。手机和电脑没有共同的方式时，手机连不上。",
   alerts: '提醒', agentNeedsYou: 'Agent 在等你', agentNeedsYouDetail: '它在等你回答或批准。',
   // Android's notification while the app stays connected in the background.
   keepAliveTitle: '已连接到你的电脑',

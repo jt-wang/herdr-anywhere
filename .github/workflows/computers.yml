@@ -79,7 +79,7 @@ jobs:
             core: herdr-core-macos-x86_64.tar.gz
             sha256: 15a12b80e93ec4e074dbdb82fa8a66e529857abfbdfb456f94d5116dc438fedc
           - os: ubuntu-latest
-            timeout: 24
+            timeout: 30
             core: herdr-core-linux-x86_64.tar.gz
             sha256: 5b2f97cb4b2a9d7a6b2cc5942628203ed9fbb7cc0c2b4b09ad8a6f5648e246b7
           - os: ubuntu-24.04-arm
@@ -189,6 +189,11 @@ jobs:
           for i in $(seq 1 30); do XDG_RUNTIME_DIR=/run/user/$(id -u) systemctl --user show-environment >/dev/null 2>&1 && break; sleep 1; done
           XDG_RUNTIME_DIR=/run/user/$(id -u) systemctl --user is-system-running || true
           echo "HM_SYSTEMD_LIVE=1" >> "$GITHUB_ENV"
+      # serve --routes lan sends nothing through Tailcat: iptables counts every packet the LAN-only pairing, connection
+      # and revoke send off this computer (0), against the same run through Tailcat (above 0).
+      - name: LAN only sends nothing off this computer (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: app/e2e/no-tailcat-packets.sh "$HM_TEST_HC"
       - run: go vet ./...
         working-directory: companion
       # cmd/herdr-anywhere cross-compiles each release file and vets two of them: on macos-26-intel that alone ran

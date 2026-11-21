@@ -39,15 +39,15 @@ import (
 )
 
 // A var so a test can build two versions of this program.
-var version = "0.3.5"
+var version = "0.3.6"
 
 const defaultPort = "7681"
 
 const usage = `herdr-anywhere: reach herdr-core on this computer from a paired phone
 
 usage:
-  herdr-anywhere serve   [--listen 127.0.0.1:7681]... [--tailcat [--lan | --no-lan | --tailcat-only]] [--web DIR] [--hc PATH] [--state DIR]
-  herdr-anywhere start   [--lan | --no-lan | --tailcat-only] [--listen ADDR]... [--state DIR]
+  herdr-anywhere serve   [--listen 127.0.0.1:7681]... [--tailcat [--lan | --no-lan | --tailcat-only] | --routes tailcat,lan,relay [--lan]] [--relay URL --relay-token-file FILE] [--web DIR] [--hc PATH] [--state DIR]
+  herdr-anywhere start   [--lan | --no-lan | --tailcat-only | --routes LIST] [--relay URL --relay-token-file FILE] [--listen ADDR]... [--state DIR]
   herdr-anywhere stop    [--state DIR]
   herdr-anywhere pair    [--name "Phone"] [--ttl 10m] [--url URL] [--json [--window ID [--answer yes|no]]] [--state DIR]
   herdr-anywhere devices [--json] [--state DIR]
@@ -64,9 +64,11 @@ With serve --tailcat running, pair shows an invite the Herdr app scans, then wai
 once you have checked that the four emoji it shows are the ones pair shows, and answered y.
 Phones on this computer's own network reach serve --tailcat directly, end-to-end encrypted; --no-lan turns that
 off, and --tailcat-only keeps phones on Tailcat alone (no local network, no relay).
+--routes lists the routes exactly, instead of --tailcat: --routes lan reaches phones only on this computer's own
+network and sends nothing through Tailcat (away from home they don't connect), --routes relay only through your relay.
 start runs serve --tailcat in the background, returns once it answers, and has it start again
 whenever you log in (and after a crash); stop stops it and turns that off.
-start --lan, --no-lan, --tailcat-only and --listen ADDR go to that serve, at each login too; a later start without them takes them out.
+start --lan, --no-lan, --tailcat-only, --routes, --relay and --listen ADDR go to that serve, at each login too; a later start without them takes them out.
 With no serve running, pair starts one the way start does.
 install-dialog adds an Add phone dialog to the Herdr desktop app, which does all of this without a terminal;
 start adds it too, and start, serve and update keep it up to date.
@@ -242,11 +244,12 @@ func serve(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	fs, state := newFlags("serve", stderr)
 	var listen listFlag
 	fs.Var(&listen, "listen", "address to listen on (repeatable; default 127.0.0.1:7681)")
-	withLAN := fs.Bool("lan", false, "let paired phones reach this computer on its private LAN IPv4 address(es) on port 7682, end-to-end encrypted, and phones paired before 0.3 on the plain port for up to 3 days (needs --tailcat)")
+	withLAN := fs.Bool("lan", false, "let paired phones reach this computer on its private LAN IPv4 address(es) on port 7682, end-to-end encrypted, and phones paired before 0.3 on the plain port for up to 3 days (needs --tailcat, or lan in --routes)")
 	withTailcat := fs.Bool("tailcat", false, "also let paired phones reach this computer through Tailcat, from any network; phones on this computer's own network reach it directly too, end-to-end encrypted")
 	noLAN := fs.Bool("no-lan", false, "with --tailcat: not directly on this computer's local network, only through Tailcat (and --relay)")
 	tailcatOnly := fs.Bool("tailcat-only", false, "with --tailcat: through Tailcat alone, as before 0.3: no local network route and no relay")
-	relayURL := fs.String("relay", "", "also register with this tailpocket-relay (wss://…), end-to-end encrypted (needs --tailcat and --relay-token-file)")
+	routesFlag := fs.String("routes", "", "exactly these routes, end-to-end encrypted, separated by commas: tailcat (from any network), lan (this computer's local network), relay (--relay); without tailcat nothing goes through Tailcat")
+	relayURL := fs.String("relay", "", "also register with this tailpocket-relay (wss://…), end-to-end encrypted (needs --relay-token-file, and --tailcat or relay in --routes)")
 	relayTokenFile := fs.String("relay-token-file", "", "file holding the relay's token")
 	web := fs.String("web", "", "serve the PWA from this directory")
 	logTo := fs.String("log", "", "append what serve prints to this file (start's entry on Windows, which has no console)")
@@ -278,9 +281,15 @@ func serve(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 			fmt.Fprintf(stderr, "could not bring the Add phone dialog up to date: %v\n", err)
 		}
 	}
-	// Before anything listens: a second serve would start this computer's Tailcat node a second time.
-	if *withTailcat && tailcat.ServeRunning(st.Dir()) {
-		err := fmt.Errorf("--tailcat: Companion is already running on %s (herdr-anywhere stop stops it)", st.Dir())
+	routes, err := routeSet(*withTailcat, *routesFlag, *withLAN, *noLAN, *tailcatOnly, *relayURL != "")
+	if err != nil {
+		return usageError{err}
+	}
+	// secure: TailPocket's end-to-end encrypted host runs, on the routes --tailcat or --routes name.
+	secure := *withTailcat || routes != nil
+	// Before anything listens: a second serve would start this computer's TailPocket host a second time.
+	if secure && tailcat.ServeRunning(st.Dir()) {
+		err := fmt.Errorf("Companion is already running on %s (herdr-anywhere stop stops it)", st.Dir())
 		if atLogin().StartedThis() {
 			// Not a failure to the service manager, which would otherwise start it again every few seconds for as
 			// long as the other one runs.
@@ -289,13 +298,7 @@ func serve(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		}
 		return err
 	}
-	if *withLAN && !*withTailcat {
-		return usageError{errors.New("--lan needs --tailcat: the local network is end-to-end encrypted through TailPocket (herdr-anywhere start runs both)")}
-	}
-	if err := routeFlags(*withTailcat, *withLAN, *noLAN, *tailcatOnly, *relayURL != ""); err != nil {
-		return usageError{err}
-	}
-	relays, err := relayOption(*relayURL, *relayTokenFile, *withTailcat)
+	relays, err := relayOption(*relayURL, *relayTokenFile)
 	if err != nil {
 		return usageError{err}
 	}
@@ -390,22 +393,26 @@ func serve(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 	defer plain.close()
-	if *withTailcat {
-		opts := tailcat.Options{Relays: relays, NoLAN: *noLAN, TailcatOnly: *tailcatOnly}
+	if secure {
+		opts := tailcat.Options{Routes: routes, Relays: relays, NoLAN: *noLAN, TailcatOnly: *tailcatOnly}
 		for _, a := range lanAddrs {
 			opts.Listen = append(opts.Listen, net.JoinHostPort(a.String(), strconv.Itoa(secureLANPort)))
 		}
 		closeTailcat, err := serveTailcat(ctx, st, httpSrv, srv.Revoking, urls, errc, logger, opts)
 		if err != nil {
 			httpSrv.Close()
-			return fmt.Errorf("--tailcat: %w", err)
+			return err
 		}
 		defer closeTailcat()
-		fmt.Fprintln(stdout, "listening on Tailcat; phones pair by scanning `herdr-anywhere pair`")
+		if tailcatOn(routes) {
+			fmt.Fprintln(stdout, "listening on Tailcat; phones pair by scanning `herdr-anywhere pair`")
+		} else {
+			fmt.Fprintf(stdout, "listening for phones on %s, not through Tailcat; phones pair by scanning `herdr-anywhere pair`\n", routeWords(routes))
+		}
 	}
 	fmt.Fprintf(stdout, "state in %s; pair a phone with: herdr-anywhere pair\n", st.Dir())
 	if isTerminal(stdout) {
-		fmt.Fprintln(stdout, foregroundTip(serveOpts{lan: *withLAN, noLAN: *noLAN, tailcatOnly: *tailcatOnly, listen: listen}))
+		fmt.Fprintln(stdout, foregroundTip(serveOpts{routes: routes, lan: *withLAN, noLAN: *noLAN, tailcatOnly: *tailcatOnly, listen: listen, relay: *relayURL, relayTokenFile: absPath(*relayTokenFile)}))
 	}
 	go updates.Run(ctx)
 	if hcPath != "" {
@@ -450,17 +457,21 @@ func serveTailcat(ctx context.Context, st *store.Store, httpSrv *http.Server, re
 		logger.Printf("listening on %s for phones on this network, end-to-end encrypted", a)
 	}
 	switch {
+	case opts.Routes != nil && !tailcatOn(opts.Routes):
+		logger.Printf("routes: %s; not through Tailcat (--routes %s)", routeWords(opts.Routes), strings.Join(opts.Routes, ","))
+	case opts.Routes != nil:
+		logger.Printf("routes: %s (--routes %s)", routeWords(opts.Routes), strings.Join(opts.Routes, ","))
 	case opts.TailcatOnly:
 		logger.Printf("Tailcat only (--tailcat-only): not on the local network, no relay")
 	case opts.NoLAN:
 		logger.Printf("not on the local network (--no-lan)")
-	case len(opts.Listen) == 0:
+	case len(opts.Listen) == 0 && opts.Routes == nil:
 		logger.Printf("listening on this computer's private network addresses for phones on the same network, end-to-end encrypted (--no-lan turns it off)")
 	}
 	for _, r := range opts.Relays {
 		logger.Printf("registering with relay %s, end-to-end encrypted", r.URL)
 	}
-	if n := tc.Unsynced(); n > 0 && !opts.TailcatOnly && (!opts.NoLAN || len(opts.Relays) > 0) {
+	if n := tc.Unsynced(); n > 0 && tailcatOn(opts.Routes) && !opts.TailcatOnly && (!opts.NoLAN || len(opts.Relays) > 0) {
 		logger.Printf("%d phone(s) paired before 0.3 reach this computer only through Tailcat until they open Herdr Anywhere 0.3 or later: ask their owners to open the new app soon", n)
 	}
 	ctl, err := tailcat.Listen(st.Dir())

@@ -2,6 +2,16 @@
 
 A cloud coding agent can request an iOS build through GitHub Actions. Apple signing credentials stay in the repository's `testflight` environment; the agent needs a GitHub token with **Actions: write** and **Contents: read**.
 
+## 0.3.6 (41): TailPocket v0.3.3, Tailcat optional
+
+Built on TailPocket v0.3.3 (jt-wang/tailpocket@32c50f3aac847044030222fe9b498bb98e882133). Tailcat is now one route of three. Use the phone and Companion from the same build.
+
+1. **Local network only.** On the computer, `herdr-anywhere start --routes lan` (or `serve --routes lan --listen 127.0.0.1:0`). Pair the phone on the same Wi-Fi: the emoji check works as before, and the invite lists only the local network. Settings › Connection shows Automatic; the Status line says Connected and the path says the local network. Leave the Wi-Fi: the phone doesn't connect, which is what that choice costs.
+2. **Settings › Connection.** Pick each of Automatic, Local network only, Without Tailcat and Tailcat only. Each pick closes the open tunnel and the connection comes back at once on a route it allows (Status goes Reconnecting, then Connected). A pick the computer doesn't run (Tailcat only against `--routes lan`) does not connect: the banner says the phone and the computer have no route in common, and its Connection button opens the list.
+3. **Relay only.** `herdr-anywhere start --routes relay --relay wss://… --relay-token-file FILE`, Without Tailcat on the phone, with the phone off the computer's network: Settings shows the relay.
+4. **Clear errors.** `herdr-anywhere serve --lan` (without `--tailcat`), `start --routes lan,relay` without `--relay`, `start --routes lan --tailcat-only` and `serve --tailcat --routes lan` each stop at once with a message that names the fix.
+5. A phone that had Settings › Tailcat only on before this build opens with Connection set to Tailcat only.
+
 ## 0.3.5 (40)
 
 The Companion is the same as 0.3.4, and the steps below still apply. Settings › Language picks the app's language (Follow system, or one of the seven) and changes it at once; on iOS it is the same setting as Settings › Herdr Anywhere › Language (see CHANGELOG.md).

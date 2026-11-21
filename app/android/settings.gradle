@@ -1,7 +1,7 @@
 pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
-// TailPocket's Android modules come from its copy of v0.3.1, public commit 086e368 (third_party), with its version catalog,
+// TailPocket's Android modules come from its copy of v0.3.3, public commit 32c50f3 (third_party), with its version catalog,
 // and its phone library from the local Maven repository scripts/tailpocket.sh puts there from that release.
-def tailpocket = file('../../third_party/tailpocket-086e368')
+def tailpocket = file('../../third_party/tailpocket-32c50f3')
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {

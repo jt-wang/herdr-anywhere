@@ -138,10 +138,10 @@ def check_source(root, sha, env):
 
 def prepared_inputs(root):
     paths = ['app/ios/Herdr.xcodeproj', 'app/ios/nsh', 'app/ios/Info.plist',
-             'third_party/tailpocket-086e368/build/apple/TailPocketMobile.xcframework',
-             'third_party/tailpocket-086e368/sdk/apple/NSH/NativeShell.xcframework']
+             'third_party/tailpocket-32c50f3/build/apple/TailPocketMobile.xcframework',
+             'third_party/tailpocket-32c50f3/sdk/apple/NSH/NativeShell.xcframework']
     for name in ['app/ios/Herdr.xcodeproj/project.pbxproj', 'app/ios/nsh/bundle.nshc',
-                 'third_party/tailpocket-086e368/sdk/apple/NSH/NativeShell.xcframework/ios-arm64/NativeShell.framework/NativeShell']:
+                 'third_party/tailpocket-32c50f3/sdk/apple/NSH/NativeShell.xcframework/ios-arm64/NativeShell.framework/NativeShell']:
         if not (root / name).is_file():
             raise ReleaseError('Missing prepared input: ' + name)
     result = {}

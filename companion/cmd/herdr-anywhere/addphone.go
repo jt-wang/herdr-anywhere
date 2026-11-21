@@ -95,18 +95,24 @@ const serveLogFile = "serve.log"
 // startWait is how long start waits for serve to answer.
 var startWait = execLimit
 
-// serveOpts are what start was given for serve beyond Tailcat: --lan, --listen, --no-lan, --tailcat-only. Only this
-// start's go into the login entry; nothing is kept from an earlier one.
+// serveOpts are what start was given for serve: --routes, --lan, --listen, --no-lan, --tailcat-only, --relay. Only
+// this start's go into the login entry; nothing is kept from an earlier one.
 type serveOpts struct {
+	routes      []string // --routes; nil: serve --tailcat
 	lan         bool
 	noLAN       bool
 	tailcatOnly bool
 	listen      []string
+	// relay is --relay; relayTokenFile its --relay-token-file as an absolute path, read again at each login.
+	relay, relayTokenFile string
 }
 
 // flags is opts as start's own flags, to tell the person the command that applies them.
 func (o serveOpts) flags() string {
 	var b strings.Builder
+	if o.routes != nil {
+		b.WriteString(" --routes " + strings.Join(o.routes, ","))
+	}
 	for _, l := range o.listen {
 		b.WriteString(" --listen " + l)
 	}
@@ -119,14 +125,20 @@ func (o serveOpts) flags() string {
 	if o.tailcatOnly {
 		b.WriteString(" --tailcat-only")
 	}
+	if o.relay != "" {
+		b.WriteString(" --relay " + o.relay + " --relay-token-file " + shellQuote(o.relayTokenFile))
+	}
 	return b.String()
 }
 
 // startedServeArgs is the serve start runs. With neither --lan nor --listen it asks for any free local port: phones
-// arrive through Tailcat. --lan keeps serve's own port, 7681: a LAN phone keeps the address it paired with, and a port
-// that changed at each login would lose it.
+// arrive through TailPocket's own listeners. --lan keeps serve's own port, 7681: a LAN phone keeps the address it
+// paired with, and a port that changed at each login would lose it.
 func startedServeArgs(dir string, o serveOpts) []string {
 	args := []string{"serve", "--tailcat"}
+	if o.routes != nil {
+		args = []string{"serve", "--routes", strings.Join(o.routes, ",")}
+	}
 	if !o.lan && len(o.listen) == 0 {
 		args = append(args, "--listen", "127.0.0.1:0")
 	}
@@ -141,6 +153,9 @@ func startedServeArgs(dir string, o serveOpts) []string {
 	}
 	if o.tailcatOnly {
 		args = append(args, "--tailcat-only")
+	}
+	if o.relay != "" {
+		args = append(args, "--relay", o.relay, "--relay-token-file", o.relayTokenFile)
 	}
 	return append(args, "--state", dir)
 }
@@ -173,16 +188,23 @@ func start(args []string, stdout, stderr io.Writer) error {
 	withLAN := fs.Bool("lan", false, "also let phones on this computer's local network reach it on port 7682, and phones paired before 0.3 for up to 3 days, as serve --lan; kept for each login")
 	noLAN := fs.Bool("no-lan", false, "not directly on this computer's local network, as serve --no-lan; kept for each login")
 	tailcatOnly := fs.Bool("tailcat-only", false, "through Tailcat alone, no local network and no relay, as serve --tailcat-only; kept for each login")
+	routesFlag := fs.String("routes", "", "exactly these routes, as serve --routes: tailcat, lan, relay, separated by commas (lan alone: only on this computer's local network, nothing through Tailcat); kept for each login")
+	relayURL := fs.String("relay", "", "also register with this tailpocket-relay (wss://…), as serve --relay; kept for each login")
+	relayTokenFile := fs.String("relay-token-file", "", "file holding the relay's token, read again at each login")
 	if err := parse(fs, args); err != nil {
 		return err
 	}
 	if fs.NArg() > 0 {
 		return usageError{fmt.Errorf("unexpected argument %q", fs.Arg(0))}
 	}
-	o := serveOpts{lan: *withLAN, noLAN: *noLAN, tailcatOnly: *tailcatOnly, listen: listen}
-	if err := routeFlags(true, o.lan, o.noLAN, o.tailcatOnly, false); err != nil {
+	routes, err := routeSet(*routesFlag == "", *routesFlag, *withLAN, *noLAN, *tailcatOnly, *relayURL != "")
+	if err != nil {
 		return usageError{err}
 	}
+	if _, err := relayOption(*relayURL, *relayTokenFile); err != nil {
+		return usageError{err}
+	}
+	o := serveOpts{routes: routes, lan: *withLAN, noLAN: *noLAN, tailcatOnly: *tailcatOnly, listen: listen, relay: *relayURL, relayTokenFile: absPath(*relayTokenFile)}
 	// What serve would refuse fails here, not later in the background, at every login.
 	if _, err := listenAddrs(o.listen, false, nil); err != nil {
 		return usageError{err}

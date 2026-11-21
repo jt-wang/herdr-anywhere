@@ -64,6 +64,13 @@ export function ConnBanner(props: { store: Store }) {
               </If>
             </View>
           </If>
+          <If when={!connecting() && why() === 'no-route' && s.openConnection}>
+            <View class="mt-1 flex-row">
+              <View role="button" testID="conn-open-connection" onPress={() => s.openConnection?.()} class="rounded-(--radius) border border-input px-2.5 py-1 active:bg-accent">
+                <Text class="text-[12.5px] font-medium text-foreground">{t('connection')}</Text>
+              </View>
+            </View>
+          </If>
           <If when={age()}><Text class="text-[11.5px] text-sidebar-foreground">{age()}</Text></If>
         </View>
       </View>

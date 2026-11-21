@@ -5,14 +5,14 @@ import { createNavStack, NavPage, NavStack } from 'nsh/base'
 import type { ViewSwitchProps } from './view-switch.tsx'
 import type { Store } from '../store.ts'
 import { chatApi, fileApi, folderApi, imageApi, parseInvite, plainLink, type Link, type Linker, type Tunnel } from '../link.ts'
-import type { PrefStore } from '../prefs.ts'
+import { ROUTES, type PrefStore } from '../prefs.ts'
 import { Alerts, type AlertKind } from '../alerts.ts'
 import { appLanguage, followInstallFailures, installApp, onFront, setAppLanguage, allowNotifications, followPage, keepAlive, notifications, notifyFromPage, wantsKeepAlive } from '../page.ts'
 import { HomeScreen } from './home.tsx'
 import { ProgressData, ProgressHome, TaskScreen } from './progress.tsx'
 import { xtermTheme } from './terminal-page.ts'
 import { SpaceScreen } from './space.tsx'
-import { DiagnosticsScreen, LanguageScreen, SettingsScreen } from './settings.tsx'
+import { ConnectionScreen, DiagnosticsScreen, LanguageScreen, SettingsScreen } from './settings.tsx'
 import { PairScreen } from './pair.tsx'
 import { NewSheet, RenameSheet, type NewTarget, type RenameTarget } from './sheets.tsx'
 import { PeekSheet } from './peek.tsx'
@@ -47,7 +47,7 @@ export type RootDeps = {
   updateEveryMs?: number
 }
 
-type Route = { name: 'home' } | { name: 'space'; id: string } | { name: 'settings' } | { name: 'diagnostics' } | { name: 'language' } | { name: 'progress' } | { name: 'task'; id: string }
+type Route = { name: 'home' } | { name: 'space'; id: string } | { name: 'settings' } | { name: 'diagnostics' } | { name: 'language' } | { name: 'connection' } | { name: 'progress' } | { name: 'task'; id: string }
 
 /** Points up, or points a second up at the release, past which a pull on a toast takes it away. 24, as on an iPhone
  *  SE the toast sits 8 pt from the top and a finger has about 35 pt above the card's middle. */
@@ -105,6 +105,7 @@ function Connected(props: { deps: RootDeps; store: Store; link: Link; unpaired: 
   const first: Route = startOn.progressFirst && startOn.homeView !== 'agents' ? { name: 'progress' } : { name: 'home' }
   const nav = createNavStack<Route>(props.deps.opensSettings ? [first, { name: 'settings' }] : [first])
   const diagnosticStatus = signal(diagnostics.status)
+  store.openConnection = () => nav.push({ name: 'connection' })
   const progress = new ProgressData(store, 30_000, { load: () => Storage.getItem('progress-alerts'), save: (v) => void Storage.setItem('progress-alerts', v).catch(() => {}) })
   progress.told = { get: () => deps.prefs.prefs.get().progressLang, set: (l) => deps.prefs.set({ progressLang: l }) }
   // A language picked in Settings reaches the sorting agent now, not at the page's next read.
@@ -234,11 +235,15 @@ function Connected(props: { deps: RootDeps; store: Store; link: Link; unpaired: 
       : r.name === 'settings'
       ? <NavPage headerVisible={false} class="bg-sidebar">
           <SettingsScreen updates={updates} store={store} prefs={deps.prefs} link={props.link} linker={deps.linker} fetcher={deps.fetcher} back={() => nav.pop()} forget={() => { if (props.leaveDemo) props.leaveDemo(); else deps.linker.forget() }}
-            openLanguage={() => nav.push({ name: 'language' })} openDiagnostics={() => nav.push({ name: 'diagnostics' })} diagnosticStatus={diagnosticStatus()} diagnosticChanged={(s) => diagnosticStatus.set(s)} />
+            openLanguage={() => nav.push({ name: 'language' })} openConnection={() => nav.push({ name: 'connection' })} openDiagnostics={() => nav.push({ name: 'diagnostics' })} diagnosticStatus={diagnosticStatus()} diagnosticChanged={(s) => diagnosticStatus.set(s)} />
         </NavPage>
       : r.name === 'language'
       ? <NavPage headerVisible={false} class="bg-sidebar">
           <LanguageScreen prefs={deps.prefs} back={() => nav.pop()} choose={(l) => { deps.prefs.set({ language: l }); setAppLanguage(l) }} />
+        </NavPage>
+      : r.name === 'connection'
+      ? <NavPage headerVisible={false} class="bg-sidebar">
+          <ConnectionScreen prefs={deps.prefs} store={store} linker={deps.linker} back={() => nav.pop()} />
         </NavPage>
       : r.name === 'diagnostics'
       ? <NavPage headerVisible={false} class="bg-sidebar">
@@ -282,8 +287,9 @@ export function Root(props: { deps: RootDeps }) {
   const demo = signal<Demo | null>(null)
   const leaveDemo = () => { demo()?.stop(); demo.set(null) }
   effect(() => setColorScheme(prefs().appearance))
-  // Tailcat only when Settings says so: told to TailPocket once the prefs are read, before the first tunnel or pairing.
-  effect(() => { void deps.linker.setTailcatOnly(prefs().tailcatOnly).catch(() => {}) })
+  // Settings › Connection, told to TailPocket at every launch once the prefs are read (null too: it keeps the routes in
+  // the app's process), before the first tunnel or pairing, which wait for it.
+  effect(() => { if (loaded()) void deps.linker.setRoutes(ROUTES[prefs().connection]).catch(() => {}) })
   // Settings › Language. Where the phone keeps a language for this app (Android 13+, iOS), that one wins: the app sets
   // it with each pick, so it differs only when the person changed it in the phone's settings.
   effect(() => setPicked(prefs().language))

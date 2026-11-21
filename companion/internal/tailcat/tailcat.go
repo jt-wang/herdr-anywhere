@@ -45,8 +45,12 @@ type Window struct {
 	Expires time.Time `json:"expires"`
 }
 
-// Options are serve's routes beyond Tailcat, each end-to-end encrypted by TailPocket (Noise).
+// Options are serve's routes, each end-to-end encrypted by TailPocket (Noise).
 type Options struct {
+	// Routes, when set, are exactly the routes the host runs (connecthost.Config.Routes): without "tailcat" it runs
+	// no Tailcat node and pairs only through the other routes. Nil: Tailcat, the local network unless NoLAN or
+	// TailcatOnly, and Relays. Routes takes no NoLAN or TailcatOnly.
+	Routes []string
 	// Relays are tailpocket-relay servers to register with.
 	Relays []connecthost.Relay
 	// Listen are local network addresses ("192.168.1.5:7682") phones reach directly. Empty: TailPocket's own
@@ -101,13 +105,17 @@ func Open(st *store.Store, name string, logger *log.Logger, opts Options) (*Serv
 	}
 	// Keys are the phones' end-to-end keys: without them, a phone that has its key would be turned away as unpaired
 	// on the relay and the local network after a restart.
+	// Before New: without Tailcat, New forgets the phones it holds no end-to-end key for and saves that (save).
+	s.last = connecthost.State{Allowed: allowed, Keys: saved.Keys}
 	h, err := connecthost.New(connecthost.Config{Name: name, Identity: saved.Identity, Allowed: allowed, Keys: saved.Keys,
-		Save: s.save, Relays: opts.Relays, Listen: opts.Listen, NoLAN: opts.NoLAN, TailcatOnly: opts.TailcatOnly})
+		Save: s.save, Routes: opts.Routes, Relays: opts.Relays, Listen: opts.Listen, NoLAN: opts.NoLAN, TailcatOnly: opts.TailcatOnly})
 	if err != nil {
+		if errors.Is(err, connecthost.ErrInvalidRoutes) {
+			return nil, err
+		}
 		return nil, fmt.Errorf("%s: %w", s.statePath(), err)
 	}
 	s.host = h
-	s.last = connecthost.State{Allowed: allowed, Keys: saved.Keys}
 	return s, nil
 }
 

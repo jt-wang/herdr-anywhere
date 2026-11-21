@@ -141,16 +141,3 @@ func windowError(stdout io.Writer, err error) error {
 	}
 	return reportJSON(stdout, err.Error())
 }
-
-// routeFlags checks serve's and start's --no-lan and --tailcat-only against the other routes.
-func routeFlags(withTailcat, withLAN, noLAN, tailcatOnly, relay bool) error {
-	switch {
-	case (noLAN || tailcatOnly) && !withTailcat:
-		return errors.New("--no-lan and --tailcat-only need --tailcat")
-	case tailcatOnly && (withLAN || relay):
-		return errors.New("--tailcat-only takes no --lan and no --relay")
-	case noLAN && withLAN:
-		return errors.New("--no-lan and --lan contradict each other")
-	}
-	return nil
-}

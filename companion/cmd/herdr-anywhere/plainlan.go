@@ -206,15 +206,12 @@ func plainOnly(st *store.Store, h http.Handler) http.Handler {
 }
 
 // relayOption is --relay with the token from --relay-token-file.
-func relayOption(url, tokenFile string, withTailcat bool) ([]connecthost.Relay, error) {
+func relayOption(url, tokenFile string) ([]connecthost.Relay, error) {
 	if url == "" {
 		if tokenFile != "" {
 			return nil, errors.New("--relay-token-file needs --relay")
 		}
 		return nil, nil
-	}
-	if !withTailcat {
-		return nil, errors.New("--relay needs --tailcat")
 	}
 	if !connectinvite.ValidRelayURL(url) {
 		return nil, fmt.Errorf("--relay %q: want wss://host (ws:// only to a loopback address)", url)

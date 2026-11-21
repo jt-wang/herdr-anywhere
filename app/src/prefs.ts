@@ -5,6 +5,12 @@ import { LANGS, type Lang } from './strings/index.ts'
 export type Appearance = 'system' | 'light' | 'dark'
 /** Where typing goes in a pane: our input box, or the phone's own keyboard straight into the terminal. */
 export type TypeIn = 'composer' | 'terminal'
+/** How the phone reaches its computer through TailPocket (Settings › Connection): every route, the local network
+ *  alone, the local network and the computer's relay (no Tailcat), or Tailcat alone. */
+export type Connection = 'auto' | 'lan' | 'notailcat' | 'tailcat'
+export const CONNECTIONS: Connection[] = ['auto', 'lan', 'notailcat', 'tailcat']
+/** The routes TailPocket may use for each (its setRoutes); null: every route, the fastest that answers. */
+export const ROUTES: Record<Connection, ('tailcat' | 'lan' | 'relay')[] | null> = { auto: null, lan: ['lan'], notailcat: ['lan', 'relay'], tailcat: ['tailcat'] }
 export type Prefs = { appearance: Appearance; typeIn: TypeIn; fontSize: number; alertBlocked: boolean; alertDone: boolean; stayConnected: boolean; dismissedUpdate: string; askedNotifications: boolean
   /** The last update a system notification told of (src/updates.ts updateKey): each is told once. */
   toldUpdate: string
@@ -28,9 +34,9 @@ export type Prefs = { appearance: Appearance; typeIn: TypeIn; fontSize: number; 
   chatSetupAsked: string[]
   /** The language picked in Settings › Language; '' follows the phone's (ui/root.tsx keeps it and the phone's own setting for this app the same). */
   language: Lang | ''
-  /** TailPocket keeps this phone on Tailcat alone: no relay, no local network route (Settings › Computer). */
-  tailcatOnly: boolean }
-export const DEFAULTS: Prefs = { appearance: 'system', typeIn: 'composer', fontSize: 13, alertBlocked: true, alertDone: true, stayConnected: true, dismissedUpdate: '', toldUpdate: '', askedNotifications: false, showAgentNames: true, progressFirst: false, progressAgent: '', progressLang: '', homeView: 'progress', progressFolded: [], opened: 0, chatFirst: false, chatSetupAsked: [], language: '', tailcatOnly: false }
+  /** The routes TailPocket may use to reach the computer (Settings › Connection); before 0.3.6 a Tailcat only switch. */
+  connection: Connection }
+export const DEFAULTS: Prefs = { appearance: 'system', typeIn: 'composer', fontSize: 13, alertBlocked: true, alertDone: true, stayConnected: true, dismissedUpdate: '', toldUpdate: '', askedNotifications: false, showAgentNames: true, progressFirst: false, progressAgent: '', progressLang: '', homeView: 'progress', progressFolded: [], opened: 0, chatFirst: false, chatSetupAsked: [], language: '', connection: 'auto' }
 import { FONT_MAX, FONT_MIN } from './ui/terminal-page.ts'
 export { FONT_MAX, FONT_MIN }
 
@@ -43,6 +49,8 @@ export class PrefStore {
     if (!v) return
     try {
       const p = JSON.parse(v)
+      // Before 0.3.6, Settings had a Tailcat only switch.
+      if (p.connection === undefined && p.tailcatOnly === true) p.connection = 'tailcat'
       this.prefs.set(clean({ ...DEFAULTS, ...p }))
     } catch {}
   }
@@ -75,6 +83,6 @@ function clean(p: Prefs): Prefs {
     chatFirst: p.chatFirst === true,
     chatSetupAsked: Array.isArray(p.chatSetupAsked) ? p.chatSetupAsked.filter((x): x is string => typeof x === 'string') : [],
     language: LANGS.includes(p.language as Lang) ? p.language : '',
-    tailcatOnly: p.tailcatOnly === true,
+    connection: CONNECTIONS.includes(p.connection) ? p.connection : 'auto',
   }
 }

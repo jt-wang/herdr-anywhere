@@ -9,6 +9,7 @@ const handlers = (more: Record<string, unknown> = {}) => ({
   'tailPocket.decodeInvite': DECODED,
   'tailPocket.pair': { address: 'nodekey:00', port: 1, name: 'studio', key: 'synthetic-key', payload: JSON.stringify({ token: 'synthetic-token', device: 'd1', name: 'studio' }) },
   'tailPocket.connect': { handle: 1, port: 40001, baseUrl: 'http://127.0.0.1:40001' },
+  'tailPocket.setRoutes': null,
   ...more,
 })
 const calls = (app: any, name: string) => app.host.calls().filter((c: any) => c.name === name).map((c: any) => c.data)
@@ -160,22 +161,84 @@ test('a pairing the computer did not confirm says to start again', async () => {
   expect(app.shows('id:pair')).toBe(true)
 })
 
-// Settings › Computer › Tailcat only: TailPocket is told, and a phone that has it on is told before it pairs or connects.
-test('Tailcat only in Settings is told to TailPocket, and kept for the next launch', async () => {
-  const more = { 'tailPocket.link': NEW_LINK, 'tailPocket.setTailcatOnly': null, 'tailPocket.path': { route: 'direct' } }
+// Settings › Connection: a pick is told to TailPocket at once, the open tunnel closes and the connection comes back on
+// a new one that uses it, and the pick is told before the next launch pairs or connects.
+test('Settings › Connection picks the routes TailPocket may use, reconnects at once, and keeps the pick', async () => {
+  const more = { 'tailPocket.link': NEW_LINK, 'tailPocket.setRoutes': null, 'tailPocket.disconnect': null, 'tailPocket.path': { route: 'direct', kind: 'lan' } }
   const app = await open('./App.tsx', { platform: 'ios', host: { handlers: handlers(more) }, network: { '*': { error: 'offline' } } })
   await pairAndConnect(app)
-  expect(calls(app, 'tailPocket.setTailcatOnly')).toEqual([])
+  // Automatic is every route, told as an explicit null at launch.
+  expect(calls(app, 'tailPocket.setRoutes')).toEqual([{ routes: null }])
   await app.waitFor('id:settings')
   await app.press('id:settings')
-  await app.waitFor('id:tailcat-only')
-  await app.press('id:tailcat-only')
-  await app.waitUntil(() => calls(app, 'tailPocket.setTailcatOnly').length > 0)
-  expect(calls(app, 'tailPocket.setTailcatOnly')).toEqual([{ on: true }])
-  expect(JSON.parse(app.storage()['prefs']).tailcatOnly).toBe(true)
+  await app.waitFor('id:connection-state')
+  expect(app.texts()).toContain('Automatic')
+  await app.press('id:connection')
+  await app.waitFor('id:connection-lan')
+  expect(app.shows("text:Only when the phone is on the same network as the computer. Away from it, the phone doesn't connect. Nothing goes through Tailcat.")).toBe(true)
+  const tunnels = calls(app, 'tailPocket.connect').length
+  const closed = calls(app, 'tailPocket.disconnect').length
+  await app.press('id:connection-lan')
+  await app.waitUntil(() => calls(app, 'tailPocket.setRoutes').length > 1)
+  expect(calls(app, 'tailPocket.setRoutes')).toEqual([{ routes: null }, { routes: ['lan'] }])
+  // The tunnel opened before the pick closes at once, and a new one opens.
+  expect(calls(app, 'tailPocket.disconnect').length).toBe(closed + 1)
+  await app.waitUntil(() => calls(app, 'tailPocket.connect').length > tunnels)
+  expect(JSON.parse(app.storage()['prefs']).connection).toBe('lan')
+  await app.press('id:connection-back')
+  await app.waitFor('id:connection-state')
+  expect(app.texts()).toContain('Local network only')
+  // Back to Automatic: every route again.
+  await app.press('id:connection')
+  await app.press('id:connection-auto')
+  await app.waitUntil(() => calls(app, 'tailPocket.setRoutes').length > 2)
+  expect(calls(app, 'tailPocket.setRoutes')[2]).toEqual({ routes: null })
 
-  const again = await open('./App.tsx', { platform: 'ios', storage: { prefs: JSON.stringify({ tailcatOnly: true }) }, host: { handlers: handlers(more) }, network: { '*': { error: 'offline' } } })
+  const again = await open('./App.tsx', { platform: 'ios', storage: { prefs: JSON.stringify({ connection: 'notailcat' }) }, host: { handlers: handlers(more) }, network: { '*': { error: 'offline' } } })
   await pairAndConnect(again)
-  const order = again.host.calls().map((c: any) => c.name).filter((n: string) => n === 'tailPocket.setTailcatOnly' || n === 'tailPocket.pair')
-  expect(order).toEqual(['tailPocket.setTailcatOnly', 'tailPocket.pair'])
+  const order = again.host.calls().filter((c: any) => c.name === 'tailPocket.setRoutes' || c.name === 'tailPocket.pair')
+  expect(order.map((c: any) => [c.name, c.data?.routes])).toEqual([['tailPocket.setRoutes', ['lan', 'relay']], ['tailPocket.pair', undefined]])
+})
+
+// Before 0.3.6 Settings had a Tailcat only switch: a phone that had it on stays on Tailcat alone.
+test('a phone that had Tailcat only on keeps Tailcat alone after the update', async () => {
+  const more = { 'tailPocket.link': NEW_LINK, 'tailPocket.setRoutes': null }
+  const app = await open('./App.tsx', { platform: 'ios', storage: { prefs: JSON.stringify({ tailcatOnly: true }) }, host: { handlers: handlers(more) }, network: { '*': { error: 'offline' } } })
+  await pairAndConnect(app)
+  expect(calls(app, 'tailPocket.setRoutes')).toEqual([{ routes: ['tailcat'] }])
+})
+
+// With routes picked in Settings › Connection, a computer whose link holds none of them is said as such, with a way to
+// that setting: TailPocket opens the tunnel either way, and every connection through it ends unanswered. Otherwise
+// (Automatic, or a route in common) an unanswered tunnel stays the computer that doesn't answer.
+test('no route in common with the computer says so and opens Settings › Connection', async () => {
+  const NO_ROUTE = "text:The phone and the computer have no route in common: Settings › Connection leaves out the ones the computer offers. Pick another there, or start the computer with that route. Trying again…"
+  const NO_ANSWER = "text:Your computer doesn't answer. Run this on it:"
+  // As on Android: each tunnel has its own handle, and a closed one can no longer be asked for its link.
+  const tailcatLink = () => {
+    let next = 1
+    const closed = new Set<number>()
+    return {
+      'tailPocket.connect': () => ({ handle: next++, port: 40001, baseUrl: 'http://127.0.0.1:40001' }),
+      'tailPocket.disconnect': (d: any) => { closed.add(d.handle); return null },
+      'tailPocket.link': (d: any) => { if (closed.has(d.handle)) throw new Error('unknown-handle'); return NEW_LINK },
+    }
+  }
+  const lan = await open('./App.tsx', { platform: 'ios', storage: { prefs: JSON.stringify({ connection: 'lan' }) }, host: { handlers: handlers(tailcatLink()) }, network: { '*': { error: 'offline' } } })
+  await pairAndConnect(lan)
+  await lan.waitFor(NO_ROUTE)
+  await lan.press('id:conn-open-connection')
+  await lan.waitFor('id:connection-lan')
+  expect(lan.shows('id:connection-now')).toBe(true)
+
+  const auto = await open('./App.tsx', { platform: 'ios', host: { handlers: handlers(tailcatLink()) }, network: { '*': { error: 'offline' } } })
+  await pairAndConnect(auto)
+  await auto.waitFor(NO_ANSWER)
+  expect(auto.shows('id:conn-open-connection')).toBe(false)
+
+  const lanLink = { 'tailPocket.link': { ...NEW_LINK, address: undefined, via: [{ t: 'lan', a: ['192.0.2.10:7681'] }] } }
+  const common = await open('./App.tsx', { platform: 'ios', storage: { prefs: JSON.stringify({ connection: 'lan' }) }, host: { handlers: handlers(lanLink) }, network: { '*': { error: 'offline' } } })
+  await pairAndConnect(common)
+  await common.waitFor(NO_ANSWER)
+  expect(common.shows('id:conn-open-connection')).toBe(false)
 })

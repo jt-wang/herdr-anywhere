@@ -22,6 +22,7 @@ export const ko: Table = {
   lostRefusedPair: "컴퓨터의 컴패니언에 연결할 수 없어요. 컴퓨터에서 다음을 실행한 뒤 다시 페어링을 눌러 새 QR 코드를 스캔하세요:",
   lostUnreachable: '컴퓨터가 응답하지 않아요. 잠자기 상태이거나 꺼져 있거나 다른 네트워크에 있을 수 있어요. 다시 시도하는 중…',
   lostTunnel: 'TailPocket으로 컴퓨터에 연결할 수 없어요. 다시 연결하는 중…',
+  lostNoRoute: "휴대폰과 컴퓨터에 공통된 연결 방식이 없어요. 설정 › 연결에서 고른 방식을 컴퓨터가 제공하지 않아요. 다른 방식을 고르거나 컴퓨터에서도 그 방식을 켜세요. 다시 시도하는 중…",
   lostNoAnswer: "컴퓨터가 응답하지 않아요. 컴퓨터에서 다음을 실행하세요:",
   pairAgain: "다시 페어링",
   lostSlower: '더 느린 연결로 전환하는 중…',
@@ -63,7 +64,7 @@ export const ko: Table = {
   language: '언어', followSystem: '시스템 언어 사용',
   terminalTextSize: '터미널 글자 크기', points: '{n}pt', smaller: '작게', larger: '크게',
   showAgentNames: '에이전트 이름 표시', showAgentNamesDetail: '각 제목 앞에 Claude Code 같은 이름을 표시해요. 꺼도 아이콘으로 프로그램을 알 수 있어요.',
-  tailcatOnly: "Tailcat만 사용", tailcatOnlyDetail: "Tailcat으로만 컴퓨터에 연결해요. relay를 거치지 않고 로컬 네트워크에서 직접 연결하지도 않아요. 더 느릴 수 있어요.",
+  connectionAuto: "자동", connectionAutoDetail: "응답하는 가장 빠른 방법을 써요. 휴대폰이 로컬 네트워크에 있으면 직접, 아니면 Tailcat이나 컴퓨터의 relay를 거쳐요. 어디서나 연결돼요.", connectionLan: "로컬 네트워크만", connectionLanDetail: "휴대폰이 컴퓨터와 같은 네트워크에 있을 때만 연결돼요. 벗어나면 연결되지 않아요. Tailcat을 거치지 않아요.", connectionNoTailcat: "Tailcat 없이", connectionNoTailcatDetail: "로컬 네트워크와, 컴퓨터에 relay가 있으면 그 relay를 써요. relay가 없으면 컴퓨터의 네트워크에서만 연결돼요.", connectionTailcat: "Tailcat만 사용", connectionTailcatDetail: "Tailcat으로만 연결해요. relay를 거치지 않고 로컬 네트워크에서 직접 연결하지도 않아요. 어디서나 연결되지만 더 느릴 수 있어요.", connectionComputerNote: "컴퓨터도 연결 방법을 골라요(예: herdr-anywhere start --routes lan). 휴대폰과 컴퓨터에 공통된 방법이 없으면 휴대폰이 연결되지 않아요.",
   alerts: '알림', agentNeedsYou: '에이전트가 응답을 기다릴 때', agentNeedsYouDetail: '답변이나 승인을 기다리고 있어요.',
   // Android's notification while the app stays connected in the background.
   keepAliveTitle: '컴퓨터에 연결됨',

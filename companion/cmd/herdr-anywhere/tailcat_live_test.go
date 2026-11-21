@@ -19,6 +19,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -109,6 +110,12 @@ func TestPairFromScreen(t *testing.T) {
 // --json for the code, and, once the phone shows its emoji and the window asks with the same ones, --answer yes.
 func pairLive(t *testing.T, dir, device string, logs fmt.Stringer) connectphone.Link {
 	t.Helper()
+	return pairLiveWith(t, dir, device, logs, connectphone.Options{TailcatOnly: true})
+}
+
+// pairLiveWith is pairLive with the phone's own route options (opts' Device and OnSAS are pairLive's).
+func pairLiveWith(t *testing.T, dir, device string, logs fmt.Stringer, opts connectphone.Options) connectphone.Link {
+	t.Helper()
 	out, errs, code := runCLI(t, "pair", "--json", "--state", dir)
 	var win struct{ Invite, ID string }
 	if code != 0 || json.Unmarshal([]byte(out), &win) != nil || win.ID == "" {
@@ -118,6 +125,11 @@ func pairLive(t *testing.T, dir, device string, logs fmt.Stringer) connectphone.
 	inv, err := connectinvite.DecodeV2(win.Invite, tailcat.Prefix2)
 	if err != nil {
 		t.Fatalf("invite (%d chars) doesn't decode: %v", len(win.Invite), err)
+	}
+	for _, r := range inv.Via {
+		if opts.Routes != nil && !slices.Contains(opts.Routes, r.T) {
+			t.Fatalf("the invite lists a %s route; serve runs only %v", r.T, opts.Routes)
+		}
 	}
 	answered := make(chan error, 1)
 	onSAS := func(emoji []string) {
@@ -145,7 +157,8 @@ func pairLive(t *testing.T, dir, device string, logs fmt.Stringer) connectphone.
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
-	link, err := connectphone.PairV2(ctx, inv, connectphone.NewKey(), connectphone.Options{Device: device, OnSAS: onSAS, TailcatOnly: true})
+	opts.Device, opts.OnSAS = device, onSAS
+	link, err := connectphone.PairV2(ctx, inv, connectphone.NewKey(), opts)
 	select {
 	case aerr := <-answered:
 		if aerr != nil {

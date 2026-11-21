@@ -1,14 +1,14 @@
 #!/bin/sh
-# Puts TailPocket's phone library, as its public release v0.3.1 (jt-wang/tailpocket@086e368148aac78dc7ad21eb18b3a98d69a0590a)
+# Puts TailPocket's phone library, as its public release v0.3.3 (jt-wang/tailpocket@32c50f3aac847044030222fe9b498bb98e882133)
 # ships it, into the copy of its SDKs in third_party, where its Swift package and Gradle modules look for it:
 #   apple   → build/apple/TailPocketMobile.xcframework (ios/build.sh)
-#   android → build/android/m2, a local Maven repository holding tailpocket-mobile 0.3.1 (android/build.sh)
+#   android → build/android/m2, a local Maven repository holding tailpocket-mobile 0.3.3 (android/build.sh)
 # Each file is checked against the SHA-256 below, from the release's SHA256SUMS, before it is unpacked.
 # A target already in place is kept; FORCE=1 fetches it again. Usage: scripts/tailpocket.sh [apple] [android]
 # Needs curl, unzip and shasum or sha256sum.
 set -eu
-release=https://github.com/jt-wang/tailpocket/releases/download/v0.3.1
-tp=$(cd "$(dirname "$0")/../../third_party/tailpocket-086e368" && pwd -P)
+release=https://github.com/jt-wang/tailpocket/releases/download/v0.3.3
+tp=$(cd "$(dirname "$0")/../../third_party/tailpocket-32c50f3" && pwd -P)
 mkdir -p "$tp/build/download"
 sha256() { if command -v sha256sum >/dev/null; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d' ' -f1; }
 fetch() { # file, sha256
@@ -24,18 +24,18 @@ for target in ${*:-apple android}; do
   apple)
     out="$tp/build/apple/TailPocketMobile.xcframework"
     [ -z "${FORCE:-}" ] && [ -d "$out" ] && continue
-    fetch TailPocketMobile.xcframework.zip aab55f6b5ea47fc0577a4140576f66d8bd21b2572eae7e134a557eaf5b045a1b
+    fetch TailPocketMobile.xcframework.zip 556bcb5b866eba1fbc8ec2572ed8b4a5b0173d22b5f266b78ff75232766e325b
     rm -rf "$out"; mkdir -p "$tp/build/apple"
     unzip -q "$tp/build/download/TailPocketMobile.xcframework.zip" -d "$tp/build/apple"
     [ -d "$out" ] || { echo "tailpocket.sh: no TailPocketMobile.xcframework in the release's zip" >&2; exit 1; }
     ;;
   android)
-    aar="$tp/build/android/m2/io/jingtao/tailpocket/tailpocket-mobile/0.3.1/tailpocket-mobile-0.3.1.aar"
+    aar="$tp/build/android/m2/io/jingtao/tailpocket/tailpocket-mobile/0.3.3/tailpocket-mobile-0.3.3.aar"
     [ -z "${FORCE:-}" ] && [ -f "$aar" ] && continue
-    fetch tailpocket-android-m2.zip 4459ba12330dfa0255828dadf1702ec55ce60ba3c68e7ec66d31266ddc2faf00
+    fetch tailpocket-android-m2.zip 10e35b99a2394a6d6a7190426848b040133584e48522ca93db7bb92fa3dc8f54
     rm -rf "$tp/build/android/m2"; mkdir -p "$tp/build/android"
     unzip -q "$tp/build/download/tailpocket-android-m2.zip" -d "$tp/build/android"
-    [ -f "$aar" ] || { echo "tailpocket.sh: no tailpocket-mobile 0.3.1 in the release's zip" >&2; exit 1; }
+    [ -f "$aar" ] || { echo "tailpocket.sh: no tailpocket-mobile 0.3.3 in the release's zip" >&2; exit 1; }
     ;;
   *) echo "unknown target $target" >&2; exit 2 ;;
   esac

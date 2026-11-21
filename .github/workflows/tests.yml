@@ -201,9 +201,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # TailPocket is v0.3.1, public jt-wang/tailpocket@086e368148aac78dc7ad21eb18b3a98d69a0590a: its Go module from the Go
+      # TailPocket is v0.3.3, public jt-wang/tailpocket@32c50f3aac847044030222fe9b498bb98e882133: its Go module from the Go
       # proxy (companion/go.mod), its phone library from that release (app/scripts/tailpocket.sh checks its SHA-256),
-      # its SDKs copied into third_party/tailpocket-086e368.
+      # its SDKs copied into third_party/tailpocket-32c50f3.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: companion/go.mod

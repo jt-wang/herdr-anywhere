@@ -95,6 +95,7 @@ export const LOST_TEXT: Record<string, Key> = {
   refused: 'lostRefused',
   unreachable: 'lostUnreachable',
   tunnel: 'lostTunnel',
+  'no-route': 'lostNoRoute',
   'no-answer': 'lostNoAnswer',
   'binary-unsupported': 'lostSlower',
 }
@@ -131,6 +132,8 @@ export class Store {
   readonly lostWhy = new Signal<string>('')
   /** Opens pairing again, keeping this link until a new one pairs (set by the screens). */
   pairAgain?: () => void
+  /** Opens Settings › Connection (set by the screens). */
+  openConnection?: () => void
   /** What to run on the computer so this phone connects again, from how it was paired (restart.ts; set by the screens). */
   restart?: Restart
   readonly rev = new Signal(0)

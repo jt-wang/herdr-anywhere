@@ -7,7 +7,7 @@ import { agentsLine, parseAgents, pickLine, switchLine, type AgentChoice } from 
 import { busyWord, runUpdate, useUpdates } from './update.tsx'
 import { APP_VERSION, type Updates } from '../updates.ts'
 import { companionVersion, type Link, type Linker, type Route } from '../link.ts'
-import { FONT_MAX, FONT_MIN, type Appearance, type PrefStore } from '../prefs.ts'
+import { CONNECTIONS, FONT_MAX, FONT_MIN, type Appearance, type Connection, type PrefStore } from '../prefs.ts'
 import { allowNotifications, notifications, notifyChannels, onFront, openChannel, type ChannelKind, type Channels, type ChannelState, type Permission } from '../page.ts'
 import { Glyph, IconButton, openPrivacy, SectionLabel, useRev, useSignal } from './kit.tsx'
 import { LANG_NAMES, lang, langName, systemLang, t, type Key, type Lang } from '../strings/index.ts'
@@ -278,7 +278,91 @@ export function LanguageScreen(props: { prefs: PrefStore; back: () => void; choo
   )
 }
 
-export function SettingsScreen(props: { updates?: Updates; store: Store; prefs: PrefStore; link: Link; linker: Linker; fetcher?: typeof fetch; back: () => void; forget: () => void; openLanguage: () => void; openDiagnostics: () => void; diagnosticStatus: DiagnosticStatus; diagnosticChanged: (s: DiagnosticStatus) => void }) {
+/** The connection's state and the path TailPocket measures, asked again every ROUTE_EVERY_MS while it is up and the app
+ *  is in front; `ready` runs too each time it asks. */
+function useConnection(store: Store, linker: Linker, ready?: () => void) {
+  const conn = useSignal(store.conn)
+  const route = signal<Route | null>(null)
+  const ask = () => {
+    if (conn() !== 'ready' || !store.appActive) return
+    void linker.path().then((r) => route.set(r))
+    ready?.()
+  }
+  let asking: ReturnType<typeof setInterval> | undefined
+  const resume = () => {
+    clearInterval(asking)
+    asking = undefined
+    if (!store.appActive || store.conn.get() !== 'ready') { if (store.conn.get() !== 'ready') route.set(null); return }
+    ask()
+    asking = setInterval(ask, ROUTE_EVERY_MS)
+  }
+  resume()
+  const offConn = store.conn.sub(resume, 'Settings.ask')
+  const offActive = store.activity.sub(resume)
+  cleanup(() => { clearInterval(asking); offConn(); offActive() })
+  const status = () => {
+    const c = conn()
+    return c === 'ready' ? { word: t('connected'), dot: 'bg-chart-3' }
+      : c === 'connecting' ? { word: t('connecting'), dot: 'bg-muted-foreground' }
+      : c === 'reconnecting' ? { word: t('reconnecting'), dot: 'bg-muted-foreground' }
+      : { word: t('notConnected'), dot: 'bg-destructive' }
+  }
+  return { conn, route, status }
+}
+
+/** The path a TailPocket tunnel takes now, as words; '' before it is measured. */
+function pathWord(r: Route | null) {
+  if (!r) return ''
+  const kind = r.kind || r.route
+  if (kind === 'direct') return t('pathDirect')
+  if (kind === 'lan') return t('pathLan')
+  if (kind === 'derp' || kind === 'relay') {
+    // Only a region code is uppercased, never a DERP or custom relay hostname. Legacy hosts only have `relay`.
+    const region = r.kind === 'derp' ? r.derpCode?.toUpperCase() || r.derpHost : r.kind === 'relay' ? r.relayHost : r.relay?.toUpperCase()
+    return region ? t('pathRelay', { region }) : t('pathRelayPlain')
+  }
+  return t('pathUnknown')
+}
+
+const CONNECTION_TEXT: Record<Connection, [Key, Key]> = {
+  auto: ['connectionAuto', 'connectionAutoDetail'], lan: ['connectionLan', 'connectionLanDetail'],
+  notailcat: ['connectionNoTailcat', 'connectionNoTailcatDetail'], tailcat: ['connectionTailcat', 'connectionTailcatDetail'],
+}
+
+/** Settings › Connection: the routes TailPocket may use to reach the computer, what each costs, and the connection as it
+ *  is now. A pick is told to TailPocket at once (ui/root.tsx), and the connection comes back on a tunnel that uses it. */
+export function ConnectionScreen(props: { prefs: PrefStore; store: Store; linker: Linker; back: () => void }) {
+  const p = useSignal(props.prefs.prefs)
+  const { conn, route, status } = useConnection(props.store, props.linker)
+  return (
+    <View class="flex-1 bg-sidebar pt-[env(safe-area-inset-top)]">
+      <View class="flex-row items-center h-12 pl-1 pr-3">
+        <IconButton name="chevron-left" label={t('back')} testID="connection-back" onPress={props.back} />
+        <Text class="text-[16px] font-semibold text-foreground ml-1">{t('connection')}</Text>
+      </View>
+      <Scroll class="flex-1" contentClass="pb-10">
+        <View class="mt-3 border-t border-border">
+          <Each of={CONNECTIONS} key={(c) => c}>{(c) => (
+            <View role="button" testID={`connection-${c()}`} accessibilityState={{ selected: p().connection === c() }} onPress={() => props.prefs.set({ connection: c() })}
+              class="flex-row items-center min-h-12 px-4 gap-3 border-b border-border bg-card active:bg-sidebar-accent">
+              <View class="flex-1 py-2.5">
+                <Text class="text-[14px] text-foreground">{t(CONNECTION_TEXT[c()][0])}</Text>
+                <Text class="text-[12px] leading-[17px] text-sidebar-foreground mt-0.5">{t(CONNECTION_TEXT[c()][1])}</Text>
+              </View>
+              <View class="w-4"><If when={p().connection === c()}><Glyph name="check" size={16} class="tint-chart-3" /></If></View>
+            </View>
+          )}</Each>
+        </View>
+        <View class="mt-5 border-t border-border">
+          <Fact label={t('connectionStatus')} value={status().word} dot={status().dot} under={conn() === 'ready' ? pathWord(route()) : ''} testID="connection-now" />
+        </View>
+        <Text testID="connection-computer-note" class="px-4 pt-2 text-[12px] leading-[17px] text-sidebar-foreground">{t('connectionComputerNote')}</Text>
+      </Scroll>
+    </View>
+  )
+}
+
+export function SettingsScreen(props: { updates?: Updates; store: Store; prefs: PrefStore; link: Link; linker: Linker; fetcher?: typeof fetch; back: () => void; forget: () => void; openLanguage: () => void; openConnection: () => void; openDiagnostics: () => void; diagnosticStatus: DiagnosticStatus; diagnosticChanged: (s: DiagnosticStatus) => void }) {
   const rev = useRev(props.store)
   const p = useSignal(props.prefs.prefs)
   void diagnostics.refresh().then(props.diagnosticChanged)
@@ -316,33 +400,10 @@ export function SettingsScreen(props: { updates?: Updates; store: Store; prefs: 
     props.prefs.set({ progressFirst: false })
     void run(switchLine(false)).catch((e) => props.store.toast({ title: t('progressCouldntOff'), body: explain(e), level: 'error' }))
   }
-  const conn = useSignal(props.store.conn)
-  const route = signal<Route | null>(null)
   const companion = signal('')
-  const ask = () => {
-    if (conn() !== 'ready' || !props.store.appActive) return
-    void props.linker.path().then((r) => route.set(r))
+  const { conn, route, status } = useConnection(props.store, props.linker, () => {
     if (!companion()) void companionVersion(props.linker, props.fetcher).then((v) => companion.set(v))
-  }
-  let asking: ReturnType<typeof setInterval> | undefined
-  const resume = () => {
-    clearInterval(asking)
-    asking = undefined
-    if (!props.store.appActive || props.store.conn.get() !== 'ready') return
-    ask()
-    asking = setInterval(ask, ROUTE_EVERY_MS)
-  }
-  resume()
-  const offConn = props.store.conn.sub(resume, 'Settings.ask')
-  const offActive = props.store.activity.sub(resume)
-  cleanup(() => { clearInterval(asking); offConn(); offActive() })
-  const status = () => {
-    const c = conn()
-    return c === 'ready' ? { word: t('connected'), dot: 'bg-chart-3' }
-      : c === 'connecting' ? { word: t('connecting'), dot: 'bg-muted-foreground' }
-      : c === 'reconnecting' ? { word: t('reconnecting'), dot: 'bg-muted-foreground' }
-      : { word: t('notConnected'), dot: 'bg-destructive' }
-  }
+  })
   const address = () => props.link.url.replace(/^https?:\/\//, '')
   // Only TailPocket's tunnel is end-to-end (Tailcat v0.6.0's README: "encrypted end-to-end with WireGuard"); the companion serves plain HTTP.
   const how = () => (props.link.via === 'demo' ? t('demoConnection') : props.link.via === 'tailpocket' ? t('tunnelE2E') : props.link.url.startsWith('https:') ? t('httpsEncrypted') : maybeTailnet(address()) ? t('notEncryptedByApp') : t('notEncrypted'))
@@ -350,16 +411,7 @@ export function SettingsScreen(props: { updates?: Updates; store: Store; prefs: 
     if (props.link.via === 'demo') return ''
     if (props.link.via !== 'tailpocket') return props.link.url.startsWith('https:') ? t('httpsDetail', { host: address() }) : maybeTailnet(address()) ? t('tailnetDetail', { host: address() }) : t('notEncryptedDetail', { host: address() })
     if (conn() !== 'ready') return ''
-    const r = route()
-    const kind = r?.kind || r?.route
-    if (kind === 'direct') return t('pathDirect')
-    if (kind === 'lan') return t('pathLan')
-    if (kind === 'derp' || kind === 'relay') {
-      // Only a region code is uppercased, never a DERP or custom relay hostname. Legacy hosts only have `relay`.
-      const region = r?.kind === 'derp' ? r.derpCode?.toUpperCase() || r.derpHost : r?.kind === 'relay' ? r.relayHost : r?.relay?.toUpperCase()
-      return region ? t('pathRelay', { region }) : t('pathRelayPlain')
-    }
-    return t('pathUnknown')
+    return pathWord(route()) || t('pathUnknown')
   }
   const forget = async () => {
     const r = await AlertDialog.show({ title: t('forgetTitle', { name: props.link.name }), description: t('forgetDetail'),
@@ -465,12 +517,18 @@ export function SettingsScreen(props: { updates?: Updates; store: Store; prefs: 
         <SectionLabel label={t('computer')} />
         <Fact label={t('computerName')} value={props.link.via === 'demo' ? t('demoComputer') : props.link.name} testID="computer-name" />
         <Fact label={t('connectionStatus')} value={status().word} dot={status().dot} testID="connection-status" />
-        <Fact label={t('connection')} value={how()} under={under()} testID="connection" />
-        <If when={props.link.via === 'tailpocket'}>
-          <Row label={t('tailcatOnly')} detail={t('tailcatOnlyDetail')}>
-            {/* The app tells TailPocket (ui/root.tsx); the open tunnel closes, and the connection comes back on a new one. */}
-            <Toggle label={t('tailcatOnly')} testID="tailcat-only" on={p().tailcatOnly} onChange={(on) => props.prefs.set({ tailcatOnly: on })} />
-          </Row>
+        {/* Through TailPocket the person picks its routes (ConnectionScreen); other links have one way to the computer. */}
+        <If when={props.link.via === 'tailpocket'} else={<Fact label={t('connection')} value={how()} under={under()} testID="connection" />}>
+          <View role="button" testID="connection" onPress={props.openConnection}
+            class="flex-row items-center min-h-12 px-4 gap-3 border-b border-border bg-card active:bg-sidebar-accent">
+            <View class="flex-1 py-2">
+              <Text class="text-[14px] text-foreground">{t('connection')}</Text>
+              <Text class="text-[12px] text-sidebar-foreground mt-0.5">{how()}</Text>
+              <If when={under()}><Text class="text-[12px] text-sidebar-foreground">{under()}</Text></If>
+            </View>
+            <Text testID="connection-state" class="text-[13px] text-sidebar-foreground">{t(CONNECTION_TEXT[p().connection][0])}</Text>
+            <Glyph name="chevron-right" size={16} />
+          </View>
         </If>
         <If when={(rev(), props.store.hello)}><Fact label={t('coreVersion')} value={props.store.hello?.version ?? ''} /></If>
         <If when={companion()}><Fact label={t('companionVersion')} value={companion()} /></If>

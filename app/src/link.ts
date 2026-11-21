@@ -50,8 +50,8 @@ export type Tunnel = {
   /** Pairs with the computer that showed `invite` and keeps its link; resolves with the computer's answer. A computer
    *  with the emoji check (TailPocket v0.3) calls `onEmoji` with the four emoji it asks its user to compare. */
   pair: (invite: string, device: string, onEmoji?: (emoji: string[]) => void) => Promise<string>
-  /** Keeps pairing and every tunnel opened after it on Tailcat alone: no relay, no local network route. */
-  setTailcatOnly?: (on: boolean) => Promise<void>
+  /** Keeps pairing and every tunnel opened after it on these routes (TailPocket's setRoutes); null: every route. */
+  setRoutes?: (routes: string[] | null) => Promise<void>
   /** The text of a QR code, from the camera. */
   scan: () => Promise<string>
   /** Opens the tunnel to the paired computer: `baseUrl` is `http://127.0.0.1:<port>`, which ends at the companion. */
@@ -112,9 +112,11 @@ export type LinkerIO = {
 }
 
 /** `path` answers as TailPocket does (any route name); Linker.path keeps the ones it knows. */
-type Opened = { baseUrl: string; close: () => void; path?: () => Promise<Route> }
+/** `routes`: the route types the saved link holds (tailcat, lan, relay), which the phone may dial if its pick allows. */
+type Opened = { baseUrl: string; close: () => void; path?: () => Promise<Route>; routes?: () => Promise<string[]> }
 /** A tunnel being opened, and once open, the tunnel. */
-type Tunnelling = { opening: Promise<Opened>; open?: Opened }
+/** `routes`: what the tunnel's link holds, read once it opens, while its handle is still open (null: unknown). */
+type Tunnelling = { opening: Promise<Opened>; open?: Opened; routes?: Promise<string[] | null> }
 
 export class Linker {
   readonly link = new Signal<Link | null>(null)
@@ -140,16 +142,23 @@ export class Linker {
     this.link.set(l)
   }
 
-  /** Tailcat only, or every route: tunnels opened from now on take it; the open one is closed, so the next pipe opens
-   *  one that does. */
-  async setTailcatOnly(on: boolean) {
-    if (!this.io.tunnel?.setTailcatOnly || on === this.tailcatOnly) return
-    this.tailcatOnly = on
-    await this.io.tunnel.setTailcatOnly(on)
+  /** The routes TailPocket may use (null: every route): tunnels opened from now on take them; the open one is closed,
+   *  so the connection comes back at once on one that does. */
+  async setRoutes(routes: string[] | null) {
+    const key = routes ? routes.join(',') : 'all'
+    if (!this.io.tunnel?.setRoutes || key === this.routes) return
+    this.routes = key
+    try {
+      await this.io.tunnel.setRoutes(routes)
+    } catch (e) {
+      this.routes = undefined // told again on the next call
+      throw e
+    }
     this.dropTunnel(this.tunnel)
   }
-  /** As TailPocket was last told; it starts with every route. */
-  private tailcatOnly = false
+  /** As TailPocket was last told, joined ('all' for null). Unset until the first call, which TailPocket gets even for
+   *  null: it keeps the routes in the app's process, so it is told at every launch. */
+  private routes?: string
 
   forget() {
     this.dropTunnel(this.tunnel)
@@ -225,7 +234,11 @@ export class Linker {
       s.onClose = (r) => {
         const silent = r === 'network' && !heard
         if (silent) this.dropTunnel(t)
-        closed(silent ? 'no-answer' : r)
+        // With routes picked in Settings › Connection, a link that holds none of them is said as such: TailPocket
+        // opens the tunnel either way and each connection through it ends unanswered.
+        const picked = this.routes && this.routes !== 'all' ? this.routes.split(',') : null
+        if (!silent || !picked || !t.routes) return closed(silent ? 'no-answer' : r)
+        void t.routes.then((have) => closed(!have || have.some((x) => picked.includes(x)) ? 'no-answer' : 'no-route'))
       }
       for (const b of queue.splice(0)) s.send(b)
     }, () => {
@@ -273,7 +286,12 @@ export class Linker {
     diag('tunnel-start', { request })
     const t: Tunnelling = { opening: tunnel.connect() }
     const end = (result: string) => diag('tunnel-end', { request, elapsed: String(Math.max(0, Date.now() - started)), result })
-    t.opening.then((c) => { end('ok'); if (this.tunnel === t) t.open = c; else c.close() }, () => end('error'))
+    t.opening.then((c) => {
+      end('ok')
+      // Read now: once a silent socket drops the tunnel, its handle is closed and can no longer be asked.
+      t.routes = c.routes?.().catch(() => null)
+      if (this.tunnel === t) t.open = c; else c.close()
+    }, () => end('error'))
     return t
   }
 

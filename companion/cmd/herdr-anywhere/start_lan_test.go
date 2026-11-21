@@ -40,6 +40,8 @@ func TestStartedServeArgs(t *testing.T) {
 		{"lan and listen", serveOpts{lan: true, listen: []string{"127.0.0.1:9000"}}, "serve --tailcat --listen 127.0.0.1:9000 --lan --state /s"},
 		{"no lan", serveOpts{noLAN: true}, "serve --tailcat --listen 127.0.0.1:0 --no-lan --state /s"},
 		{"tailcat only", serveOpts{tailcatOnly: true}, "serve --tailcat --listen 127.0.0.1:0 --tailcat-only --state /s"},
+		{"lan only", serveOpts{routes: []string{"lan"}}, "serve --routes lan --listen 127.0.0.1:0 --state /s"},
+		{"relay only", serveOpts{routes: []string{"relay"}, relay: "wss://r.example", relayTokenFile: "/k/token"}, "serve --routes relay --listen 127.0.0.1:0 --relay wss://r.example --relay-token-file /k/token --state /s"},
 	}
 	for _, c := range cases {
 		if got := strings.Join(startedServeArgs("/s", c.o), " "); got != c.want {
@@ -157,6 +159,7 @@ func TestForegroundTipNamesTheSameStart(t *testing.T) {
 		{serveOpts{lan: true}, "herdr-anywhere start --lan\n"},
 		{serveOpts{noLAN: true}, "herdr-anywhere start --no-lan\n"},
 		{serveOpts{tailcatOnly: true}, "herdr-anywhere start --tailcat-only\n"},
+		{serveOpts{routes: []string{"lan", "relay"}, relay: "wss://r.example", relayTokenFile: "/my keys/token"}, "herdr-anywhere start --routes lan,relay --relay wss://r.example --relay-token-file '/my keys/token'\n"},
 		{serveOpts{listen: []string{"127.0.0.1:7681"}}, "herdr-anywhere start\n"},
 		{serveOpts{listen: []string{"127.0.0.1:7681", "100.64.0.5:7681"}}, "herdr-anywhere start --listen 100.64.0.5:7681\n"},
 	} {

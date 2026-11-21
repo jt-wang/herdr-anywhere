@@ -22,6 +22,7 @@ export const ja: Table = {
   lostRefusedPair: "パソコンのコンパニオンに接続できません。パソコンで次を実行してから「もう一度ペアリング」をタップし、新しい QR コードをスキャンしてください:",
   lostUnreachable: 'パソコンが応答しません。スリープ中、電源オフ、または別のネットワークの可能性があります。再試行中…',
   lostTunnel: 'TailPocket 経由でパソコンに接続できません。再接続中…',
+  lostNoRoute: "スマホとパソコンに共通の接続方法がありません。設定 › 接続で選んだ方法を、パソコンが提供していません。別の方法を選ぶか、パソコンでもその方法を有効にしてください。再試行中…",
   lostNoAnswer: "パソコンが応答しません。パソコンで次を実行してください:",
   pairAgain: "もう一度ペアリング",
   lostSlower: '低速の接続に切り替えています…',
@@ -63,7 +64,7 @@ export const ja: Table = {
   language: '言語', followSystem: 'システムに従う',
   terminalTextSize: 'ターミナルの文字サイズ', points: '{n}pt', smaller: '小さく', larger: '大きく',
   showAgentNames: 'エージェント名を表示', showAgentNamesDetail: '各タイトルの前に Claude Code などの名前を表示します。オフでもアイコンでプログラムがわかります。',
-  tailcatOnly: "Tailcat のみ", tailcatOnlyDetail: "パソコンには Tailcat だけで接続します。relay は使わず、ローカルネットワークでの直接接続もしません。遅くなることがあります。",
+  connectionAuto: "自動", connectionAutoDetail: "応答するいちばん速い方法を使います。スマホがローカルネットワークにいるときは直接、それ以外は Tailcat かパソコンの relay 経由です。どこからでもつながります。", connectionLan: "ローカルネットワークのみ", connectionLanDetail: "スマホがパソコンと同じネットワークにいるときだけつながります。離れるとつながりません。Tailcat は通りません。", connectionNoTailcat: "Tailcat を使わない", connectionNoTailcatDetail: "ローカルネットワークと、パソコンに relay があればその relay を使います。relay がないと、パソコンのネットワーク内でしかつながりません。", connectionTailcat: "Tailcat のみ", connectionTailcatDetail: "Tailcat だけで接続します。relay は使わず、ローカルネットワークでの直接接続もしません。どこからでもつながりますが、遅くなることがあります。", connectionComputerNote: "パソコン側でも使う方法を選びます（例：herdr-anywhere start --routes lan）。スマホとパソコンに共通の方法がないと、スマホはつながりません。",
   alerts: '通知', agentNeedsYou: 'エージェントが対応待ちのとき', agentNeedsYouDetail: '回答や承認を待っています。',
   // Android's notification while the app stays connected in the background.
   keepAliveTitle: 'コンピュータに接続中',
