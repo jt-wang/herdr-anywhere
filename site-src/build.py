@@ -206,7 +206,7 @@ def page(key):
                   <button type="button" class="btn btn-secondary js-only" data-copy-target="setup-line" data-copy-status="copy-status" data-copied="{e("copied")}" data-copy-fail="{e("copy_fail")}">{e("copy")}</button>
                 </div>
                 <p id="copy-status" class="copy-status" role="status"></p></div></li>
-              <li><span class="step-num">2</span><div><p>{e("g2")}</p><div class="links"><a class="btn btn-primary" href="{APK}">{e("android")}</a>{version}</div></div></li>
+              <li><span class="step-num">2</span><div><p>{e("g2")}</p><div class="links"><a class="btn btn-primary" href="{APK}">{e("android")}</a><a class="btn btn-primary" href="https://testflight.apple.com/join/ddBQGV2T">{e("iphone")}</a>{version}</div></div></li>
               <li><span class="step-num">3</span><div><p>{t["g3"]}</p></div></li>
             </ol>
             <p class="ios-note">{e("ios")}</p>

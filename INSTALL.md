@@ -81,9 +81,8 @@ Passes when it prints `Add phone is installed`. It says which key opens the dial
 ## 4. Pair the phone
 
 Tell the user to install the app on their Android phone from https://github.com/jt-wang/herdr-anywhere/releases/latest/download/Herdr-Anywhere.apk, press the
-dialog's key in Herdr, press Start, and scan the QR code with the app. The iPhone app is in TestFlight testing; the public
-invitation will be announced on [X (@thejingtao)](https://x.com/thejingtao). With an invitation, the user installs it through
-TestFlight and scans the same code. Building under the user's own Apple account remains an option: see [app/ios/README.md](app/ios/README.md).
+dialog's key in Herdr, press Start, and scan the QR code with the app. On an iPhone, the user installs the app through TestFlight from
+https://testflight.apple.com/join/ddBQGV2T (it opens Apple's TestFlight app first) and scans the same code. Building under the user's own Apple account remains an option: see [app/ios/README.md](app/ios/README.md).
 
 Check:
 

@@ -97,7 +97,7 @@ herdr-anywhere serve --listen 127.0.0.1:7681 --listen <your VPN address>:7681 --
 
 ## iPhone and other agents
 
-**iPhone:** the app is in TestFlight testing. The public invitation will be announced on [X (@thejingtao)](https://x.com/thejingtao). With an invitation, install it through TestFlight and scan the same pairing code. You can also [build it under your own Apple account](app/ios/README.md). The app asks for notification permission, but iOS can pause it in the background; notices still appear when you open it.
+**iPhone:** install it through TestFlight from [https://testflight.apple.com/join/ddBQGV2T](https://testflight.apple.com/join/ddBQGV2T) and scan the same pairing code. You can also [build it under your own Apple account](app/ios/README.md). The app asks for notification permission, but iOS can pause it in the background; notices still appear when you open it.
 
 **Agents:** anything that runs in Herdr opens in a terminal you can type into. Status and alerts come from each agent's own reports. Claude Code, Pi, Kimi and Antigravity send them. OpenCode, Grok, Cursor and Codex 0.159 don't, so they work without alerts.
 
