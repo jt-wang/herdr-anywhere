@@ -4,7 +4,7 @@
 // sidebar-foreground = dim text, accent = selected, secondary = raised; chart-1..4 = working, blocked, done,
 // idle; chart-5 = herdr's accent.
 import { cleanup, colorScheme, Image, openUrl, Scroll, signal, Text, View, type Accessor } from 'nsh'
-import type { Store, ConnSubscriberSite } from '../store.ts'
+import type { Conn, Store, ConnSubscriberSite } from '../store.ts'
 import type { Shown } from '../model/model.ts'
 import { duration } from '../model/agents.ts'
 import { PROGRAM_ICONS as ICONS } from '../data/icons.ts'
@@ -29,6 +29,15 @@ export function useSignal<T>(s: { get(): T; sub(f: (v: T) => void, site?: ConnSu
 }
 
 /** While the line is down: why, in words (store.ts LOST_TEXT), and how old what the screen shows is. */
+/** The connection's word and dot, the same on every screen. With no route in common the phone does not get through
+ *  until a setting changes, so it is not connected, not reconnecting. */
+export function connStatus(c: Conn, why: string): { word: string; dot: string } {
+  return c === 'ready' ? { word: t('connected'), dot: 'bg-chart-3' }
+    : c === 'connecting' ? { word: t('connecting'), dot: 'bg-muted-foreground' }
+    : c === 'reconnecting' && why !== 'no-route' ? { word: t('reconnecting'), dot: 'bg-muted-foreground' }
+    : { word: t('notConnected'), dot: 'bg-destructive' }
+}
+
 export function ConnBanner(props: { store: Store }) {
   const s = props.store
   const rev = useRev(s)

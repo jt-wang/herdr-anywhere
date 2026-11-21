@@ -30,7 +30,9 @@ const WHY: Record<string, Key> = {
 /** The line under a terminal that is not live, and whether it offers Try again. A page still not ready after its two
  *  waits (slow) may be slow or may have lost its web process: the WebView tells the app neither (nsh has no callback for
  *  it), so the line says only what is true either way, and Try again works either way. */
-export function terminalNote(state: SessionState, slow: boolean, conn: Conn, why: string): { text: string; retry: boolean } {
+export function terminalNote(state: SessionState, slow: boolean, conn: Conn, why: string, lost = ''): { text: string; retry: boolean } {
+  // No route in common: nothing gets through until a setting changes, so not connected, as the banner and Settings say.
+  if (state !== 'ended' && conn !== 'ready' && lost === 'no-route') return { text: t('notConnected'), retry: false }
   if (state === 'waiting') return { text: t(slow && conn === 'ready' ? 'terminalLoading' : 'connecting'), retry: slow }
   return { text: state === 'lost' ? t('reconnecting') : why, retry: state === 'lost' }
 }

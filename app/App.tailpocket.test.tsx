@@ -229,10 +229,15 @@ test('no route in common with the computer says so, offers Automatic and opens S
   await lan.waitFor(NO_ROUTE)
   // One status only: no age line while what the screen shows is current.
   expect(lan.texts().some((x) => x.startsWith('Last updated'))).toBe(false)
+  // Not reconnecting: nothing gets through until a setting changes, and home and Settings use the same word for it.
+  expect(lan.shows('text:Not connected')).toBe(true)
+  expect(lan.shows('text:Reconnecting…')).toBe(false)
   await lan.press('id:conn-open-connection')
   await lan.waitFor('id:connection-lan')
   // The Connection page says the same, from the same state.
   expect(lan.count(NO_ROUTE)).toBe(1)
+  expect(lan.shows('text:Not connected')).toBe(true)
+  expect(lan.shows('text:Reconnecting…')).toBe(false)
   await lan.press('id:connection-back')
   await lan.press('id:conn-use-auto')
   // Every route again: the computer answers or not, but no longer for want of a route.

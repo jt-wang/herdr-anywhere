@@ -516,6 +516,10 @@ test('the line under a slow terminal: loading once the computer is connected, co
   expect(terminalNote('waiting', true, 'reconnecting', '')).toEqual({ text: t('connecting'), retry: true })
   expect(terminalNote('lost', false, 'reconnecting', '')).toEqual({ text: t('reconnecting'), retry: true })
   expect(terminalNote('ended', false, 'ready', 'gone')).toEqual({ text: 'gone', retry: false })
+  // No route in common: no Connecting… or Reconnecting… and no Try again, which cannot get through either.
+  expect(terminalNote('waiting', true, 'reconnecting', '', 'no-route')).toEqual({ text: t('notConnected'), retry: false })
+  expect(terminalNote('lost', false, 'reconnecting', '', 'no-route')).toEqual({ text: t('notConnected'), retry: false })
+  expect(terminalNote('waiting', false, 'ready', '', 'no-route')).toEqual({ text: t('connecting'), retry: false })
 })
 
 test('a page that says ready in time is left alone', async () => {

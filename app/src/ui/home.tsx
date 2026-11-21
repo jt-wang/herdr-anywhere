@@ -14,7 +14,7 @@ import { gitTail } from '../model/marks.ts'
 import { ChecksQuestion, PlainNotice, UpdateBanner } from './update.tsx'
 import type { Updates } from '../updates.ts'
 import type { PrefStore } from '../prefs.ts'
-import { ChoiceRow, ConnBanner, Glyph, IconButton, ProgramIcon, SpaceBadge, StatusMark, useRev } from './kit.tsx'
+import { ChoiceRow, ConnBanner, connStatus, Glyph, IconButton, ProgramIcon, SpaceBadge, StatusMark, useRev, useSignal } from './kit.tsx'
 import { AgentName, AgentRow, agentWords } from './agent-row.tsx'
 import { EdgeScroll, Hold, inList, shifts, targetIndex, type RowBox } from './pin-drag.ts'
 import { t } from '../strings/index.ts'
@@ -60,7 +60,8 @@ export function StatusLine(props: { store: Store }) {
   const s = props.store
   const conn = () => { rev(); return s.conn.get() }
   const counts = () => { rev(); return s.counts() }
-  const problem = () => { rev(); const c = conn(); return c === 'connecting' ? t('connecting') : c !== 'ready' ? t('notConnected') : '' }
+  const why = useSignal(s.lostWhy)
+  const problem = () => { rev(); const c = conn(); return c === 'ready' ? '' : connStatus(c, why()).word }
   return (
     <View role="button" testID="status-line" onPress={() => s.reconnectNow()} class="flex-row items-center gap-2 h-9 px-4 border-t border-border bg-sidebar">
       <Glyph name="monitor" size={13} />

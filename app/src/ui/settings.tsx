@@ -9,7 +9,7 @@ import { APP_VERSION, type Updates } from '../updates.ts'
 import { companionVersion, type Link, type Linker, type Route } from '../link.ts'
 import { CONNECTIONS, FONT_MAX, FONT_MIN, type Appearance, type Connection, type PrefStore } from '../prefs.ts'
 import { allowNotifications, notifications, notifyChannels, onFront, openChannel, type ChannelKind, type Channels, type ChannelState, type Permission } from '../page.ts'
-import { Glyph, IconButton, openPrivacy, SectionLabel, useRev, useSignal } from './kit.tsx'
+import { connStatus, Glyph, IconButton, openPrivacy, SectionLabel, useRev, useSignal } from './kit.tsx'
 import { LANG_NAMES, lang, langName, systemLang, t, type Key, type Lang } from '../strings/index.ts'
 import { diagnostics, type DiagnosticCategory, type DiagnosticStatus, type NativeDiagnostics } from '../diag.ts'
 
@@ -300,13 +300,8 @@ function useConnection(store: Store, linker: Linker, ready?: () => void) {
   const offConn = store.conn.sub(resume, 'Settings.ask')
   const offActive = store.activity.sub(resume)
   cleanup(() => { clearInterval(asking); offConn(); offActive() })
-  const status = () => {
-    const c = conn()
-    return c === 'ready' ? { word: t('connected'), dot: 'bg-chart-3' }
-      : c === 'connecting' ? { word: t('connecting'), dot: 'bg-muted-foreground' }
-      : c === 'reconnecting' ? { word: t('reconnecting'), dot: 'bg-muted-foreground' }
-      : { word: t('notConnected'), dot: 'bg-destructive' }
-  }
+  const why = useSignal(store.lostWhy)
+  const status = () => connStatus(conn(), why())
   return { conn, route, status }
 }
 
@@ -358,7 +353,7 @@ export function ConnectionScreen(props: { prefs: PrefStore; store: Store; linker
         <View class="mt-5 border-t border-border">
           <Fact label={t('connectionStatus')} value={status().word} dot={status().dot} under={under()} testID="connection-now" />
         </View>
-        <Text testID="connection-computer-note" class="px-4 pt-2 text-[12px] leading-[17px] text-sidebar-foreground">{t('connectionComputerNote')}</Text>
+        <View class="px-4 pt-2"><Text testID="connection-computer-note" class="text-[12px] leading-[17px] text-sidebar-foreground">{t('connectionComputerNote')}</Text></View>
       </Scroll>
     </View>
   )
