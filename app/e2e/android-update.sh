@@ -220,6 +220,9 @@ echo "ok: back from allowing installs, the download started by itself"
 restart_with() {
   echo "$1" > "$work/scenario"
   kill "$serve_pid"; wait "$serve_pid" 2>/dev/null || true
+  # A restarted Companion counts its day from GitHub's last answer (update.json's looked) and would keep the last
+  # scenario's release: without it, as when the day has passed, it asks at once and gets this scenario's.
+  python3 -c 'import json,sys; p=sys.argv[1]; s=json.load(open(p)); s.pop("looked",None); json.dump(s,open(p,"w"))' "$state/update.json"
   start_serve
   sleep 2
   wait_for "Version $new_version is available" 60
