@@ -20,6 +20,7 @@ import (
 	"github.com/jt-wang/tailpocket/connectsecure"
 
 	"herdr-anywhere/companion/internal/store"
+	"herdr-anywhere/companion/internal/testfake"
 )
 
 func TestLiveRotateIdentity(t *testing.T) {
@@ -117,7 +118,7 @@ func TestLiveRotateIdentity(t *testing.T) {
 	if err != nil || json.Unmarshal(moved, &kept) != nil || kept.Identity != secrets.Identity || len(kept.Allowed) != 0 {
 		t.Fatalf("the retired file is not the old identity without its phones (%d phones): %v", len(kept.Allowed), err)
 	}
-	if fi, err := os.Stat(retired[0]); err != nil || fi.Mode().Perm() != 0o600 {
+	if fi, err := os.Stat(retired[0]); err != nil || testfake.PermBits() && fi.Mode().Perm() != 0o600 {
 		t.Fatalf("the retired file's mode: %v %v", fi.Mode(), err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "tailcat.json")); !errors.Is(err, os.ErrNotExist) {

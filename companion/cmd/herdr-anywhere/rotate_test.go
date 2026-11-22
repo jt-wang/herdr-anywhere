@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"herdr-anywhere/companion/internal/store"
+	"herdr-anywhere/companion/internal/testfake"
 )
 
 // rotateFixture is a state dir with two paired phones and an identity file whose content is a marker no output may hold.
@@ -58,7 +59,7 @@ func TestRotateIdentityWithoutServe(t *testing.T) {
 	if b, _ := os.ReadFile(retired[0]); !strings.Contains(string(b), secret) {
 		t.Fatal("the retired file is not the old identity")
 	}
-	if fi, _ := os.Stat(retired[0]); fi.Mode().Perm() != 0o600 {
+	if fi, _ := os.Stat(retired[0]); testfake.PermBits() && fi.Mode().Perm() != 0o600 {
 		t.Fatalf("mode %v", fi.Mode())
 	}
 	if !strings.Contains(out, "herdr-anywhere pair") || !strings.Contains(out, filepath.Base(retired[0])) {
