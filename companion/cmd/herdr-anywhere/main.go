@@ -52,6 +52,7 @@ usage:
   herdr-anywhere pair    [--name "Phone"] [--ttl 10m] [--url URL] [--json [--window ID [--answer yes|no]]] [--state DIR]
   herdr-anywhere devices [--json] [--state DIR]
   herdr-anywhere revoke  [--state DIR] <device id>
+  herdr-anywhere rotate-identity [--yes] [--state DIR]   new keys for this computer; every phone pairs again
   herdr-anywhere install-dialog [--app-home DIR] [--state DIR]
   herdr-anywhere language   this computer's language for the Add phone dialog: en zh-Hans zh-Hant es ko ja ru
   herdr-anywhere update [--check]
@@ -107,6 +108,8 @@ func runContext(ctx context.Context, args []string, stdout, stderr io.Writer) in
 		err = devices(rest, stdout, stderr)
 	case "revoke":
 		err = revoke(rest, stdout, stderr)
+	case "rotate-identity":
+		err = rotateIdentity(rest, stdout, stderr)
 	case "update":
 		err = updateCommand(ctx, rest, stdout, stderr)
 	case "track":
@@ -126,7 +129,25 @@ func runContext(ctx context.Context, args []string, stdout, stderr io.Writer) in
 		return 2
 	}
 	var u usageError
+	var rot rotateRestart
 	switch {
+	case errors.As(err, &rot):
+		// serve has stopped, its host with it: the identity moves aside unread, and serve starts again without it. A
+		// phone that paired during the wait is unpaired too: nothing can pair now, and it holds the old host key.
+		if err := revokeAll(rot.dir); err != nil {
+			fmt.Fprintf(stderr, "herdr-anywhere: unpairing the phones: %v\n", err)
+			return 1
+		}
+		if err := tailcat.Retire(rot.dir, rot.retired); err != nil {
+			fmt.Fprintf(stderr, "herdr-anywhere: moving the old identity aside: %v\n", err)
+			return 1
+		}
+		fmt.Fprintf(stderr, "rotate-identity: the old identity is in %s; starting again with a new one\n", rot.retired)
+		if err := restartSelf(); err != nil {
+			fmt.Fprintf(stderr, "herdr-anywhere: restarting: %v\n", err)
+			return 1
+		}
+		return 0
 	case errors.Is(err, errRestart):
 		if err := restartSelf(); err != nil {
 			fmt.Fprintf(stderr, "herdr-anywhere: restarting: %v\n", err)
@@ -339,6 +360,7 @@ func serve(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	}
 
 	restart := make(chan struct{}, 1)
+	rotating := make(chan string, 1) // rotate-identity: the name the old identity goes to once serve stopped
 	client, err := releases()
 	if err != nil {
 		return err
@@ -398,7 +420,7 @@ func serve(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		for _, a := range lanAddrs {
 			opts.Listen = append(opts.Listen, net.JoinHostPort(a.String(), strconv.Itoa(secureLANPort)))
 		}
-		closeTailcat, err := serveTailcat(ctx, st, httpSrv, srv.Revoking, urls, errc, logger, opts)
+		closeTailcat, err := serveTailcat(ctx, st, httpSrv, srv.Revoking, urls, errc, logger, opts, rotateHandler(st, rotating, logger))
 		if err != nil {
 			httpSrv.Close()
 			return err
@@ -419,11 +441,12 @@ func serve(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		go progressLoop(ctx, hcPath, st.Dir(), stderr)
 	}
 
-	restarting := false
+	restarting, retired := false, ""
 	select {
 	case <-ctx.Done():
 	case <-restart:
 		restarting = true
+	case retired = <-rotating:
 	case err := <-errc:
 		if !errors.Is(err, http.ErrServerClosed) {
 			return err
@@ -433,6 +456,11 @@ func serve(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	defer cancel()
 	srv.Close() // WebSockets are hijacked: Shutdown does not close them
 	err = httpSrv.Shutdown(shutdown)
+	if retired != "" {
+		// The deferred closeTailcat stops the host before serve returns; main moves the identity aside after that,
+		// as the host saves the identity it holds until it stops.
+		return rotateRestart{dir: st.Dir(), retired: retired}
+	}
 	if restarting {
 		return errRestart
 	}
@@ -444,7 +472,7 @@ func serve(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 // socket pair talks to, and keeps the host's allowlist in step with the
 // device list, once a revoked phone's socket has closed (revoking). The
 // returned func stops all of it.
-func serveTailcat(ctx context.Context, st *store.Store, httpSrv *http.Server, revoking func() bool, urls []string, errc chan<- error, logger *log.Logger, opts tailcat.Options) (func(), error) {
+func serveTailcat(ctx context.Context, st *store.Store, httpSrv *http.Server, revoking func() bool, urls []string, errc chan<- error, logger *log.Logger, opts tailcat.Options, rotate http.HandlerFunc) (func(), error) {
 	tc, err := tailcat.Open(st, computerName(), logger, opts)
 	if err != nil {
 		return nil, err
@@ -480,13 +508,18 @@ func serveTailcat(ctx context.Context, st *store.Store, httpSrv *http.Server, re
 		return nil, err
 	}
 	go func() { errc <- httpSrv.Serve(tc.Listener()) }()
-	ctlSrv := &http.Server{Handler: tailcat.ControlHandler(removeImageAfter(st.Dir(), tc.Pair), tc, urls), ReadHeaderTimeout: 10 * time.Second, ErrorLog: logger}
+	control := http.NewServeMux()
+	control.Handle("/", tailcat.ControlHandler(removeImageAfter(st.Dir(), tc.Pair), tc, urls))
+	control.HandleFunc("POST /rotate", rotate)
+	ctlSrv := &http.Server{Handler: control, ReadHeaderTimeout: 10 * time.Second, ErrorLog: logger}
 	go ctlSrv.Serve(ctl)
 	watch, stopWatch := context.WithCancel(ctx)
-	go tc.Watch(watch, time.Second, revoking)
+	watched := make(chan struct{})
+	go func() { tc.Watch(watch, time.Second, revoking); close(watched) }()
 	return func() {
 		stopWatch()
 		ctlSrv.Close()
+		<-watched // a revoke Watch is making saves tailcat.json: done before the host stops (rotate-identity moves it next)
 		tc.Close()
 	}, nil
 }

@@ -79,8 +79,9 @@ func newUpdates(dir string, client update.Client, logger *log.Logger, restart fu
 }
 
 // restartSelf runs the file now at this program's path, as this same process with these same arguments: whatever
-// started serve, a terminal or the Herdr dialog, keeps watching it, and phones connect again by themselves.
-func restartSelf() error {
+// started serve, a terminal or the Herdr dialog, keeps watching it, and phones connect again by themselves. A var:
+// a test that runs serve in its own process starts it again itself.
+var restartSelf = func() error {
 	exe, err := thisFile()
 	if err != nil {
 		return err

@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -207,7 +208,7 @@ func call(ctx context.Context, dir, method, path string, body, out any) error {
 		switch {
 		case resp.StatusCode == http.StatusNotFound && e.Error == ErrNoWindow.Error():
 			return ErrNoWindow
-		case resp.StatusCode == http.StatusConflict:
+		case resp.StatusCode == http.StatusConflict && strings.HasPrefix(path, "/pair/"):
 			return ErrNotAsking
 		case e.Error == "":
 			// A serve from before the emoji check has no such route.
@@ -233,6 +234,16 @@ func PairStatus(ctx context.Context, dir, id string) (Status, error) {
 	var st Status
 	err := call(ctx, dir, http.MethodGet, "/pair/"+url.PathEscape(id), nil, &st)
 	return st, err
+}
+
+// RequestRotate asks the serve on dir for a new identity (serve's POST /rotate): it unpairs every phone, telling the
+// ones connected now, then starts again with new keys once it moved the old ones to the file it names.
+func RequestRotate(ctx context.Context, dir string) (retired string, err error) {
+	var r struct {
+		Retired string `json:"retired"`
+	}
+	err = call(ctx, dir, http.MethodPost, "/rotate", struct{}{}, &r)
+	return r.Retired, err
 }
 
 // AnswerPair answers the phone asking on window id.

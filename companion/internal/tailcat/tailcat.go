@@ -16,6 +16,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -120,6 +121,26 @@ func Open(st *store.Store, name string, logger *log.Logger, opts Options) (*Serv
 }
 
 func (s *Service) statePath() string { return filepath.Join(s.store.Dir(), stateName) }
+
+// HasIdentity says whether dir holds a host identity (one is saved once a phone first pairs).
+func HasIdentity(dir string) bool {
+	_, err := os.Stat(filepath.Join(dir, stateName))
+	return err == nil
+}
+
+// RetiredName is the file Retire moves the identity to at t, in the same dir.
+func RetiredName(t time.Time) string {
+	return stateName + ".retired-" + t.UTC().Format("20060102T150405Z")
+}
+
+// Retire moves dir's identity aside to name, unread and with its 0600 mode, so the next Open makes a new one: new
+// Tailcat, Noise and relay keys. Only with no serve running: a running one saves the identity it holds again.
+func Retire(dir, name string) error {
+	if name != filepath.Base(name) || !strings.HasPrefix(name, stateName+".retired-") {
+		return fmt.Errorf("not a retired identity's name: %q", name)
+	}
+	return os.Rename(filepath.Join(dir, stateName), filepath.Join(dir, name))
+}
 
 // save writes the host's state through a temp file (created 0600) and a
 // rename, as the store does. connecthost refuses a change it cannot save.

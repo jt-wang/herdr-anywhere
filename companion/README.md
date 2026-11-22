@@ -13,6 +13,7 @@ go build ./cmd/herdr-anywhere          # needs Go 1.27.1
 ./herdr-anywhere pair                  # prints a QR code and a link; scan it with the phone
 ./herdr-anywhere devices               # id, name, created, last seen
 ./herdr-anywhere revoke <id>           # the device's live connections close within a second
+./herdr-anywhere rotate-identity       # new keys for this computer; every phone pairs again (asks first; --yes doesn't)
 ./herdr-anywhere start                 # serve --tailcat in the background, on any free local port, and again at each login
 ./herdr-anywhere start --lan           # the same, also directly on this computer's LAN address, end-to-end encrypted
 ./herdr-anywhere stop                  # stops it and takes it off login
@@ -86,6 +87,16 @@ herdr-core's API can run any command as you, so whoever holds a device token can
   matches, runs, and says it is that version, and tells phones the app's SHA-256 from the same list. Releases are signed
   with `go run ./cmd/release-manifest sign -key <key> -version X.Y.Z -out <dir> <files>`, which refuses a release that
   leaves out any computer's file; the private key stays off GitHub.
+- `rotate-identity` replaces the host identity in `tailcat.json` (Tailcat node key, PSK, Noise static key and relay
+  key) when it may have leaked. With serve running it asks serve over the control socket (`POST /rotate`, 0600, this
+  user only): serve unpairs every phone first, while the old identity still reaches them, so a connected phone gets
+  the authenticated close 4401 and shows "Pair it again"; then serve stops, `tailcat.json` is renamed to
+  `tailcat.json.retired-<UTC time>` (still 0600, never read or copied), and serve starts again as the same process
+  with the same arguments and makes a new identity at the next pairing. Without a serve the command does the same
+  itself. No key reaches stdout, stderr or `serve.log`. A phone that was offline has no authenticated way to learn
+  this: its routes no longer answer (the new node has another Tailcat address, the LAN port follows the Noise key, a
+  relay doesn't know the new key), so the app says it can't reach the computer and offers to pair again after a
+  while; nothing unauthenticated unpairs it. Delete the retired file once every phone is paired again.
 
 ## Tests
 
