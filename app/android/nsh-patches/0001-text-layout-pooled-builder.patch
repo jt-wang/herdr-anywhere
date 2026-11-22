@@ -1,0 +1,30 @@
+A fix of our own for nsh v0.3.0's Android text layout, not (yet) upstream.
+
+StaticLayout.Builder.obtain takes builders from a pool of three and sets most options back to their defaults, but
+not useBoundsForWidth and shiftDrawingOffsetForStartOverhang (Android 15). After an EditText built a layout with
+glyph bounds, the next text nsh lays out with that builder breaks by bounds too, while nsh measured it by advances:
+"Your computer asks GitHub once a day." measured as one line of 566.05 px breaks before "day." in a 567 px box
+whose height holds one line, and Settings shows "Your computer asks GitHub once a". Each layout now sets both.
+
+nsh is Copyright Longbridge, licensed under the Apache License 2.0
+(https://github.com/longbridge/nsh/blob/v0.3.0/LICENSE-APACHE); this patch is under the same license.
+
+diff --git a/crates/nsh-platform-android/java/com/longbridge/nsh/TextLayouts.java b/crates/nsh-platform-android/java/com/longbridge/nsh/TextLayouts.java
+--- a/crates/nsh-platform-android/java/com/longbridge/nsh/TextLayouts.java
++++ b/crates/nsh-platform-android/java/com/longbridge/nsh/TextLayouts.java
+@@ -224,6 +224,15 @@ final class TextLayouts {
+                     .setBreakStrategy(Layout.BREAK_STRATEGY_SIMPLE)
+                     .setHyphenationFrequency(Layout.HYPHENATION_FREQUENCY_NONE);
+             if (justify) b.setJustificationMode(Layout.JUSTIFICATION_MODE_INTER_WORD);
++            if (android.os.Build.VERSION.SDK_INT >= 35) {
++                // Builders come from a pool, and `obtain` leaves these two as
++                // the last user set them: after a TextView that breaks by
++                // glyph bounds (an EditText on Android 15), lines here would
++                // too, while `desired()` and `measure` count advances, and
++                // text measured as one line breaks into a second the box
++                // cuts off.
++                b.setUseBoundsForWidth(false).setShiftDrawingOffsetForStartOverhang(false);
++            }
+             if (maxLines > 0) {
+                 b.setMaxLines(maxLines);
+                 if (ellipsize != null) b.setEllipsize(ellipsize);

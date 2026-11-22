@@ -288,6 +288,7 @@ jobs:
             main)
               "$ANDROID_HOME/platform-tools/adb" shell cmd uimode night yes; sleep 2
               mkdir -p "$OUT/main"; $s main-dark e2e/android.sh "$APK" "$OUT/main/app.png"
+              mkdir -p "$OUT/settings-fit"; fresh; $s settings-fit e2e/android-settings-fit.sh "$APK" "$COMPANION" "$OUT/settings-fit"
               "$ANDROID_HOME/platform-tools/adb" shell cmd uimode night no ;;
             panes)
               mkdir -p "$OUT/switcher" "$OUT/width" "$OUT/tuiscroll" "$OUT/attach"

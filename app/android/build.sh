@@ -1,14 +1,17 @@
 #!/bin/sh
-# Builds android/build/Herdr.apk: the app's bundle (nsh build) in its own MainActivity on the release nsh.aar, with
-# the network security config that lets the phone talk plain http/ws to the companion, and TailPocket's modules from
-# third_party with its phone library (scripts/tailpocket.sh). Needs NSH, Go, a JDK, the SDK and the NDK.
+# Builds android/build/Herdr.apk: the app's bundle (nsh build) in its own MainActivity on the release nsh.aar with our
+# fixes (nsh-patches), with the network security config that lets the phone talk plain http/ws to the companion, and
+# TailPocket's modules from third_party with its phone library (scripts/tailpocket.sh). Needs NSH, Go, a JDK, the SDK
+# and the NDK.
 set -eu
 root=$(cd "$(dirname "$0")/.." && pwd)
 export ANDROID_HOME="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
 export JAVA_HOME="${JAVA_HOME:-/Applications/Android Studio.app/Contents/jbr/Contents/Home}"
 app="$root/android/app"
 "$root/scripts/tailpocket.sh" android >/dev/null
-mkdir -p "$app/libs"; cp "${NSH_HOME:-$HOME/.nsh}/embed/android/nsh.aar" "$app/libs/nsh.aar"
+# The release nsh.aar with our patches to its Java runtime (nsh-patches/patch-aar.sh).
+mkdir -p "$app/libs"
+"$root/android/nsh-patches/patch-aar.sh" "${NSH_HOME:-$HOME/.nsh}/embed/android/nsh.aar" "$app/libs/nsh.aar"
 export NSH_AAR="$app/libs/nsh.aar" # TailPocket's tailpocket-nsh module compiles against it; it looks in ~/.nsh otherwise
 rm -rf "$app/src/main/assets/nsh"
 nsh build "$root" --release --out "$app/src/main/assets/nsh"
