@@ -2,6 +2,10 @@
 
 A cloud coding agent can request an iOS build through GitHub Actions. Apple signing credentials stay in the repository's `testflight` environment; the agent needs a GitHub token with **Actions: write** and **Contents: read**.
 
+## 0.3.8 (43)
+
+Update the Companion too (it updates itself, or `herdr-anywhere start` after installing 0.3.8). Stop the Companion on the computer (`herdr-anywhere stop`) with the app open: after about 18 s the banner says Still can't reach your computer, with Try again and Other options, and the status bar says Not connected · retrying. Other options lists the four causes with what to do; Copy copies `herdr-anywhere start`. Start the Companion again: the app connects by itself with the same pairing. Pair again from that list opens pairing with Back, and Back returns to the current pairing.
+
 ## 0.3.7 (42)
 
 The Companion is the same as 0.3.6, and the steps below still apply. With Tailcat only picked against `--routes lan`, the banner says in one sentence that the computer hasn't turned that way on, and Use Automatic connects again; home, Settings and the terminal all say Not connected until then. On Android, open Settings, then a terminal's input box, then Settings again: every description shows whole (see CHANGELOG.md).

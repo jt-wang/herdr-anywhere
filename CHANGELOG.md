@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.3.8
+
+iOS build 43. The phone app and the Companion both changed; an installed Companion updates itself.
+
+- When the phone has not reached the computer for 18 seconds and no more telling reason is known, the banner says “Still can't reach your computer” and the likeliest cause, that the network may be blocking the connection, with Try again and Other options. Other options lists each thing that may be in the way with what to do: a Wi-Fi that needs a sign-in (Open sign-in page), Companion not running on the computer (the command to start it, with Copy), a connection setting that doesn't fit the network (Connection), or new keys on the computer (Pair again: scan only the QR code on your own computer's screen; the current pairing stays until the new one works). The status bar says Not connected · retrying meanwhile. Nothing is unpaired on its own.
+- On the computer, `herdr-anywhere rotate-identity` gives this computer new Tailcat keys. It unpairs every phone first, so a phone that is connected is told to pair again, then moves the old identity aside (`tailcat.json.retired-<time>`, never printed) and starts again with a new one. Pair each phone again afterwards.
+- The Companion's daily update check counts a day by the clock from GitHub's last answer, which it keeps across restarts, and checks once after the computer wakes from sleep. A check GitHub doesn't answer is tried again after 15 minutes instead of a day later.
+
 ## v0.3.7
 
 iOS build 42. The Companion is the same as 0.3.6.
