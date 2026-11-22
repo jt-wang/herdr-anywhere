@@ -425,6 +425,113 @@ func TestRunChecksAtOnceAndThenOnSchedule(t *testing.T) {
 	}
 }
 
+// waitChecks waits until GitHub was asked n times, then a while longer to see that it's asked no more.
+func waitChecks(t *testing.T, checks *atomic.Int32, n int32, what string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for checks.Load() < n && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	time.Sleep(150 * time.Millisecond)
+	if got := checks.Load(); got != n {
+		t.Fatalf("%s: asked GitHub %d times, want %d", what, got, n)
+	}
+}
+
+// A restart counts the day from GitHub's last answer, kept in update.json, not from the moment it started: serve
+// restarted an hour after a check asks nothing, one restarted a day after asks at once.
+func TestARestartCountsTheDayFromTheLastAnswer(t *testing.T) {
+	for _, c := range []struct {
+		ago  time.Duration
+		want int32
+	}{{time.Hour, 0}, {25 * time.Hour, 1}} {
+		bin := program(t, "0.1.5")
+		srv, checks := fakeGitHub(t, "v0.1.5", bin, digestOf(bin))
+		m := manager(t, srv, installed(t), func() {})
+		m.Every, m.Tick = 24*time.Hour, 10*time.Millisecond
+		if err := m.SetChecks(true); err != nil {
+			t.Fatal(err)
+		}
+		if err := m.change(func(s *saved) { s.Looked = time.Now().Add(-c.ago) }); err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		go m.Run(ctx)
+		waitChecks(t, checks, c.want, fmt.Sprintf("last answer %v ago", c.ago))
+		cancel()
+	}
+}
+
+// A computer that slept: its timers didn't count the night, its clock did. Run sees the clock jump past what it
+// slept, and asks once on waking, even with the day not over; a nap an hour after an answer asks nothing.
+func TestWakingFromSleepAsksOnce(t *testing.T) {
+	bin := program(t, "0.1.5")
+	srv, checks := fakeGitHub(t, "v0.1.5", bin, digestOf(bin))
+	m := manager(t, srv, installed(t), func() {})
+	var ahead atomic.Int64 // how far the computer slept, in total
+	m.Now = func() time.Time { return time.Now().Add(time.Duration(ahead.Load())) }
+	m.Every, m.Tick = 24*time.Hour, 10*time.Millisecond
+	if err := m.SetChecks(true); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go m.Run(ctx)
+	waitChecks(t, checks, 1, "starting")
+	ahead.Add(int64(2 * time.Hour))
+	waitChecks(t, checks, 2, "waking two hours after the last answer")
+	ahead.Add(int64(10 * time.Minute))
+	waitChecks(t, checks, 2, "waking ten minutes after the last answer")
+	ahead.Add(int64(23 * time.Hour))
+	waitChecks(t, checks, 3, "waking a day later")
+}
+
+// A last answer saved by a clock that ran ahead counts as none: the day doesn't wait for this clock to catch up.
+func TestALastAnswerInTheFutureCountsAsNone(t *testing.T) {
+	bin := program(t, "0.1.5")
+	srv, checks := fakeGitHub(t, "v0.1.5", bin, digestOf(bin))
+	m := manager(t, srv, installed(t), func() {})
+	m.Every, m.Tick = 24*time.Hour, 10*time.Millisecond
+	if err := m.SetChecks(true); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.change(func(s *saved) { s.Looked = time.Now().Add(48 * time.Hour) }); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go m.Run(ctx)
+	waitChecks(t, checks, 1, "last answer two days ahead")
+}
+
+// A check GitHub doesn't answer (no network yet after waking) is tried again in a quarter of an hour, not in a day. The
+// clock moves on in steps shorter than wokeGap, so none reads as waking.
+func TestACheckWithNoAnswerIsTriedAgainSoon(t *testing.T) {
+	bin := program(t, "0.1.5")
+	srv, checks := fakeReleases(t, "v0.1.5", bin, digestOf(bin), func(body, _ []byte) ([]byte, []byte) { return body, nil })
+	m := manager(t, srv, installed(t), func() {})
+	var ahead atomic.Int64
+	m.Now = func() time.Time { return time.Now().Add(time.Duration(ahead.Load())) }
+	m.Every, m.Tick = 24*time.Hour, 5*time.Millisecond
+	if err := m.SetChecks(true); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go m.Run(ctx)
+	waitChecks(t, checks, 1, "starting")
+	advance := func(d time.Duration) {
+		for end := ahead.Load() + int64(d); ahead.Load() < end; {
+			ahead.Add(int64(20 * time.Second))
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	advance(14 * time.Minute)
+	waitChecks(t, checks, 1, "14 minutes after a check with no answer")
+	advance(2 * time.Minute)
+	waitChecks(t, checks, 2, "16 minutes after a check with no answer")
+}
+
 func TestNothingInstallsWhereNoReleasedFileRuns(t *testing.T) {
 	bin := program(t, "0.1.6")
 	srv, _ := fakeGitHub(t, "v0.1.6", bin, digestOf(bin))

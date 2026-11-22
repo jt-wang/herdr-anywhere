@@ -324,8 +324,14 @@ type Manager struct {
 	Installs bool
 	// First is how long after starting to ask for the first time, once the person said yes.
 	First time.Duration
-	// Every is how often to ask, once the person said yes.
+	// Every is how often to ask, once the person said yes, by the wall clock from the last answer (update.json).
 	Every time.Duration
+	// Tick is the longest Run sleeps before looking at the clock again (a minute when zero). A timer doesn't count
+	// the time the computer sleeps, so a day's timer set at 19:11 can come due days later; reading the clock this
+	// often keeps the day a real one, and a clock that moved on further than Run slept says the computer slept.
+	Tick time.Duration
+	// Now is the wall clock (time.Now when nil), for tests.
+	Now func() time.Time
 	// Restart runs the new file. It's called once the old one is replaced by an automatic update; after a person's
 	// request the caller calls it, having answered first.
 	Restart func()
@@ -333,7 +339,6 @@ type Manager struct {
 
 	mu       sync.Mutex
 	failed   string        // the version an automatic update already failed on
-	looked   time.Time     // when GitHub last answered, on schedule or asked from a phone
 	asking   int           // looks still waiting on GitHub
 	answered chan struct{} // closed once none are; Run waits on it rather than ask beside a phone's check
 	applying bool
@@ -347,6 +352,16 @@ type saved struct {
 	Checks string `json:"checks,omitempty"`
 	Latest string `json:"latest,omitempty"`
 	App    *App   `json:"app,omitempty"`
+	// Looked is when GitHub last answered, on schedule or asked from a phone: a restart counts the day from it.
+	Looked time.Time `json:"looked,omitzero"`
+}
+
+// now is the wall clock alone: Round(0) drops the monotonic reading, which stops while the computer sleeps.
+func (m *Manager) now() time.Time {
+	if m.Now != nil {
+		return m.Now().Round(0)
+	}
+	return time.Now().Round(0)
 }
 
 func (m *Manager) load() saved {
@@ -492,11 +507,10 @@ func (m *Manager) look(ctx context.Context) (Release, error) {
 	if err != nil {
 		return rel, err
 	}
-	m.mu.Lock()
-	m.looked = time.Now()
-	m.mu.Unlock()
 	app := rel.App
+	looked := m.now()
 	return rel, m.change(func(s *saved) {
+		s.Looked = looked
 		s.Latest = rel.Version
 		s.App = &app
 		if app.URL == "" {
@@ -579,28 +593,49 @@ func (m *Manager) install(ctx context.Context, rel Release) error {
 	return m.Client.Apply(ctx, rel, m.Exe)
 }
 
-// Run asks after m.First and then every m.Every while the person's answer is yes, until ctx ends. A new answer counts
-// from its own moment: a yes asks after m.First.
+// wokeGap is how much further than Run slept the clock may move before it counts as the computer having slept, and
+// wokeAfter how long since the last answer a check after waking needs: a Mac that wakes for a moment every hour
+// (Power Nap) asks no more than that.
+const (
+	wokeGap    = time.Minute
+	wokeAfter  = time.Hour
+	retryAfter = 15 * time.Minute // after a check GitHub didn't answer
+)
+
+// Run asks after m.First and then m.Every after GitHub last answered, by the wall clock, while the person's answer is
+// yes, until ctx ends; and once more after the computer wakes from sleep. A new answer counts from its own moment: a
+// yes asks after m.First.
 func (m *Manager) Run(ctx context.Context) {
 	every := m.Every
 	if every <= 0 {
 		every = 24 * time.Hour
 	}
+	tick := m.Tick
+	if tick <= 0 {
+		tick = time.Minute
+	}
 	wake := make(chan struct{}, 1)
 	m.mu.Lock()
 	m.wake = wake
 	m.mu.Unlock()
-	wait := m.First
+	due := m.now().Add(m.First)
 	for {
+		slept := max(min(due.Sub(m.now()), tick), 0)
+		before := m.now()
 		select {
 		case <-ctx.Done():
 			return
 		case <-wake:
-			wait = m.First
+			due = m.now().Add(m.First)
 			continue
-		case <-time.After(wait):
+		case <-time.After(slept):
 		}
-		wait = every
+		now := m.now()
+		woke := now.Sub(before) > slept+wokeGap
+		if !woke && now.Before(due) {
+			continue
+		}
+		due = now.Add(every)
 		if m.Checks() != "on" {
 			continue
 		}
@@ -623,12 +658,31 @@ func (m *Manager) Run(ctx context.Context) {
 			}
 		}
 		m.mu.Lock()
-		since := time.Since(m.looked)
+		looked := m.load().Looked
 		m.mu.Unlock()
-		if since < every && !m.Auto() {
-			wait = every - since
+		if looked.After(m.now()) { // saved by a clock that ran ahead: no answer this clock can count from
+			looked = time.Time{}
+		}
+		since := m.now().Sub(looked)
+		skip := since < every && !m.Auto()
+		if woke {
+			skip = since < wokeAfter
+		}
+		if skip {
+			if since < every {
+				due = looked.Add(every)
+			}
 			continue
 		}
+		if woke {
+			m.logf("update: the computer woke from sleep; checking for a new version")
+		}
 		m.Check(ctx)
+		m.mu.Lock()
+		heard := m.load().Looked.After(looked)
+		m.mu.Unlock()
+		if !heard { // GitHub didn't answer (the network not up yet after waking, say): again soon, not in a day
+			due = m.now().Add(min(retryAfter, every))
+		}
 	}
 }
