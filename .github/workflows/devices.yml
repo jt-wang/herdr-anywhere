@@ -601,8 +601,9 @@ jobs:
               $s ios-tui-scroll e2e/ios-tui-scroll.sh "$OUT/tui-scroll.png"
               $s ios-locale e2e/ios-locale.sh "$RUNNER_TEMP/plain/Herdr.app" "$OUT/locale" ;;
             b)
-              mkdir -p "$OUT/picture"
+              mkdir -p "$OUT/picture" "$OUT/stuck"
               $s ios-tailcat e2e/ios-tailcat.sh "$OUT/tailcat.png"
+              $s ios-stuck e2e/ios-stuck.sh "$OUT/stuck"
               $s ios-picture e2e/ios-picture.sh "$OUT/picture"
               $s ios-pin-order e2e/ios-pin-order.sh ;;
             onerror)

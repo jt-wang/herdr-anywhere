@@ -257,3 +257,43 @@ test('no route in common with the computer says so, offers Automatic and opens S
   await common.waitFor(NO_ANSWER)
   expect(common.shows('id:conn-open-connection')).toBe(false)
 })
+
+// A line down STUCK_MS (store.ts) for no telling reason, as on a plane's or hotel's Wi-Fi before signing in: the banner
+// says what may be in the way and offers the sign-in page, a try now, Settings › Connection and pairing again.
+test('a tunnel that gets nowhere for a while says the network may be in the way, with what to do', async () => {
+  const STUCK = "text:Still can't reach your computer"
+  const app = await open('./App.tsx', { platform: 'ios', host: { handlers: handlers() }, network: { '*': { error: 'offline' } }, clock: {} })
+  await pairAndConnect(app)
+  await app.clock.runFor(5_000)
+  expect(app.shows(STUCK)).toBe(false)
+  await app.clock.runFor(14_000)
+  await app.waitFor(STUCK)
+  // The banner: one line, the likeliest cause, Try again and Other options; the bar below says the same.
+  expect(app.shows('text:The network may be blocking the connection.')).toBe(true)
+  for (const id of ['conn-retry', 'conn-options']) expect(`${id} ${app.shows(`id:${id}`)}`).toBe(`${id} true`)
+  for (const id of ['conn-sign-in', 'conn-command', 'pair-again']) expect(`${id} ${app.shows(`id:${id}`)}`).toBe(`${id} false`)
+  expect(app.shows('text:Not connected · retrying')).toBe(true)
+  expect(app.shows('text:Reconnecting…')).toBe(false)
+  const tunnels = calls(app, 'tailPocket.connect').length
+  await app.press('id:conn-retry')
+  expect(app.shows(STUCK)).toBe(false)
+  await app.clock.runFor(2_000)
+  expect(calls(app, 'tailPocket.connect').length).toBeGreaterThan(tunnels)
+  await app.clock.runFor(19_000)
+  await app.waitFor(STUCK)
+  // Other options: each cause with what to do. A stopped Companion gets no answer through the tunnel too, so its
+  // command is there; pairing again says to scan only the computer's own code, and keeps this pairing until then.
+  await app.press('id:conn-options')
+  await app.waitFor('id:stuck-sheet')
+  for (const id of ['conn-sign-in', 'conn-command', 'conn-copy', 'conn-open-connection', 'pair-again']) expect(`${id} ${app.shows(`id:${id}`)}`).toBe(`${id} true`)
+  expect(app.shows('text:herdr-anywhere start')).toBe(true)
+  expect(app.shows("text:Only scan the QR code shown on your own computer's screen. Your current pairing stays until the new one works.")).toBe(true)
+  await app.press('id:pair-again')
+  await app.waitFor('id:pair-back')
+  await app.press('id:pair-back')
+  await app.waitFor(STUCK)
+  await app.press('id:conn-options')
+  await app.waitFor('id:stuck-sheet')
+  await app.press('id:conn-open-connection')
+  await app.waitFor('id:connection-lan')
+})

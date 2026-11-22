@@ -98,7 +98,18 @@ export const LOST_TEXT: Record<string, Key> = {
   'no-route': 'lostNoRoute',
   'no-answer': 'lostNoAnswer',
   'binary-unsupported': 'lostSlower',
+  stuck: 'lostStuck',
 }
+
+/** How long the line may stay down, for no reason more telling than no answer, before the banner says what may be in
+ *  the way (a network that holds connections until someone signs in, such as hotel or plane Wi-Fi; a computer that got
+ *  new keys) and offers what to do. Tailcat alone can take 10–15 s to come up on a slow network. */
+export const STUCK_MS = 18_000
+/** Reasons that already say what is wrong and what to do: no stuck hint over them. */
+const TOLD = new Set(['no-core', 'refused', 'no-route', 'binary-unsupported'])
+/** What the stuck hint's first button opens: a plain-HTTP page that a network holding connections until sign-in
+ *  replaces with its sign-in page (the page iOS checks for one with). */
+export const SIGN_IN_CHECK_URL = 'http://captive.apple.com'
 
 // Read only by the test connection hook; Signal ignores this registration metadata.
 export type ConnSubscriberSite = 'Updates.follow' | 'Root.unpaired' | 'kit.useSignal' | 'kit.useRev' | 'ProgressData.poll'
@@ -160,7 +171,8 @@ export class Store {
       this.sync()
       void this.refreshMachines()
     }
-    if (front) this.reconnectNow()
+    // A try made on coming back counts its own time: the time away is no sign of a network in the way.
+    if (front) { this.downAt = 0; this.reconnectNow() }
     this.polling()
   }
   setBackgroundWatch(on: boolean) { this.backgroundWatch.set(on); this.polling() }
@@ -231,6 +243,11 @@ export class Store {
     this.attemptAt = this.io.now()
     this.attempt++
     this.opened = false
+    if (!this.downAt) {
+      if (this.stuckLoop !== undefined) this.io.clearInterval(this.stuckLoop)
+      this.downAt = this.io.now()
+      this.stuckLoop = this.io.setInterval(() => this.checkStuck(), STUCK_MS)
+    }
     diag('connection-connect', { attempt: String(this.attempt), step: 'start' })
     this.conn.set(this.retry ? 'reconnecting' : 'connecting')
     try {
@@ -332,6 +349,7 @@ export class Store {
       void this.flushPending()
       this.error.set('')
       this.lostWhy.set('')
+      this.upAgain()
       this.polling()
       this.heardAt = this.checkedAt = this.io.now()
       this.quietLoop = this.io.setInterval(() => this.checkQuiet(), 1000)
@@ -351,8 +369,45 @@ export class Store {
     }
   }
 
+  /** Since when the line has been down while wanted (the first try's start); 0 while it is up. */
+  private downAt = 0
+  /** Checks every STUCK_MS while the line is down whether it has been down that long. */
+  private stuckLoop?: ReturnType<typeof setInterval>
+
+  private upAgain() {
+    this.downAt = 0
+    if (this.stuckLoop !== undefined) this.io.clearInterval(this.stuckLoop)
+    this.stuckLoop = undefined
+  }
+
+  /** Down STUCK_MS, still for no telling reason: the banner says what may be in the way. */
+  private checkStuck() {
+    const c = this.conn.get()
+    if (!this.downAt || this.io.now() - this.downAt < STUCK_MS || !this.wantConnected || c === 'ready' || c === 'unpaired' || c === 'idle') return
+    const was = this.lostWhy.get()
+    if (was === 'stuck' || TOLD.has(was)) return
+    diag('connection-stuck', { attempt: String(this.attempt), was: was || c })
+    this.lostWhy.set('stuck')
+    this.error.set(tr('lostStuck'))
+  }
+
+  /** The stuck hint's Try again: a try now, and the hint again only if this one gets nowhere for STUCK_MS too. A try
+   *  still waiting is ended; its close starts the next one at once. */
+  retryNow() {
+    if (!this.wantConnected || this.conn.get() === 'ready') return
+    this.downAt = 0
+    this.retry = 0
+    if (this.lostWhy.get() === 'stuck') { this.lostWhy.set(''); this.error.set('') }
+    if (!this.hc) return this.reconnectNow()
+    this.closedByUs = true
+    this.hc.close()
+  }
+  /** The line's next close is Try again ending the try that was waiting: it says nothing about the computer. */
+  private closedByUs = false
+
   disconnect() {
     this.wantConnected = false
+    this.upAgain()
     this.stopLoops()
     this.hc?.close()
     this.hc = undefined
@@ -433,14 +488,19 @@ export class Store {
       this.conn.set('reconnecting')
       mark('conn-after')
       const plain = reason === 'network' || reason === 'closed' || reason === 'retry failed'
-      const why = !plain || this.opened ? reason
+      const ours = this.closedByUs
+      this.closedByUs = false
+      const why = ours ? '' : !plain || this.opened ? reason
         : this.io.tunnelled() ? 'no-answer'
         : this.io.now() - this.attemptAt < REFUSED_MS ? 'refused' : 'unreachable'
+      // Once the hint is up, or due, a try that fails for no more telling reason keeps it.
+      const due = this.lostWhy.get() === 'stuck' || (this.downAt > 0 && this.io.now() - this.downAt >= STUCK_MS)
+      const shown = due && !ours && !TOLD.has(why) ? 'stuck' : why
       mark('lost-why-before')
-      this.lostWhy.set(why)
+      this.lostWhy.set(shown)
       mark('lost-why-after')
       mark('error-before')
-      this.error.set(LOST_TEXT[why] ? tr(LOST_TEXT[why]) : plain ? tr('lostNetwork') : tr('lostReason', { reason }))
+      this.error.set(ours ? tr('reconnecting') : LOST_TEXT[shown] ? tr(LOST_TEXT[shown]) : plain ? tr('lostNetwork') : tr('lostReason', { reason }))
       mark('error-after')
       if (this.retrying) { returned('retry-pending'); return }
       // Back off like the desktop's 1 s retry, capped so a phone in a tunnel doesn't spin.

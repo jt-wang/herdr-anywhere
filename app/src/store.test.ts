@@ -1,5 +1,5 @@
 import { expect, test } from 'nsh/test'
-import { Store } from './store.ts'
+import { STUCK_MS, Store } from './store.ts'
 import { t as tr } from './strings/index.ts'
 import { FakeCore, settle } from './testing/fakecore.ts'
 import { panes, terminalOf } from './model/layout.ts'
@@ -303,8 +303,9 @@ test("a computer that refuses at once has Herdr's companion stopped; one that ne
   let mode: 'refuse' | 'silent' = 'refuse'
   const pipe = () => {
     const c = new FakeCore()
-    // Refused: the socket closes at once. Silent: it closes after the connect times out.
-    c.send = () => { if (mode === 'silent') now += 20_000; c.drop('network') }
+    // Refused: the socket closes at once. Silent: it closes after the connect times out (here before STUCK_MS, after
+    // which the banner says what may be in the way instead: the stuck tests below).
+    c.send = () => { if (mode === 'silent') now += 10_000; c.drop('network') }
     return c
   }
   const timers: (() => void)[] = []
@@ -322,15 +323,97 @@ test("a computer that refuses at once has Herdr's companion stopped; one that ne
   expect(store.error.get()).toBe("The computer doesn't answer: it may be asleep, off, or on another network. Trying again…")
 })
 
+// A line down STUCK_MS for no telling reason (no answer, unreachable, a first try that never ends, as on a plane's
+// Wi-Fi before signing in) says what may be in the way, in the same state the banner reads (lostWhy).
+function stuckRig(pipe: () => FakeCore) {
+  const clock = { now: 1_000_000 }
+  const intervals: { f: () => void; ms: number; on: boolean }[] = []
+  const timers: (() => void)[] = []
+  const store = new Store({ pipe, now: () => clock.now,
+    setInterval: ((f: () => void, ms: number) => intervals.push({ f, ms, on: true }) - 1) as any,
+    clearInterval: ((i: number) => { if (intervals[i]) intervals[i].on = false }) as any,
+    setTimeout: ((f: () => void) => { timers.push(f); return 0 }) as any })
+  const tick = () => { for (const i of intervals) if (i.on && i.ms === STUCK_MS) i.f() }
+  return { store, clock, timers, tick }
+}
+const STUCK_TEXT = "Still can't reach your computer"
+
+test('a line that gets nowhere for STUCK_MS says what may be in the way, keeps it through tries that fail the same way, and Try again starts over', async () => {
+  const cores: FakeCore[] = []
+  let answer = false
+  const { store, clock, timers, tick } = stuckRig(() => { const c = new FakeCore(); c.mute = !answer; cores.push(c); return c })
+  void store.connect().catch(() => {})
+  await settle()
+  clock.now += STUCK_MS - 1
+  tick()
+  expect(store.conn.get()).toBe('connecting')
+  expect(store.lostWhy.get()).toBe('')
+  clock.now += 1
+  tick()
+  expect(store.lostWhy.get()).toBe('stuck')
+  expect(store.error.get()).toBe(STUCK_TEXT)
+  // The first try gives up as unreachable, then a retry is refused at once: still no telling reason, the hint stays.
+  cores[0].drop('network')
+  await settle(20)
+  expect(store.lostWhy.get()).toBe('stuck')
+  timers.shift()!()
+  await settle(20)
+  expect(cores.length).toBe(2)
+  // Try again ends the try still waiting and starts one at once; the hint comes back only if it too gets nowhere.
+  store.retryNow()
+  expect(store.lostWhy.get()).toBe('')
+  await settle(20)
+  timers.splice(0).forEach((f) => f())
+  await settle(20)
+  expect(cores.length).toBe(3)
+  expect(store.lostWhy.get()).not.toBe('stuck')
+  clock.now += STUCK_MS
+  tick()
+  expect(store.lostWhy.get()).toBe('stuck')
+  // The line back: no hint, and a later drop says its own reason until STUCK_MS have passed again.
+  answer = true
+  store.retryNow()
+  await settle(20)
+  timers.splice(0).forEach((f) => f())
+  await settle(40)
+  expect(store.conn.get()).toBe('ready')
+  expect(store.lostWhy.get()).toBe('')
+  cores.at(-1)!.drop('network')
+  await settle(20)
+  expect(store.lostWhy.get()).toBe('network')
+})
+
+test('a reason that already says what to do keeps its words past STUCK_MS, and coming back to the app counts anew', async () => {
+  const { store, clock, timers, tick } = stuckRig(() => { const c = new FakeCore(); c.send = () => c.drop('network'); return c })
+  void store.connect().catch(() => {})
+  await settle(20)
+  expect(store.lostWhy.get()).toBe('refused')
+  clock.now += STUCK_MS + 1
+  tick()
+  expect(store.lostWhy.get()).toBe('refused')
+  // Silent from here: unreachable, which the hint does stand in for, but only STUCK_MS after the app came back.
+  const silent = stuckRig(() => { const c = new FakeCore(); c.mute = true; return c })
+  void silent.store.connect().catch(() => {})
+  await settle()
+  silent.clock.now += STUCK_MS - 1000
+  silent.store.appActive = false
+  silent.store.appActive = true
+  silent.clock.now += 1000
+  silent.tick()
+  expect(silent.store.lostWhy.get()).toBe('')
+  void timers
+})
+
 test("a retry that the tunnel leaves unanswered keeps saying so: the failed retry doesn't turn it into 'asleep or away'", async () => {
-  // As measured over a real tunnel to a stopped Companion: each retry's socket ends unanswered after the tunnel's 10 s.
+  // Over a real tunnel to a stopped Companion each retry's socket ends unanswered after the tunnel's 10 s; 5 s here, so
+  // three retries stay within STUCK_MS, after which the stuck hint takes over (tested below).
   let now = 1_000_000
   let mode: 'up' | 'silent' = 'up'
   const core = new FakeCore()
   const pipe = () => {
     if (mode === 'up') return core
     const c = new FakeCore()
-    c.send = () => { now += 10_000; c.drop('no-answer') }
+    c.send = () => { now += 5_000; c.drop('no-answer') }
     return c
   }
   const timers: (() => void)[] = []

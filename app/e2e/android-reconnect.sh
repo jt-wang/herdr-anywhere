@@ -98,6 +98,15 @@ shot() {
   echo "  $1: $(tr '\n' '|' < "$out/$1.txt" | cut -c1-300)"
 }
 must() { [ -z "$expect_new" ] && return 0; screen_has "$1" || { echo "FAIL: $2 (no \"$1\" on screen)"; exit 1; }; }
+# Down a while for no telling reason, the banner offers Try again and Other options; what to run and Pair again are in
+# the sheet Other options opens (kit.tsx StuckSheet). Opens it when the banner has it, and shoots it as $1.
+options() {
+  screen_has 'resource-id="conn-options"' || return 0
+  tap conn-options
+  wait_for 'resource-id="stuck-sheet"' 10 || { echo "FAIL: Other options opened no sheet"; exit 1; }
+  sleep 1
+  shot "$1"
+}
 
 serve 1
 "$adb" shell am start -W -n "$id/.MainActivity" >/dev/null
@@ -113,8 +122,10 @@ for _ in $(seq 1 60); do dump | grep -q 'resource-id="conn-banner"' && break; sl
 sleep 20
 echo "  banner after $(($(date +%s) - stopped)) s"
 shot 1-companion-stopped
+options 1a-options
 must 'herdr-anywhere start' "with the companion stopped the app doesn't say what to run"
 must 'resource-id="pair-again"' "with the companion stopped the app offers no Pair again"
+screen_has 'resource-id="stuck-close"' && tap stuck-close
 serve 2
 wait_for acme-api 90 || { echo "FAIL: the companion back on the same state, the app did not connect by itself within 90 s"; exit 1; }
 dump | grep -q 'resource-id="conn-banner"' && sleep 5
@@ -131,6 +142,7 @@ grep -q "tailcat: revoked phone" "$work/serve.log" || { echo "FAIL: the phone is
 for _ in $(seq 1 60); do dump | grep -qE 'resource-id="(conn-banner|pair-link)"' && break; sleep 1; done
 sleep 20
 shot 2-phone-removed
+options 2a-options
 must 'herdr-anywhere start' "with the phone removed the app doesn't say what to run"
 must 'resource-id="pair-again"' "with the phone removed the app offers no Pair again"
 [ -z "$expect_new" ] && { echo "DONE (screenshots only): $out"; exit 0; }

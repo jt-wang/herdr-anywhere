@@ -3,8 +3,9 @@
 // these (nsh.json): sidebar = chrome (bars), sidebar-primary = canvas (behind cards), sidebar-accent = hover,
 // sidebar-foreground = dim text, accent = selected, secondary = raised; chart-1..4 = working, blocked, done,
 // idle; chart-5 = herdr's accent.
-import { cleanup, colorScheme, Image, openUrl, Scroll, signal, Text, View, type Accessor } from 'nsh'
-import type { Conn, Store, ConnSubscriberSite } from '../store.ts'
+import { cleanup, Clipboard, colorScheme, Image, openUrl, Scroll, signal, Text, View, type Accessor } from 'nsh'
+import { Sheet } from 'nsh/base'
+import { SIGN_IN_CHECK_URL, type Conn, type Store, type ConnSubscriberSite } from '../store.ts'
 import type { Shown } from '../model/model.ts'
 import { duration } from '../model/agents.ts'
 import { PROGRAM_ICONS as ICONS } from '../data/icons.ts'
@@ -33,6 +34,8 @@ export function useSignal<T>(s: { get(): T; sub(f: (v: T) => void, site?: ConnSu
  *  until a setting changes, so it is not connected, not reconnecting. */
 export function connStatus(c: Conn, why: string): { word: string; dot: string } {
   return c === 'ready' ? { word: t('connected'), dot: 'bg-chart-3' }
+    // Stuck (store.ts STUCK_MS): the banner says it can't reach the computer, so this says not connected, still trying.
+    : (c === 'connecting' || c === 'reconnecting') && why === 'stuck' ? { word: t('notConnectedRetrying'), dot: 'bg-destructive' }
     : c === 'connecting' ? { word: t('connecting'), dot: 'bg-muted-foreground' }
     : c === 'reconnecting' && why !== 'no-route' ? { word: t('reconnecting'), dot: 'bg-muted-foreground' }
     : { word: t('notConnected'), dot: 'bg-destructive' }
@@ -51,7 +54,10 @@ export function ConnBanner(props: { store: Store }) {
   // (pair --url) gives no command: the address the phone uses, to start it there as it was set up.
   const toDo = () => why() === 'no-answer' || why() === 'refused'
   const atAddress = () => (why() === 'refused' && !s.restart?.command ? s.restart?.address ?? '' : '')
-  const connecting = () => { rev(); return s.conn.get() === 'connecting' }
+  // Down a while for no telling reason (store.ts STUCK_MS): what may be in the way, and what to do, over any first try.
+  const stuck = () => why() === 'stuck'
+  const options = signal(false)
+  const connecting = () => { rev(); return s.conn.get() === 'connecting' && !stuck() }
   const down = () => { rev(); const c = s.conn.get(); return c === 'connecting' || c === 'reconnecting' || c === 'failed' }
   const age = () => { rev(); tick(); const ms = s.staleFor(); return ms === undefined || ms < 60000 ? '' : t('lastUpdated', { age: duration(ms) }) }
   return (
@@ -85,10 +91,77 @@ export function ConnBanner(props: { store: Store }) {
               </View>
             </View>
           </If>
+          {/* One line for the likeliest cause; the others, each with what to do, are in the sheet. */}
+          <If when={stuck()}>
+            <Text class="text-[12.5px] text-muted-foreground">{t('stuckLikely')}</Text>
+            <View class="mt-1.5 flex-row gap-2">
+              <View role="button" testID="conn-retry" onPress={() => s.retryNow()} class="rounded-(--radius) bg-primary px-3 py-1 active:opacity-80">
+                <Text class="text-[12.5px] font-medium text-primary-foreground">{t('tryAgain')}</Text>
+              </View>
+              <BannerButton testID="conn-options" label={t('stuckOptions')} onPress={() => options.set(true)} />
+            </View>
+          </If>
           <If when={age()}><Text class="text-[11.5px] text-sidebar-foreground">{age()}</Text></If>
         </View>
       </View>
+      <StuckSheet store={s} open={() => options() && stuck()} close={() => options.set(false)} />
     </If>
+  )
+}
+
+/** The stuck banner's Other options: each thing that may be in the way, with what to do about it. */
+function StuckSheet(props: { store: Store; open: () => boolean; close: () => void }) {
+  const s = props.store
+  const then = (f?: () => void) => () => { props.close(); f?.() }
+  const copy = () => void Clipboard.writeText(s.restart?.command ?? '').then(() => s.toast({ title: t('copied'), level: 'info' }), () => {})
+  return (
+    <Sheet open={props.open()} side="bottom" onOpenChange={(o) => { if (!o) props.close() }}
+      popupClass={`${PANEL} px-4 pt-3 pb-[env(safe-area-inset-bottom)]`} backdropClass={PANEL_BACKDROP}>
+      <View testID="stuck-sheet" class="gap-3 pb-2">
+        <Text class="text-[15px] font-semibold text-foreground">{t('stuckSheetTitle')}</Text>
+        <StuckCause testID="stuck-network" title={t('stuckWhyNetwork')} how={t('stuckWhyNetworkHow')}>
+          <BannerButton testID="conn-sign-in" label={t('checkSignIn')} onPress={then(() => void openUrl(SIGN_IN_CHECK_URL).catch(() => {}))} />
+        </StuckCause>
+        <StuckCause testID="stuck-companion" title={t('stuckWhyCompanion')}
+          how={s.restart?.command ? t('stuckWhyCompanionHow') : t('stuckWhyCompanionAt', { address: s.restart?.address ?? '' })}>
+          <If when={s.restart?.command}>
+            <View class="flex-row items-center gap-2">
+              <Text selectable testID="conn-command" class="flex-1 text-[12.5px] font-mono text-foreground">{s.restart?.command}</Text>
+              <BannerButton testID="conn-copy" label={t('copyPath')} onPress={copy} />
+            </View>
+          </If>
+        </StuckCause>
+        <If when={s.openConnection}>
+          <StuckCause testID="stuck-route" title={t('stuckWhyRoute')} how={t('stuckWhyRouteHow')}>
+            <BannerButton testID="conn-open-connection" label={t('connection')} onPress={then(s.openConnection)} />
+          </StuckCause>
+        </If>
+        <If when={s.pairAgain}>
+          <StuckCause testID="stuck-keys" title={t('stuckWhyKeys')} how={t('stuckWhyKeysHow')}>
+            <BannerButton testID="pair-again" label={t('pairAgain')} onPress={then(s.pairAgain)} />
+          </StuckCause>
+        </If>
+        <Button label={t('close')} testID="stuck-close" kind="plain" onPress={props.close} />
+      </View>
+    </Sheet>
+  )
+}
+
+function StuckCause(props: { testID: string; title: string; how: string; children?: any }) {
+  return (
+    <View testID={props.testID} class="gap-1 border-t border-border pt-3">
+      <Text class="text-[14px] font-medium text-foreground">{props.title}</Text>
+      <Text class="text-[12.5px] text-muted-foreground">{props.how}</Text>
+      <View class="flex-row">{props.children}</View>
+    </View>
+  )
+}
+
+function BannerButton(props: { testID: string; label: string; onPress: () => void }) {
+  return (
+    <View role="button" testID={props.testID} onPress={props.onPress} class="rounded-(--radius) border border-input px-2.5 py-1 active:bg-accent">
+      <Text class="text-[12.5px] font-medium text-foreground">{props.label}</Text>
+    </View>
   )
 }
 
