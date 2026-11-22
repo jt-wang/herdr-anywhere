@@ -251,6 +251,43 @@ test('through TailPocket, a socket that closes before the computer answered clos
   expect(reasons).toEqual(['no-answer', 'network', 'unpaired'])
 })
 
+// TailPocket v0.3.4: why its last try failed is read from the tunnel's handle before that handle closes (it can't be
+// asked after), kept until a connection is answered, and never unpairs: anyone on the network can cause one.
+test('through TailPocket, an unanswered socket keeps why the last try failed, read before the tunnel closes', async () => {
+  const log: string[] = []
+  const answers: unknown[] = [{ reason: 'refused' }, { reason: 'relay-down' }, { reason: 'something-new' }]
+  const base = fakeTunnel().t
+  let port = 0
+  const t: Tunnel = {
+    ...base,
+    async connect() {
+      const p = ++port
+      return {
+        baseUrl: `http://127.0.0.1:${p}`, close: () => { log.push(`close ${p}`) },
+        lastFailure: async () => { await settle(); log.push(`read ${p}`); return answers.shift() as any },
+      }
+    },
+  }
+  const made: any[] = []
+  const socket = () => { const pipe: any = { send() {}, close() {} }; made.push(pipe); return pipe }
+  const l = new Linker({ load: async () => null, save() {}, remove() {}, socket: socket as any, tunnel: t })
+  l.set(await pairThrough(t, INVITE, 'iPhone'))
+  const unanswered = async (i: number) => { l.pipe(); await settle(); made[i].onClose('network'); await settle(); await settle() }
+  await unanswered(0)
+  expect(l.failure.get()).toBe('refused')
+  expect(log).toEqual(['read 1', 'close 1'])
+  await unanswered(1)
+  expect(l.failure.get()).toBe('relay-down')
+  // A reason this app doesn't know says nothing.
+  await unanswered(2)
+  expect(l.failure.get()).toBe('')
+  l.failure.set('refused')
+  l.pipe(); await settle()
+  made[3].onBytes(new Uint8Array([1]))
+  expect(l.failure.get()).toBe('')
+  expect(l.link.get()?.via).toBe('tailpocket')
+})
+
 test('a tunnel that cannot open closes the pipe, so the store retries; forgetting the computer forgets its TailPocket link', async () => {
   const { t, log } = fakeTunnel({ connectFails: 1 })
   const l = new Linker({ load: async () => null, save() {}, remove() {}, socket: (() => ({ send() {}, close() {} })) as any, tunnel: t })
@@ -410,6 +447,13 @@ test('the chat calls send the token and the address; an older companion without 
   let threw = false
   await chatApi(linker, (async () => { throw new Error('down') }) as any).get('t1').catch(() => { threw = true })
   expect(threw).toBe(true)
+})
+
+test('a tokenless setup upgrade refusal is a visible failure, not another edited-file conflict', async () => {
+  const linker = new Linker({ load: async () => null, save() {}, remove() {} })
+  linker.set({ url: 'http://192.0.2.10:7681', token: 'tk', device: 'd', name: 'studio', enc: 'bin' })
+  const api = chatApi(linker, reply(426, { error: 'upgrade-required', message: 'Update the phone app.' }) as any)
+  for (const on of [true, false]) expect(await api.setSetup('pi', on, true)).toEqual({ result: 'failed', setup: undefined })
 })
 
 // The tap and the underline go only to what is a picture on that computer: it says so for many paths at once

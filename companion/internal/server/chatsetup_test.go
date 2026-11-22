@@ -53,7 +53,7 @@ func TestChatSetupInstallAndRemove(t *testing.T) {
 		t.Fatalf("list: %d %v", code, b)
 	}
 	one := list[0].(map[string]any)
-	if one["agent"] != "pi" || one["name"] != "Pi" || one["state"] != "absent" || one["file"] != file || one["reload"] != "/reload" || one["version"] != float64(1) {
+	if one["agent"] != "pi" || one["name"] != "Pi" || one["state"] != "absent" || one["file"] != file || one["reload"] != "/reload" || one["version"] != float64(2) {
 		t.Fatalf("pi: %v", one)
 	}
 	if code, b := setupReq(t, f, token, "PUT", "/api/chat-setups/pi"); code != 200 || b["state"] != "installed" {
@@ -84,8 +84,159 @@ func TestChatSetupChangedFileAsksFirst(t *testing.T) {
 	if b, _ := os.ReadFile(file); string(b) != "// mine\n" {
 		t.Fatalf("touched: %q", b)
 	}
-	if code, b := setupReq(t, f, token, "PUT", "/api/chat-setups/pi?force=1"); code != 200 || b["state"] != "installed" {
+	_, info := setupReq(t, f, token, "GET", "/api/chat-setups")
+	confirmation := info["setups"].([]any)[0].(map[string]any)["confirmation"].(string)
+	if code, b := setupReq(t, f, token, "PUT", "/api/chat-setups/pi?force=1&confirmation="+confirmation); code != 200 || b["state"] != "installed" {
 		t.Fatalf("forced: %d %v", code, b)
+	}
+}
+
+func TestOMPChangedProfilesRequireExactConfirmation(t *testing.T) {
+	for _, method := range []string{"PUT", "DELETE"} {
+		t.Run(method, func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			t.Setenv("USERPROFILE", home)
+			for _, key := range []string{"PI_CONFIG_DIR", "PI_CODING_AGENT_DIR", "OMP_PROFILE", "PI_PROFILE", "XDG_DATA_HOME"} {
+				t.Setenv(key, "")
+			}
+			os.MkdirAll(filepath.Join(home, ".omp", "agent"), 0o755)
+			for _, name := range []string{"blue", "green"} {
+				os.MkdirAll(filepath.Join(home, ".omp", "profiles", name, "agent"), 0o755)
+			}
+			s := pi.OMPSetup("/sample/hc")
+			if err := s.Install(false); err != nil {
+				t.Fatal(err)
+			}
+			var files []string
+			for _, name := range []string{"blue", "green"} {
+				file := filepath.Join(home, ".omp", "profiles", name, "agent", "extensions", "herdr-anywhere-omp.ts")
+				if err := os.WriteFile(file, []byte("// edited\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				files = append(files, file)
+			}
+			f := newFixture(t, func(c *Config) { c.ChatSetups = map[string]chat.Setup{"omp": s} })
+			_, token := f.pair(t)
+			path := "/api/chat-setups/omp"
+			code, info := setupReq(t, f, token, method, path)
+			if code != 409 || len(info["changedFiles"].([]any)) != 2 {
+				t.Fatalf("prompt: %d %v", code, info)
+			}
+			for i, name := range []string{"blue", "green"} {
+				want := filepath.Join("~", ".omp", "profiles", name, "agent", "extensions", "herdr-anywhere-omp.ts")
+				if info["changedFiles"].([]any)[i] != want {
+					t.Fatalf("missing disclosed path: %v", info)
+				}
+			}
+			old := info["confirmation"].(string)
+			if code, _ := setupReq(t, f, token, method, path+"?force=1"); code != http.StatusUpgradeRequired {
+				t.Fatal("unscoped force accepted")
+			}
+			if err := os.WriteFile(files[1], []byte("// new edits\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if code, _ := setupReq(t, f, token, method, path+"?force=1&confirmation="+old); code != 409 {
+				t.Fatal("stale contents accepted")
+			}
+			third := filepath.Join(home, ".omp", "profiles", "red", "agent", "extensions", "herdr-anywhere-omp.ts")
+			os.MkdirAll(filepath.Dir(third), 0o755)
+			os.WriteFile(third, []byte("// red edits\n"), 0o600)
+			code, info = setupReq(t, f, token, method, path+"?force=1&confirmation="+old)
+			if code != 409 || len(info["changedFiles"].([]any)) != 3 {
+				t.Fatalf("new conflict not reprompted: %d %v", code, info)
+			}
+			for _, file := range append(files, third) {
+				if b, err := os.ReadFile(file); err != nil || len(b) > 30 {
+					t.Fatalf("edited file changed: %s %v", file, err)
+				}
+			}
+			code, info = setupReq(t, f, token, method, path+"?force=1&confirmation="+info["confirmation"].(string))
+			want := "installed"
+			if method == "DELETE" {
+				want = "absent"
+			}
+			if code != 200 || info["state"] != want {
+				t.Fatalf("confirmed: %d %v", code, info)
+			}
+		})
+	}
+}
+
+func TestChatSetupTokenlessForceRequiresUpgrade(t *testing.T) {
+	for _, method := range []string{"PUT", "DELETE"} {
+		t.Run(method, func(t *testing.T) {
+			f, token, file := setupFixture(t, true)
+			if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			const edited = "// edited\n"
+			if err := os.WriteFile(file, []byte(edited), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			path := "/api/chat-setups/pi"
+			code, info := setupReq(t, f, token, method, path)
+			if code != http.StatusConflict || info["confirmation"] == "" {
+				t.Fatalf("prompt: %d %v", code, info)
+			}
+			code, failure := setupReq(t, f, token, method, path+"?force=1")
+			if code != http.StatusUpgradeRequired || failure["error"] != "upgrade-required" || failure["message"] == "" {
+				t.Fatalf("legacy force: %d %v", code, failure)
+			}
+			if b, err := os.ReadFile(file); err != nil || string(b) != edited {
+				t.Fatalf("touched edited file: %q %v", b, err)
+			}
+			code, info = setupReq(t, f, token, method, path+"?force=1&confirmation="+info["confirmation"].(string))
+			want := "installed"
+			if method == "DELETE" {
+				want = "absent"
+			}
+			if code != http.StatusOK || info["state"] != want {
+				t.Fatalf("token confirmation: %d %v", code, info)
+			}
+		})
+	}
+}
+
+func TestChatSetupClearedEditsUseNormalOperation(t *testing.T) {
+	for _, method := range []string{"PUT", "DELETE"} {
+		for _, cleared := range []string{"restored", "deleted"} {
+			t.Run(method+"/"+cleared, func(t *testing.T) {
+				f, token, file := setupFixture(t, true)
+				path := "/api/chat-setups/pi"
+				if code, info := setupReq(t, f, token, "PUT", path); code != 200 {
+					t.Fatalf("initial install: %d %v", code, info)
+				}
+				original, err := os.ReadFile(file)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(file, []byte("// edited\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				code, info := setupReq(t, f, token, method, path)
+				if code != 409 {
+					t.Fatalf("prompt: %d %v", code, info)
+				}
+				confirmation := info["confirmation"].(string)
+				if cleared == "restored" {
+					err = os.WriteFile(file, original, 0o600)
+				} else {
+					err = os.Remove(file)
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				code, info = setupReq(t, f, token, method, path+"?force=1&confirmation="+confirmation)
+				want := "installed"
+				if method == "DELETE" {
+					want = "absent"
+				}
+				if code != 200 || info["state"] != want {
+					t.Fatalf("cleared confirmation: %d %v", code, info)
+				}
+			})
+		}
 	}
 }
 

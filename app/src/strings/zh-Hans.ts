@@ -2,6 +2,8 @@
 import type { Table } from './index.ts'
 
 export const zhHans: Table = {
+  chatFirstMessage: '发送第一条消息后即可看到聊天。',
+  setupChangedFilesBody: '以下设置文件已被编辑，目前未作更改。确认后将替换或删除列出的所有文件：\n{files}',
   diagnosticTitle: '设备本地诊断', diagnosticRecord: '记录诊断日志',
   diagnosticOnState: '开', diagnosticOffState: '关', diagnosticUnsupportedState: '不支持',
   diagnosticInteraction: '交互／生命周期', diagnosticPerformance: '性能', diagnosticNetwork: '网络', diagnosticResources: '资源／电池',
@@ -27,6 +29,8 @@ export const zhHans: Table = {
   lostSlower: '正在切换到较慢的连接…',
   lostStuck: "仍然连不上电脑",
   stuckLikely: "网络可能拦截了连接。",
+  stuckLikelyCompanion: "电脑上可能没在运行 Companion。",
+  stuckLikelyRelay: "你的中继可能没有转发连接。",
   stuckOptions: "其他办法",
   stuckSheetTitle: "可能的原因",
   stuckWhyNetwork: "这个网络需要先登录",
@@ -157,7 +161,7 @@ export const zhHans: Table = {
   // A picture a terminal shows (ui/picture-sheet.tsx).
   copyPath: "复制", pictureHold: "长按图片可复制图片", pictureOpen: "打开图片", pictureCopied: "已复制图片", pictureCantCopy: "没能复制图片", pictureLoading: "正在读取图片…", pictureMissing: "电脑上没有这个文件。", pictureOutside: "只显示主文件夹、这个终端所在文件夹和临时文件夹里的图片。", pictureNotImage: "这个文件不是图片。", pictureTooBig: "这张图片超过 {mb} MB，太大了，不显示。", pictureTooBigNoLimit: "这张图片太大了，不显示。", pictureRemote: "这台机器上的图片读不了。", pictureUnreachable: "连不上这个终端所在的机器。", pictureCantRead: "电脑读不了这张图片。",
   // Chat setups: the small file some agents' chats need (ui/chat.tsx, ui/settings.tsx).
-  chatSection: "聊天", setupAskTitle: "在手机上用 {name} 的聊天？", setupAskBody: "要在电脑上 {name} 的文件夹里放一个小文件，它告诉电脑每个 {name} 在用哪段对话。", setupFactOne: "只放这一个文件，不改 {name} 的其他设置", setupFactNet: "不联网", setupFactRemove: "随时可在设置里移除，不留东西", setupInstall: "安装", setupLater: "以后再说", setupNeededTitle: "{name} 的聊天要先在电脑上放一个小文件", setupNeededBody: "没有它，手机认不出这个 {name} 在用哪段对话。其他 agent 的聊天照常能用。", setupReload: "装好了。这个 {name} 是之前开的，在它里面输入 {reload} 或重开一次后就能显示。", setupRestart: "装好了。这个 {name} 是之前开的，重开一次后就能显示。", setupTypeReload: "替我输入 {reload}", setupChangedTitle: "这个文件被改过", setupChangedBody: "{file} 跟 Herdr Anywhere 放的不一样，可能有人改过。没有动它。", setupReplace: "换成 Herdr Anywhere 的", setupKeep: "留着我的", setupFailed: "没能放好文件", setupNoAgent: "这台电脑上没有 {name}。", setupRow: "{name} 聊天", setupOn: "已装", setupOff: "没装：手机上看不了 {name} 的聊天", setupChanged: "文件被人改过", setupRemove: "移除", setupRemoveTitle: "移除 {name} 的小文件？", setupRemoveBody: "手机上就看不了 {name} 的聊天了，其他 agent 不受影响。",
+  chatSection: "聊天", setupAskTitle: "在手机上用 {name} 的聊天？", setupAskBody: "要在电脑上 {name} 的每个配置文件夹里放一个小文件，它告诉电脑每个 {name} 在用哪段对话。", setupFactOne: "只放这个设置文件，不改 {name} 的其他设置", setupFactNet: "不联网", setupFactRemove: "随时可在设置里移除，不留东西", setupInstall: "安装", setupLater: "以后再说", setupNeededTitle: "{name} 的聊天要先在电脑上放一个小文件", setupNeededBody: "没有它，手机认不出这个 {name} 在用哪段对话。其他 agent 的聊天照常能用。", setupReload: "装好了。这个 {name} 是之前开的，在它里面输入 {reload} 或重开一次后就能显示。", setupRestart: "装好了。这个 {name} 是之前开的，重开一次后就能显示。", setupTypeReload: "替我输入 {reload}", setupChangedTitle: "这个文件被改过", setupChangedBody: "{file} 跟 Herdr Anywhere 放的不一样，可能有人改过。没有动它。", setupReplace: "换成 Herdr Anywhere 的", setupKeep: "留着我的", setupFailed: "没能放好文件", setupNoAgent: "这台电脑上没有 {name}。", setupRow: "{name} 聊天", setupOn: "已装", setupOff: "没装：手机上看不了 {name} 的聊天", setupChanged: "文件被人改过", setupRemove: "移除", setupRemoveTitle: "移除 {name} 的小文件？", setupRemoveBody: "手机上就看不了 {name} 的聊天了，其他 agent 不受影响。",
   // The decision card in the chat view (ui/ask-card.tsx).
   askAsking: "{agent} 在问", askQuestionOf: "第 {n} 题，共 {m} 题", askPickAny: "可多选", askRecommended: "推荐", askOwn: "自己写一个答案", askSkip: "先不选，在对话里聊", askNext: "下一步：确认答案", askSent: "已发给 {agent}，等它往下走…", askRun: "{agent} 要运行命令", askEdit: "{agent} 要改文件", askPermission: "{agent} 要你同意", askAfterNo: "选了之后，在下面的输入框告诉它要怎么做", askReview: "确认答案", askStuck: "终端画面没变，去终端看看是怎么回事。",
 }

@@ -6,6 +6,7 @@ import { readMenu } from './menu.ts'
 import { LONG, MULTI, ON_SUBMIT, OWN_TYPED, PLAN, Q1, QONE, REVIEW, TOUCH } from '../testing/screens/claude-2.1.325.ts'
 import * as CX from '../testing/screens/codex-0.167.1.ts'
 import * as OC from '../testing/screens/opencode-2.2.0.ts'
+import * as AG from '../testing/screens/agy-1.5.14.ts'
 import type { ChatAsk } from './chat.ts'
 
 // The computer's answer for the call on screen in Q1, MULTI and REVIEW (companion/internal/chat/claude/testdata).
@@ -149,6 +150,13 @@ test("OpenCode's questions: the record's words; its own answer is its row's digi
   expect(ownSteps(m, 'Medium too')).toEqual([{ keys: ['3'] }, { text: 'Medium too' }])
 })
 
+test("OpenCode's Write-in choice remains a button, separate from its own answer", () => {
+  const screen = OC.SINGLE.replace('2. Orange', '2. Write-in')
+  const c = opencode(screen, { kind: 'question' })!
+  expect(c.rows.find((r) => r.label === 'Write-in')?.steps).toEqual([{ keys: ['2'] }])
+  expect(ownSteps(c, 'Custom answer')).toEqual([{ keys: ['4'] }, { text: 'Custom answer' }])
+})
+
 test("OpenCode's Submit page: the answers, one button", () => {
   const c = opencode(OC.TWO_SUBMIT, { kind: 'question' })!
   expect([c.kind, c.unnumbered, c.review, c.rows.map((r) => [r.label, r.steps])]).toEqual(['review', true,
@@ -165,4 +173,52 @@ test('a typed own answer in a multi-select question: its row by place, with its 
   expect(c.next).toEqual([{ keys: ['enter'] }])
   const typed = card(OWN_TYPED, RECORD)!
   expect([typed.own, typed.next]).toEqual([{ n: 4, text: 'Footer row', checked: false }, [{ keys: ['tab', 'enter'] }]])
+})
+
+// The Antigravity CLI 1.5.14 (model/menu.ts has its screens): the call as its record has it
+// (companion/internal/chat/antigravity/testdata/antigravity/1.5.14/ask), its report as herdr-core has it.
+const AGY: ChatAsk = {
+  text: 'Which color should the button be?', options: ['(Recommended) Blue', 'Red'],
+  questions: [
+    { text: 'Which color should the button be?', options: [{ label: 'Blue', recommended: true }, { label: 'Red' }] },
+    { text: 'Which sizes should it come in?', multi: true, options: [{ label: 'Small' }, { label: 'Large' }] },
+  ],
+}
+const agy = (screen: string, msg: string, kind = 'question', ask?: ChatAsk) =>
+  askCard({ state: 'blocked', app: 'antigravity', kind, msg }, readMenu('antigravity', screen), ask)
+
+test("agy's questions: the record's words and its recommendation, Write-in is my own answer (its digit, then the text)", () => {
+  const one = agy(AG.Q1_46, 'Which color should the button be?', 'question', AGY)!
+  expect([one.kind, one.index, one.count, one.multi]).toEqual(['question', 1, 2, false])
+  expect(rows(one)).toEqual([[1, 'Blue', '', true], [2, 'Red', '', false]])
+  expect(one.own?.n).toBe(3)
+  expect(ownSteps(one, 'Green please')).toEqual([{ keys: ['3'] }, { text: 'Green please' }])
+  expect(one.next).toBe(undefined)
+  // herdr-core's report still names the first question on the second: the screen says which is up.
+  const two = agy(AG.Q2_TICKED_50, 'Which color should the button be?', 'question', AGY)!
+  expect([two.index, two.multi, two.rows.map((r) => [r.label, r.checked])]).toEqual([2, true, [['Small', true], ['Large', false]]])
+  expect(two.next).toEqual([{ keys: ['enter'] }])
+  expect(ownSteps(two, 'Medium too')).toEqual([{ keys: ['3'] }, { text: 'Medium too' }])
+})
+
+test("agy's approvals: the command or the file, No asks for words after", () => {
+  const run = agy(AG.RUN_46, "Approve Bash: echo checking; echo 'one test failed' >&2; exit 3", 'permission')!
+  expect([run.kind, run.action, run.tool, run.what]).toEqual(['permission', 'run', 'Bash', "echo checking; echo 'one test failed' >&2; exit 3"])
+  expect(run.rows.map((r) => [r.n, !!r.afterNo, r.steps])).toEqual([[1, false, [{ keys: ['1'] }]], [2, false, [{ keys: ['2'] }]], [3, false, [{ keys: ['3'] }]], [4, true, [{ keys: ['4'] }]]])
+  const edit = agy(AG.EDIT_50, 'Approve Edit: Write: /work/acme/notes.txt', 'permission')!
+  expect([edit.action, edit.tool, edit.what, edit.rows.map((r) => r.label)]).toEqual(['edit', 'Edit', '/work/acme/notes.txt', ['Yes, accept this change', 'No, reject this change']])
+  const create = agy(AG.CREATE_46, 'Approve Edit: Write: /work/acme/hello.txt', 'permission')!
+  expect([create.action, create.what, create.rows.at(-1)?.afterNo]).toEqual(['edit', '/work/acme/hello.txt', true])
+})
+
+test("agy's plan review: Approve and Reject, by their letters, for the plan's file", () => {
+  const c = agy(AG.REVIEW_46, 'Approve plan', 'permission')!
+  expect([c.kind, c.unnumbered, c.what, c.question]).toEqual(['permission', true, 'implementation_plan.md', ''])
+  expect(c.rows.map((r) => [r.n, r.label, r.steps])).toEqual([[1, 'Approve', [{ keys: ['y'] }]], [2, 'Reject', [{ keys: ['n'] }]]])
+})
+
+test("a screen's label with the mark in another language still meets the record's", () => {
+  const screen = AG.Q1_46.replace('(Recommended) Blue', '（推荐）Blue')
+  const c = agy(screen, 'Which color should the button be?', 'question', AGY)!
+  expect(rows(c)).toEqual([[1, 'Blue', '', true], [2, 'Red', '', false]])
 })

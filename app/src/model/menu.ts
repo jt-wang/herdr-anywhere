@@ -37,7 +37,11 @@ export type Menu = {
   unnumbered?: boolean
 }
 
-const READERS: Record<string, (screen: string) => Menu | undefined> = { 'claude-code': readClaude, codex: readCodex, opencode: readOpenCode }
+const READERS: Record<string, (screen: string) => Menu | undefined> = { 'claude-code': readClaude, codex: readCodex, opencode: readOpenCode, antigravity: readAntigravity }
+
+export function optionCaption(option: Option, field: 'label' | 'full'): string {
+  return option.n === 0 ? option[field] : `${option.n}. ${option[field]}`
+}
 
 /** The options as the phone shows them: the highlighted one first, then the others in the menu's order. */
 export function shownOrder(m: Menu): Option[] {
@@ -249,4 +253,80 @@ function readOpenCode(screen: string): Menu | undefined {
   while (i >= 0 && !box[i].trim()) i--
   for (; i >= 0 && box[i].trim(); i--) said.unshift(box[i].trim())
   return { question: said.join(' '), options, multi: options.some((o) => o.checked !== undefined) }
+}
+
+// The Antigravity CLI 1.5.14, measured at 46 and 50 columns (src/testing/screens/agy-1.5.14.ts): a panel under a rule
+// ("Question", "Command", "Create file", "Pending edit"); "> " marks the highlighted option, and a wrapped line goes on
+// at the screen's edge. A question is headed "Question 1/2: …", ends with "Write-in..." (its digit opens "Your answer:",
+// then text and Enter), and a digit picks (on the last question it sends every answer); a multi-select one has "[x]"
+// boxes, a digit ticks one, and Enter goes on (on the last, sends them all). An approval asks under what it is for
+// ("Requesting permission for:" and the command, or the file's path over its diff); a digit acts at once, and its No
+// ends the turn, agy asking at its prompt what to do instead. A plan written for review waits for /artifact, whose
+// page approves it with y (agy carries it out) or rejects it with n.
+const AG_OPTION = /^(?:(> )| {2})(\d+)\.\s+(.*)$/
+const AG_ASK = /^(Run this command\?|Allow creation of this file\?|Accept this file edit\?)$/
+const AG_QUESTION = /^Question \d+\/\d+: /
+const AG_FOOT = /^\s*(↑\/↓ Navigate|esc to cancel|shift\+tab to auto-approve)/
+
+function readAntigravity(screen: string): Menu | undefined {
+  const lines = screen.split('\n').map((l) => l.replace(/\s+$/, ''))
+  const review = lines.findLastIndex((l) => /^Action required\b/.test(l))
+  if (review >= 0 && lines.slice(review).some((l) => /y\/n Approve\/reject/.test(l))) {
+    const items = lines.slice(review + 1, lines.findIndex((l, i) => i > review && /y\/n Approve\/reject/.test(l)))
+      .filter((l) => /^›\s*□/.test(l))
+    const name = items[0]?.replace(/^›\s*□\s*(new\s+)?/, '').replace(/\s{2,}.*$/, '').trim()
+    if (items.length !== 1 || !name) return undefined
+    const plain = (label: string, key: string): Option => ({ n: 0, label, full: label, lines: [label], selected: false, typed: false, keys: [key] })
+    return { question: '', multi: false, unnumbered: true, subject: name, options: [plain('Approve', 'y'), plain('Reject', 'n')] }
+  }
+  // The menu: from option 1 at or over the highlighted one, its lines up to the first blank one.
+  const cursor = lines.findLastIndex((l) => !!AG_OPTION.exec(l)?.[1])
+  if (cursor < 0) return undefined
+  let first = -1
+  for (let i = cursor; i >= 0 && lines[i].trim(); i--) if (AG_OPTION.exec(lines[i])?.[2] === '1') { first = i; break }
+  if (first < 0) return undefined
+  const options: Option[] = []
+  for (let i = first; i < lines.length && lines[i].trim() && !AG_FOOT.test(lines[i]); i++) {
+    const m = AG_OPTION.exec(lines[i])
+    if (m && Number(m[2]) === options.length + 1) {
+      const box = BOX.exec(m[3].trim())
+      const label = (box ? box[2] : m[3]).trim()
+      options.push({ n: Number(m[2]), label, full: label, lines: [label], selected: !!m[1], typed: false, keys: [m[2]], ...(box ? { checked: box[1] !== ' ' } : {}) })
+      continue
+    }
+    if (!options.length) return undefined
+    const o = options[options.length - 1]
+    o.lines.push(lines[i].trim())
+    o.label = o.full = joinLines(o.lines)
+  }
+  if (!options.length) return undefined
+  // What it asks: the line over the options (an approval), or the question's paragraph after "Question n/m: ".
+  let i = first - 1
+  while (i >= 0 && !lines[i].trim()) i--
+  const said: string[] = []
+  for (; i >= 0 && lines[i].trim() && !RULE.test(lines[i]); i--) said.unshift(lines[i].trim())
+  const over = lines[first - 1]?.trim() ?? ''
+  const asked = AG_ASK.test(over) ? over : said.join(' ')
+  if (AG_ASK.test(asked)) {
+    for (const o of options) o.typed = /^No\b/.test(o.label)
+    const panel = lines.slice(0, first)
+    const top = panel.findLastIndex((l) => RULE.test(l))
+    const body = panel.slice(top + 1)
+    if (asked === 'Run this command?') {
+      const from = body.findIndex((l) => l.trim() === 'Requesting permission for:')
+      const cmd: string[] = []
+      for (const l of from >= 0 ? body.slice(from + 1) : []) { if (!l.trim()) break; cmd.push(l.trim()) }
+      return { question: asked, options, multi: false, action: 'run', ...(cmd.length ? { subject: cmd.join(' ') } : {}) }
+    }
+    const file = body.find((l) => l.trim())?.trim().replace(/\s+\+\d*$/, '')
+    return { question: asked, options, multi: false, action: 'edit', ...(file ? { subject: file } : {}) }
+  }
+  if (!AG_QUESTION.test(asked)) return undefined
+  for (const o of options) o.typed = /^Write-in\.*$/.test(o.label)
+  return { question: asked.replace(AG_QUESTION, ''), options, multi: options.some((o) => o.checked !== undefined) }
+}
+
+/** agy's wrapped lines, joined: a line broken at a space goes on after one. */
+function joinLines(lines: string[]): string {
+  return lines.join(' ').replace(/\s+/g, ' ').trim()
 }

@@ -1,6 +1,6 @@
 // Package pi is Pi's reader, and the small file that lets it find Pi's conversation. Pi writes each conversation to
 // a .jsonl file under its folder's sessions/ (measured with Pi 1.4.0): a `session` line, then entries that
-// each name their parent, so a conversation can branch; the one Pi shows is the chain from the last entry back.
+// each name their parent, so a conversation can branch; the one Pi shows is the chain from its active leaf back.
 // Messages are user, assistant (text, thinking, toolCall) and toolResult.
 //
 // Which file a pane's Pi writes can't be told from outside: Pi keeps no file open and reports no conversation to
@@ -8,7 +8,6 @@
 package pi
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -25,15 +24,17 @@ import (
 type Reader struct {
 	Setup *Setup
 
-	mu    sync.Mutex
-	cache map[string]parsed
+	mu     sync.Mutex
+	cache  map[string]parsed
+	leaves map[string]runtimeLeaf
 }
 
 type parsed struct {
-	size  int64
-	mod   time.Time
-	ino   uint64
-	turns []chat.Turn
+	selection string
+	size      int64
+	mod       time.Time
+	ino       uint64
+	turns     []chat.Turn
 }
 
 var _ chat.PaneReader = (*Reader)(nil)
@@ -44,6 +45,12 @@ func (r *Reader) Find(pid int) (string, string, error) {
 }
 
 func (r *Reader) sessionDirs() []string {
+	if r.Setup.targets != nil {
+		return r.Setup.roots(false)
+	}
+	if len(r.Setup.SessionRoots) > 0 {
+		return r.Setup.SessionRoots
+	}
 	ds := []string{filepath.Join(r.Setup.Dir, "sessions")}
 	if d := os.Getenv("PI_CODING_AGENT_SESSION_DIR"); d != "" {
 		ds = append(ds, d)
@@ -52,12 +59,15 @@ func (r *Reader) sessionDirs() []string {
 }
 
 func (r *Reader) FindPane(p chat.Pane) (string, string, error) {
+	if r.Setup == nil {
+		return "", "", &chat.Miss{Reason: chat.NoMatch}
+	}
+	if st := r.Setup.State(); st == chat.Absent || st == chat.NoAgent {
+		return "", "", &chat.Miss{Reason: chat.SetupNeeded}
+	}
 	f, ok := p.Labeled()
 	if !ok {
-		if r.Setup == nil {
-			return "", "", &chat.Miss{Reason: chat.NoMatch}
-		}
-		if st := r.Setup.State(); st == chat.Absent || st == chat.NoAgent {
+		if r.Setup.missingTargets() {
 			return "", "", &chat.Miss{Reason: chat.SetupNeeded}
 		}
 		return "", "", &chat.Miss{Reason: chat.SetupNotLoaded}
@@ -72,20 +82,50 @@ func (r *Reader) FindPane(p chat.Pane) (string, string, error) {
 	if !inside || filepath.Ext(f) != ".jsonl" {
 		return "", "", &chat.Miss{Reason: chat.NoMatch}
 	}
-	if _, err := os.Stat(f); err != nil {
+	st, err := os.Stat(f)
+	if err != nil {
 		return "", "", &chat.Miss{Reason: chat.NoRecordYet}
 	}
-	return f, "", nil
+	if r.Setup.Agent() == "omp" && !r.containedSession(f) {
+		return "", "", &chat.Miss{Reason: chat.NoMatch}
+	}
+	path, err := selectedPath(f, p.Labels[leafLabel], chat.Inode(st))
+	if err == nil && p.Labels[leafLabel] != "" {
+		var expired bool
+		expired, err = r.expiredLeaf(f, p.Labels[leafLabel], st)
+		if expired {
+			path = f
+		}
+	}
+	return path, "", err
+}
+
+func (r *Reader) containedSession(file string) bool {
+	real, err := filepath.EvalSymlinks(file)
+	if err != nil {
+		return false
+	}
+	for _, root := range r.sessionDirs() {
+		if !strings.HasPrefix(file, filepath.Clean(root)+string(filepath.Separator)) {
+			continue
+		}
+		resolved, err := filepath.EvalSymlinks(root)
+		if err == nil && strings.HasPrefix(real, resolved+string(filepath.Separator)) {
+			return true
+		}
+	}
+	return false
 }
 
 // entry is one line of a conversation file.
 type entry struct {
-	Type      string          `json:"type"`
-	ID        string          `json:"id"`
-	ParentID  *string         `json:"parentId"`
-	Timestamp string          `json:"timestamp"`
-	Cwd       string          `json:"cwd"`
-	Message   json.RawMessage `json:"message"`
+	Type       string          `json:"type"`
+	ID         string          `json:"id"`
+	ParentID   *string         `json:"parentId"`
+	Timestamp  string          `json:"timestamp"`
+	Cwd        string          `json:"cwd"`
+	Message    json.RawMessage `json:"message"`
+	ActiveLeaf json.RawMessage `json:"activeLeafId"`
 }
 
 type part struct {
@@ -161,7 +201,7 @@ func isUser(raw []byte) bool {
 // branch reads a conversation file's end: its messages along the chain from the last entry back, and its folder. cut:
 // the chain goes on before the window.
 func branch(path string) (_ []msg, cwd string, cut bool, _ error) {
-	off, err := window(path)
+	off, err := window(recordPath(path))
 	if err != nil {
 		return nil, "", false, err
 	}
@@ -169,11 +209,60 @@ func branch(path string) (_ []msg, cwd string, cut bool, _ error) {
 	return ms, cwd, cut, err
 }
 
-func branchWindow(path string, off, end int64, head string) (_ []msg, cwd string, cut bool, parent string, _ error) {
+func branchWindow(path string, off, end int64, head string) ([]msg, string, bool, string, error) {
+	ms, cwd, cut, parent, err := branchWindowAt(path, off, end, head)
+	leaf, tail := snapshotOf(path)
+	if err == nil && len(ms) == 0 && !cut && off > 0 && head == "" && leaf != "" && tail != "~" {
+		st, statErr := os.Stat(recordPath(path))
+		if statErr != nil {
+			return nil, "", false, "", statErr
+		}
+		frozenEnd := end
+		if frozenEnd < 0 {
+			frozenEnd = st.Size()
+		}
+		tailEnd, findErr := entryEnd(recordPath(path), tail, frozenEnd)
+		if findErr == nil && tailEnd == frozenEnd && leaf != "~" {
+			selectedEnd, err := entryEnd(recordPath(path), leaf, frozenEnd)
+			if err != nil {
+				return nil, "", false, "", err
+			}
+			return branchWindowAt(path, max(selectedEnd-chat.MaxBack, 0), selectedEnd, leaf)
+		}
+	}
+	hasUser := false
+	for _, m := range ms {
+		hasUser = hasUser || m.m.Role == "user"
+	}
+	if err == nil && cut && !hasUser && off > 0 {
+		st, statErr := os.Stat(recordPath(path))
+		if statErr != nil {
+			return nil, "", false, "", statErr
+		}
+		if end < 0 {
+			end = st.Size()
+		}
+		floor := max(end-chat.MaxBack, 0)
+		if floor < off {
+			ms, cwd, cut, parent, err = branchWindowAt(path, floor, end, head)
+		}
+		if err == nil && cut && len(ms) == 0 && parent != "" {
+			selectedEnd, err := entryEnd(recordPath(path), parent, end)
+			if err != nil {
+				return nil, "", false, "", err
+			}
+			return branchWindowAt(path, max(selectedEnd-chat.MaxBack, 0), selectedEnd, parent)
+		}
+	}
+	return ms, cwd, cut, parent, err
+}
+
+func branchWindowAt(path string, off, end int64, head string) (_ []msg, cwd string, cut bool, parent string, _ error) {
+	leaf, tail := snapshotOf(path)
 	byID := map[string]entry{}
 	var last string
 	var rerr error
-	for raw := range chat.LinesUntil(path, off, end, &rerr) {
+	for raw := range chat.LinesUntil(recordPath(path), off, end, &rerr) {
 		var e entry
 		if json.Unmarshal(raw, &e) != nil {
 			return nil, "", false, "", chat.Formatf("a line that isn't JSON")
@@ -187,6 +276,22 @@ func branchWindow(path string, off, end int64, head string) (_ []msg, cwd string
 		}
 		byID[e.ID] = e
 		last = e.ID
+		if e.ActiveLeaf != nil {
+			var active *string
+			if json.Unmarshal(e.ActiveLeaf, &active) != nil {
+				return nil, "", false, "", chat.Formatf("activeLeafId")
+			}
+			last = ""
+			if active != nil {
+				last = *active
+			}
+		}
+		if e.ID == tail {
+			last = leaf
+			if leaf == "~" {
+				last = ""
+			}
+		}
 	}
 	if rerr != nil {
 		return nil, "", false, "", rerr
@@ -294,14 +399,15 @@ func toolStep(p part, result *message, cwd string) chat.Step {
 }
 
 func (r *Reader) Turns(path string) ([]chat.Turn, error) {
-	st, err := os.Stat(path)
+	st, err := os.Stat(recordPath(path))
 	if err != nil {
 		return nil, err
 	}
 	ino := chat.Inode(st)
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if c, ok := r.cache[path]; ok && c.size == st.Size() && c.mod.Equal(st.ModTime()) && c.ino == ino {
+	file := recordPath(path)
+	if c, ok := r.cache[file]; ok && c.selection == path && c.size == st.Size() && c.mod.Equal(st.ModTime()) && c.ino == ino {
 		return c.turns, nil
 	}
 	ts, err := parse(path)
@@ -311,7 +417,7 @@ func (r *Reader) Turns(path string) ([]chat.Turn, error) {
 	if r.cache == nil {
 		r.cache = map[string]parsed{}
 	}
-	r.cache[path] = parsed{size: st.Size(), mod: st.ModTime(), ino: ino, turns: ts}
+	r.cache[file] = parsed{selection: path, size: st.Size(), mod: st.ModTime(), ino: ino, turns: ts}
 	return ts, nil
 }
 
@@ -329,10 +435,19 @@ func parse(path string) ([]chat.Turn, error) {
 	return turns, nil
 }
 
-func (r *Reader) Before(path, first string) (string, error) { return chat.FileBefore(path, first) }
+func (r *Reader) Before(path, first string) (string, error) {
+	if first == "earlier" || first == "" {
+		return chat.FileBefore(recordPath(path), first)
+	}
+	end, err := entryEnd(recordPath(path), first, -1)
+	if err != nil {
+		return "", err
+	}
+	return chat.FileBeforeAt(recordPath(path), first, end)
+}
 
 func (r *Reader) History(path, before string) (chat.HistoryPage, error) {
-	return chat.FileBranchHistory(path, before, isUser, func(off, end int64, head string) ([]chat.Turn, string, error) {
+	return chat.FileBranchHistory(recordPath(path), before, isUser, func(off, end int64, head string) ([]chat.Turn, string, error) {
 		ms, cwd, cut, parent, err := branchWindow(path, off, end, head)
 		if err != nil {
 			return nil, "", err
@@ -345,6 +460,9 @@ func (r *Reader) History(path, before string) (chat.HistoryPage, error) {
 }
 
 func parseMessages(ms []msg, cwd string, cut bool) []chat.Turn {
+	if len(ms) == 0 {
+		return nil
+	}
 	results := map[string]*message{}
 	for i := range ms {
 		if ms[i].m.Role == "toolResult" {
@@ -386,7 +504,9 @@ func parseMessages(ms []msg, cwd string, cut bool) []chat.Turn {
 				cur.Steps = append(cur.Steps, chat.Step{Kind: "note", Title: title(s)})
 			}
 		}
-		turns = append(turns, *cur)
+		if cur.ID != "earlier" || cur.Said != "" || cur.Reply != "" || len(cur.Steps) > 0 || len(cur.Images) > 0 {
+			turns = append(turns, *cur)
+		}
 		cur = nil
 	}
 	prev := ""
@@ -548,7 +668,7 @@ func (r *Reader) Image(path, id string) (string, []byte, error) {
 			}
 			if (x.m.Role == "user" && id == fmt.Sprintf("%s:%d", x.id, i)) ||
 				(x.m.Role == "toolResult" && id == fmt.Sprintf("%s#%d", x.m.ToolCallID, i)) {
-				b, err := base64.StdEncoding.DecodeString(p.Data)
+				b, err := r.imageData(p.Data)
 				if err != nil {
 					return "", nil, chat.ErrNoStep
 				}

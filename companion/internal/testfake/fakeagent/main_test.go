@@ -65,10 +65,16 @@ func TestFakesInHerdrCore(t *testing.T) {
 	t.Cleanup(func() { exec.Command(hc, "server", "stop").Run() })
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	// Pi's chat is read only with its extension installed, as the phone's Settings does it (pi.Reader.FindPane).
+	piSetup := &pi.Setup{Dir: dirs["pi"], HC: hc}
+	os.MkdirAll(dirs["pi"], 0o755)
+	if err := piSetup.Install(false); err != nil {
+		t.Fatalf("pi setup: %v", err)
+	}
 	svc := &chat.Service{HC: hc, Ctx: ctx, Readers: map[string]chat.Reader{
 		"claude-code": &claude.Reader{Dir: dirs["claude-code"]},
 		"codex":       &codex.Reader{Dir: dirs["codex"]},
-		"pi":          &pi.Reader{Setup: &pi.Setup{Dir: dirs["pi"], HC: hc}},
+		"pi":          &pi.Reader{Setup: piSetup},
 		"opencode":    &opencode.Reader{},
 	}}
 	for _, agent := range []string{"claude-code", "codex", "pi", "opencode"} {

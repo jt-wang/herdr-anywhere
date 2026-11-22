@@ -28,7 +28,7 @@ test('names: the table name, a shell its own name, an unknown program its comman
 })
 
 test('startable agents come first in herdr order', () => {
-  expect(startable().slice(0, 4).map((p) => p.key)).toEqual(['claude', 'codex', 'pi', 'opencode'])
+  expect(startable().slice(0, 5).map((p) => p.key)).toEqual(['claude', 'codex', 'pi', 'omp', 'opencode'])
   expect(startable()[0].run).toEqual(['claude'])
 })
 
@@ -49,4 +49,11 @@ test('an icon herdr tints is one colour, drawn in the text colour; the others ke
 test('Kimi Code reports itself as kimi-code and shows as Kimi, with its icon (measured with Kimi 2.4.1)', () => {
   const p = programOf('kimi-code', ['kimi'])
   expect([p.key, p.name, p.icon, p.agent]).toEqual(['kimi', 'Kimi', 'kimi', true])
+})
+
+test('OMP reports itself and launches as its own agent, not Pi', () => {
+  const p = programOf('omp', ['omp'])
+  expect([p.key, p.name, p.icon, p.agent]).toEqual(['omp', 'Oh My Pi', 'omp', true])
+  expect(programOf(undefined, ['omp']).key).toBe('omp')
+  expect(startable().find((p) => p.key === 'omp')?.run).toEqual(['omp'])
 })

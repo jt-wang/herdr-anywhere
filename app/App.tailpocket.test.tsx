@@ -297,3 +297,61 @@ test('a tunnel that gets nowhere for a while says the network may be in the way,
   await app.press('id:conn-open-connection')
   await app.waitFor('id:connection-lan')
 })
+
+// TailPocket's last failed try (v0.3.4 lastFailure) puts its likeliest cause first, in the banner's line and the sheet;
+// it isn't authenticated, so the other causes stay, and nothing unpairs.
+test('the stuck hint names first the cause TailPocket last saw: refused, Companion; relay-down, the connection setting', async () => {
+  const STUCK = "text:Still can't reach your computer"
+  const causes = (app: any) => app.texts().map((x: string) => ({
+    "This network needs you to sign in": 'network', "Companion isn't running on the computer": 'companion',
+    "The connection setting doesn't fit this network": 'route', 'The computer got new keys': 'keys',
+  } as Record<string, string>)[x]).filter(Boolean)
+  for (const [reason, likely, order] of [
+    ['refused', 'Companion may not be running on the computer.', ['companion', 'network', 'route', 'keys']],
+    ['handshake-closed', 'Companion may not be running on the computer.', ['companion', 'network', 'route', 'keys']],
+    ['relay-down', 'Your relay may not be passing the connection on.', ['route', 'network', 'companion', 'keys']],
+    ['no-answer', 'The network may be blocking the connection.', ['network', 'companion', 'route', 'keys']],
+  ] as const) {
+    const failure = { code: 'unreachable', reason, route: 'relay', routes: [{ t: 'relay', r: reason }], at: 0 }
+    const app = await open('./App.tsx', { platform: 'ios', host: { handlers: handlers({ 'tailPocket.lastFailure': failure }) }, network: { '*': { error: 'offline' } }, clock: {} })
+    await pairAndConnect(app)
+    await app.clock.runFor(19_000)
+    await app.waitFor(STUCK)
+    expect(`${reason}: ${app.shows(`text:${likely}`)}`).toBe(`${reason}: true`)
+    await app.press('id:conn-options')
+    await app.waitFor('id:stuck-sheet')
+    expect(`${reason}: ${causes(app).join(' ')}`).toBe(`${reason}: ${order.join(' ')}`)
+    expect(calls(app, 'tailPocket.forget').length + calls(app, 'tailPocket.deleteLink').length).toBe(0)
+    expect(app.shows('id:pair-link')).toBe(false)
+  }
+})
+
+// That cause is TailPocket's guess, not the computer's word: a phone told Companion isn't answering that pairs again
+// with a code that fails keeps the pairing it had, and goes back to it.
+test('pairing again from the stuck hint with a code that fails keeps the pairing the phone had', async () => {
+  const STUCK = "text:Still can't reach your computer"
+  let pairs = 0
+  const pair = () => { if (++pairs > 1) throw new Error('unauthorized'); return handlers()['tailPocket.pair'] }
+  const failure = { code: 'unreachable', reason: 'handshake-closed', route: 'tailcat', routes: [{ t: 'tailcat', r: 'handshake-closed' }], at: 0 }
+  const app = await open('./App.tsx', { platform: 'ios', host: { handlers: handlers({ 'tailPocket.pair': pair, 'tailPocket.lastFailure': failure, 'tailPocket.decodeInvite2': DECODED2 }) }, network: { '*': { error: 'offline' } }, clock: {} })
+  await pairAndConnect(app)
+  await app.clock.runFor(19_000)
+  await app.waitFor(STUCK)
+  expect(app.shows('text:Companion may not be running on the computer.')).toBe(true)
+  await app.press('id:conn-options')
+  await app.waitFor('id:stuck-sheet')
+  await app.press('id:pair-again')
+  await app.waitFor('id:pair-link')
+  await app.type('id:pair-link', INVITE2)
+  await app.press('id:pair')
+  await app.clock.runFor(500)
+  await app.waitFor('text:The computer did not confirm this phone, or the code was already used. Run herdr-anywhere pair again.')
+  expect(pairs).toBe(2)
+  await app.press('id:pair-back')
+  const tunnels = calls(app, 'tailPocket.connect').length
+  await app.clock.runFor(20_000)
+  await app.waitFor(STUCK)
+  expect(calls(app, 'tailPocket.connect').length).toBeGreaterThan(tunnels)
+  expect(calls(app, 'tailPocket.connect').every((c: any) => c.slot === 'herdr')).toBe(true)
+  expect(calls(app, 'tailPocket.forget').length + calls(app, 'tailPocket.store.deleteLink').length).toBe(0)
+})

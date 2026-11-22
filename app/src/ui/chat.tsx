@@ -4,7 +4,7 @@
 import { cleanup, effect, Image, Keyboard, Scroll, signal, Text, untracked, Video, View } from 'nsh'
 import { Sheet, TextView } from 'nsh/base'
 import type { Store } from '../store.ts'
-import { changeRows, clockText, pathsIn, sizeText, foldLine, outsideFold, workPreview, refreshEvery, shows, unknownText, type ChatAnswer, type ChatSetup, type ChatChange, type ChatDetail, type ChatFile, type ChatPicture, type ChatRun, type ChatStep, type ChatTurn } from '../model/chat.ts'
+import { changeRows, clockText, pathsIn, sizeText, foldLine, outsideFold, workPreview, refreshEvery, shows, unknownText, setupChangedText, type ChatAnswer, type ChatSetup, type ChatChange, type ChatDetail, type ChatFile, type ChatPicture, type ChatRun, type ChatStep, type ChatTurn } from '../model/chat.ts'
 import { Glyph, IconButton, useRev, useSignal } from './kit.tsx'
 import { AskCard } from './ask-card.tsx'
 import { askCard } from '../model/ask.ts'
@@ -15,7 +15,7 @@ import type { ChatPosition } from '../content.ts'
 const closed = () => signal(false)
 type Opened = (id: string) => ReturnType<typeof closed>
 
-const STEP_GLYPH: Record<string, string> = { read: 'file-text', edit: 'square-pen', run: 'terminal', search: 'search', web: 'monitor', agent: 'layers', think: 'brain' }
+const STEP_GLYPH: Record<string, string> = { read: 'file-text', edit: 'square-pen', run: 'terminal', search: 'search', web: 'monitor', agent: 'layers', think: 'brain', plan: 'list-checks' }
 
 export function ChatView(props: { store: Store; address: string; status: () => string | undefined; back: () => void }) {
   const s = props.store
@@ -29,7 +29,17 @@ export function ChatView(props: { store: Store; address: string; status: () => s
   let session = cached?.session
   let historyLoaded = !!cached?.historyLoaded
   let lastTurns = cached?.turns
-  const merge = (older: ChatTurn[], newer: ChatTurn[]) => [...new Map([...older, ...newer].map((x) => [x.id, x])).values()]
+  const mergeEarlier = (older: ChatTurn[], newer: ChatTurn[]) => {
+    const ids = new Set(older.map((x) => x.id))
+    const first = Math.max(0, newer.findIndex((x) => ids.has(x.id)))
+    return [...newer.slice(0, first), ...new Map([...older, ...newer.slice(first)].map((x) => [x.id, x])).values()]
+  }
+  const mergeLatest = (older: ChatTurn[], newer: ChatTurn[]) => {
+    const first = older.findIndex((x) => x.id === newer[0]?.id)
+    const ids = new Set(newer.map((x) => x.id))
+    const prefix = older.slice(0, Math.max(0, first)).filter((x) => !ids.has(x.id))
+    return { turns: [...prefix, ...newer], keptPrefix: prefix.length > 0 }
+  }
   let alive = true
   let timer: ReturnType<typeof setTimeout> | undefined
   // Asks overlap when the computer is slow (each 2 to 7.6 s in CI, six at once): an answer to an ask older than the
@@ -51,11 +61,18 @@ export function ChatView(props: { store: Store; address: string; status: () => s
         lastTurns = undefined
         earlierError.set('')
       }
-      if (!historyLoaded) { before.set(a.before); earlierError.set(a.historyError ?? '') }
+      const hadHistory = historyLoaded
       // A moving latest-page window must not evict the turn being read. Only join overlapping pages of the same
       // session (a session change cleared lastTurns above); otherwise the fresh page replaces the old record.
       if (reading && !pinned && a.turns?.some((x) => lastTurns?.some((old) => old.id === x.id))) historyLoaded = true
-      if (a.turns) lastTurns = historyLoaded ? merge(lastTurns ?? [], a.turns) : a.turns
+      if (a.turns) {
+        if (historyLoaded) {
+          const merged = mergeLatest(lastTurns ?? [], a.turns)
+          lastTurns = merged.turns
+          historyLoaded = merged.keptPrefix
+        } else lastTurns = a.turns
+      }
+      if (!hadHistory || !historyLoaded) { before.set(a.before); earlierError.set(a.historyError ?? '') }
       if (!a.turns && a.unknown !== 'behind') lastTurns = undefined
       if (reading && a.turns && !lastTurns?.some((x) => x.id === reading!.turn)) {
         reading = undefined; pinned = true
@@ -152,7 +169,7 @@ export function ChatView(props: { store: Store; address: string; status: () => s
           pinned = false
           remember()
         }
-        lastTurns = merge(a.turns, lastTurns ?? [])
+        lastTurns = mergeEarlier(a.turns, lastTurns ?? [])
         answer.set({ ...answer()!, turns: lastTurns })
       }
       s.rememberChat(props.address, { ...answer()!, before: before(), historyLoaded })
@@ -265,7 +282,7 @@ function SetupPage(props: { store: Store; address: string; agent: string; needed
     busy.set(true)
     failed.set('')
     try {
-      const r = await s.chat!.setSetup(props.agent, true, force)
+      const r = await s.chat!.setSetup(props.agent, true, force, force ? setup()?.confirmation : undefined)
       if (r.setup) setup.set(r.setup)
       if (r.result === 'changed') { asking.set(false); changed.set(true); return }
       changed.set(false)
@@ -325,7 +342,7 @@ function SetupPage(props: { store: Store; address: string; agent: string; needed
       <Sheet open={changed()} side="bottom" onOpenChange={(o) => { if (!o) changed.set(false) }} popupClass="bg-background rounded-t-[16px] pb-[env(safe-area-inset-bottom)]">
         <View testID="chat-setup-changed" class="px-5 pt-5 pb-4 gap-3">
           <Text class="text-[17px] font-semibold text-foreground">{t('setupChangedTitle')}</Text>
-          <Text class="text-[14px] text-muted-foreground">{t('setupChangedBody', { file: setup()?.file ?? '' })}</Text>
+          <Text testID="chat-setup-changed-body" class="text-[14px] text-muted-foreground">{setupChangedText(setup())}</Text>
           <View role="button" testID="chat-setup-replace" disabled={busy()} onPress={() => void install(true)} class="h-11 items-center justify-center rounded-[10px] bg-primary active:opacity-80">
             <Text class="text-[15px] font-medium text-primary-foreground">{t('setupReplace')}</Text>
           </View>
@@ -442,12 +459,15 @@ function StepView(props: { store: Store; address: string; step: ChatStep; opened
         <View class="ml-5 mb-1 px-2.5 py-2 rounded-[8px] bg-popover border border-border gap-2">
           <If when={detail()} else={<Text class="text-[12px] text-muted-foreground">{t('stepGone')}</Text>}>{(d) => (
             <View class="gap-2">
-              <If when={d().run} else={<If when={d().change} else={<If when={d().read} else={
+              <If when={d().run} else={<If when={d().change} else={<If when={d().read} else={props.step.kind === 'plan' ? (
+                // A plan for review: the Markdown the agent wrote, formatted.
+                <TextView testID={`plan-${props.step.id}`} markdown={d().input} selectable links="open" class="text-[13px] text-foreground" />
+              ) : (
                 <>
                   <Text selectable class={props.step.kind === 'note' || props.step.kind === 'think' ? 'text-[13px] text-foreground' : 'text-[11.5px] font-mono text-foreground'}>{d().input}</Text>
                   <If when={d().output}><Text selectable class="text-[11.5px] font-mono text-muted-foreground">{d().output}</Text></If>
                 </>
-              }>{(r) => <Text testID={`read-${props.step.id}`} class="text-[12px] text-muted-foreground">{t('chatReadLines', { from: r().from, to: r().from + Math.max(r().count, 1) - 1, total: r().total })}</Text>}</If>
+              )}>{(r) => <Text testID={`read-${props.step.id}`} class="text-[12px] text-muted-foreground">{t('chatReadLines', { from: r().from, to: r().from + Math.max(r().count, 1) - 1, total: r().total })}</Text>}</If>
               }>{(c) => <ChangeView id={props.step.id} change={c()} />}</If>
               }>{(r) => <RunView id={props.step.id} run={r()} />}</If>
               <Each of={d().images ?? []} key={(p) => p.id}>{(p) => <ChatImage store={props.store} address={props.address} picture={p()} />}</Each>

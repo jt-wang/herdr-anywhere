@@ -68,6 +68,12 @@ func (u *TUI) Screen() string {
 	return s
 }
 
+// Get is what herdr-core says of the terminal (hc get --json): its status, its foreground process.
+func (u *TUI) Get() string {
+	s, _ := u.hcRun("get", "agent", "--json")
+	return s
+}
+
 // Wait waits up to d for ok to hold of the screen, and fails the test with the screen when it doesn't.
 func (u *TUI) Wait(d time.Duration, what string, ok func(screen string) bool) string {
 	u.t.Helper()
@@ -125,6 +131,15 @@ func (u *TUI) Send(text string) {
 		if !strings.Contains(out, "still starting") || time.Now().After(deadline) {
 			u.t.Fatalf("hc send %q: %v\n%s\nscreen:\n%s", text, err, out, u.Screen())
 		}
+	}
+}
+
+// SendForce is Send to a program herdr-core reports blocked on a dialog of its own (hc send --force): agy reports its
+// plan's review as blocked while its prompt still takes a command.
+func (u *TUI) SendForce(text string) {
+	u.t.Helper()
+	if out, err := u.hcRun("send", "--force", "agent", text); err != nil {
+		u.t.Fatalf("hc send --force %q: %v\n%s\nscreen:\n%s", text, err, out, u.Screen())
 	}
 }
 

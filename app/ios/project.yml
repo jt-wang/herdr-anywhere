@@ -9,8 +9,8 @@ settings:
   base:
     # BUNDLE_ID_PREFIX and the signing team: Signing.xcconfig.
     PRODUCT_BUNDLE_IDENTIFIER: $(BUNDLE_ID_PREFIX).herdranywhere
-    MARKETING_VERSION: "0.3.8"
-    CURRENT_PROJECT_VERSION: "43"
+    MARKETING_VERSION: "0.3.9"
+    CURRENT_PROJECT_VERSION: "44"
     SWIFT_VERSION: "5.0"
     TARGETED_DEVICE_FAMILY: "1,2"
     GENERATE_INFOPLIST_FILE: NO
@@ -20,7 +20,7 @@ settings:
 packages:
   # TailPocket's NSH adapter (TailPocketNsh.attach), which brings TailPocket, its QR scanner and NSH's NativeShell.
   TailPocketNSH:
-    path: ../../third_party/tailpocket-32c50f3/sdk/apple/NSH
+    path: ../../third_party/tailpocket-e197f3e/sdk/apple/NSH
 targets:
   Herdr:
     type: application

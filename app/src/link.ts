@@ -112,14 +112,22 @@ export type LinkerIO = {
 }
 
 /** `path` answers as TailPocket does (any route name); Linker.path keeps the ones it knows. */
-/** `routes`: the route types the saved link holds (tailcat, lan, relay), which the phone may dial if its pick allows. */
-type Opened = { baseUrl: string; close: () => void; path?: () => Promise<Route>; routes?: () => Promise<string[]> }
+/** `routes`: the route types the saved link holds (tailcat, lan, relay), which the phone may dial if its pick allows.
+ *  `lastFailure`: why TailPocket's last try to reach the computer failed (TailPocket v0.3.4), null after one worked. */
+type Opened = { baseUrl: string; close: () => void; path?: () => Promise<Route>; routes?: () => Promise<string[]>; lastFailure?: () => Promise<{ reason: string } | null> }
+/** TailPocket's reasons for a failed try (its sdk/js client.ts TailPocketDialFailure): refused and handshake-closed,
+ *  something answered for the computer and didn't take this phone; no-answer, no route answered; relay-down, the relay
+ *  answered but wouldn't carry the phone. Not authenticated: anyone on the network can cause one, so they only order
+ *  what the stuck hint suggests, and never unpair. */
+const DIAL_REASONS = ['refused', 'handshake-closed', 'no-answer', 'relay-down']
 /** A tunnel being opened, and once open, the tunnel. */
 /** `routes`: what the tunnel's link holds, read once it opens, while its handle is still open (null: unknown). */
 type Tunnelling = { opening: Promise<Opened>; open?: Opened; routes?: Promise<string[] | null> }
 
 export class Linker {
   readonly link = new Signal<Link | null>(null)
+  /** Why the last unanswered connection through the tunnel failed (DIAL_REASONS), '' once one is answered again. */
+  readonly failure = new Signal<string>('')
   private contentEpoch = 0
   /** The TailPocket tunnel every pipe uses, until its forwarder stops answering. */
   private tunnel?: Tunnelling
@@ -228,12 +236,20 @@ export class Linker {
       if (ended) return
       let heard = false
       const s = (inner = open(socketUrl(c.baseUrl, l.token, l.enc), l.enc))
-      s.onBytes = (b) => { heard = true; outer.onBytes?.(b) }
+      s.onBytes = (b) => {
+        if (!heard) this.failure.set('')
+        heard = true
+        outer.onBytes?.(b)
+      }
       // Unanswered, it is all the phone can know: Companion stopped and this phone taken off the computer look the
-      // same through the tunnel (link.test.ts).
+      // same through the tunnel (link.test.ts). TailPocket's last failed try hints which: read before the tunnel's
+      // handle closes, as it can't be asked after.
       s.onClose = (r) => {
         const silent = r === 'network' && !heard
-        if (silent) this.dropTunnel(t)
+        if (silent) {
+          const read = c.lastFailure?.().then((f) => this.failure.set(f && DIAL_REASONS.includes(f.reason) ? f.reason : ''), () => {})
+          this.dropTunnel(t, read)
+        }
         // With routes picked in Settings › Connection, a link that holds none of them is said as such: TailPocket
         // opens the tunnel either way and each connection through it ends unanswered.
         const picked = this.routes && this.routes !== 'all' ? this.routes.split(',') : null
@@ -295,10 +311,13 @@ export class Linker {
     return t
   }
 
-  private dropTunnel(t: Tunnelling | undefined) {
+  /** `after`: a read of the handle that must end before it closes. */
+  private dropTunnel(t: Tunnelling | undefined, after?: Promise<void>) {
     if (!t || t !== this.tunnel) return
     this.tunnel = undefined
-    t.open?.close()
+    const open = t.open
+    if (after) void after.then(() => open?.close())
+    else open?.close()
   }
 }
 
@@ -417,8 +436,8 @@ export function chatApi(linker: Linker, fetcher: typeof fetch = fetch): ChatApi 
       const { r, body } = await call('/api/chat-setups')
       return r.ok && Array.isArray(body?.setups) ? body.setups.map(setupOf).filter((x: ChatSetup | null): x is ChatSetup => !!x) : []
     },
-    async setSetup(agent, on, force) {
-      const r = await diagnosticFetch(fetcher, `${await linker.baseUrl()}/api/chat-setups/${encodeURIComponent(agent)}${force ? '?force=1' : ''}`,
+    async setSetup(agent, on, force, confirmation) {
+      const r = await diagnosticFetch(fetcher, `${await linker.baseUrl()}/api/chat-setups/${encodeURIComponent(agent)}${force ? `?force=1${confirmation ? `&confirmation=${encodeURIComponent(confirmation)}` : ''}` : ''}`,
         { method: on ? 'PUT' : 'DELETE', headers: { authorization: `Bearer ${linker.link.get()?.token ?? ''}` } })
       const setup = setupOf(await r.json().catch(() => null)) ?? undefined
       if (r.ok) return { result: 'ok', setup }
@@ -433,6 +452,8 @@ const SETUP_STATES = ['no-agent', 'absent', 'installed', 'old', 'changed']
 function setupOf(x: any): ChatSetup | null {
   if (!x || typeof x.agent !== 'string' || !x.agent || typeof x.file !== 'string') return null
   return { agent: x.agent, name: typeof x.name === 'string' && x.name ? x.name : x.agent, file: x.file,
+    ...(Array.isArray(x.changedFiles) && x.changedFiles.every((f: unknown) => typeof f === 'string') ? { changedFiles: x.changedFiles } : {}),
+    ...(typeof x.confirmation === 'string' ? { confirmation: x.confirmation } : {}),
     ...(typeof x.reload === 'string' && x.reload ? { reload: x.reload } : {}), version: Number(x.version) || 0,
     state: SETUP_STATES.includes(x.state) ? x.state : 'no-agent' }
 }

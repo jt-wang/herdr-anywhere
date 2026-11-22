@@ -16,6 +16,9 @@ final class Stuck: XCTestCase {
     XCTAssertTrue(el("conn-options").waitForExistence(timeout: 90), "no Other options on the banner")
     XCTAssertTrue(el("conn-retry").exists, "no Try again on the banner")
     XCTAssertFalse(el("pair-again").exists, "Pair again is on the banner, not in the sheet")
+    // Shot once it says how old the screen is (60 s after the last update, kit.tsx age), as e2e/android-reconnect.sh
+    // does: the light and the dark run, and the two phones, show the same banner.
+    XCTAssertTrue(el("conn-age").waitForExistence(timeout: 90), "the banner never said how old the screen is")
     sleep(2); shot("1-banner")
     el("conn-options").tap()
     if !el("stuck-sheet").waitForExistence(timeout: 5), el("conn-options").exists { el("conn-options").tap() }

@@ -10,7 +10,7 @@ import { machineOfAddress } from '../model/model.ts'
 import { asWord, withPath } from './attach.ts'
 import { composerHeight } from './composer-size.ts'
 import { asks } from '../model/answers.ts'
-import type { Option } from '../model/menu.ts'
+import { optionCaption, type Option } from '../model/menu.ts'
 import type { BarKey } from './terminal-page.ts'
 import type { TerminalSession } from './terminal-session.ts'
 import type { TypeIn } from '../prefs.ts'
@@ -118,10 +118,10 @@ export function PaneBar(props: { store: Store; session: TerminalSession; program
 export const choiceRow = {
   button(o: () => Option, pick: (o: Option) => void, toast: (title: string) => void) {
     return (
-      <View role="button" testID={`choice-${o().n}`} accessibilityLabel={`${o().n}. ${o().full}`} onPress={() => void pick(o())}
-        onLongPress={() => toast(`${o().n}. ${o().full}`)}
+      <View role="button" testID={`choice-${o().n}`} accessibilityLabel={optionCaption(o(), 'full')} onPress={() => void pick(o())}
+        onLongPress={() => toast(optionCaption(o(), 'full'))}
         class={`h-9 max-w-[230px] px-3.5 justify-center rounded-[8px] ${o().selected ? 'bg-primary active:opacity-80' : 'bg-secondary border border-border active:bg-accent'}`}>
-        <Text class={`text-[14px] font-medium ${o().selected ? 'text-primary-foreground' : 'text-foreground'}`} numberOfLines={1}>{`${o().n}. ${o().label}`}</Text>
+        <Text class={`text-[14px] font-medium ${o().selected ? 'text-primary-foreground' : 'text-foreground'}`} numberOfLines={1}>{optionCaption(o(), 'label')}</Text>
       </View>
     )
   },

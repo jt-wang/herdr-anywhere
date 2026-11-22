@@ -2,6 +2,8 @@
 import type { Table } from './index.ts'
 
 export const ko: Table = {
+  chatFirstMessage: '첫 메시지를 보내면 채팅이 표시돼요.',
+  setupChangedFilesBody: '다음 설정 파일은 편집되었습니다. 아직 변경하지 않았습니다. 목록의 모든 파일을 교체하거나 삭제하려면 확인하세요:\n{files}',
   diagnosticTitle: '기기 내 진단', diagnosticRecord: '진단 기록',
   diagnosticOnState: '켜짐', diagnosticOffState: '꺼짐', diagnosticUnsupportedState: '지원 안 함',
   diagnosticInteraction: '상호작용 / 수명 주기', diagnosticPerformance: '성능', diagnosticNetwork: '네트워크', diagnosticResources: '리소스 / 배터리',
@@ -27,6 +29,8 @@ export const ko: Table = {
   lostSlower: '더 느린 연결로 전환하는 중…',
   lostStuck: "아직 컴퓨터에 연결되지 않아요",
   stuckLikely: "네트워크가 연결을 막고 있을 수 있어요.",
+  stuckLikelyCompanion: "컴퓨터에서 Companion이 실행 중이 아닐 수 있어요.",
+  stuckLikelyRelay: "릴레이가 연결을 전달하지 않고 있을 수 있어요.",
   stuckOptions: "다른 방법",
   stuckSheetTitle: "가능한 원인",
   stuckWhyNetwork: "이 네트워크는 로그인이 필요해요",
@@ -157,7 +161,7 @@ export const ko: Table = {
   // A picture a terminal shows (ui/picture-sheet.tsx).
   copyPath: "복사", pictureHold: "이미지를 길게 누르면 이미지가 복사돼요", pictureOpen: "이미지 열기", pictureCopied: "이미지를 복사했어요", pictureCantCopy: "이미지를 복사하지 못했어요", pictureLoading: "이미지를 불러오는 중…", pictureMissing: "컴퓨터에 이 파일이 없어요.", pictureOutside: "홈 폴더, 이 터미널의 폴더, 임시 폴더에 있는 이미지만 보여 줘요.", pictureNotImage: "이 파일은 이미지가 아니에요.", pictureTooBig: "이 이미지는 {mb}MB가 넘어서 보여 줄 수 없어요.", pictureTooBigNoLimit: "이 이미지는 너무 커서 보여 줄 수 없어요.", pictureRemote: "이 머신의 이미지는 읽을 수 없어요.", pictureUnreachable: "이 터미널이 있는 머신에 연결할 수 없어요.", pictureCantRead: "컴퓨터가 이 이미지를 읽을 수 없어요.",
   // Chat setups: the small file some agents' chats need (ui/chat.tsx, ui/settings.tsx).
-  chatSection: "채팅", setupAskTitle: "이 휴대폰에서 {name} 채팅을 쓸까요?", setupAskBody: "컴퓨터의 {name} 폴더에 작은 파일 하나가 필요해요. 이 파일이 각 {name}이(가) 어떤 대화를 쓰는지 컴퓨터에 알려줘요.", setupFactOne: "이 파일 하나만 넣고, {name}의 다른 설정은 바꾸지 않아요", setupFactNet: "네트워크로 아무것도 보내지 않아요", setupFactRemove: "설정에서 언제든 지울 수 있고, 아무것도 남지 않아요", setupInstall: "설치", setupLater: "나중에", setupNeededTitle: "{name} 채팅을 보려면 컴퓨터에 작은 파일 하나가 필요해요", setupNeededBody: "이 파일이 없으면 휴대폰이 이 {name}이(가) 어떤 대화를 쓰는지 알 수 없어요. 다른 에이전트의 채팅은 그대로 쓸 수 있어요.", setupReload: "설치했어요. 이 {name}은(는) 전에 열려 있어서 {reload}을(를) 입력하거나 다시 시작하면 파일을 쓰기 시작해요.", setupRestart: "설치했어요. 이 {name}은(는) 전에 열려 있어서 다시 시작하면 파일을 쓰기 시작해요.", setupTypeReload: "{reload} 대신 입력", setupChangedTitle: "이 파일이 바뀌었어요", setupChangedBody: "{file}은(는) Herdr Anywhere가 넣은 파일과 달라요. 누군가 고쳤을 수 있어요. 그대로 두었어요.", setupReplace: "Herdr Anywhere 파일로 바꾸기", setupKeep: "내 파일 유지", setupFailed: "파일을 넣지 못했어요", setupNoAgent: "이 컴퓨터에는 {name}이(가) 없어요.", setupRow: "{name} 채팅", setupOn: "켜짐", setupOff: "꺼짐: 이 휴대폰에서 {name} 채팅을 볼 수 없어요", setupChanged: "누군가 파일을 바꿨어요", setupRemove: "지우기", setupRemoveTitle: "{name} 파일을 지울까요?", setupRemoveBody: "이 휴대폰에서 {name} 채팅이 더 이상 보이지 않아요. 다른 에이전트는 그대로예요.",
+  chatSection: "채팅", setupAskTitle: "이 휴대폰에서 {name} 채팅을 쓸까요?", setupAskBody: "컴퓨터의 {name} 폴더마다 작은 설정 파일이 필요해요. 이 파일이 각 {name}이(가) 어떤 대화를 쓰는지 컴퓨터에 알려줘요.", setupFactOne: "설정 파일만 넣고, {name}의 다른 설정은 바꾸지 않아요", setupFactNet: "네트워크로 아무것도 보내지 않아요", setupFactRemove: "설정에서 언제든 지울 수 있고, 아무것도 남지 않아요", setupInstall: "설치", setupLater: "나중에", setupNeededTitle: "{name} 채팅을 보려면 컴퓨터에 작은 설정 파일이 필요해요", setupNeededBody: "이 파일이 없으면 휴대폰이 이 {name}이(가) 어떤 대화를 쓰는지 알 수 없어요. 다른 에이전트의 채팅은 그대로 쓸 수 있어요.", setupReload: "설치했어요. 이 {name}은(는) 전에 열려 있어서 {reload}을(를) 입력하거나 다시 시작하면 파일을 쓰기 시작해요.", setupRestart: "설치했어요. 이 {name}은(는) 전에 열려 있어서 다시 시작하면 파일을 쓰기 시작해요.", setupTypeReload: "{reload} 대신 입력", setupChangedTitle: "이 파일이 바뀌었어요", setupChangedBody: "{file}은(는) Herdr Anywhere가 넣은 파일과 달라요. 누군가 고쳤을 수 있어요. 그대로 두었어요.", setupReplace: "Herdr Anywhere 파일로 바꾸기", setupKeep: "내 파일 유지", setupFailed: "파일을 넣지 못했어요", setupNoAgent: "이 컴퓨터에는 {name}이(가) 없어요.", setupRow: "{name} 채팅", setupOn: "켜짐", setupOff: "꺼짐: 이 휴대폰에서 {name} 채팅을 볼 수 없어요", setupChanged: "누군가 파일을 바꿨어요", setupRemove: "지우기", setupRemoveTitle: "{name} 파일을 지울까요?", setupRemoveBody: "이 휴대폰에서 {name} 채팅이 더 이상 보이지 않아요. 다른 에이전트는 그대로예요.",
   // The decision card in the chat view (ui/ask-card.tsx).
   askAsking: "{agent}이(가) 묻고 있어요", askQuestionOf: "질문 {n}/{m}", askPickAny: "여러 개 선택 가능", askRecommended: "추천", askOwn: "직접 답 쓰기", askSkip: "지금은 고르지 않고 채팅에서 이야기하기", askNext: "다음: 답 확인", askSent: "{agent}에 보냈어요. 다음으로 넘어가길 기다리는 중…", askRun: "{agent}이(가) 명령을 실행하려고 해요", askEdit: "{agent}이(가) 파일을 바꾸려고 해요", askPermission: "{agent}이(가) 허락을 구해요", askAfterNo: "고른 뒤 아래 입력란에 대신 무엇을 할지 알려 주세요", askReview: "답 확인", askStuck: "터미널 화면이 바뀌지 않았어요. 터미널에서 확인해 보세요.",
 }

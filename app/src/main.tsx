@@ -29,6 +29,7 @@ export function start(o: { pairLink?: string; opensSettings?: boolean; updateEve
       prefs: new PrefStore(io),
       makeStore: (l) => {
         const store = new Store({ pipe: () => l.pipe(), tunnelled: () => l.link.get()?.via === 'tailpocket', load: io.load, save: io.save, content: l.content() })
+        store.dialFailure = l.failure
         o.traceConnection?.(store.conn)
         return store
       },

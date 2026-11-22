@@ -2,6 +2,7 @@ package server
 
 import (
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -152,6 +153,92 @@ func TestChatImage(t *testing.T) {
 	}
 }
 
+func TestOMPExternalizedImageEndpoint(t *testing.T) {
+	dir := filepath.Join("..", "chat", "pi", "testdata", "omp", "19.0.0", "externalized")
+	reader := &pi.Reader{Setup: &pi.Setup{ID: "omp", BlobDir: filepath.Join(dir, "blobs")}}
+	r := &chatLocatedReader{Reader: reader, HistoryReader: reader, path: filepath.Join(dir, "images.jsonl")}
+	hc := chatHC(t)
+	f := newFixture(t, func(c *Config) {
+		c.Chat = &chat.Service{HC: hc, Readers: map[string]chat.Reader{"claude-code": r}}
+	})
+	_, token := f.pair(t)
+	files, err := filepath.Glob(filepath.Join(dir, "blobs", "*"))
+	if err != nil || len(files) != 1 {
+		t.Fatalf("blob fixture: %v %v", files, err)
+	}
+	want, err := os.ReadFile(files[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"u1:1", "read1%230"} {
+		code, body := getJSON(t, f, token, "/api/chat/t1/images/"+id)
+		if code != 200 || body["url"] != "data:image/png;base64,"+base64.StdEncoding.EncodeToString(want) {
+			t.Fatalf("image %s: %d %v", id, code, body)
+		}
+	}
+}
+
+func TestOMPTreeSwitchChangesETagAndHistoryIdentity(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("PI_CODING_AGENT_DIR", dir)
+	t.Setenv("OMP_PROFILE", "")
+	s := pi.OMPSetup("/sample/hc")
+	if err := s.Install(false); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "sessions"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(dir, "sessions", "tree.jsonl")
+	journal := `{"type":"session","id":"s1","cwd":"/sample"}` + "\n"
+	parent := "null"
+	for i := 0; i < 40; i++ {
+		journal += fmt.Sprintf(`{"type":"message","id":"u%d","parentId":%s,"message":{"role":"user","content":"sample question"}}`+"\n", i, parent)
+		journal += fmt.Sprintf(`{"type":"message","id":"a%d","parentId":"u%d","message":{"role":"assistant","content":[{"type":"text","text":"sample answer"}],"stopReason":"stop"}}`+"\n", i, i)
+		parent = fmt.Sprintf(`"a%d"`, i)
+	}
+	if err := os.WriteFile(file, []byte(journal), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	core := filepath.Join(dir, "terminal.json")
+	selectLeaf := func(leaf string) {
+		t.Helper()
+		b, _ := json.Marshal(map[string]any{
+			"status":     map[string]string{"app": "omp", "state": "done"},
+			"foreground": map[string]int{"pid": 4242},
+			"labels":     map[string]string{chat.LabelPid: "4242", chat.LabelSession: file, "herdr-anywhere.chat.leaf": leaf + ":a39"},
+		})
+		if err := os.WriteFile(core, b, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	selectLeaf("a39")
+	hc := testfake.HC(t, filepath.Join(dir, "bin"), "hc", testfake.Spec{On: map[string][]testfake.Reply{"get": {{Cat: core}}}})
+	f := newFixture(t, func(c *Config) {
+		c.Chat = &chat.Service{HC: hc, Readers: map[string]chat.Reader{"omp": &pi.Reader{Setup: s}}}
+	})
+	_, token := f.pair(t)
+	res, body := chatGET(t, f, token, "/api/chat/t1")
+	tag := chatTag(t, res, body)
+	var first chat.Answer
+	if err := json.Unmarshal(body, &first); err != nil || first.Before == "" || first.Session == "" {
+		t.Fatalf("initial history: %s %v", body, err)
+	}
+	selectLeaf("a0")
+	res, body = chatGET(t, f, token, "/api/chat/t1", tag)
+	if next := chatTag(t, res, body); next == tag {
+		t.Fatal("tree switch retained ETag")
+	}
+	var next chat.Answer
+	if err := json.Unmarshal(body, &next); err != nil || next.Session == first.Session || len(next.Turns) != 1 || next.Turns[0].ID != "u0" {
+		t.Fatalf("switched branch: %s %v", body, err)
+	}
+	res, body = chatGET(t, f, token, "/api/chat/t1?before="+url.QueryEscape(first.Before))
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("old branch cursor accepted: %d %s", res.StatusCode, body)
+	}
+}
+
 func chatGET(t *testing.T, f *fixture, token, path string, validators ...string) (*http.Response, []byte) {
 	t.Helper()
 	req, err := http.NewRequest(http.MethodGet, f.srv.URL+path, nil)
@@ -203,9 +290,14 @@ func TestChatConditionalGETReplay(t *testing.T) {
 		{"codex", "codex/testdata/codex/0.167.1/steps.jsonl", &codex.Reader{}},
 		{"opencode", "opencode/testdata/opencode/2.2.0/steps.json", &opencode.Reader{}},
 		{"pi", "pi/testdata/pi/1.4.0/steps.jsonl", &pi.Reader{}},
+		{"omp", "pi/testdata/omp/19.0.0/turns.jsonl", &pi.Reader{}},
 	} {
 		t.Run(c.agent, func(t *testing.T) {
-			script, err := replay.Load(c.agent, filepath.Join("..", "chat", c.fixture))
+			format := c.agent
+			if format == "omp" {
+				format = "pi"
+			}
+			script, err := replay.Load(format, filepath.Join("..", "chat", c.fixture))
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 
 	"herdr-anywhere/companion/internal/chat"
 )
@@ -20,15 +21,25 @@ const FileName = "herdr-anywhere.ts"
 //go:embed herdr-anywhere.ts
 var current string
 
-const version = 1
+//go:embed herdr-anywhere-v1.txt
+var previous string
 
-var templates = map[int]string{version: current}
+const version = 2
+
+var templates = map[int]string{version: current, 1: previous}
 
 // Setup is Pi's chat.Setup. Pi loads every .ts file in its extensions folder at start and at /reload (measured
 // with Pi 1.4.0: a file put there while Pi ran was not used until /reload, not even after a turn).
 type Setup struct {
-	Dir string // Pi's own folder: PI_CODING_AGENT_DIR, else ~/.pi/agent (AgentDir)
-	HC  string // the hc the file calls
+	Dir          string // Pi's own folder: PI_CODING_AGENT_DIR, else ~/.pi/agent (AgentDir)
+	HC           string // the hc the file calls
+	ID           string
+	Title        string
+	SessionRoots []string
+	BlobDir      string
+	templates    map[int]string
+	targets      func() ([]*Setup, error)
+	confirmMu    sync.Mutex
 }
 
 var _ chat.Setup = (*Setup)(nil)
@@ -42,21 +53,60 @@ func AgentDir() string {
 	return filepath.Join(h, ".pi", "agent")
 }
 
-func (s *Setup) Agent() string  { return "pi" }
-func (s *Setup) Name() string   { return "Pi" }
-func (s *Setup) Reload() string { return "/reload" }
-func (s *Setup) Version() int   { return version }
-func (s *Setup) File() string   { return filepath.Join(s.Dir, "extensions", FileName) }
+func (s *Setup) Agent() string {
+	if s.ID != "" {
+		return s.ID
+	}
+	return "pi"
+}
+func (s *Setup) Name() string {
+	if s.Title != "" {
+		return s.Title
+	}
+	return "Pi"
+}
+func (s *Setup) Reload() string {
+	if s.Agent() == "omp" {
+		return "/restart"
+	}
+	return "/reload"
+}
+func (s *Setup) Version() int { return version }
+func (s *Setup) File() string {
+	if s.targets != nil {
+		ts, _ := s.targets()
+		for _, target := range ts {
+			if target.State() == chat.Changed {
+				return target.File()
+			}
+		}
+	}
+	name := FileName
+	if s.Agent() == "omp" {
+		name = "herdr-anywhere-omp.ts"
+	}
+	return filepath.Join(s.Dir, "extensions", name)
+}
 
 func content(tmpl, hc string) string {
 	q, _ := json.Marshal(hc)
 	return strings.Replace(tmpl, `"{{HC}}"`, string(q), 1)
 }
 
+func (s *Setup) variants() map[int]string {
+	if s.templates != nil {
+		return s.templates
+	}
+	return templates
+}
+
 // The line's end may be CRLF: a Windows checkout can embed the file so (git's autocrlf).
 var hcLine = regexp.MustCompile(`(?m)^const HC = ("(?:[^"\\]|\\.)*");\r?$`)
 
 func (s *Setup) State() chat.SetupState {
+	if s.targets != nil {
+		return s.allState()
+	}
 	if st, err := os.Stat(s.Dir); err != nil || !st.IsDir() {
 		return chat.NoAgent
 	}
@@ -65,13 +115,13 @@ func (s *Setup) State() chat.SetupState {
 		return chat.Absent
 	}
 	got := string(b)
-	if got == content(current, s.HC) {
+	if got == content(s.variants()[s.Version()], s.HC) {
 		return chat.Installed
 	}
 	if m := hcLine.FindStringSubmatch(got); m != nil {
 		var hc string
 		if json.Unmarshal([]byte(m[1]), &hc) == nil {
-			for _, t := range templates {
+			for _, t := range s.variants() {
 				if got == content(t, hc) {
 					return chat.Old
 				}
@@ -83,6 +133,9 @@ func (s *Setup) State() chat.SetupState {
 
 // Install writes the file. A changed file is left as it is unless force.
 func (s *Setup) Install(force bool) error {
+	if s.targets != nil {
+		return s.applyTargets(true, force)
+	}
 	switch s.State() {
 	case chat.NoAgent:
 		return chat.ErrNoAgent
@@ -98,8 +151,8 @@ func (s *Setup) Install(force bool) error {
 		return err
 	}
 	// Written beside it under a name Pi doesn't load (not .ts), then moved in place in one step.
-	tmp := filepath.Join(dir, ".herdr-anywhere.tmp")
-	if err := os.WriteFile(tmp, []byte(content(current, s.HC)), 0o644); err != nil {
+	tmp := filepath.Join(dir, "."+filepath.Base(s.File())+".tmp")
+	if err := os.WriteFile(tmp, []byte(content(s.variants()[s.Version()], s.HC)), 0o644); err != nil {
 		return err
 	}
 	if err := os.Rename(tmp, s.File()); err != nil {
@@ -112,6 +165,9 @@ func (s *Setup) Install(force bool) error {
 // Remove deletes the file, and the extensions folder when nothing else is left in it. A changed file is left as it is
 // unless force.
 func (s *Setup) Remove(force bool) error {
+	if s.targets != nil {
+		return s.applyTargets(false, force)
+	}
 	switch s.State() {
 	case chat.NoAgent, chat.Absent:
 		return nil

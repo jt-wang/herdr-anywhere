@@ -1,7 +1,7 @@
 // The app over an in-memory herdr-core (src/testing/fakecore.ts), already paired, for the screen tests.
 // `host.params.slowSendMs`: how long a send goes unanswered before the input box says why (5 s when not set).
 // `host.params.scene`: "empty" (a fresh computer), "busy" (two spaces, agents in every state), "twins" (two Claude
-// Codes in one space), "unpaired", "companion-off" (with via: "tailpocket": nothing answers through the tunnel), "companion-refused" (the computer at
+// Codes in one space), "unpaired", "companion-off" (with via: "tailpocket": nothing answers through the tunnel; `failure`: TailPocket's lastFailure reason), "companion-refused" (the computer at
 // `url` refuses at once),
 // "link" (never paired, opened with the `#pair=` link in `host.params.link`, as the web app is), "link-forgotten" (the
 // same, and the computer forgets the phone right after), "relaunch-forgotten" (paired before, opened again with that
@@ -256,6 +256,7 @@ async function chat(url: string) {
 // setup-needed for that agent turns setup-not-loaded once it is installed, and back once it is removed.
 let setups: any[] = params.setups ? JSON.parse(params.setups) : []
 const setupAsks: string[] = []
+host.on('fake.setups', (d: any) => { setups = d.setups })
 function chatSetups(url: string, init: any) {
   const path = url.replace(/^https?:\/\/[^/]+/, '')
   const method = init?.method ?? 'GET'
@@ -266,6 +267,7 @@ function chatSetups(url: string, init: any) {
   const i = setups.findIndex((x) => x.agent === agent)
   if (i < 0) return answer(404, { error: 'no such setup' })
   const force = /[?&]force=1/.test(path)
+  if (force && setups[i].confirmation && !path.includes(`confirmation=${encodeURIComponent(setups[i].confirmation)}`)) return answer(409, setups[i])
   if (setups[i].state === 'no-agent' || (setups[i].state === 'changed' && !force)) return answer(409, setups[i])
   setups[i] = { ...setups[i], state: method === 'PUT' ? 'installed' : 'absent' }
   if (chatAnswer.setup === agent) {
@@ -276,6 +278,10 @@ function chatSetups(url: string, init: any) {
 }
 // Another Herdr screen pins or unpins an agent: `app.host.send('fake.label', { address, labels: { 'herdr.pinned': '1' } })`.
 host.on('fake.label', (d: any) => core.label(d.address, d.labels))
+host.on('fake.foreground', (d: any) => {
+  const term = core.terms.get(d.address)
+  if (term) { term.foreground = d.foreground; core.emit('foreground', d.address, d.foreground) }
+})
 // A test drops the line: `app.host.send('fake.drop', {})`; the computer then stops answering.
 host.on('fake.drop', () => core.drop('network'))
 // Test-only trace for a real fake.drop while Chat and ConnBanner are mounted.
@@ -378,7 +384,12 @@ const pipe = (l: Linker) => () => {
   const forgotten = (scene === 'unpaired' && l.link.get()?.token === 'synthetic-token') || ((scene === 'link-forgotten' || scene === 'relaunch-forgotten') && !forgot++)
   if (forgotten) { const c = new FakeCore(); c.send = () => c.drop('unpaired'); return c }
   // "companion-off": through the tunnel nothing answers the saved link; a link from pairing again gets through.
-  if (scene === 'companion-off' && l.link.get()?.token === 'synthetic-token') { const c = new FakeCore(); c.send = () => c.drop('no-answer'); return c }
+  // `failure`: why TailPocket's last try failed (its lastFailure reason), as the Linker keeps it for the stuck hint.
+  if (scene === 'companion-off' && l.link.get()?.token === 'synthetic-token') {
+    const c = new FakeCore()
+    c.send = () => { if (params.failure) l.failure.set(String(params.failure)); c.drop('no-answer') }
+    return c
+  }
   // "companion-refused": the computer at `url` refuses at once (nothing listens on the port).
   if (scene === 'companion-refused' && l.link.get()?.token === 'synthetic-token') { const c = new FakeCore(); c.send = () => c.drop('network'); return c }
   return core
@@ -443,7 +454,7 @@ mount(() => (
     linker: new Linker({ ...io, write: contentWrite, ...(tunnel ? { tunnel } : {}) }),
     opensSettings: params.open === 'settings',
     prefs: new PrefStore(io),
-    makeStore: (l) => tapPicture(counted(new Store({ pipe: pipe(l), content: l.content(), tunnelled: () => l.link.get()?.via === 'tailpocket', slowSendMs: params.slowSendMs ? Number(params.slowSendMs) : undefined }))),
+    makeStore: (l) => { const s = new Store({ pipe: pipe(l), content: l.content(), tunnelled: () => l.link.get()?.via === 'tailpocket', slowSendMs: params.slowSendMs ? Number(params.slowSendMs) : undefined }); s.dialFailure = l.failure; return tapPicture(counted(s)) },
     device: 'Test phone',
     updateEveryMs: params.updateEveryMs ? Number(params.updateEveryMs) : undefined,
     tunnel,

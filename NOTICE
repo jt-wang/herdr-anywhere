@@ -21,7 +21,8 @@ Copyright (c) 2025 Mario Zechner; Copyright (c) 2025-2026 Can Bölük; Copyright
 
 Lucide (https://lucide.dev), ISC License, Copyright (c) Lucide Contributors 2022, portions Cole Bemis 2013-2022
   - the phone's icons in app/assets/phone: ellipsis (more.svg), keyboard, send-horizontal (send.svg), message-square
-    (chat.svg) and brain, and keyboard-down.svg drawn from keyboard (license: app/assets/phone/LICENSE-Lucide.txt)
+    (chat.svg), brain and list-checks, and keyboard-down.svg drawn from keyboard
+    (license: app/assets/phone/LICENSE-Lucide.txt)
 
 NSH (https://nsh.dev), Apache License 2.0
   - the runtime that the Android, iOS and web builds embed
@@ -63,9 +64,9 @@ Copyright (c) 2024 Mitchell Hashimoto, Ghostty contributors
   - the KITTY_MARKS table in app/src/model/kitty.ts: the combining marks that number a Kitty graphics placeholder's
     row and column, in Ghostty's order (from src/terminal/kitty/graphics_unicode.zig)
 
-The Android and iOS apps include TailPocket v0.3.3 (jt-wang/tailpocket@32c50f3; MIT License, see above): its
+The Android and iOS apps include TailPocket v0.3.6 (jt-wang/tailpocket@e197f3e; MIT License, see above): its
 phone library (connectmobile, built with gomobile) as its release ships it, and, copied into
-third_party/tailpocket-32c50f3, its Swift package and NSH adapter (sdk/apple), its Android modules (sdk/android) and
+third_party/tailpocket-e197f3e, its Swift package and NSH adapter (sdk/apple), its Android modules (sdk/android) and
 its JavaScript client (sdk/js). The library is built from the Go modules listed below for serve --tailcat, and
 golang.org/x/mobile (BSD 3-Clause License, Copyright 2009 The Go Authors). Its Android modules bring AndroidX, Jetpack Compose,
 CameraX and Kotlin's coroutines and serialization (Apache License 2.0) and ZXing (Apache License 2.0).
@@ -79,8 +80,8 @@ The companion (companion/) is built with these Go modules:
     (SQLite is in the public domain), with modernc.org/libc (BSD 3-Clause License, Copyright (c) 2017 The Libc
     Authors, which carries musl libc, MIT License) and the modules they depend on, listed with their licenses in its
     LICENSE-3RD-PARTY.md; the chat view reads OpenCode's database with it
-  - TailPocket v0.3.3 (github.com/jt-wang/tailpocket, commit 32c50f3), MIT License, Copyright (c) 2026
-    Jingtao Wang; its LICENSE and NOTICE are in third_party/tailpocket-32c50f3
+  - TailPocket v0.3.6 (github.com/jt-wang/tailpocket, commit e197f3e), MIT License, Copyright (c) 2026
+    Jingtao Wang; its LICENSE and NOTICE are in third_party/tailpocket-e197f3e
   - for serve --tailcat, tailscale.com and github.com/tailscale/tailcat (BSD 3-Clause License, Copyright (c) 2020
     Tailscale Inc & contributors), github.com/tailscale/wireguard-go (MIT License) and gvisor.dev/gvisor
     (Apache License 2.0), with the modules they depend on; each module's license is in its source

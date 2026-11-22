@@ -1,0 +1,58 @@
+import { expect, open, test } from 'nsh/test'
+
+const setup = { agent: 'omp', name: 'Oh My Pi', file: '~/.omp/agent/extensions/herdr-anywhere-omp.ts', reload: '/restart', version: 1, state: 'absent' }
+const turns = [{ id: 'u1', from: 'you', said: 'Explain the sample module.', reply: 'The sample module adds two numbers.', end: 'done', steps: [{ id: 'tool1', kind: 'run', title: 'ls' }] }]
+
+test('OMP chat installs its own setup, reloads, shows tools, and sends through the composer', async () => {
+  const app = await open('./fixtures/fake.tsx', { host: { params: { scene: 'single', argv: 'omp', status: 'idle', chat: JSON.stringify({ chat: true, unknown: 'setup-needed', setup: 'omp' }), setups: JSON.stringify([setup]) } }, clock: {} })
+  await app.clock.runFor(100)
+  await app.host.send('fake.status', { address: 't1', state: 'idle', app: 'omp' })
+  await app.press('id:space-sp1')
+  await app.waitFor('id:show-chat')
+  await app.press('id:show-chat')
+  await app.waitFor('id:chat-setup-ask')
+  expect(app.texts()).toContain('Use Oh My Pi’s chat on this phone?')
+  await app.press('id:chat-setup-yes')
+  await app.waitFor('id:chat-setup-reload')
+  expect(JSON.parse(app.storage()['fake-setup-asks'] ?? '[]')).toContain('PUT /api/chat-setups/omp')
+  expect(app.texts()).toContain('Type /restart for me')
+  await app.press('id:chat-setup-reload')
+  await app.waitUntil(() => JSON.parse(app.storage()['fake-sent'] ?? '[]').some((s: string[]) => s[1] === '/restart'))
+  await app.host.send('fake.chat', { chat: true, turns })
+  await app.clock.runFor(30_100)
+  await app.waitFor('text:The sample module adds two numbers.')
+  expect(app.texts()).toContain('Oh My Pi')
+  await app.type('id:compose-input', 'HELLO from the OMP chat composer')
+  await app.press('id:compose-send')
+  await app.waitUntil(() => JSON.parse(app.storage()['fake-sent'] ?? '[]').some((s: string[]) => s[1].startsWith('HELLO from the OMP chat composer')))
+  await app.press('id:fold-u1')
+  await app.waitFor('id:step-tool1')
+  await app.press('id:step-tool1')
+  await app.waitFor('text:input of tool1')
+})
+
+test('OMP setup appears in Settings independently of Pi', async () => {
+  const app = await open('./fixtures/fake.tsx', { host: { params: { scene: 'single', open: 'settings', setups: JSON.stringify([setup, { ...setup, agent: 'pi', name: 'Pi' }]) } }, clock: {} })
+  await app.clock.runFor(300)
+  await app.waitFor('id:setup-omp')
+  await app.waitFor('id:setup-pi')
+  expect(app.texts()).toContain('Oh My Pi chat')
+  await app.press('id:setup-omp-install')
+  await app.waitFor('text:On')
+  expect(JSON.parse(app.storage()['fake-setup-asks'] ?? '[]')).toContain('PUT /api/chat-setups/omp')
+})
+
+test('OMP uses terminal fallback without chat and shows blocked permission in Needs you', async () => {
+  const app = await open('./fixtures/fake.tsx', { host: { params: { scene: 'single', argv: 'omp', status: 'idle', chat: JSON.stringify({ chat: false }) } }, clock: {} })
+  await app.clock.runFor(100)
+  await app.press('id:space-sp1')
+  await app.waitFor('id:terminal-t1')
+  await app.clock.runFor(300)
+  expect(app.count('id:show-chat')).toBe(0)
+  await app.host.send('fake.status', { address: 't1', state: 'blocked', app: 'omp', kind: 'permission', msg: 'approve bash: ls' })
+  await app.clock.runFor(300)
+  expect(app.texts()).toContain('bash: ls')
+  await app.back()
+  await app.waitFor('text:Needs you')
+  expect(app.texts()).toContain('Oh My Pi')
+})

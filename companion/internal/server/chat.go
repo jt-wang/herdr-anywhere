@@ -136,7 +136,14 @@ func (s *Server) chatSetupSet(w http.ResponseWriter, r *http.Request) {
 	}
 	force := r.URL.Query().Get("force") == "1"
 	var err error
-	if r.Method == http.MethodPut {
+	if confirmed, ok := st.(chat.ConfirmedSetup); ok && force {
+		confirmation := r.URL.Query().Get("confirmation")
+		if confirmation == "" {
+			writeJSON(w, http.StatusUpgradeRequired, map[string]string{"error": "upgrade-required", "message": "Update the phone app before confirming changes to chat setup files."})
+			return
+		}
+		err = confirmed.ApplyConfirmed(r.Method == http.MethodPut, confirmation)
+	} else if r.Method == http.MethodPut {
 		err = st.Install(force)
 	} else {
 		err = st.Remove(force)

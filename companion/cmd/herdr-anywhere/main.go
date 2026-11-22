@@ -27,8 +27,10 @@ import (
 	"github.com/mdp/qrterminal/v3"
 
 	"herdr-anywhere/companion/internal/chat"
+	"herdr-anywhere/companion/internal/chat/antigravity"
 	"herdr-anywhere/companion/internal/chat/claude"
 	"herdr-anywhere/companion/internal/chat/codex"
+	"herdr-anywhere/companion/internal/chat/cursor"
 	"herdr-anywhere/companion/internal/chat/opencode"
 	"herdr-anywhere/companion/internal/chat/pi"
 	"herdr-anywhere/companion/internal/hcbin"
@@ -39,7 +41,7 @@ import (
 )
 
 // A var so a test can build two versions of this program.
-var version = "0.3.8"
+var version = "0.3.9"
 
 const defaultPort = "7681"
 
@@ -118,6 +120,14 @@ func runContext(ctx context.Context, args []string, stdout, stderr io.Writer) in
 		err = progressCommand(rest, stdout, stderr)
 	case "chat-setup":
 		err = chatSetupCommand(rest, stdout, stderr)
+	case "cursor-hook":
+		fs := flag.NewFlagSet("cursor-hook", flag.ContinueOnError)
+		fs.SetOutput(io.Discard)
+		hc := fs.String("hc", "", "hc executable")
+		if fs.Parse(rest) == nil {
+			cursor.Hook(os.Stdin, *hc)
+		}
+		return 0
 	case "-h", "--help", "help":
 		fmt.Fprint(stdout, usage)
 		return 0
@@ -787,10 +797,15 @@ func revoke(args []string, stdout, stderr io.Writer) error {
 // chatReaders: setups are chatSetups' (Pi's reader asks its setup whether the file is there).
 func chatReaders(setups map[string]chat.Setup) map[string]chat.Reader {
 	piSetup, _ := setups["pi"].(*pi.Setup)
+	cursorSetup, _ := setups["cursor"].(*cursor.Setup)
+	ompSetup, _ := setups["omp"].(*pi.Setup)
 	return map[string]chat.Reader{
+		"cursor":      &cursor.Reader{Setup: cursorSetup},
 		"claude-code": &claude.Reader{Dir: chat.ClaudeDir()},
 		"codex":       &codex.Reader{Dir: codex.Dir()},
 		"pi":          &pi.Reader{Setup: piSetup},
+		"omp":         &pi.Reader{Setup: ompSetup},
 		"opencode":    &opencode.Reader{},
+		"antigravity": &antigravity.Reader{Dir: antigravity.Dir()},
 	}
 }

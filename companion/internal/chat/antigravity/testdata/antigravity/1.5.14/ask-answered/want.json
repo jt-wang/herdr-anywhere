@@ -1,0 +1,16 @@
+[
+  {
+    "id": "0",
+    "from": "you",
+    "said": "please ASK now",
+    "steps": [
+      {
+        "id": "1.0",
+        "kind": "other",
+        "title": "Which color should the button be?"
+      }
+    ],
+    "reply": "Noted your choice.",
+    "end": "done"
+  }
+]

@@ -56,6 +56,6 @@ Tried another agent or model? Run it and open an issue with its `report.json`; h
 
 `test_score.py` checks the scorer itself without a model: a made-up run that does everything right passes, and each way of getting it wrong fails its rule.
 
-## Before a release
+## Is the last run still current?
 
-`check.sh` passes only when `last-report.json` comes from a passing run on the filing rules, the `track` code and this evaluation as they are now (a hash of those files). After changing any of them, run `run.sh` again and copy its `report.json` to `last-report.json`.
+The Tests workflow no longer runs this check, so a release doesn't wait on it; run it by hand. `check.sh` passes only when `last-report.json` comes from a passing run on the filing rules, the `track` code and this evaluation as they are now (a hash of those files). After changing any of them, run `run.sh` again and copy its `report.json` to `last-report.json`.

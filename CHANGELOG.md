@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.3.9
+
+iOS build 44. The phone app and the Companion both changed; an installed Companion updates itself.
+
+- Read Cursor conversations in the phone’s chat view, including tool results, failed commands, edit diffs and images. Enable Cursor chat in Settings; restart a Cursor that was already open after installing its hooks.
+- Antigravity CLI (`agy`) panes open in the chat view: each turn with its steps (reads, edits as diffs, commands with their output, searches, sub-agents), `/plan` plans as Markdown, and agy's questions as answer cards.
+- Oh My Pi has a chat view. In Settings, turn on Oh My Pi chat, then choose “Type /restart for me” in its pane to show the conversation.
+- Built on TailPocket v0.3.6 (jt-wang/tailpocket@e197f3e). When the phone still can't reach the computer, the banner's likeliest cause and the order of Other options follow why TailPocket's last try failed: the computer's address answered but didn't take the phone, so Companion may not be running there; the relay wouldn't carry the connection, so another way to connect; nothing answered, so the network. Anyone on the network can cause these answers, so they only change the order: every option stays, and the phone never unpairs on one.
+
 ## v0.3.8
 
 iOS build 43. The phone app and the Companion both changed; an installed Companion updates itself.

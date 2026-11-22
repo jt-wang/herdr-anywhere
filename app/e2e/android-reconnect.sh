@@ -118,8 +118,9 @@ echo "1. the companion stops"
 kill "$serve_pid"; wait "$serve_pid" 2>/dev/null || true; serve_pid=""
 stopped=$(date +%s)
 for _ in $(seq 1 60); do dump | grep -q 'resource-id="conn-banner"' && break; sleep 1; done
-# The first retries back off to 15 s: wait one round more for what the banner settles on.
-sleep 20
+# Shot once the banner says how old the screen is (60 s after the last update, kit.tsx age), as iOS's Stuck does, so
+# the two phones show the same banner; by then the retries have backed off to 15 s and the banner has settled.
+wait_for 'resource-id="conn-age"' 90 || [ -z "$expect_new" ] || { echo "FAIL: the banner never said how old the screen is"; exit 1; }
 echo "  banner after $(($(date +%s) - stopped)) s"
 shot 1-companion-stopped
 options 1a-options

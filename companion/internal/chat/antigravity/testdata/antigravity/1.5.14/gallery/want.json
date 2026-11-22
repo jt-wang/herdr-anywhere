@@ -1,0 +1,59 @@
+[
+  {
+    "id": "0",
+    "from": "you",
+    "said": "THINK about a plan",
+    "steps": [
+      {
+        "id": "1.t",
+        "kind": "think",
+        "title": "The notes and the todo list may disagree."
+      }
+    ],
+    "reply": "Plan: read both files, then merge them.",
+    "end": "done"
+  },
+  {
+    "id": "2",
+    "from": "you",
+    "said": "MARK up the notes",
+    "steps": [],
+    "reply": "## Notes\n\n- **notes.txt** has one line\n- *todo.txt* has one line\n\n```sh\ncat notes.txt todo.txt\n```\n\n| file | lines |\n|---|---|\n| notes.txt | 1 |\n| todo.txt | 1 |\n\nSee [the guide](https://example.com/guide).",
+    "end": "done"
+  },
+  {
+    "id": "5",
+    "from": "you",
+    "said": "HELP me with a helper",
+    "steps": [
+      {
+        "id": "7.0",
+        "kind": "agent",
+        "title": "Greeting Helper"
+      },
+      {
+        "id": "9.n",
+        "kind": "note",
+        "title": "The helper said hello."
+      }
+    ],
+    "reply": "The helper said hello.",
+    "end": "done"
+  },
+  {
+    "id": "12",
+    "from": "you",
+    "said": "LONG list please",
+    "steps": [],
+    "reply": "Here are the rows:\n\n- row 1 of the sample list, with some words to make it longer than a short line\n- row 2 of the sample list, with some words to make it longer than a short line\n- row 3 of the sample list, with some words to make it longer than a short line\n- row 4 of the sample list, with some words to make it longer than a short line\n- row 5 of the sample list, with some words to make it longer than a short line\n- row 6 of the sample list, with some words to make it longer than a short line\n- row 7 of the sample list, with some words to make it longer than a short line\n- row 8 of the sample list, with some words to make it longer than a short line\n- row 9 of the sample list, with some words to make it longer than a short line\n- row 10 of the sample list, with some words to make it longer than a short line\n- row 11 of the sample list, with some words to make it longer than a short line\n- row 12 of the sample list, with some words to make it longer than a short line\n- row 13 of the sample list, with some words to make it longer than a short line\n- row 14 of the sample list, with some words to make it longer than a short line\n- row 15 of the sample list, with some words to make it longer than a short line\n- row 16 of the sample list, with some words to make it longer than a short line\n- row 17 of the sample list, with some words to make it longer than a short line\n- row 18 of the sample list, with some words to make it longer than a short line\n- row 19 of the sample list, with some words to make it longer than a short line\n- row 20 of the sample list, with some words to make it longer than a short line\n- row 21 of the sample list, with some words to make it longer than a short line\n- row 22 of the sample list, with some words to make it longer than a short line\n- row 23 of the sample list, with some words to make it longer than a short line\n- row 24 of the sample list, with some words to make it longer than a short line\n- row 25 of the sample list, with some words to make it longer than a short line\n- row 26 of the sample list, with some words to make it longer than a short line\n- row 27 of the sample list, with some words to make it longer than a short line\n- row 28 of the sample list, with some words to make it longer than a short line\n- row 29 of the sample list, with some words to make it longer than a short line\n- row 30 of the sample list, with some words to make it longer than a short line\n- row 31 of the sample list, with some words to make it longer than a short line\n- row 32 of the sample list, with some words to make it longer than a short line\n- row 33 of the sample list, with some words to make it longer than a short line\n- row 34 of the sample list, with some words to make it longer than a short line\n- row 35 of the sample list, with some words to make it longer than a short line\n- row 36 of the sample list, with some words to make it longer than a short line\n- row 37 of the sample list, with some words to make it longer than a short line\n- row 38 of the sample list, with some words to make it longer than a short line\n- row 39 of the sample list, with some words to make it longer than a short line\n- row 40 of the sample list, with some words to make it longer than a short line\n- row 41 of the sample list, with some words to make it longer than a short line\n- row 42 of the sample list, with some words to make it longer than a short line\n- row 43 of the sample list, with some words to make it longer than a short line\n- row 44 of the sample list, with some words to make it longer than a short line\n- row 45 of the sample list, with some words to make it longer than a short line\n- row 46 of the sample list, with some words to make it longer than a short line\n- row 47 of the sample list, with some words to make it longer than a short line\n- row 48 of the sample list, with some words to make it longer than a short line\n- row 49 of the sample list, with some words to make it longer than a short line\n- row 50 of the sample list, with some words to make it longer than a short line\n- row 51 of the sample list, with some words to make it longer than a short line\n- row 52 of the sample list, with some words to make it longer than a short line\n- row 53 of the sample list, with some words to make it longer than a short line\n- row 54 of the sample list, with some words to make it longer than a short line\n- row 55 of the sample list, with some words to make it longer than a short line\n- row 56 of the sample list, with some words to make it longer than a short line\n- row 57 of the sample list, with some words to make it longer than a short line\n- row 58 of the sample list, with some words to make it longer than a short line\n- row 59 of the sample list, with some words to make it longer than a short line\n- row 60 of the sample list, with some words to make it longer than a short line\n- row 61 of the sample list, with some words to make it longer than a short line\n- row 62 of the sample list, with some words to make it longer than a short line\n- row 63 of the sample list, with some words to make it longer than a short line\n- row 64 of the sample list, with some words to make it longer than a short line\n- row 65 of the sample list, with some words to make it longer than a short line\n- row 66 of the sample list, with some words to make it longer than a short line\n- row 67 of the sample list, with some words to make it longer than a short line\n- row 68 of the sample list, with some words to make it longer than a short line\n- row 69 of the sample list, with some words to make it longer than a short line\n- row 70 of the sample list, with some words to make it longer than a short line\n- row 71 of the sample list, with some words to make it longer than a short line\n- row 72 of the sample list, with some words to make it longer than a short line\n- row 73 of the sample list, with some words to make it longer than a short line\n- row 74 of the sample list, with some words to make it longer than a short line\n- row 75 of the sample list, with some words to make it longer than a short line\n- row 76 of the sample list, with some words to make it longer than a short line\n- row 77 of the sample list, with some words to make it longer than a short line\n- row 78 of the sample list, with some words to make it longer than a short line\n- row 79 of the sample list, with some words to make it longer than a short line\n- row 80 of the sample list, with some words to make it longer than a short line\n- row 81 of the sample list, with some words to make it longer than a short line\n- row 82 of the sample list, with some words to make it longer than a short line\n- row 83 of the sample list, with some words to make it longer than a short line\n- row 84 of the sample list, with some words to make it longer than a short line\n- row 85 of the sample list, with some words to make it longer than a short line\n- row 86 of the sample list, with some words to make it longer than a short line\n- row 87 of the sample list, with some words to make it longer than a short line\n- row 88 of the sample list, with some words to make it longer than a short line\n- row 89 of the sample list, with some words to make it longer than a short line\n- row 90 of the sample list, with some words to make it longer than a short line\n- row 91 of the sample list, with some words to make it longer than a short line\n- row 92 of the sample list, with some words to make it longer than a short line\n- row 93 of the sample list, with some words to make it longer than a short line\n- row 94 of the sample list, with some words to make it longer than a short line\n- row 95 of the sample list, with some words to make it longer than a short line\n- row 96 of the sample list, with some words to make it longer than a short line\n- row 97 of the sample list, with some words to make it longer than a short line\n- row 98 of the sample list, with some words to make it longer than a short line\n- row 99 of the sample list, with some words to make it longer than a short line\n- row 100 of the sample list, with some words to make it longer than a short line\n- row 101 of the sample list, with some words to make it longer than a short line\n- row 102 of the sample list, with some words to make it longer than a short line\n- row 103 of the sample list, with some words to make it longer than a short line\n- row 104 of the sample list, with some words to make it longer than a short line\n- row 105 of the sample list, with some words to make it longer than a short line\n- row 106 of the sample list, with some words to make it longer than a short line\n- row 107 of the sample list, with some words to make it longer than a short line\n- row 108 of the sample list, with some words to make it longer than a short line\n- row 109 of the sample list, with some words to make it longer than a short line\n- row 110 of the sample list, with some words to make it longer than a short line\n- row 111 of the sample list, with some words to make it longer than a short line\n- row 112 of the sample list, with some words to make it longer than a short line\n- row 113 of the sample list, with some words to make it longer than a short line\n- row 114 of the sample list, with some words to make it longer than a short line\n- row 115 of the sample list, with some words to make it longer than a short line\n- row 116 of the sample list, with some words to make it longer than a short line\n- row 117 of the sample list, with some words to make it longer than a short line\n- row 118 of the sample list, with some words to make it longer than a short line\n- row 119 of the sample list, with some words to make it longer than a short line\n- row 120 of the sample list, with some words to make it longer than a short line\n",
+    "end": "done"
+  },
+  {
+    "id": "15",
+    "from": "you",
+    "said": "FAIL on purpose",
+    "steps": [],
+    "reply": "",
+    "end": "open"
+  }
+]

@@ -24,6 +24,7 @@ func TestChatSetupCommand(t *testing.T) {
 	dir := filepath.Join(d, "pi-agent")
 	os.MkdirAll(dir, 0o755)
 	t.Setenv("PI_CODING_AGENT_DIR", dir)
+	t.Setenv("OMP_PROFILE", "")
 	// A folder with a backslash, as every path on Windows has: the file has the path as a string, escaped.
 	hc := testfake.HC(t, filepath.Join(d, `bin\hc`), "hc", testfake.Spec{Version: "hc 0.1.20"})
 	file := filepath.Join(dir, "extensions", "herdr-anywhere.ts")
@@ -38,7 +39,7 @@ func TestChatSetupCommand(t *testing.T) {
 	if b, _ := os.ReadFile(file); !strings.Contains(string(b), `const HC = `+string(q)+`;`) {
 		t.Fatalf("the file doesn't call this hc")
 	}
-	if code, out := piCmd(t, hc, "status"); code != 0 || !strings.Contains(out, "installed") || strings.Contains(out, "not installed") {
+	if code, out := piCmd(t, hc, "status"); code != 0 || !strings.Contains(out, "pi\tinstalled: "+file) || !strings.Contains(out, "omp\tnot installed:") {
 		t.Fatalf("status after: %d %s", code, out)
 	}
 	if code, out := piCmd(t, hc, "remove", "pi"); code != 0 || !strings.Contains(out, "removed") {

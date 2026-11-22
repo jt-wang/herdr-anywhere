@@ -173,12 +173,13 @@ func (m *Miss) Error() string { return m.Reason }
 
 // Reasons a Miss or an answer gives, as the phone gets them.
 const (
-	NoTerminal  = "no-terminal"   // hc can't say what runs there
-	NoMatch     = "no-match"      // no session file belongs to this process for sure
-	NoRecordYet = "no-record-yet" // the agent writes its record at the first prompt
-	NoRecord    = "no-record"     // the agent runs with its record turned off: none will come
-	Ambiguous   = "ambiguous"
-	Format      = "format" // a format the reader doesn't know
+	NoTerminal     = "no-terminal"     // hc can't say what runs there
+	NoMatch        = "no-match"        // no session file belongs to this process for sure
+	NoRecordYet    = "no-record-yet"   // the agent writes its record at the first prompt
+	AwaitingPrompt = "awaiting-prompt" // setup was installed before this process started; waiting for its first prompt
+	NoRecord       = "no-record"       // the agent runs with its record turned off: none will come
+	Ambiguous      = "ambiguous"
+	Format         = "format" // a format the reader doesn't know
 	// NotReported: an agent that says which conversation it shows only while it works hasn't said it yet to this
 	// Companion; its next turn will.
 	NotReported = "not-reported"
@@ -250,33 +251,38 @@ func DiffHunks(diff string) (hunks []Hunk, cut bool) {
 }
 
 // recommendedMark is the agent's mark after the label it suggests, in the app's languages and either brackets: words
-// the agent wrote, recognised, never shown (allow: user words).
-var recommendedMark = regexp.MustCompile(`(?i)\s*[(（]\s*(recommended|推荐|推薦|おすすめ|推奨|추천|recomendad[oa]|рекомендуется)\s*[)）]\s*$`)
+// the agent wrote, recognised, never shown (allow: user words). recommendedFirst is the same mark before the label, as
+// agy writes it.
+var (
+	recommendedMark  = regexp.MustCompile(`(?i)\s*[(（]\s*(recommended|推荐|推薦|おすすめ|推奨|추천|recomendad[oa]|рекомендуется)\s*[)）]\s*$`)
+	recommendedFirst = regexp.MustCompile(`(?i)^\s*[(（]\s*(recommended|推荐|推薦|おすすめ|推奨|추천|recomendad[oa]|рекомендуется)\s*[)）]\s*`)
+)
 
-// Recommended splits the agent's "(Recommended)" off an option's label. A label that is only the mark stays as it is.
+// Recommended splits the agent's "(Recommended)" off an option's label, after it or before it. A label that is only
+// the mark stays as it is.
 func Recommended(label string) (string, bool) {
-	loc := recommendedMark.FindStringIndex(label)
-	if loc == nil || strings.TrimSpace(label[:loc[0]]) == "" {
-		return label, false
+	if loc := recommendedMark.FindStringIndex(label); loc != nil && strings.TrimSpace(label[:loc[0]]) != "" {
+		return strings.TrimSpace(label[:loc[0]]), true
 	}
-	return strings.TrimSpace(label[:loc[0]]), true
+	if loc := recommendedFirst.FindStringIndex(label); loc != nil && strings.TrimSpace(label[loc[1]:]) != "" {
+		return strings.TrimSpace(label[loc[1]:]), true
+	}
+	return label, false
 }
 
-// AskOf reads a question call's input as Claude Code's AskUserQuestion, Codex's request_user_input and OpenCode's
-// question write it: questions, each with its header, words, options (label, description) and whether any number
-// can be picked (Claude Code's multiSelect, OpenCode's multiple; Codex has none). Text and
-// Options are the first question's, as phones before 0.2.0 show them.
+// AskOf reads a question call's input as Claude Code's AskUserQuestion, Codex's request_user_input, OpenCode's
+// question and agy's ask_question write it: questions, each with its header, words, options (label, description; agy's
+// are plain strings) and whether any number can be picked (Claude Code's multiSelect, OpenCode's multiple, agy's
+// is_multi_select; Codex has none). Text and Options are the first question's, as phones before 0.2.0 show them.
 func AskOf(in json.RawMessage) *Ask {
 	var q struct {
 		Questions []struct {
-			Question    string `json:"question"`
-			Header      string `json:"header"`
-			MultiSelect bool   `json:"multiSelect"`
-			Multiple    bool   `json:"multiple"` // OpenCode's
-			Options     []struct {
-				Label       string `json:"label"`
-				Description string `json:"description"`
-			} `json:"options"`
+			Question    string   `json:"question"`
+			Header      string   `json:"header"`
+			MultiSelect bool     `json:"multiSelect"`
+			Multiple    bool     `json:"multiple"`        // OpenCode's
+			IsMulti     bool     `json:"is_multi_select"` // agy's
+			Options     []option `json:"options"`
 		} `json:"questions"`
 	}
 	a := &Ask{Options: []string{}}
@@ -284,7 +290,7 @@ func AskOf(in json.RawMessage) *Ask {
 		return a
 	}
 	for i, x := range q.Questions {
-		one := Question{Header: x.Header, Text: x.Question, Multi: x.MultiSelect || x.Multiple, Options: []Choice{}}
+		one := Question{Header: x.Header, Text: x.Question, Multi: x.MultiSelect || x.Multiple || x.IsMulti, Options: []Choice{}}
 		for _, o := range x.Options {
 			if i == 0 {
 				a.Options = append(a.Options, o.Label)
@@ -298,6 +304,20 @@ func AskOf(in json.RawMessage) *Ask {
 		a.Questions = append(a.Questions, one)
 	}
 	return a
+}
+
+// option is a question's option: {label, description}, or agy's plain string (its label).
+type option struct {
+	Label       string `json:"label"`
+	Description string `json:"description"`
+}
+
+func (o *option) UnmarshalJSON(b []byte) error {
+	if len(b) > 0 && b[0] == '"' {
+		return json.Unmarshal(b, &o.Label)
+	}
+	type plain option
+	return json.Unmarshal(b, (*plain)(o))
 }
 
 // Start is where a reader reads a record from: its last MaxTail bytes, or further back to the start of the last line

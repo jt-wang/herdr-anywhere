@@ -671,6 +671,84 @@ test('reading an older turn survives a terminal switch and an offline cold launc
   expect(app.shows('id:reply-grove-new')).toBe(true)
 })
 
+test('a relaunched chat restores pagination while preserving its unpinned cached prefix', async () => {
+  for (const more of [false, true]) {
+    const history = Array.from({ length: 18 }, (_, n) => ({ id: `cedar-${n}`, from: 'you',
+      said: `Inspect cedar ${n}`, reply: `Cedar ${n}: ${'The trees are healthy. '.repeat(18)}`, end: 'done', steps: [] }))
+    const recorded = { chat: true, session: 'cedar-relaunch', before: 'expired', turns: history.slice(3) }
+    const app = await pane({ status: 'working', chat: JSON.stringify(recorded) })
+    await app.press('id:show-chat')
+    await app.scroll('id:chat-scroll', -100000)
+    await app.clock.runFor(300)
+    const saved = (a: any) => JSON.parse(JSON.parse(a.storage()['fake-content']).value).chats.find(([address]: [string]) => address === 't1')[1]
+    expect(saved(app).reading.turn).toBe('cedar-3')
+    expect(saved(app).reading.atEnd).toBe(false)
+    expect(saved(app).before).toBe(undefined)
+    expect(saved(app).historyLoaded).toBe(false)
+    const cold = await pane({ status: 'working', content: app.storage()['fake-content'], chat: JSON.stringify({ offline: true }) })
+    await cold.press('id:show-chat')
+    await cold.clock.runFor(300)
+    expect(cold.count('id:reply-cedar-3')).toBe(1)
+    expect(cold.count('id:chat-earlier')).toBe(0)
+    expect(saved(cold).reading.atEnd).toBe(false)
+    await cold.host.send('fake.chat', { ...recorded, turns: history.slice(8), before: more ? 'live' : undefined,
+      historyError: more ? undefined : 'history-limit', pages: {
+        live: { chat: true, session: recorded.session, turns: history.slice(0, 8) },
+      } })
+    await cold.clock.runFor(3200)
+    expect(cold.count('id:reply-cedar-3')).toBe(1)
+    expect(saved(cold).reading.turn).toBe('cedar-3')
+    expect(saved(cold).reading.atEnd).toBe(false)
+    expect(cold.count('id:chat-earlier')).toBe(more ? 1 : 0)
+    expect(cold.count('id:chat-earlier-error')).toBe(more ? 0 : 1)
+    if (more) {
+      await cold.press('id:chat-earlier')
+      await cold.waitFor('id:reply-cedar-0')
+      expect(asks(cold)).toContain('/api/chat/t1?before=live')
+      expect(cold.count('id:reply-cedar-3')).toBe(1)
+      expect(cold.count('id:reply-cedar-17')).toBe(1)
+      expect(cold.count('id:chat-earlier')).toBe(0)
+    }
+  }
+})
+
+test('older pages overlapping a relaunched cached prefix keep row order and advance past cached IDs', async () => {
+  const history = Array.from({ length: 125 }, (_, n) => ({ id: `pine-${n + 1}`, from: 'you',
+    said: `Inspect pine ${n + 1}`, reply: `Pine ${n + 1} is healthy.`, end: 'done', steps: [] }))
+  const recorded = { chat: true, session: 'pine-relaunch', turns: history.slice(60, 100) }
+  const app = await pane({ status: 'working', chat: JSON.stringify(recorded) })
+  await app.press('id:show-chat')
+  await app.scroll('id:chat-scroll', -100000)
+  await app.clock.runFor(300)
+  const saved = (a: any) => JSON.parse(JSON.parse(a.storage()['fake-content']).value).chats.find(([address]: [string]) => address === 't1')[1]
+  expect(saved(app).reading.turn).toBe('pine-61')
+  expect(saved(app).reading.atEnd).toBe(false)
+  const cold = await pane({ status: 'working', content: app.storage()['fake-content'], chat: JSON.stringify({ offline: true }) })
+  await cold.press('id:show-chat')
+  await cold.clock.runFor(300)
+  expect(saved(cold).reading.turn).toBe('pine-61')
+  expect(saved(cold).reading.atEnd).toBe(false)
+  expect(cold.count('id:chat-earlier')).toBe(0)
+  await cold.host.send('fake.chat', { ...recorded, turns: history.slice(95), before: 'middle', pages: {
+    middle: { chat: true, session: recorded.session, turns: history.slice(65, 95), before: 'start' },
+    start: { chat: true, session: recorded.session, turns: history.slice(35, 65) },
+  } })
+  await cold.clock.runFor(3200)
+  const rows = () => cold.texts().filter((x: string) => /^Inspect pine \d+$/.test(x))
+  expect(rows()).toEqual(history.slice(60).map((x) => x.said))
+  await cold.press('id:chat-earlier')
+  await cold.clock.runFor(300)
+  expect(asks(cold)).toContain('/api/chat/t1?before=middle')
+  expect(rows()).toEqual(history.slice(60).map((x) => x.said))
+  expect(saved(cold).turns.map((x: any) => x.id)).toEqual(history.slice(85).map((x) => x.id))
+  expect(cold.count('id:chat-earlier')).toBe(1)
+  await cold.press('id:chat-earlier')
+  await cold.waitFor('id:reply-pine-36')
+  expect(asks(cold).filter((x) => x.includes('?before='))).toEqual(['/api/chat/t1?before=middle', '/api/chat/t1?before=start'])
+  expect(rows()).toEqual(history.slice(35).map((x) => x.said))
+  expect(cold.count('id:chat-earlier')).toBe(0)
+})
+
 test('older pages extend a long chat, survive polling and offline retries, and clear on a new session', async () => {
   const history = Array.from({ length: 65 }, (_, n) => ({ id: `orchard-${n + 1}`, from: 'you',
     said: `Inspect orchard row ${n + 1}`, reply: `Row ${n + 1} is healthy.`, end: 'done', steps: [] }))
@@ -708,6 +786,102 @@ test('older pages extend a long chat, survive polling and offline retries, and c
   await pollUntil(app, 'A fresh orchard.')
   expect(app.count('id:reply-orchard-1')).toBe(0)
   expect(app.count('id:reply-orchard-65')).toBe(0)
+})
+
+test('a fresh branch replaces the abandoned suffix without losing loaded earlier history', async () => {
+  const earlier = { ...turns[0], id: 'u0', said: 'Earlier history', reply: 'Keep this earlier reply.' }
+  const latest = { chat: true, session: 'branch', before: 'earlier', turns, pages: {
+    earlier: { chat: true, session: 'branch', turns: [earlier] },
+  } }
+  const app = await pane({ status: 'working', chat: JSON.stringify(latest) })
+  await app.press('id:show-chat')
+  await app.press('id:chat-earlier')
+  await app.waitFor('id:reply-u0')
+  const replacement = { ...turns[1], id: 'u3', reply: 'A replacement branch.' }
+  await app.host.send('fake.chat', { chat: true, session: 'branch', turns: [turns[0], replacement] })
+  await pollUntil(app, replacement.reply)
+  expect(app.count('id:reply-u0')).toBe(1)
+  expect(app.count('id:reply-u1')).toBe(1)
+  expect(app.count('id:reply-u2')).toBe(0)
+  expect(app.count('id:reply-u3')).toBe(1)
+})
+
+test('normal polls, appends and streaming updates preserve loaded earlier history and open steps', async () => {
+  const earlier = { ...turns[0], id: 'u0', said: 'Earlier history', reply: 'Keep this earlier reply.' }
+  const latest = { chat: true, session: 'append', before: 'earlier', turns, pages: {
+    earlier: { chat: true, session: 'append', turns: [earlier] },
+  } }
+  const app = await pane({ status: 'working', chat: JSON.stringify(latest) })
+  await app.press('id:show-chat')
+  await app.press('id:chat-earlier')
+  await app.waitFor('id:reply-u0')
+  await app.clock.runFor(3200)
+  expect(app.count('id:reply-u0')).toBe(1)
+  const streaming = { ...ask[0], ask: undefined, reply: 'A partial reply.' }
+  await app.host.send('fake.chat', { chat: true, session: 'append', turns: [...turns, streaming] })
+  await pollUntil(app, streaming.reply)
+  if (!app.shows('id:fold-u3')) await app.scroll('id:chat-scroll', 100000)
+  await app.press('id:fold-u3')
+  await app.waitFor('id:step-toolu_3')
+  await app.host.send('fake.chat', { chat: true, session: 'append', turns: [turns[1], { ...streaming, reply: 'A longer streaming reply.' }] })
+  await pollUntil(app, 'A longer streaming reply.')
+  expect(app.count('id:reply-u0')).toBe(1)
+  expect(app.count('id:reply-u1')).toBe(1)
+  expect(app.count('id:reply-u2')).toBe(1)
+  expect(app.count('id:reply-u3')).toBe(1)
+  expect(app.count('id:step-toolu_3')).toBe(1)
+})
+
+test('a disjoint fresh page replaces exhausted pagination and offers its earlier history', async () => {
+  for (const historyError of [undefined, 'history-limit']) {
+    const latest = { chat: true, session: 'refresh', before: 'old', turns: [turns[1]], pages: {
+      old: { chat: true, session: 'refresh', turns: [turns[0]], historyError: 'history-limit' },
+    } }
+    const app = await pane({ status: 'working', chat: JSON.stringify(latest) })
+    await app.press('id:show-chat')
+    await app.press('id:chat-earlier')
+    await app.waitFor('id:reply-u1')
+    expect(app.count('id:chat-earlier')).toBe(0)
+    expect(app.count('id:chat-earlier-error')).toBe(1)
+    await app.press('id:show-terminal')
+    const fresh = { ...turns[0], id: 'u3', reply: 'The refreshed latest page.' }
+    await app.host.send('fake.chat', { chat: true, session: 'refresh', turns: [fresh], before: 'refreshed', historyError, pages: {
+      refreshed: { chat: true, session: 'refresh', turns },
+    } })
+    await app.press('id:show-chat')
+    await pollUntil(app, fresh.reply)
+    expect(app.count('id:reply-u1')).toBe(0)
+    expect(app.count('id:reply-u2')).toBe(0)
+    expect(app.count('id:chat-earlier')).toBe(1)
+    expect(app.count('id:chat-earlier-error')).toBe(historyError ? 1 : 0)
+    await app.clock.runFor(300)
+    const saved = JSON.parse(JSON.parse(app.storage()['fake-content']).value).chats.find(([address]: [string]) => address === 't1')[1]
+    expect(saved.historyLoaded).toBe(false)
+    await app.press('id:chat-earlier')
+    await app.waitFor('id:reply-u1')
+    expect(asks(app)).toContain('/api/chat/t1?before=refreshed')
+    expect(app.count('id:reply-u2')).toBe(1)
+    expect(app.count('id:reply-u3')).toBe(1)
+    expect(app.count('id:chat-earlier')).toBe(0)
+    expect(app.count('id:chat-earlier-error')).toBe(0)
+  }
+})
+
+test('empty and unanchored fresh pages do not retain a loaded old branch', async () => {
+  for (const fresh of [[], [{ ...turns[0], id: 'new-root', reply: 'A different root.' }]]) {
+    const latest = { chat: true, session: 'same', before: 'earlier', turns: [turns[1]], pages: {
+      earlier: { chat: true, session: 'same', turns: [turns[0]] },
+    } }
+    const app = await pane({ status: 'working', chat: JSON.stringify(latest) })
+    await app.press('id:show-chat')
+    await app.press('id:chat-earlier')
+    await app.waitFor('id:reply-u1')
+    await app.host.send('fake.chat', { chat: true, session: 'same', turns: fresh })
+    await app.clock.runFor(3200)
+    await app.waitUntil(() => app.count('id:reply-u2') === 0)
+    expect(app.count('id:reply-u1')).toBe(0)
+    expect(app.count('id:reply-new-root')).toBe(fresh.length)
+  }
 })
 
 test('cached chat survives terminal switches and an offline cold launch, then yields to a new remote session', async () => {

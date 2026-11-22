@@ -17,6 +17,7 @@ import (
 // agent, but nothing sure to show, and why.
 type Answer struct {
 	Chat    bool   `json:"chat"`
+	Program string `json:"program,omitempty"`
 	Unknown string `json:"unknown,omitempty"`
 	// Setup is the agent whose Setup the phone can offer, when Unknown is SetupNeeded or SetupNotLoaded.
 	Setup string `json:"setup,omitempty"`
@@ -58,6 +59,7 @@ type Service struct {
 var localAddress = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}$`)
 
 type terminal struct {
+	Pid     int               `json:"pid"`
 	Address string            `json:"address"`
 	Cwd     string            `json:"cwd"`
 	Title   string            `json:"title"`
@@ -120,6 +122,25 @@ func (s *Service) findMsg(addr string) (app string, r Reader, path, version stri
 		return "", nil, "", "", "", "", nil
 	}
 	if t.Status == nil {
+		if t.Foreground == nil {
+			for app, reader := range s.Readers {
+				if v, ok := reader.(interface {
+					UnreportedPane(int, map[string]string) (Pane, bool)
+				}); ok {
+					if p, valid := v.UnreportedPane(t.Pid, t.Labels); valid {
+						t.Foreground = &struct {
+							Pid  int    `json:"pid"`
+							Cwd  string `json:"cwd"`
+							Name string `json:"name"`
+						}{Pid: p.Pid, Cwd: p.Cwd, Name: app}
+						if n, ok := reader.(Named); ok {
+							t.Foreground.Name = n.ProgramName()
+						}
+						break
+					}
+				}
+			}
+		}
 		// A program that reports no status, known by its process name (OpenCode 1).
 		app, r = s.named(t)
 		if r == nil {
@@ -134,6 +155,13 @@ func (s *Service) findMsg(addr string) (app string, r Reader, path, version stri
 	r = s.Readers[t.Status.App]
 	if r == nil {
 		return "", nil, "", "", "", "", nil
+	}
+	if v, ok := r.(interface {
+		UnreportedPane(int, map[string]string) (Pane, bool)
+	}); ok {
+		if p, valid := v.UnreportedPane(t.Pid, t.Labels); !valid || t.Foreground == nil || p.Pid != t.Foreground.Pid {
+			return "", nil, "", "", "", "", nil
+		}
 	}
 	if t.Foreground == nil || t.Foreground.Pid <= 0 {
 		return t.Status.App, r, "", "", t.Status.State, t.Status.Msg, &Miss{Reason: NoTerminal}
@@ -171,7 +199,14 @@ func (s *Service) Chat(addr string) Answer {
 	return s.chatFound(app, r, path, version, state, msg, err)
 }
 
-func (s *Service) chatFound(app string, r Reader, path, version, state, msg string, err error) Answer {
+func (s *Service) chatFound(app string, r Reader, path, version, state, msg string, err error) (answer Answer) {
+	defer func() {
+		if _, ok := r.(interface {
+			UnreportedPane(int, map[string]string) (Pane, bool)
+		}); ok {
+			answer.Program = app
+		}
+	}()
 	// A slow hc can't say now what runs there: unsure, not "no chat here", which closes an open chat view.
 	if errors.Is(err, errSlow) {
 		return Answer{Chat: true, Unknown: NoTerminal}
@@ -199,6 +234,9 @@ func (s *Service) chatFound(app string, r Reader, path, version, state, msg stri
 	if errors.As(err, &fe) {
 		s.once(app+" "+version+" "+fe.Field, "chat: %s %s: %v", app, version, err)
 		return Answer{Chat: true, Unknown: Format}
+	}
+	if errors.As(err, &m) {
+		return Answer{Chat: true, Unknown: m.Reason}
 	}
 	if err != nil {
 		return Answer{Chat: true, Unknown: NoMatch}

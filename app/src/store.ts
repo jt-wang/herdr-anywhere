@@ -19,7 +19,7 @@ import { readMenu, type Menu } from './model/menu.ts'
 import type { Step } from './model/ask.ts'
 import { spaceMarks } from './model/marks.ts'
 import { KittyImages } from './model/kitty.ts'
-import type { ChatApi } from './model/chat.ts'
+import type { ChatApi, ChatAnswer } from './model/chat.ts'
 import { Content, type ContentIO, type CachedChat } from './content.ts'
 import { diag } from './diag.ts'
 
@@ -149,6 +149,8 @@ export class Store {
   useAutomatic?: () => void
   /** What to run on the computer so this phone connects again, from how it was paired (restart.ts; set by the screens). */
   restart?: Restart
+  /** Through TailPocket: why its last try failed (the Linker's `failure`), which the stuck hint names first. */
+  dialFailure?: Signal<string>
   readonly rev = new Signal(0)
   readonly toasts = new Signal<Toast[]>([])
   readonly machines = new Signal<Machine[]>([])
@@ -595,6 +597,8 @@ export class Store {
   private event(msg: any) {
     if (this.restored) { this.restoringEvents?.push(msg); return }
     const r = this.terms.apply(msg)
+    if (r.rereadDocs) this.cursorPrograms.clear()
+    if (r.terminal && this.cursorPrograms.get(r.terminal) !== this.cursorChatKey(r.terminal)) this.cursorPrograms.delete(r.terminal)
     if (r.type === 'labels' && r.terminal && this.moving.delete(r.terminal)) r.changed = true
     if (r.rereadDocs) for (const m of this.machineNames()) void this.readDoc(m)
     if (r.doc && r.doc.name === 'herdr-app') {
@@ -974,7 +978,33 @@ export class Store {
 
   program(addr: string | undefined): Program {
     const t = this.term(addr)
+    if (addr && this.cursorPrograms.get(addr) === this.cursorChatKey(addr)) return programOf('cursor', [])
     return programOf(t?.status?.app ?? null, t?.foreground?.argv ?? t?.argv ?? [])
+  }
+
+  private cursorPrograms = new Map<string, string>()
+  readonly chatSetupRevision = new Signal(0)
+
+  chatSetupChanged(agent: string) {
+    if (agent === 'cursor') this.chatSetupRevision.set(this.chatSetupRevision.get() + 1)
+  }
+
+  /** Labels are only a discovery hint. Only the companion can validate the process and its terminal ancestry. */
+  cursorChatKey(addr: string): string {
+    const t = this.term(addr)
+    if (!t || t.state !== 'live') return ''
+    const p = programOf(t.status?.app ?? null, t.foreground?.argv ?? t.argv)
+    if (p.key !== 'cursor' && (t.status?.app || t.foreground || (!p.shell && !t.labels['herdr-anywhere.chat.cursor.cwd']))) return ''
+    return JSON.stringify([this.attempt, t.pid, t.argv, t.foreground, t.status, t.labels['herdr-anywhere.chat.pid'],
+      t.labels['herdr-anywhere.chat.session'], t.labels['herdr-anywhere.chat.cursor.cwd']])
+  }
+
+  acceptChatProgram(addr: string, key: string, answer: ChatAnswer) {
+    if (!key || key !== this.cursorChatKey(addr)) return
+    const before = this.cursorPrograms.get(addr)
+    if (answer.chat && answer.program === 'cursor') this.cursorPrograms.set(addr, key)
+    else this.cursorPrograms.delete(addr)
+    if (before !== this.cursorPrograms.get(addr)) { this.dirty = true; this.sync() }
   }
 
   terminalName(t: Term | undefined): string {

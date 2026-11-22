@@ -2,7 +2,7 @@
 import { cleanup, platform, Scroll, signal, Text, View } from 'nsh'
 import { AlertDialog } from 'nsh/base'
 import { explain, type Store } from '../store.ts'
-import type { ChatSetup } from '../model/chat.ts'
+import { setupChangedText, type ChatSetup } from '../model/chat.ts'
 import { agentsLine, parseAgents, pickLine, switchLine, type AgentChoice } from '../model/progress.ts'
 import { busyWord, runUpdate, useUpdates } from './update.tsx'
 import { APP_VERSION, type Updates } from '../updates.ts'
@@ -60,12 +60,15 @@ function ChatSetupRows(props: { store: Store }) {
     busy.set(x.agent)
     try {
       let r = await chat!.setSetup(x.agent, on)
-      if (r.result === 'changed') {
-        const a = await AlertDialog.show({ title: t('setupChangedTitle'), description: t('setupChangedBody', { file: x.file }),
+      while (r.result === 'changed') {
+        const current = r.setup ?? x
+        const a = await AlertDialog.show({ title: t('setupChangedTitle'), description: setupChangedText(current),
           actions: [{ id: 'keep', label: t('setupKeep'), role: 'cancel' }, { id: 'go', label: on ? t('setupReplace') : t('setupRemove'), role: on ? undefined : 'destructive' }] })
-        if (a === 'go') r = await chat!.setSetup(x.agent, on, true)
+        if (a !== 'go') break
+        r = await chat!.setSetup(x.agent, on, true, current.confirmation)
       }
       if (r.setup) put(r.setup)
+      if (r.result === 'ok') props.store.chatSetupChanged(x.agent)
       if (r.result === 'failed') props.store.toast({ title: t('setupFailed'), level: 'error' })
     } catch {
       props.store.toast({ title: t('setupFailed'), level: 'error' })

@@ -64,6 +64,8 @@ func TestHistoryLongSession(t *testing.T) {
 
 func TestHistoryRecordedFixtures(t *testing.T) {
 	files, _ := filepath.Glob("testdata/pi/*/*.jsonl")
+	ompFiles, _ := filepath.Glob("testdata/omp/*/*.jsonl")
+	files = append(files, ompFiles...)
 	if len(files) == 0 {
 		t.Fatal("no fixtures")
 	}

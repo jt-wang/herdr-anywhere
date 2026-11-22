@@ -1,0 +1,25 @@
+// Placed by Herdr Anywhere, so its phone app can show this Oh My Pi's conversation.
+// It reports only the session file and process number to the local terminal; no other setting is changed.
+// To remove it: tap Remove at "Oh My Pi chat" in settings, run `herdr-anywhere chat-setup remove omp`, or delete
+// this file. Oh My Pi stops using it after /restart.
+// herdr-anywhere chat setup: omp 1
+// @ts-nocheck
+
+import { execFile } from "node:child_process";
+
+const HC = "{{HC}}";
+
+export default function (omp) {
+  const terminal = process.env.HC_TERMINAL_ID;
+  if (!terminal) {
+    return;
+  }
+  omp.on("session_start", (_event, ctx) => {
+    const file = ctx?.sessionManager?.getSessionFile?.();
+    if (!file) {
+      return;
+    }
+    execFile(HC, ["label", terminal, `herdr-anywhere.chat.pid=${process.pid}`, `herdr-anywhere.chat.session=${file}`],
+      { timeout: 5000 }, () => {});
+  });
+}

@@ -5,6 +5,17 @@
 const front = () => typeof document === 'undefined' || (document.visibilityState === 'visible' && document.hasFocus())
 const permission = () => (typeof Notification === 'undefined' ? 'unsupported' : Notification.permission)
 
+// Native alerts have no styling hook; their web counterpart must also wrap unbroken setup paths on phones.
+export function setupPathStyles() {
+  const style = document.createElement('style')
+  style.textContent = `
+    .nsh-dialog { min-width: 0; max-width: calc(100% - 32px); max-height: calc(100% - 32px); overflow-y: auto; }
+    .nsh-dialog p, [data-testid="chat-setup-changed-body"] { overflow-wrap: anywhere; word-break: break-word; min-width: 0; max-width: 100%; }
+    [data-testid="chat-setup-changed"] { max-height: calc(100dvh - 32px); overflow-y: auto; }
+  `
+  return style
+}
+
 // The notifications on screen, by terminal: new words (`quiet`) replace one still there, silently.
 const shown = new Map()
 function notify(player, a) {
@@ -80,6 +91,7 @@ async function copyImage(a) {
 }
 
 export function createHost(player) {
+  if (typeof document !== 'undefined' && document.head) document.head.append(setupPathStyles())
   const functions = new Map([
     ['page.address', () => (typeof location === 'undefined' ? null : { href: location.href, origin: location.origin })],
     ['page.dropPair', () => {

@@ -1,7 +1,7 @@
 // The page's side of alerts (web-host.js) over a stand-in browser: whether the page is in front, and the system's
 // notifications it posts while it is not.
 import { expect, test } from 'nsh/test'
-import { createHost } from './web-host.js'
+import { createHost, setupPathStyles } from './web-host.js'
 
 function browser(permission = 'granted') {
   const listeners = new Map<string, (() => void)[]>()
@@ -36,6 +36,21 @@ test('the page says whether it is in front, and tells the app when that changes'
   b.page.visibilityState = 'visible'
   b.fire('visibilitychange')
   expect(b.events).toEqual([{ name: 'page.front', data: { front: false } }, { name: 'page.front', data: { front: true } }])
+})
+
+test('web confirmations wrap long setup paths and stay inside a narrow viewport', () => {
+  const b = browser()
+  const styles: any[] = []
+  const doc = (globalThis as any).document
+  doc.head = { append: (style: any) => styles.push(style) }
+  doc.createElement = (tag: string) => ({ tag, textContent: '' })
+  createHost({ hostEvent: () => {} })
+  expect(styles.length).toBe(1)
+  expect(styles[0].tag).toBe('style')
+  const css = setupPathStyles().textContent
+  expect(css.includes('.nsh-dialog p, [data-testid="chat-setup-changed-body"] { overflow-wrap: anywhere;')).toBe(true)
+  expect(css.includes('max-width: calc(100% - 32px)')).toBe(true)
+  expect(css.includes('max-height: calc(100dvh - 32px); overflow-y: auto;')).toBe(true)
 })
 
 test('a page in another tab posts the notification; tapping it brings the page and the agent back', () => {

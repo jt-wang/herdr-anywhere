@@ -12,6 +12,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"herdr-anywhere/companion/internal/chat"
+	"herdr-anywhere/companion/internal/chat/pi"
 )
 
 // PaneReport says what one pane did for one thing, read from the agent's own
@@ -32,9 +35,10 @@ type PaneReport struct {
 }
 
 type HCDetail struct {
-	Pid int
-	App string
-	Msg string
+	Pid    int
+	App    string
+	Msg    string
+	Labels map[string]string
 }
 
 // ReportSources are the places Report reads; zero fields use this Mac's.
@@ -116,6 +120,8 @@ func reportPane(t Thing, p PaneRef, live Live, src ReportSources, now time.Time,
 			r.Reply, r.Source, r.Note = claudeByPid(src.ClaudeHome, d.Pid)
 		case "pi":
 			r.Reply, r.Source, r.Note = piByCwd(src.PiHome, lp.cwd)
+		case "omp":
+			r.Reply, r.Source, r.Note = ompByPane(d, src.HC)
 		default:
 			r.Note = "no reader for " + d.App
 		}
@@ -133,6 +139,23 @@ func reportPane(t Thing, p PaneRef, live Live, src ReportSources, now time.Time,
 	}
 	r.Reply = cut(r.Reply, 300)
 	return r
+}
+
+func ompByPane(p HCDetail, hc string) (reply, source, note string) {
+	r := &pi.Reader{Setup: pi.OMPSetup(hc)}
+	file, _, err := r.FindPane(chat.Pane{Pid: p.Pid, Labels: p.Labels})
+	if err != nil {
+		return "", "", err.Error()
+	}
+	turns, err := r.Turns(file)
+	if err != nil {
+		return "", "", err.Error()
+	}
+	source = "omp session (labeled)"
+	if len(turns) == 0 || turns[len(turns)-1].End != "done" || turns[len(turns)-1].Reply == "" {
+		return "", source, "the last turn has no finished reply"
+	}
+	return turns[len(turns)-1].Reply, source, ""
 }
 
 func (l Live) herdrAgent(p PaneRef) HerdrAgent {
@@ -350,6 +373,7 @@ func hcGet(hc, addr string) (HCDetail, error) {
 		return HCDetail{}, err
 	}
 	var v struct {
+		Labels     map[string]string `json:"labels"`
 		Foreground struct {
 			Pid int `json:"pid"`
 		} `json:"foreground"`
@@ -361,7 +385,7 @@ func hcGet(hc, addr string) (HCDetail, error) {
 	if err := json.Unmarshal(out, &v); err != nil {
 		return HCDetail{}, err
 	}
-	d := HCDetail{Pid: v.Foreground.Pid}
+	d := HCDetail{Pid: v.Foreground.Pid, Labels: v.Labels}
 	if v.Status != nil {
 		d.App, d.Msg = v.Status.App, v.Status.Msg
 	}

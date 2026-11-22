@@ -122,8 +122,8 @@ class ArchiveTest(ReleaseTest):
                 'app/ios/Herdr.xcodeproj/project.pbxproj': 'synthetic generated project',
                 'app/ios/nsh/bundle.nshc': 'synthetic store bytecode',
                 'app/ios/Info.plist': 'synthetic generated info',
-                'third_party/tailpocket-32c50f3/build/apple/TailPocketMobile.xcframework/Info.plist': 'synthetic mobile library',
-                'third_party/tailpocket-32c50f3/sdk/apple/NSH/NativeShell.xcframework/ios-arm64/NativeShell.framework/NativeShell': 'synthetic runtime',
+                'third_party/tailpocket-e197f3e/build/apple/TailPocketMobile.xcframework/Info.plist': 'synthetic mobile library',
+                'third_party/tailpocket-e197f3e/sdk/apple/NSH/NativeShell.xcframework/ios-arm64/NativeShell.framework/NativeShell': 'synthetic runtime',
             }
             for name, content in inputs.items():
                 path = self.root / name
@@ -302,8 +302,8 @@ class ArchiveTest(ReleaseTest):
 
     def test_changed_prepared_artifact_is_rejected_before_signing(self):
         for name in ['app/ios/Herdr.xcodeproj/project.pbxproj', 'app/ios/nsh/bundle.nshc',
-                     'third_party/tailpocket-32c50f3/build/apple/TailPocketMobile.xcframework/Info.plist',
-                     'third_party/tailpocket-32c50f3/sdk/apple/NSH/NativeShell.xcframework/ios-arm64/NativeShell.framework/NativeShell']:
+                     'third_party/tailpocket-e197f3e/build/apple/TailPocketMobile.xcframework/Info.plist',
+                     'third_party/tailpocket-e197f3e/sdk/apple/NSH/NativeShell.xcframework/ios-arm64/NativeShell.framework/NativeShell']:
             with self.subTest(name=name):
                 file = self.root / name
                 original = file.read_bytes()

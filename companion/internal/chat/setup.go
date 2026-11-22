@@ -58,16 +58,33 @@ func (p Pane) Labeled() (string, bool) {
 
 // SetupInfo is a Setup as the phone gets it.
 type SetupInfo struct {
-	Agent   string     `json:"agent"`
-	Name    string     `json:"name"`
-	File    string     `json:"file"`             // ~ for the home folder
-	Reload  string     `json:"reload,omitempty"` // what to type in an agent already running for it to use the file
-	Version int        `json:"version"`
-	State   SetupState `json:"state"`
+	ChangedFiles []string   `json:"changedFiles,omitempty"`
+	Confirmation string     `json:"confirmation,omitempty"`
+	Agent        string     `json:"agent"`
+	Name         string     `json:"name"`
+	File         string     `json:"file"`             // ~ for the home folder
+	Reload       string     `json:"reload,omitempty"` // what to type in an agent already running for it to use the file
+	Version      int        `json:"version"`
+	State        SetupState `json:"state"`
 }
 
 func Info(s Setup) SetupInfo {
-	return SetupInfo{Agent: s.Agent(), Name: s.Name(), File: tilde(s.File()), Reload: s.Reload(), Version: s.Version(), State: s.State()}
+	i := SetupInfo{Agent: s.Agent(), Name: s.Name(), File: tilde(s.File()), Reload: s.Reload(), Version: s.Version(), State: s.State()}
+	if c, ok := s.(ConfirmedSetup); ok {
+		files, token, err := c.Confirmation()
+		if err == nil {
+			for _, file := range files {
+				i.ChangedFiles = append(i.ChangedFiles, tilde(file))
+			}
+			i.Confirmation = token
+		}
+	}
+	return i
+}
+
+type ConfirmedSetup interface {
+	Confirmation() ([]string, string, error)
+	ApplyConfirmed(install bool, token string) error
 }
 
 // tilde writes a path under the home folder as ~/…: what the phone shows is shorter, and shows no user name.

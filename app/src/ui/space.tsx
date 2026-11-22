@@ -141,17 +141,23 @@ function PhoneSpace(props: { store: Store; spaceId: string; tab: Tab; actions: S
   const session = signal<TerminalSession | undefined>(undefined)
   const switching = signal(false)
   const whole = () => { rev(); return s.shownWhole.has(props.tab.id) && panes(props.tab.root).length > 1 }
-  // The chat view (ui/chat.tsx): the computer says which agents' panes have one; asked again when the pane, its program
-  // or its status changes, never on a timer.
+  // Cursor has no status reports. Revalidate its availability while focused, including before its first hook.
   const addr = () => { const n = node(); return n ? terminalOf(n) : undefined }
   const chat = { avail: signal(false), on: signal(false) }
+  const setupRevision = useSignal(s.chatSetupRevision)
   let asked = ''
+  let cursorTimer: ReturnType<typeof setTimeout> | undefined
+  cleanup(() => { asked = ''; clearTimeout(cursorTimer) })
   effect(() => {
     rev()
-    if (!active()) { asked = ''; return }
+    const setup = setupRevision()
+    if (!active()) { asked = ''; clearTimeout(cursorTimer); return }
     const a = addr()
-    const key = a && s.chat && s.isAgent(a) ? `${a} ${s.program(a).key} ${s.statusOf(a) ?? ''}` : ''
+    const cursor = a ? s.cursorChatKey(a) : ''
+    const key = a && s.chat && (s.isAgent(a) || cursor)
+      ? cursor ? `${a} cursor ${cursor} ${setup}` : `${a} ${s.program(a).key} ${s.statusOf(a) ?? ''}` : ''
     if (key === asked) return
+    clearTimeout(cursorTimer)
     const moved = key.split(' ')[0] !== asked.split(' ')[0]
     asked = key
     if (moved) untracked(() => {
@@ -160,12 +166,21 @@ function PhoneSpace(props: { store: Store; spaceId: string; tab: Tab; actions: S
       chat.on.set(s.chatFirst.get()); chat.avail.set(!!key && !!s.cachedChat(a!)?.chat)
     })
     if (!key) return
-    void s.chat!.get(a!).then((r) => {
-      if (asked !== key) return
-      if (!r.chat && untracked(() => chat.on() && chat.avail())) diag('chat-gone', { addr: a!, agent: String(s.isAgent(a)), program: s.program(a).key })
-      if (!s.cachedChat(a!) || !r.chat || (r.unknown && r.unknown !== 'behind')) s.rememberChat(a!, r)
-      chat.avail.set(r.chat)
-    }, () => {})
+    const ask = async () => {
+      try {
+        const r = await s.chat!.get(a!)
+        if (asked !== key || !s.appActive || (cursor && cursor !== s.cursorChatKey(a!))) return
+        if (!r.chat && untracked(() => chat.on() && chat.avail())) diag('chat-gone', { addr: a!, agent: String(s.isAgent(a)), program: s.program(a).key })
+        s.acceptChatProgram(a!, cursor, r)
+        if (!s.cachedChat(a!) || !r.chat || (r.unknown && r.unknown !== 'behind')) s.rememberChat(a!, r)
+        chat.avail.set(r.chat)
+      } catch {} finally {
+        if (cursor && asked === key && s.appActive && cursor === s.cursorChatKey(a!)) {
+          cursorTimer = setTimeout(() => void ask(), s.program(a!).key === 'cursor' || s.term(a!)?.labels['herdr-anywhere.chat.cursor.cwd'] ? 3000 : 10_000)
+        }
+      }
+    }
+    void ask()
   })
   return (
     <View class="flex-1 bg-background">

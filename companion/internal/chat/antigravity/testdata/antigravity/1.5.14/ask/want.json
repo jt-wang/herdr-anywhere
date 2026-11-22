@@ -1,0 +1,43 @@
+[
+  {
+    "id": "0",
+    "from": "you",
+    "said": "please ASK now",
+    "steps": [],
+    "reply": "",
+    "ask": {
+      "text": "Which color should the button be?",
+      "options": [
+        "(Recommended) Blue",
+        "Red"
+      ],
+      "questions": [
+        {
+          "text": "Which color should the button be?",
+          "options": [
+            {
+              "label": "Blue",
+              "recommended": true
+            },
+            {
+              "label": "Red"
+            }
+          ]
+        },
+        {
+          "text": "Which sizes should it come in?",
+          "multi": true,
+          "options": [
+            {
+              "label": "Small"
+            },
+            {
+              "label": "Large"
+            }
+          ]
+        }
+      ]
+    },
+    "end": "open"
+  }
+]

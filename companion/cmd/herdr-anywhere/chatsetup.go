@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"herdr-anywhere/companion/internal/chat"
+	"herdr-anywhere/companion/internal/chat/cursor"
 	"herdr-anywhere/companion/internal/chat/pi"
 	"herdr-anywhere/companion/internal/hcbin"
 )
@@ -19,8 +20,11 @@ import (
 // chatSetups are the small files some agents' chats need (chat.Setup), by the agent's OSC 7501 app name. serve
 // offers them to the phone and the chat-setup command runs them; adding an agent's is one entry here.
 func chatSetups(hc string) map[string]chat.Setup {
+	binary, _ := os.Executable()
 	return map[string]chat.Setup{
-		"pi": &pi.Setup{Dir: pi.AgentDir(), HC: hc},
+		"cursor": &cursor.Setup{Binary: binary, HC: hc},
+		"pi":     &pi.Setup{Dir: pi.AgentDir(), HC: hc},
+		"omp":    pi.OMPSetup(hc),
 	}
 }
 

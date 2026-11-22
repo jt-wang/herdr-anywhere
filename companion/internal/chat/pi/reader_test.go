@@ -158,6 +158,46 @@ func TestFindPaneByWhatTheFileSaid(t *testing.T) {
 	}
 }
 
+func TestFindPaneAfterSetupRemoval(t *testing.T) {
+	for _, agent := range []string{"pi", "omp"} {
+		t.Run(agent, func(t *testing.T) {
+			r, p, file := pane(t, map[string]string{chat.LabelPid: "4242", chat.LabelSession: "FILE"})
+			if agent == "omp" {
+				ompEnv(t)
+				t.Setenv("PI_CODING_AGENT_DIR", r.Setup.Dir)
+				r.Setup = OMPSetup(r.Setup.HC)
+			}
+			if err := r.Setup.Install(false); err != nil {
+				t.Fatal(err)
+			}
+			if got, _, err := r.FindPane(p); err != nil || got != file {
+				t.Fatalf("installed: %q %v", got, err)
+			}
+			if err := r.Setup.Remove(false); err != nil {
+				t.Fatal(err)
+			}
+			if _, ok := p.Labeled(); !ok {
+				t.Fatal("removal test must retain matching process/session labels")
+			}
+			if got, _, err := r.FindPane(p); got != "" || miss(err) != chat.SetupNeeded {
+				t.Fatalf("removed: %q %v", got, err)
+			}
+			if err := r.Setup.Install(false); err != nil {
+				t.Fatal(err)
+			}
+			if got, _, err := r.FindPane(p); err != nil || got != file {
+				t.Fatalf("reinstalled: %q %v", got, err)
+			}
+			if err := os.RemoveAll(r.Setup.Dir); err != nil {
+				t.Fatal(err)
+			}
+			if got, _, err := r.FindPane(p); got != "" || miss(err) != chat.SetupNeeded {
+				t.Fatalf("agent directory removed: %q %v", got, err)
+			}
+		})
+	}
+}
+
 // Without the file there is nothing to go by: the phone offers to put it there.
 func TestFindPaneWithoutTheFile(t *testing.T) {
 	r, p, _ := pane(t, map[string]string{})

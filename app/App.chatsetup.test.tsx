@@ -24,13 +24,15 @@ test('the first Pi chat asks once; after Not now the page says what is missing, 
   await app.press('id:show-chat')
   await app.waitFor('id:chat-setup-ask')
   expect(app.texts()).toContain('Use Pi’s chat on this phone?')
+  expect(app.texts()).toContain('· Only the setup file; no other Pi setting changes')
+  expect(app.texts().some((x: string) => x.includes('a small setup file in each of Pi’s folders'))).toBe(true)
   expect(app.texts().some((x: string) => x.includes('~/.pi/agent/extensions/herdr-anywhere.ts'))).toBe(true)
   await app.press('id:chat-setup-later')
   await app.waitUntil(() => app.count('id:chat-setup-ask') === 0)
   expect(setupAsks(app).filter((a) => !a.startsWith('GET'))).toEqual([])
   // The page itself: what is missing, and Install. The terminal is one tap away.
   expect(app.count('id:chat-setup-install')).toBe(1)
-  expect(app.texts()).toContain('Pi’s chat needs one small file on the computer')
+  expect(app.texts()).toContain('Pi’s chat needs a setup file on the computer')
   await app.press('id:chat-terminal')
   await app.waitFor('id:show-chat')
   await app.press('id:show-chat')
@@ -73,6 +75,47 @@ const settings = async (setups: unknown[]) => {
   await app.clock.runFor(300)
   return app
 }
+
+const editedProfiles = { ...PI, agent: 'omp', name: 'Oh My Pi', state: 'changed',
+  changedFiles: ['~/.omp/profiles/blue/agent/extensions/herdr-anywhere-omp.ts', '~/.omp/profiles/green/agent/extensions/herdr-anywhere-omp.ts'], confirmation: 'sample-two' }
+
+for (const on of [true, false]) test(`Settings discloses both edited profiles before ${on ? 'replacing' : 'removing'} them`, async () => {
+  const app = await settings([editedProfiles])
+  await app.waitFor('id:setup-omp')
+  const prompts: string[] = []
+  app.onDialog((d) => { prompts.push(JSON.stringify(d)); return on ? 'Replace it with Herdr Anywhere’s' : 'Remove' })
+  await app.press(`id:setup-omp-${on ? 'install' : 'remove'}`)
+  await app.waitUntil(() => setupAsks(app).some((x) => x.includes('force=1&confirmation=sample-two')))
+  expect(prompts.some((x) => editedProfiles.changedFiles.every((f) => x.includes(f)))).toBe(true)
+})
+
+test('a stale confirmation asks again with the newly edited profile', async () => {
+  const app = await pane({ setups: JSON.stringify([{ ...editedProfiles, agent: 'pi', name: 'Pi' }]) })
+  await app.press('id:show-chat')
+  await app.waitFor('id:chat-setup-ask')
+  await app.press('id:chat-setup-yes')
+  await app.waitFor('id:chat-setup-changed')
+  expect(app.texts().some((x: string) => editedProfiles.changedFiles.every((f) => x.includes(f)))).toBe(true)
+  const red = '~/.omp/profiles/red/agent/extensions/herdr-anywhere-omp.ts'
+  await app.host.send('fake.setups', { setups: [{ ...editedProfiles, agent: 'pi', confirmation: 'sample-three', changedFiles: [...editedProfiles.changedFiles, red] }] })
+  await app.press('id:chat-setup-replace')
+  await app.waitUntil(() => app.texts().some((x: string) => x.includes(red)))
+  expect(setupAsks(app)).not.toContain('PUT /api/chat-setups/pi?force=1&confirmation=sample-three')
+  await app.press('id:chat-setup-replace')
+  await app.waitUntil(() => setupAsks(app).includes('PUT /api/chat-setups/pi?force=1&confirmation=sample-three'))
+})
+
+test('the chat confirmation echoes the edited profile token and completes installation', async () => {
+  const app = await pane({ setups: JSON.stringify([{ ...editedProfiles, agent: 'pi', name: 'Pi' }]) })
+  await app.press('id:show-chat')
+  await app.waitFor('id:chat-setup-ask')
+  await app.press('id:chat-setup-yes')
+  await app.waitFor('id:chat-setup-changed')
+  await app.press('id:chat-setup-replace')
+  await app.waitUntil(() => setupAsks(app).includes('PUT /api/chat-setups/pi?force=1&confirmation=sample-two'))
+  await app.waitFor('id:chat-setup-reload')
+  expect(app.count('id:chat-setup-changed')).toBe(0)
+})
 
 test('settings has a row for each agent on the computer whose chat needs a file: install or remove at any time', async () => {
   const app = await settings([PI, { ...PI, agent: 'other', name: 'Other', state: 'no-agent' }])

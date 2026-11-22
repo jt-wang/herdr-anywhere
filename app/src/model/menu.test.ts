@@ -5,6 +5,7 @@ import { readMenu } from './menu.ts'
 import { LONG, MULTI, ON_SUBMIT, OWN_TYPED, PLAN, REVIEW } from '../testing/screens/claude-2.1.325.ts'
 import * as CX from '../testing/screens/codex-0.167.1.ts'
 import * as OC from '../testing/screens/opencode-2.2.0.ts'
+import * as AG from '../testing/screens/agy-1.5.14.ts'
 import { joinWrapped } from './ask.ts'
 
 const RULE = '─'.repeat(60)
@@ -209,4 +210,63 @@ test('the cursor on the Submit row: no option highlighted, the typed answer is i
     [1, 'Home', false, false], [2, 'Cart', false, false], [3, 'Help', false, false], [4, 'Footer row', true, false], [5, 'Chat about this', undefined, false]])
   const typed = readMenu('claude-code', OWN_TYPED)!.options[3]
   expect([typed.label, typed.checked, typed.selected]).toEqual(['Footer row', false, true])
+})
+
+// The Antigravity CLI 1.5.14 at 46 and 50 columns (src/testing/screens/agy-1.5.14.ts): "> " marks the highlighted
+// option, a wrapped line starts at the screen's edge, and "Question 1/2: " heads a question.
+for (const w of [46, 50] as const) {
+  const at = (name: string) => (AG as Record<string, string>)[`${name}_${w}`]
+  test(`agy's questions at ${w} columns: the question whole, Write-in typed, boxes`, () => {
+    const one = readMenu('antigravity', at('Q1'))!
+    expect([one.question, one.multi]).toEqual(['Which color should the button be?', false])
+    expect(one.options.map((o) => [o.n, o.label, o.selected, o.typed, o.keys])).toEqual([
+      [1, '(Recommended) Blue', true, false, ['1']], [2, 'Red', false, false, ['2']], [3, 'Write-in...', false, true, ['3']]])
+    const two = readMenu('antigravity', at('Q2'))!
+    expect([two.question, two.multi]).toEqual(['Which sizes should it come in?', true])
+    expect(two.options.map((o) => [o.n, o.label, o.checked])).toEqual([[1, 'Small', false], [2, 'Large', false], [3, 'Write-in...', undefined]])
+    const ticked = readMenu('antigravity', at('Q2_TICKED'))!
+    expect(ticked.options.map((o) => [o.checked, o.selected])).toEqual([[true, true], [false, false], [undefined, false]])
+    expect(readMenu('antigravity', at('WRITE_IN'))!.options.find((o) => o.selected)?.n).toBe(3)
+  })
+  test(`agy's approvals at ${w} columns: what for, wrapped options joined, No typed`, () => {
+    const run = readMenu('antigravity', at('RUN'))!
+    expect([run.action, run.subject, run.question]).toEqual(['run', "echo checking; echo 'one test failed' >&2; exit 3", 'Run this command?'])
+    expect(run.options.map((o) => [o.n, o.selected, o.typed])).toEqual([[1, true, false], [2, false, false], [3, false, false], [4, false, true]])
+    expect(run.options[0].label).toBe('Yes, run command')
+    expect(joinWrapped(run.options[1].lines)).toBe("Yes, and always allow in this conversation for commands that start with 'echo'")
+    expect(run.options[3].label).toBe('No, cancel')
+    const create = readMenu('antigravity', at('CREATE'))!
+    expect([create.action, create.subject, create.question]).toEqual(['edit', '/work/acme/hello.txt', 'Allow creation of this file?'])
+    expect(create.options.map((o) => [o.n, o.typed])).toEqual([[1, false], [2, false], [3, true]])
+    const edit = readMenu('antigravity', at('EDIT'))!
+    expect([edit.action, edit.subject]).toEqual(['edit', '/work/acme/notes.txt'])
+    expect(edit.options.map((o) => [o.label, o.typed])).toEqual([['Yes, accept this change', false], ['No, reject this change', true]])
+  })
+  test(`agy's plan review at ${w} columns: Approve and Reject, by their letters`, () => {
+    const m = readMenu('antigravity', at('REVIEW'))!
+    expect([m.unnumbered, m.question, m.action, m.subject]).toEqual([true, '', undefined, 'implementation_plan.md'])
+    expect(m.options.map((o) => [o.label, o.keys, o.typed])).toEqual([['Approve', ['y'], false], ['Reject', ['n'], false]])
+  })
+}
+
+test("agy's flush-left wrapped text is not another numbered option", () => {
+  const screen = AG.Q1_46.replace('  2. Red', '2. from the setup instructions\n  2. Red')
+  const m = readMenu('antigravity', screen)!
+  expect(m.options.map((o) => [o.label, o.keys])).toEqual([
+    ['(Recommended) Blue 2. from the setup instructions', ['1']], ['Red', ['2']], ['Write-in...', ['3']]])
+})
+
+test("agy's artifact review requires one highlighted artifact and names that artifact", () => {
+  const screen = AG.REVIEW_46.replace('› □ new implementation_plan.md', '  □ new implementation_plan.md\n› □ new revised_plan.md')
+  const m = readMenu('antigravity', screen)!
+  expect(m.subject).toBe('revised_plan.md')
+  expect(m.options.map((o) => o.keys)).toEqual([['y'], ['n']])
+  expect(readMenu('antigravity', screen.replace('› □', '  □'))).toBe(undefined)
+  expect(readMenu('antigravity', screen.replace('  □', '› □'))).toBe(undefined)
+})
+
+test("agy's screens without a menu give nothing", () => {
+  expect(readMenu('antigravity', '> please ASK now\n\n  Hello from the fake model.\n\n? for shortcuts')).toBe(undefined)
+  // A wrapped command line starting with ">" is not the cursor.
+  expect(readMenu('antigravity', 'Requesting permission for:\n   ls\n>&2\n')).toBe(undefined)
 })

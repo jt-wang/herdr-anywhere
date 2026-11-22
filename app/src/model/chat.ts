@@ -30,12 +30,13 @@ export type ChatQuestion = { header?: string; text: string; multi?: boolean; opt
 /** `chat` false: no chat button. `unknown`: nothing sure to show, and why (the companion's chat.go lists them). */
 /** `setup`: with unknown "setup-needed" or "setup-not-loaded", the agent whose chat setup (ChatSetup) is missing or
  *  not yet used. */
-export type ChatAnswer = { chat: boolean; unknown?: string; setup?: string; turns?: ChatTurn[]; session?: string; before?: string; historyError?: string }
+export type ChatAnswer = { chat: boolean; program?: string; unknown?: string; setup?: string; turns?: ChatTurn[]; session?: string; before?: string; historyError?: string }
 /** A small file some agents' chats need in the agent's own folder (companion/internal/chat/setup.go): the phone shows
  *  what the computer says of it, by agent, and knows no agent by name. `reload`: what to type in an agent already
  *  running for it to use the file. */
 export type ChatSetupState = 'no-agent' | 'absent' | 'installed' | 'old' | 'changed'
-export type ChatSetup = { agent: string; name: string; file: string; reload?: string; version: number; state: ChatSetupState }
+export type ChatSetup = { agent: string; name: string; file: string; reload?: string; version: number; state: ChatSetupState; changedFiles?: string[]; confirmation?: string }
+export const setupChangedText = (x?: ChatSetup): string => t('setupChangedFilesBody', { files: (x?.changedFiles?.length ? x.changedFiles : [x?.file ?? '']).join('\n') })
 /** What installing or removing did: done, refused because the file was changed (or the agent isn't there), or failed. */
 export type ChatSetupResult = { result: 'ok' | 'changed' | 'no-agent' | 'failed'; setup?: ChatSetup }
 /** A command the agent ran: whether it failed, its exit code, the end of what it printed (`lines` counts all of it). */
@@ -116,7 +117,7 @@ export type ChatApi = {
   /** The computer's chat setups; none from a Companion from before them. */
   setups(): Promise<ChatSetup[]>
   /** Install (on) or remove a setup's file; `force` replaces or removes a file someone changed. */
-  setSetup(agent: string, on: boolean, force?: boolean): Promise<ChatSetupResult>
+  setSetup(agent: string, on: boolean, force?: boolean, confirmation?: string): Promise<ChatSetupResult>
 }
 
 const span = (secs: number) => {
@@ -162,6 +163,7 @@ export function refreshEvery(status: string | undefined, open = false): number {
 
 /** What the view says when the computer isn't sure. `agent`: the program's name, for a reason that names it. */
 export function unknownText(reason: string, agent?: string): string {
+  if (reason === 'awaiting-prompt') return t('chatFirstMessage')
   if (reason === 'not-reported') return t('chatNotReported', { agent: agent || 'agent' })
   if (reason === 'behind') return t('chatBehind')
   if (reason === 'format') return t('chatFormat')

@@ -8,6 +8,54 @@ import * as CX from './testing/screens/codex-0.167.1.ts'
 import * as CL from './testing/screens/claude-2.1.325.ts'
 import * as OC from './testing/screens/opencode-2.2.0.ts'
 
+test('Cursor labels and cached answers are hints, not program identity; fresh companion validation is bound to the process', async () => {
+  const { core, store } = setup()
+  const doc = { spaces: [] as any[] }
+  core.addSpace(doc, 'flowers', '/synthetic/flowers', '', [{ id: 'garden', argv: ['bash'] }])
+  core.terms.get('t1')!.foreground = undefined
+  core.docs.set('', { value: doc, version: 1 })
+  await store.connect()
+  await settle()
+  const labels = { 'herdr-anywhere.chat.pid': '4242', 'herdr-anywhere.chat.session': 'flowers', 'herdr-anywhere.chat.cursor.cwd': '/synthetic/flowers' }
+  core.label('t1', labels)
+  await settle()
+  const key = store.cursorChatKey('t1')
+  expect(!!key).toBe(true)
+  expect(store.program('t1').shell).toBe(true)
+  store.rememberChat('t1', { chat: true, program: 'cursor' })
+  expect(store.program('t1').shell).toBe(true)
+  store.acceptChatProgram('t1', key, { chat: false, program: 'cursor' })
+  expect(store.program('t1').shell).toBe(true)
+  store.acceptChatProgram('t1', key, { chat: true })
+  expect(store.program('t1').shell).toBe(true)
+  store.acceptChatProgram('t1', key, { chat: true, program: 'cursor' })
+  expect(store.program('t1').key).toBe('cursor')
+  expect(store.isAgent('t1')).toBe(true)
+  core.label('t1', { ...labels, 'herdr-anywhere.chat.pid': '4343' })
+  await settle()
+  expect(store.program('t1').shell).toBe(true)
+  store.acceptChatProgram('t1', key, { chat: true, program: 'cursor' })
+  expect(store.program('t1').shell).toBe(true)
+  store.acceptChatProgram('t1', store.cursorChatKey('t1'), { chat: true, program: 'cursor' })
+  expect(store.program('t1').key).toBe('cursor')
+  store.acceptChatProgram('t1', store.cursorChatKey('t1'), { chat: false })
+  expect(store.program('t1').shell).toBe(true)
+  core.setStatus('t1', 'working', 'pi')
+  await settle()
+  expect(store.program('t1').key).toBe('pi')
+  expect(store.cursorChatKey('t1')).toBe('')
+  store.acceptChatProgram('t1', key, { chat: true, program: 'cursor' })
+  expect(store.program('t1').key).toBe('pi')
+})
+
+test('only Cursor setup changes invalidate Cursor availability', () => {
+  const { store } = setup()
+  store.chatSetupChanged('pi')
+  expect(store.chatSetupRevision.get()).toBe(0)
+  store.chatSetupChanged('cursor')
+  expect(store.chatSetupRevision.get()).toBe(1)
+})
+
 /** Waits for a condition the store reaches on its own timers, up to 5 s: a fixed wait failed while the computer was busy. */
 async function until(ok: () => boolean) {
   for (let i = 0; i < 250 && !ok(); i++) await new Promise((f) => setTimeout(f, 20))

@@ -1,7 +1,7 @@
 // TailPocket on a phone: the native bridge the app's host project attaches (ios/Sources/App.swift, android
-// MainActivity), through TailPocket's NSH client (third_party/tailpocket-32c50f3/sdk/js). It keeps the computer's
+// MainActivity), through TailPocket's NSH client (third_party/tailpocket-e197f3e/sdk/js). It keeps the computer's
 // link, which holds the phone's private key, in the Keychain / Android Keystore under one slot.
-import { tailPocket } from '../../third_party/tailpocket-32c50f3/sdk/js/nsh.ts'
+import { tailPocket } from '../../third_party/tailpocket-e197f3e/sdk/js/nsh.ts'
 import type { Tunnel } from './link.ts'
 
 /** What `herdr-anywhere pair` starts its invites with (companion/internal/tailcat Prefix); TailPocket's own differs. */
@@ -30,7 +30,7 @@ export const nativeTunnel: Tunnel = {
     // a computer not on v0.3 yet doesn't serve it at all; either way the tunnel goes on over Tailcat now.
     void c.link().then((l) => (l.pk ? undefined : c.sync())).catch(() => {})
     const routes = () => c.link().then((l) => [...(l.address ? ['tailcat'] : []), ...(l.via ?? []).map((r) => r.t)])
-    return { baseUrl: c.baseUrl, close: () => void c.close().catch(() => {}), path: () => c.path(), routes }
+    return { baseUrl: c.baseUrl, close: () => void c.close().catch(() => {}), path: () => c.path(), routes, lastFailure: () => c.lastFailure() }
   },
   forget: () => void tailPocket.store.deleteLink(SLOT).catch(() => {}),
 }

@@ -31,11 +31,24 @@ type fileCursor struct {
 // FileBefore freezes the initial end without reparsing the polling cache. An empty final page is allowed:
 // the normal tail deliberately does not count the complete session just to decide whether to show a button.
 func FileBefore(path, first string) (string, error) {
+	return FileBeforeAt(path, first, -1)
+}
+
+// FileBeforeAt anchors history to a known entry, rather than unrelated later branches.
+func FileBeforeAt(path, first string, end int64) (string, error) {
 	st, err := os.Stat(path)
 	if err != nil {
 		return "", err
 	}
-	b, _ := json.Marshal(fileCursor{End: st.Size(), Anchor: first})
+	head := first
+	if end < 0 {
+		end = st.Size()
+		head = ""
+	}
+	if end > st.Size() {
+		return "", ErrCursor
+	}
+	b, _ := json.Marshal(fileCursor{End: end, Anchor: first, Head: head})
 	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 

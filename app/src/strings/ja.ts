@@ -2,6 +2,8 @@
 import type { Table } from './index.ts'
 
 export const ja: Table = {
+  chatFirstMessage: '最初のメッセージを送るとチャットが表示されます。',
+  setupChangedFilesBody: '次の設定ファイルは編集されています。まだ変更していません。一覧のすべてのファイルを置き換えるか削除するには確認してください：\n{files}',
   diagnosticTitle: '端末内の診断', diagnosticRecord: '診断を記録',
   diagnosticOnState: 'オン', diagnosticOffState: 'オフ', diagnosticUnsupportedState: '未対応',
   diagnosticInteraction: '操作／ライフサイクル', diagnosticPerformance: 'パフォーマンス', diagnosticNetwork: 'ネットワーク', diagnosticResources: 'リソース／バッテリー',
@@ -27,6 +29,8 @@ export const ja: Table = {
   lostSlower: '低速の接続に切り替えています…',
   lostStuck: "まだパソコンにつながりません",
   stuckLikely: "ネットワークが接続を止めているかもしれません。",
+  stuckLikelyCompanion: "パソコンで Companion が動いていないかもしれません。",
+  stuckLikelyRelay: "リレーが接続を中継していないかもしれません。",
   stuckOptions: "ほかの方法",
   stuckSheetTitle: "考えられる原因",
   stuckWhyNetwork: "このネットワークはログインが必要です",
@@ -157,7 +161,7 @@ export const ja: Table = {
   // A picture a terminal shows (ui/picture-sheet.tsx).
   copyPath: "コピー", pictureHold: "画像を長押しすると画像をコピーできます", pictureOpen: "画像を開く", pictureCopied: "画像をコピーしました", pictureCantCopy: "画像をコピーできませんでした", pictureLoading: "画像を読み込み中…", pictureMissing: "このファイルはパソコンにありません。", pictureOutside: "ホームフォルダ、このターミナルのフォルダ、一時フォルダにある画像だけを表示します。", pictureNotImage: "このファイルは画像ではありません。", pictureTooBig: "この画像は {mb} MB を超えているため表示できません。", pictureTooBigNoLimit: "この画像は大きすぎるため表示できません。", pictureRemote: "このマシンの画像は読み込めません。", pictureUnreachable: "このターミナルのマシンに接続できません。", pictureCantRead: "パソコンがこの画像を読み込めません。",
   // Chat setups: the small file some agents' chats need (ui/chat.tsx, ui/settings.tsx).
-  chatSection: "チャット", setupAskTitle: "このスマホで {name} のチャットを使いますか？", setupAskBody: "パソコンの {name} のフォルダに小さなファイルを1つ置きます。このファイルが、各 {name} がどの会話を使っているかをパソコンに伝えます。", setupFactOne: "置くのはこのファイルだけで、{name} のほかの設定は変えません", setupFactNet: "ネットワークには何も送りません", setupFactRemove: "設定からいつでも削除でき、何も残りません", setupInstall: "インストール", setupLater: "あとで", setupNeededTitle: "{name} のチャットには、パソコンに小さなファイルが1つ必要です", setupNeededBody: "これがないと、この {name} がどの会話を使っているかスマホで分かりません。ほかのエージェントのチャットはこれまでどおり使えます。", setupReload: "インストールしました。この {name} は前から開いていたので、{reload} を入力するか再起動するとファイルを使い始めます。", setupRestart: "インストールしました。この {name} は前から開いていたので、再起動するとファイルを使い始めます。", setupTypeReload: "{reload} を代わりに入力", setupChangedTitle: "このファイルは変更されています", setupChangedBody: "{file} は Herdr Anywhere が置いたものと違います。誰かが編集したのかもしれません。そのままにしました。", setupReplace: "Herdr Anywhere のものに置き換える", setupKeep: "自分のを残す", setupFailed: "ファイルを置けませんでした", setupNoAgent: "このパソコンには {name} がありません。", setupRow: "{name} のチャット", setupOn: "オン", setupOff: "オフ：このスマホで {name} のチャットは見られません", setupChanged: "誰かがファイルを変更しました", setupRemove: "削除", setupRemoveTitle: "{name} のファイルを削除しますか？", setupRemoveBody: "このスマホで {name} のチャットが見られなくなります。ほかのエージェントには影響しません。",
+  chatSection: "チャット", setupAskTitle: "このスマホで {name} のチャットを使いますか？", setupAskBody: "パソコンの {name} の各フォルダに小さな設定ファイルを置きます。このファイルが、各 {name} がどの会話を使っているかをパソコンに伝えます。", setupFactOne: "置くのは設定ファイルだけで、{name} のほかの設定は変えません", setupFactNet: "ネットワークには何も送りません", setupFactRemove: "設定からいつでも削除でき、何も残りません", setupInstall: "インストール", setupLater: "あとで", setupNeededTitle: "{name} のチャットには、パソコンに小さな設定ファイルが必要です", setupNeededBody: "これがないと、この {name} がどの会話を使っているかスマホで分かりません。ほかのエージェントのチャットはこれまでどおり使えます。", setupReload: "インストールしました。この {name} は前から開いていたので、{reload} を入力するか再起動するとファイルを使い始めます。", setupRestart: "インストールしました。この {name} は前から開いていたので、再起動するとファイルを使い始めます。", setupTypeReload: "{reload} を代わりに入力", setupChangedTitle: "このファイルは変更されています", setupChangedBody: "{file} は Herdr Anywhere が置いたものと違います。誰かが編集したのかもしれません。そのままにしました。", setupReplace: "Herdr Anywhere のものに置き換える", setupKeep: "自分のを残す", setupFailed: "ファイルを置けませんでした", setupNoAgent: "このパソコンには {name} がありません。", setupRow: "{name} のチャット", setupOn: "オン", setupOff: "オフ：このスマホで {name} のチャットは見られません", setupChanged: "誰かがファイルを変更しました", setupRemove: "削除", setupRemoveTitle: "{name} のファイルを削除しますか？", setupRemoveBody: "このスマホで {name} のチャットが見られなくなります。ほかのエージェントには影響しません。",
   // The decision card in the chat view (ui/ask-card.tsx).
   askAsking: "{agent} が質問しています", askQuestionOf: "質問 {n}/{m}", askPickAny: "複数選択可", askRecommended: "おすすめ", askOwn: "自分で答えを書く", askSkip: "今は選ばず、チャットで相談する", askNext: "次へ：回答を確認", askSent: "{agent} に送信しました。進むのを待っています…", askRun: "{agent} がコマンドを実行しようとしています", askEdit: "{agent} がファイルを変更しようとしています", askPermission: "{agent} が許可を求めています", askAfterNo: "選んだあと、下の入力欄で代わりにどうするか伝えてください", askReview: "回答を確認", askStuck: "ターミナルの画面が変わりませんでした。ターミナルで確認してください。",
 }

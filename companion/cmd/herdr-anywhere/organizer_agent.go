@@ -41,6 +41,7 @@ type knownAgent struct {
 var knownAgents = []knownAgent{
 	{id: "claude-code", name: "Claude Code", bin: "claude", cmd: "claude --model claude-haiku-5-5"},
 	{id: "pi", name: "Pi", bin: "pi", cmd: "pi"},
+	{id: "omp", name: "Oh My Pi", bin: "omp", cmd: "omp"},
 	// Without --yolo every track command waits for a yes in the pane.
 	{id: "kimi-code", name: "Kimi Code", bin: "kimi", cmd: "kimi --yolo"},
 	// Codex: no update prompt (its default installs a new Codex for the whole computer), no asking before

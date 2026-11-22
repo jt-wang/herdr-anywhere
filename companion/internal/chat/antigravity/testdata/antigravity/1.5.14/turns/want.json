@@ -1,0 +1,79 @@
+[
+  {
+    "id": "0",
+    "from": "you",
+    "said": "HELLO there",
+    "steps": [],
+    "reply": "Hello from the fake model.",
+    "end": "done"
+  },
+  {
+    "id": "2",
+    "from": "you",
+    "said": "LIST the files here",
+    "steps": [
+      {
+        "id": "4.n",
+        "kind": "note",
+        "title": "I'll list the files."
+      },
+      {
+        "id": "4.0",
+        "kind": "run",
+        "title": "ls"
+      }
+    ],
+    "reply": "There are two files: notes.txt and todo.txt.",
+    "end": "done"
+  },
+  {
+    "id": "7",
+    "from": "you",
+    "said": "CHANGE the notes",
+    "steps": [
+      {
+        "id": "9.0",
+        "kind": "read",
+        "title": "/work/acme/notes.txt"
+      },
+      {
+        "id": "11.0",
+        "kind": "edit",
+        "title": "/work/acme/notes.txt",
+        "added": 2
+      }
+    ],
+    "reply": "Added two lines to notes.txt.",
+    "end": "done"
+  },
+  {
+    "id": "15",
+    "from": "you",
+    "said": "WRITE a new file",
+    "steps": [
+      {
+        "id": "17.0",
+        "kind": "edit",
+        "title": "/work/acme/hello.txt",
+        "added": 2
+      }
+    ],
+    "reply": "Wrote hello.txt.",
+    "end": "done"
+  },
+  {
+    "id": "20",
+    "from": "you",
+    "said": "BREAK the build",
+    "steps": [
+      {
+        "id": "22.0",
+        "kind": "run",
+        "title": "echo checking; echo 'one test failed' \u003e\u00262; exit 3",
+        "failed": true
+      }
+    ],
+    "reply": "The check failed with code 3.",
+    "end": "done"
+  }
+]

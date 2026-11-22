@@ -56,6 +56,7 @@ export function ConnBanner(props: { store: Store }) {
   const atAddress = () => (why() === 'refused' && !s.restart?.command ? s.restart?.address ?? '' : '')
   // Down a while for no telling reason (store.ts STUCK_MS): what may be in the way, and what to do, over any first try.
   const stuck = () => why() === 'stuck'
+  const first = useFirstCause(s)
   const options = signal(false)
   const connecting = () => { rev(); return s.conn.get() === 'connecting' && !stuck() }
   const down = () => { rev(); const c = s.conn.get(); return c === 'connecting' || c === 'reconnecting' || c === 'failed' }
@@ -93,7 +94,7 @@ export function ConnBanner(props: { store: Store }) {
           </If>
           {/* One line for the likeliest cause; the others, each with what to do, are in the sheet. */}
           <If when={stuck()}>
-            <Text class="text-[12.5px] text-muted-foreground">{t('stuckLikely')}</Text>
+            <Text testID="stuck-likely" class="text-[12.5px] text-muted-foreground">{t(LIKELY[first()])}</Text>
             <View class="mt-1.5 flex-row gap-2">
               <View role="button" testID="conn-retry" onPress={() => s.retryNow()} class="rounded-(--radius) bg-primary px-3 py-1 active:opacity-80">
                 <Text class="text-[12.5px] font-medium text-primary-foreground">{t('tryAgain')}</Text>
@@ -101,7 +102,7 @@ export function ConnBanner(props: { store: Store }) {
               <BannerButton testID="conn-options" label={t('stuckOptions')} onPress={() => options.set(true)} />
             </View>
           </If>
-          <If when={age()}><Text class="text-[11.5px] text-sidebar-foreground">{age()}</Text></If>
+          <If when={age()}><Text testID="conn-age" class="text-[11.5px] text-sidebar-foreground">{age()}</Text></If>
         </View>
       </View>
       <StuckSheet store={s} open={() => options() && stuck()} close={() => options.set(false)} />
@@ -109,9 +110,24 @@ export function ConnBanner(props: { store: Store }) {
   )
 }
 
-/** The stuck banner's Other options: each thing that may be in the way, with what to do about it. */
+/** What may be in the way, in the order the stuck hint gives it when TailPocket's last failed try says nothing. */
+const CAUSES = ['network', 'companion', 'route', 'keys'] as const
+type Cause = typeof CAUSES[number]
+/** The cause TailPocket's last failed try points at (link.ts DIAL_REASONS): something answered for the computer and
+ *  didn't take this phone, Companion isn't running there (or the computer was reset, which pairing again is for); the
+ *  relay wouldn't carry it, another way to connect. Only an order: none of it is authenticated. */
+const FIRST: Record<string, Cause> = { refused: 'companion', 'handshake-closed': 'companion', 'relay-down': 'route', 'no-answer': 'network' }
+const LIKELY: Record<Cause, Key> = { network: 'stuckLikely', companion: 'stuckLikelyCompanion', route: 'stuckLikelyRelay', keys: 'stuckLikely' }
+function useFirstCause(s: Store): () => Cause {
+  const failure = s.dialFailure ? useSignal(s.dialFailure) : () => ''
+  return () => FIRST[failure()] ?? 'network'
+}
+
+/** The stuck banner's Other options: each thing that may be in the way, with what to do about it, the likeliest first. */
 function StuckSheet(props: { store: Store; open: () => boolean; close: () => void }) {
   const s = props.store
+  const first = useFirstCause(s)
+  const order = () => [first(), ...CAUSES.filter((c) => c !== first())]
   const then = (f?: () => void) => () => { props.close(); f?.() }
   const copy = () => void Clipboard.writeText(s.restart?.command ?? '').then(() => s.toast({ title: t('copied'), level: 'info' }), () => {})
   return (
@@ -119,28 +135,35 @@ function StuckSheet(props: { store: Store; open: () => boolean; close: () => voi
       popupClass={`${PANEL} px-4 pt-3 pb-[env(safe-area-inset-bottom)]`} backdropClass={PANEL_BACKDROP}>
       <View testID="stuck-sheet" class="gap-3 pb-2">
         <Text class="text-[15px] font-semibold text-foreground">{t('stuckSheetTitle')}</Text>
-        <StuckCause testID="stuck-network" title={t('stuckWhyNetwork')} how={t('stuckWhyNetworkHow')}>
-          <BannerButton testID="conn-sign-in" label={t('checkSignIn')} onPress={then(() => void openUrl(SIGN_IN_CHECK_URL).catch(() => {}))} />
-        </StuckCause>
-        <StuckCause testID="stuck-companion" title={t('stuckWhyCompanion')}
-          how={s.restart?.command ? t('stuckWhyCompanionHow') : t('stuckWhyCompanionAt', { address: s.restart?.address ?? '' })}>
-          <If when={s.restart?.command}>
-            <View class="flex-row items-center gap-2">
-              <Text selectable testID="conn-command" class="flex-1 text-[12.5px] font-mono text-foreground">{s.restart?.command}</Text>
-              <BannerButton testID="conn-copy" label={t('copyPath')} onPress={copy} />
-            </View>
-          </If>
-        </StuckCause>
-        <If when={s.openConnection}>
-          <StuckCause testID="stuck-route" title={t('stuckWhyRoute')} how={t('stuckWhyRouteHow')}>
-            <BannerButton testID="conn-open-connection" label={t('connection')} onPress={then(s.openConnection)} />
-          </StuckCause>
-        </If>
-        <If when={s.pairAgain}>
-          <StuckCause testID="stuck-keys" title={t('stuckWhyKeys')} how={t('stuckWhyKeysHow')}>
-            <BannerButton testID="pair-again" label={t('pairAgain')} onPress={then(s.pairAgain)} />
-          </StuckCause>
-        </If>
+        <Each of={order()} key={(c) => c}>{(c) => (
+          c() === 'network' ? (
+            <StuckCause testID="stuck-network" title={t('stuckWhyNetwork')} how={t('stuckWhyNetworkHow')}>
+              <BannerButton testID="conn-sign-in" label={t('checkSignIn')} onPress={then(() => void openUrl(SIGN_IN_CHECK_URL).catch(() => {}))} />
+            </StuckCause>
+          ) : c() === 'companion' ? (
+            <StuckCause testID="stuck-companion" title={t('stuckWhyCompanion')}
+              how={s.restart?.command ? t('stuckWhyCompanionHow') : t('stuckWhyCompanionAt', { address: s.restart?.address ?? '' })}>
+              <If when={s.restart?.command}>
+                <View class="flex-row items-center gap-2">
+                  <Text selectable testID="conn-command" class="flex-1 text-[12.5px] font-mono text-foreground">{s.restart?.command}</Text>
+                  <BannerButton testID="conn-copy" label={t('copyPath')} onPress={copy} />
+                </View>
+              </If>
+            </StuckCause>
+          ) : c() === 'route' ? (
+            <If when={s.openConnection}>
+              <StuckCause testID="stuck-route" title={t('stuckWhyRoute')} how={t('stuckWhyRouteHow')}>
+                <BannerButton testID="conn-open-connection" label={t('connection')} onPress={then(s.openConnection)} />
+              </StuckCause>
+            </If>
+          ) : (
+            <If when={s.pairAgain}>
+              <StuckCause testID="stuck-keys" title={t('stuckWhyKeys')} how={t('stuckWhyKeysHow')}>
+                <BannerButton testID="pair-again" label={t('pairAgain')} onPress={then(s.pairAgain)} />
+              </StuckCause>
+            </If>
+          )
+        )}</Each>
         <Button label={t('close')} testID="stuck-close" kind="plain" onPress={props.close} />
       </View>
     </Sheet>

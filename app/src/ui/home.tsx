@@ -7,7 +7,7 @@ import { ViewSwitch, type ViewSwitchProps } from './view-switch.tsx'
 import type { Store } from '../store.ts'
 import type { AgentInfo, SubRow } from '../model/agents.ts'
 import { duration } from '../model/agents.ts'
-import { shownOrder, type Option } from '../model/menu.ts'
+import { optionCaption, shownOrder, type Option } from '../model/menu.ts'
 import type { Space } from '../model/model.ts'
 import { addresses } from '../model/layout.ts'
 import { gitTail } from '../model/marks.ts'
@@ -117,10 +117,10 @@ function WaitingRow(props: { store: Store; a: AgentInfo; now: number; actions: H
           <ChoiceRow testID={`needs-${addr}-choices`}>
             <If when={menu()}>{(m) => (
               <Each of={shownOrder(m())} key={(o) => `${o.n}. ${o.full}`}>{(o) => (
-                <View role="button" testID={`needs-${addr}-choice-${o().n}`} accessibilityLabel={`${o().n}. ${o().full}`} disabled={sending()} onPress={() => void pick(o())}
-                  onLongPress={() => s.toast({ title: `${o().n}. ${o().full}`, level: 'info' })}
+                <View role="button" testID={`needs-${addr}-choice-${o().n}`} accessibilityLabel={optionCaption(o(), 'full')} disabled={sending()} onPress={() => void pick(o())}
+                  onLongPress={() => s.toast({ title: optionCaption(o(), 'full'), level: 'info' })}
                   class={`h-8 max-w-[200px] px-3 justify-center rounded-[7px] ${o().selected ? 'bg-primary active:opacity-80' : 'bg-secondary border border-border active:bg-accent'} ${sending() ? 'opacity-50' : ''}`}>
-                  <Text class={`text-[13px] font-medium ${o().selected ? 'text-primary-foreground' : 'text-foreground'}`} numberOfLines={1}>{`${o().n}. ${o().label}`}</Text>
+                  <Text class={`text-[13px] font-medium ${o().selected ? 'text-primary-foreground' : 'text-foreground'}`} numberOfLines={1}>{optionCaption(o(), 'label')}</Text>
                 </View>
               )}</Each>
             )}</If>

@@ -1,0 +1,47 @@
+[
+  {
+    "id": "0",
+    "from": "you",
+    "said": "/plan please PLAN now",
+    "steps": [
+      {
+        "id": "1.n",
+        "kind": "note",
+        "title": "I'll read the notes first."
+      },
+      {
+        "id": "1.0",
+        "kind": "read",
+        "title": "/work/acme/notes.txt"
+      },
+      {
+        "id": "3.0",
+        "kind": "plan",
+        "title": "Merge the notes"
+      },
+      {
+        "id": "6.n",
+        "kind": "note",
+        "title": "The plan is ready for your review."
+      },
+      {
+        "id": "7",
+        "kind": "you",
+        "title": "[Approved] implementation_plan.md"
+      },
+      {
+        "id": "8.n",
+        "kind": "note",
+        "title": "Carrying out the plan."
+      },
+      {
+        "id": "8.0",
+        "kind": "edit",
+        "title": "/work/acme/notes.txt",
+        "added": 1
+      }
+    ],
+    "reply": "Merged the notes.",
+    "end": "done"
+  }
+]

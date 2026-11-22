@@ -15,7 +15,7 @@ export type Program = {
 
 type Entry = (typeof PROGRAMS.programs)[string]
 
-const AGENTS_FIRST = ['claude', 'codex', 'pi', 'opencode', 'cursor', 'copilot', 'amp', 'gemini', 'grok']
+const AGENTS_FIRST = ['claude', 'codex', 'pi', 'omp', 'opencode', 'cursor', 'copilot', 'amp', 'gemini', 'grok']
 const PALETTE = ['#6d5bd0', '#2f80ed', '#0f9d8a', '#d9822b', '#c2417d', '#3a7d44', '#8a5a44', '#4e5d94']
 
 function base(s: string) {

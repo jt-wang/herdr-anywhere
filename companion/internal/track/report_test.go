@@ -6,7 +6,42 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"herdr-anywhere/companion/internal/chat"
+	"herdr-anywhere/companion/internal/chat/pi"
 )
+
+func TestOMPReportUsesLabeledBranch(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("OMP_PROFILE", "")
+	t.Setenv("PI_CODING_AGENT_DIR", home)
+	t.Setenv("XDG_DATA_HOME", "")
+	file := filepath.Join(home, "sessions", "project", "branch.jsonl")
+	b, err := os.ReadFile("../chat/pi/testdata/omp/19.0.0/branch.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, file, string(b))
+	if err := pi.OMPSetup("hc").Install(false); err != nil {
+		t.Fatal(err)
+	}
+	p := HCDetail{Pid: 17, App: "omp", Labels: map[string]string{chat.LabelPid: "17", chat.LabelSession: file}}
+	reply, source, note := ompByPane(p, "hc")
+	if reply != "Hello from the fake model." || source != "omp session (labeled)" || note != "" {
+		t.Fatalf("%q %q %q", reply, source, note)
+	}
+	p.Labels[chat.LabelPid] = "18"
+	if reply, _, note := ompByPane(p, "hc"); reply != "" || note == "" {
+		t.Fatalf("%q %q", reply, note)
+	}
+	p.Labels[chat.LabelPid] = "17"
+	write(t, file, "")
+	if reply, _, note := ompByPane(p, "hc"); reply != "" || note != "the last turn has no finished reply" {
+		t.Fatalf("%q %q", reply, note)
+	}
+}
 
 func write(t *testing.T, path, body string) {
 	t.Helper()

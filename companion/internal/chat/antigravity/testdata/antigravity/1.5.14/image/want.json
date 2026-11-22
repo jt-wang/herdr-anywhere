@@ -1,0 +1,15 @@
+[
+  {
+    "id": "0",
+    "from": "you",
+    "said": "please HELLO, what is in this picture?",
+    "images": [
+      {
+        "id": "0.m0"
+      }
+    ],
+    "steps": [],
+    "reply": "Hello from the fake model.",
+    "end": "done"
+  }
+]

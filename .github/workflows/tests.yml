@@ -90,9 +90,6 @@ jobs:
         run: |
           swiftc app/ios/Sources/DiagnosticLog.swift app/ios/Tests/DiagnosticLogTests.swift -o "$RUNNER_TEMP/diagnostic-consent-tests"
           "$RUNNER_TEMP/diagnostic-consent-tests"
-      # The filing agent's last evaluation (eval/filing/last-report.json) is for the rules and code as they are now and
-      # passed. The evaluation itself needs an agent's login, so it runs where that is: run.sh.
-      - run: companion/eval/filing/check.sh
 
   nsh-cli:
     name: Build the patched test CLI
@@ -201,9 +198,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # TailPocket is v0.3.3, public jt-wang/tailpocket@32c50f3aac847044030222fe9b498bb98e882133: its Go module from the Go
+      # TailPocket is v0.3.6, public jt-wang/tailpocket@e197f3edca01ba4d1c70a6a752a5cad9a383cb0c: its Go module from the Go
       # proxy (companion/go.mod), its phone library from that release (app/scripts/tailpocket.sh checks its SHA-256),
-      # its SDKs copied into third_party/tailpocket-32c50f3.
+      # its SDKs copied into third_party/tailpocket-e197f3e.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: companion/go.mod

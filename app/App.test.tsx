@@ -1,5 +1,6 @@
 // The screens over a fake herdr-core: what the desktop's sidebar, tab bar and panes show, and what tapping does.
 import { expect, open, test } from 'nsh/test'
+import { REVIEW_46 } from './src/testing/screens/agy-1.5.14.ts'
 
 const busy = () => open('./fixtures/fake.tsx', { host: { params: { scene: 'busy' } } })
 /** Opens a menu (ui/menu-sheet.tsx) with `opener` and picks the choice `id`. */
@@ -645,6 +646,25 @@ test("a blocked pane says Needs you, and its composer row is the agent's own cho
   // Claude Code goes on working: the composer comes back.
   await app.waitFor('id:compose-input')
   expect(app.count('id:answers')).toBe(0)
+})
+
+test("Antigravity's artifact choices on home and in the terminal have no number and send the agent's own keys", async () => {
+  const app = await open('./fixtures/fake.tsx', { host: { params: { scene: 'single', argv: 'agy', status: 'working' } } })
+  await app.waitFor('id:space-sp1')
+  await app.host.send('fake.status', { address: 't1', app: 'antigravity', state: 'blocked', kind: 'permission', msg: 'Approve plan', screen: REVIEW_46 })
+  const checkChoices = async (row: string) => {
+    await app.waitFor(`${row} >> label:Approve`)
+    for (const label of ['Approve', 'Reject']) {
+      expect(app.count(`${row} >> text:${label}`)).toBe(1)
+      expect(app.count(`${row} >> label:${label}`)).toBe(1)
+      expect(app.texts()).not.toContain(`0. ${label}`)
+    }
+  }
+  await checkChoices('id:needs-t1')
+  await app.press('id:space-sp1')
+  await checkChoices('id:answers')
+  await app.press('id:answers >> label:Reject')
+  await app.waitUntil(() => app.storage()['fake-keys'] === JSON.stringify([['t1', ['n']]]))
 })
 
 // herdr-core (0.1.20) holds a send while the terminal has a half-typed line, up to 60 s after its last key.

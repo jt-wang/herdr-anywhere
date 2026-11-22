@@ -1,0 +1,24 @@
+[
+  {
+    "id": "0",
+    "from": "you",
+    "said": "please SLOW now",
+    "steps": [
+      {
+        "id": "1.0",
+        "kind": "run",
+        "title": "python3 -c 'import time; time.sleep(60)'"
+      }
+    ],
+    "reply": "",
+    "end": "stopped"
+  },
+  {
+    "id": "3",
+    "from": "you",
+    "said": "please HELLO again",
+    "steps": [],
+    "reply": "Hello from the fake model.",
+    "end": "done"
+  }
+]

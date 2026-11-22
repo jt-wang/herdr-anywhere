@@ -17,6 +17,10 @@
 //
 // OpenCode 2.2.0 (model/menu.ts has its keys): a permission's three buttons, unnumbered; a question's digits; its own
 // answer, the row's digit, then text and Enter, in a multi-select question too; Tab goes on; Enter on the Submit page.
+//
+// The Antigravity CLI 1.5.14 (model/menu.ts has its keys): a question's digits; its own answer is Write-in, the row's
+// digit, then text and Enter, in a multi-select question too; a multi-select question goes on with Enter. An approval's
+// digit acts at once, and herdr-core's report names an edit "Edit: Write: <file>". A plan's review page: y or n.
 import type { Status } from './answers.ts'
 import { asks } from './answers.ts'
 import type { ChatAsk, ChatQuestion } from './chat.ts'
@@ -67,12 +71,17 @@ export type Card = {
   cursor: number
 }
 
-/** The row the agent adds for an answer of one's own: Claude Code's, Codex's (its notes), OpenCode's. */
+/** The row the agent adds for an answer of one's own. */
 const TYPE_OWN = /^(Type something\.?|None of the above|Type your own answer)$/
 const EDITS = /^(Write|Edit|MultiEdit|NotebookEdit)$/
 const CHAT = /^Chat about this$/
 
 const norm = (s: string) => s.replace(/\s+/g, '')
+/** The agent's "(Recommended)" mark, after a label or (agy) before it, in the languages companion/internal/chat
+ *  recognises: a screen's label shows it, the record's has it apart. */
+const REC = '[(\\uff08]\\s*(recommended|\\u63a8\\u8350|\\u63a8\\u85a6|\\u304a\\u3059\\u3059\\u3081|\\u63a8\\u5968|\\ucd94\\ucc9c|recomendad[oa]|\\u0440\\u0435\\u043a\\u043e\\u043c\\u0435\\u043d\\u0434\\u0443\\u0435\\u0442\\u0441\\u044f)\\s*[)\\uff09]'
+const REC_MARK = new RegExp(`^\\s*${REC}\\s*|\\s*${REC}\\s*$`, 'i')
+const unmarked = (s: string) => s.replace(REC_MARK, '')
 const CJK = /[\u3000-\u30ff\u3400-\u9fff\uac00-\ud7af\uff00-\uffef]/
 /** Wrapped lines back into one: no space between two CJK characters. */
 export function joinWrapped(lines: string[]): string {
@@ -84,7 +93,8 @@ export function askCard(status: Status, menu: Menu | undefined, ask: ChatAsk | u
   const sel = menu.options.find((o) => o.selected)
   // Claude Code's own-answer row is the one before Chat about this; once an answer is typed there it shows the words.
   const chat = menu.options.find((o) => CHAT.test(o.label))
-  const own = menu.options.find((o) => TYPE_OWN.test(o.label)) ?? (chat ? menu.options.find((o) => o.n === chat.n - 1) : undefined)
+  const ownLabel = status.app === 'antigravity' ? /^Write-in\.{0,3}$/ : TYPE_OWN
+  const own = menu.options.find((o) => ownLabel.test(o.label)) ?? (chat ? menu.options.find((o) => o.n === chat.n - 1) : undefined)
   const cursor = sel ? sel.n : menu.submit?.cursor ? (own?.n ?? 0) + 1 : 0
   const base = { multi: !!menu.multi, question: menu.question, cursor, ...(status.app ? { app: status.app } : {}), ...(menu.unnumbered ? { unnumbered: true } : {}) }
   const digit = (o: Option): Step[] => [{ keys: o.keys }]
@@ -95,7 +105,8 @@ export function askCard(status: Status, menu: Menu | undefined, ask: ChatAsk | u
     const m = /^([\w.-]+):\s*(.*)$/s.exec(said)
     const tool = m ? m[1] : said
     const action = menu.action ?? (tool === 'Bash' ? 'run' : EDITS.test(tool) ? 'edit' : undefined)
-    return { ...base, kind: 'permission', tool, what: m ? m[2].trim() : menu.subject ?? '', ...(action ? { action } : {}),
+    const what = m ? m[2].trim().replace(status.app === 'antigravity' && tool === 'Edit' ? /^Write:\s*/ : /^$/, '') : menu.subject ?? ''
+    return { ...base, kind: 'permission', tool, what, ...(action ? { action } : {}),
       rows: menu.options.map((o) => ({ n: o.n, label: joinWrapped(o.lines), ...(o.typed ? { afterNo: true } : {}), steps: digit(o) })) }
   }
   const qs = ask?.questions ?? []
@@ -103,7 +114,7 @@ export function askCard(status: Status, menu: Menu | undefined, ask: ChatAsk | u
   const q: ChatQuestion | undefined = qs[at]
   const listed = menu.options.filter((o) => o !== own && o !== chat)
   const fromRecord = !!q && q.options.length === listed.length && listed.every((o, i) => {
-    const a = norm(o.lines[0]), b = norm(q.options[i].label)
+    const a = norm(unmarked(o.lines[0])), b = norm(unmarked(q.options[i].label))
     return a.startsWith(b) || b.startsWith(a)
   })
   const rows: CardRow[] = listed.map((o, i) => {
@@ -113,9 +124,9 @@ export function askCard(status: Status, menu: Menu | undefined, ask: ChatAsk | u
     return { n: o.n, label, ...(detail ? { detail } : {}), ...(r?.recommended ? { recommended: true } : {}), ...(o.checked !== undefined ? { checked: o.checked } : {}), steps: digit(o) }
   })
   return { ...base, kind: 'question', ...(q ? { index: at + 1, count: qs.length } : {}), rows,
-    ...(own ? { own: { n: own.n, ...(TYPE_OWN.test(own.label) ? {} : { text: joinWrapped(own.lines) }), ...(own.checked !== undefined && !TYPE_OWN.test(own.label) ? { checked: own.checked } : {}) } } : {}),
+    ...(own ? { own: { n: own.n, ...(ownLabel.test(own.label) ? {} : { text: joinWrapped(own.lines) }), ...(own.checked !== undefined && !ownLabel.test(own.label) ? { checked: own.checked } : {}) } } : {}),
     ...(chat ? { skip: { n: chat.n, label: chat.label, steps: digit(chat) } } : {}),
-    ...(menu.multi ? { next: [{ keys: menu.submit?.cursor ? ['enter'] : status.app === 'claude-code' && own && sel?.n === own.n ? ['tab', 'enter'] : ['tab'] }] } : {}) }
+    ...(menu.multi ? { next: [{ keys: menu.submit?.cursor || status.app === 'antigravity' ? ['enter'] : status.app === 'claude-code' && own && sel?.n === own.n ? ['tab', 'enter'] : ['tab'] }] } : {}) }
 }
 
 /** How many of an option's screen lines its label took (menu.ts joins a wrapped label that goes on in lower case). */
@@ -132,7 +143,8 @@ export function ownSteps(c: Card, text: string): Step[] {
   const moves: Step[] = d ? [{ keys: Array(Math.abs(d)).fill(d > 0 ? 'down' : 'up') }] : []
   // Codex: None of the above, highlighted, takes notes after Tab; Enter sends them with the answer.
   if (c.app === 'codex') return [...moves, { keys: ['tab'] }, { text }]
-  // OpenCode: the row's digit opens the answer (in a multi-select question, it ticks the row and takes its words).
-  if (!c.multi || c.app === 'opencode') return [{ keys: [String(c.own.n)] }, { text }]
+  // OpenCode: the row's digit opens the answer (in a multi-select question, it ticks the row and takes its words);
+  // agy's Write-in the same.
+  if (!c.multi || c.app === 'opencode' || c.app === 'antigravity') return [{ keys: [String(c.own.n)] }, { text }]
   return [...moves, { text }, { keys: ['enter'] }]
 }

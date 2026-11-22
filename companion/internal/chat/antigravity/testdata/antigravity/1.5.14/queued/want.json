@@ -1,0 +1,55 @@
+[
+  {
+    "id": "0",
+    "from": "you",
+    "said": "please WORK now",
+    "steps": [
+      {
+        "id": "1.n",
+        "kind": "note",
+        "title": "Step one."
+      },
+      {
+        "id": "1.0",
+        "kind": "run",
+        "title": "python3 -c 'import time; time.sleep(6)'"
+      },
+      {
+        "id": "3.n",
+        "kind": "note",
+        "title": "Step two."
+      },
+      {
+        "id": "3.0",
+        "kind": "run",
+        "title": "python3 -c 'import time; time.sleep(6)'"
+      },
+      {
+        "id": "7.n",
+        "kind": "note",
+        "title": "Step three."
+      },
+      {
+        "id": "7.0",
+        "kind": "run",
+        "title": "python3 -c 'import time; time.sleep(6)'"
+      }
+    ],
+    "reply": "All three steps are done.",
+    "end": "done"
+  },
+  {
+    "id": "11",
+    "from": "you",
+    "said": "also HELLO there",
+    "steps": [
+      {
+        "id": "12.n",
+        "kind": "note",
+        "title": "Hello from the fake model."
+      }
+    ],
+    "reply": "Hello from the fake model.",
+    "end": "done"
+  }
+]

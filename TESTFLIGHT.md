@@ -2,6 +2,14 @@
 
 A cloud coding agent can request an iOS build through GitHub Actions. Apple signing credentials stay in the repository's `testflight` environment; the agent needs a GitHub token with **Actions: write** and **Contents: read**.
 
+## 0.3.9 (44): TailPocket v0.3.6, Cursor and Oh My Pi chat
+
+Update the Companion too (it updates itself, or `herdr-anywhere start` after installing 0.3.9).
+
+1. **Why the phone can't reach the computer.** With the app open, stop the Companion on the computer (`herdr-anywhere stop`). After about 18 s the banner says Still can't reach your computer, and the line under it and the order of Other options follow why the last try failed: Companion may not be running there when the computer answered but didn't take the phone, the network may be blocking the connection when nothing answered. Start the Companion again and the banner goes away. Pairing again with a new code that fails keeps the old pairing.
+2. **Cursor chat.** Settings › Cursor chat on, install its hooks, restart a Cursor that was already open, and open a Cursor pane: the chat view shows the conversation, tool results, failed commands, edit diffs and images.
+3. **Oh My Pi chat.** Settings › Oh My Pi chat on, then choose Type /restart for me in its pane: the chat view shows the conversation.
+
 ## 0.3.8 (43)
 
 Update the Companion too (it updates itself, or `herdr-anywhere start` after installing 0.3.8). Stop the Companion on the computer (`herdr-anywhere stop`) with the app open: after about 18 s the banner says Still can't reach your computer, with Try again and Other options, and the status bar says Not connected · retrying. Other options lists the four causes with what to do; Copy copies `herdr-anywhere start`. Start the Companion again: the app connects by itself with the same pairing. Pair again from that list opens pairing with Back, and Back returns to the current pairing.
