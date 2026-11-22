@@ -4,6 +4,8 @@
 # once, and on Android 15 an EditText left the layouts after it breaking lines by glyph bounds: Settings opened again
 # showed "Your computer asks GitHub once a", the line measured as one broken into two in a box one line high
 # (app/android/nsh-patches/0001). So Settings is paged through first, then the input box is used, then Settings again.
+# Settings scrolls on under the navigation bar, whose handle is drawn over the texts there: those are read on the next
+# page, higher up, and at the end of Settings no text may be under the bar.
 # Needs Pillow and tesseract (e2e/ci/tools.sh shots).
 # Usage: ANDROID_SERIAL=emulator-5554 e2e/android-settings-fit.sh APK COMPANION [folder for screenshots]
 set -eu
@@ -35,7 +37,15 @@ sleep 1
 invite=$("$bin" pair --url "http://10.0.2.2:$port" --state "$state" 2>/dev/null | grep -o 'http://[^ ]*#pair=[A-Za-z0-9_-]*' | head -1)
 [ -n "$invite" ] || { echo "FAIL: no invite"; exit 1; }
 "$adb" uninstall "$id" >/dev/null 2>&1 || true
-"$adb" install "$apk" >/dev/null
+# adb once lost the emulator on CI just then ("device offline", back after adb reconnect in 1 s): install again.
+for try in 1 2 3; do
+  "$adb" install -r "$apk" >/dev/null && break
+  [ "$try" = 3 ] && { echo "FAIL: adb install failed 3 times"; exit 1; }
+  "$adb" wait-for-device; sleep 2
+done
+# The top of the navigation bar, in the screenshots' pixels: frame=[0,TOP][WIDTH,HEIGHT] in dumpsys window.
+nav=$("$adb" shell dumpsys window | grep -oE 'type=navigationBars frame=\[[0-9]+,[0-9]+\]' | head -1 | sed -E 's/.*,([0-9]+)\]$/\1/')
+[ -n "$nav" ] || { echo "FAIL: no navigation bar in dumpsys window"; exit 1; }
 "$adb" shell pm grant "$id" android.permission.POST_NOTIFICATIONS >/dev/null 2>&1 || true
 
 xml() { "$adb" shell rm -f /sdcard/hm.xml; "$adb" shell uiautomator dump /sdcard/hm.xml >/dev/null 2>&1; "$adb" shell cat /sdcard/hm.xml 2>/dev/null || true; }
@@ -54,15 +64,17 @@ pages() {
   for s in "$scale" 1.3; do
     "$adb" shell settings put system font_scale "$s"; sleep 3
     for _ in 1 2 3 4 5 6; do "$adb" shell input swipe 540 700 540 2000 150; done; sleep 2
-    last=""
+    last=""; under=0
     for page in 1 2 3 4 5 6 7 8 9 10; do
       "$adb" exec-out screencap -p > "$work/p.png"; xml > "$work/p.xml"
       now=$(cksum < "$work/p.xml"); [ "$now" = "$last" ] && break; last=$now # a swipe that moved nothing: the end
       [ -n "$shot" ] && cp "$work/p.png" "$shot/settings-fit-$1-$s-$page.png"
-      python3 "$here/android-text-fit.py" "$work/p.png" "$work/p.xml" > "$work/fit" || bad=1
+      python3 "$here/android-text-fit.py" "$work/p.png" "$work/p.xml" "$nav" > "$work/fit" || bad=1
       sed "s/^/  $1 the input box, font $s, page $page: /" "$work/fit"
+      under=$(sed -n 's/^under the navigation bar: //p' "$work/fit"); under=${under:-0}
       "$adb" shell input swipe 540 1800 540 900 600; sleep 2
     done
+    [ "$under" = 0 ] || { echo "  $1 the input box, font $s: FAIL: at the end of Settings $under texts are under the navigation bar"; bad=1; }
   done
   "$adb" shell settings put system font_scale "$scale"; sleep 2
   [ $bad = 0 ] || { echo "FAIL: a text on Settings is cut off $1 the input box was used (above)"; exit 1; }
