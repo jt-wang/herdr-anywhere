@@ -38,16 +38,26 @@ final class PinOrder: XCTestCase {
     func middle(_ e: XCUIElement) -> XCUICoordinate { e.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)) }
     let top = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3))
     func sp() -> Int { Int(el("space-new").frame.minY) }
-    // Held still 0.8 s, then dragged; held at the end for the script's screenshot. The row lifts on the app's 400 ms
-    // timer: on a CI simulator whose app was busy when the finger went down, a hold came out as a scroll (the list
-    // moved, no row did). That is written down ("retry …"), the list goes back, and the hold is made once more.
-    // HM_PIN_SCROLL_FIRST=1 (the suite's self-test) makes the first hold a quick swipe, which must come out the same.
+    // Held still, then dragged; held at the end for the script's screenshot. The row lifts on the app's 400 ms timer
+    // and the list stops scrolling then (home.tsx: `scrollable`, a change the app sends to the list). Until that change
+    // is in, a finger that moves is the list's too: on a CI host at load 116-130 a row lifted, and the list's own pan
+    // took the touch from it with the finger's first move, 0.8 s down (the app's log: pin-lift, then pin-terminate
+    // with lifted=1 moves=0; the list stood still, no row moved). Held 1.5 s, the change has 1.1 s to get there.
+    // A drag that still comes to nothing is made once more, saying why, when the app never dropped the row (its log,
+    // SERVE_LOG: each touch on a Pinned row is a /hm-e2e/pin-… line): the hold came out as a scroll (the list moved,
+    // put back first), the app got no touch, or the touch was taken from the lifted row. A drop in the wrong place
+    // is not made again. HM_PIN_SCROLL_FIRST=1 (the suite's self-test) makes the first hold a quick swipe, which must
+    // come out as a scroll and be made again.
+    let serveLog = env["SERVE_LOG"] ?? ""
+    func pinLog() -> String {
+      ((try? String(contentsOfFile: serveLog, encoding: .utf8)) ?? "").components(separatedBy: "\n").filter { $0.contains("/hm-e2e/pin-") }.joined(separator: "\n")
+    }
     var first = env["SCROLL_FIRST"] == "1"
     var upFrames: (source: CGRect, target: CGRect)?
     func drag(_ name: String, _ i: Int, by: () -> CGFloat, hold: TimeInterval = 0.3) {
       for attempt in 1...2 {
-        let o = order(), s = sp(), c = middle(row(i))
-        let press: TimeInterval = first ? 0.05 : 0.8
+        let o = order(), s = sp(), before = pinLog().count, c = middle(row(i))
+        let press: TimeInterval = first ? 0.05 : 1.5
         first = false
         let destination = c.withOffset(CGVector(dx: 0, dy: by()))
         let perform = { c.press(forDuration: press, thenDragTo: destination, withVelocity: 300, thenHoldForDuration: hold) }
@@ -58,10 +68,21 @@ final class PinOrder: XCTestCase {
         } else { perform() }
         write("let go \(name)")
         sleep(2)
-        if attempt == 2 || order() != o || sp() == s { return }
-        write("retry \(name): the hold came out as a scroll (no row moved, the list went from \(s) to \(sp()))")
-        top.press(forDuration: 0.05, thenDragTo: top.withOffset(CGVector(dx: 0, dy: 500)), withVelocity: 1500, thenHoldForDuration: 0)
-        sleep(2)
+        if attempt == 2 || order() != o { return }
+        if sp() != s {
+          write("retry \(name): the hold came out as a scroll (no row moved, the list went from \(s) to \(sp()))")
+          top.press(forDuration: 0.05, thenDragTo: top.withOffset(CGVector(dx: 0, dy: 500)), withVelocity: 1500, thenHoldForDuration: 0)
+          sleep(2)
+          continue
+        }
+        // A busy app's lines can come late: 3 s more for a drop to show, in the list or in its log.
+        sleep(3)
+        let said = String(pinLog().dropFirst(before))
+        if order() != o || serveLog.isEmpty || said.contains("/hm-e2e/pin-drop/") { return }
+        let why = !said.contains("/hm-e2e/pin-grant/") ? "the app got no touch"
+          : said.contains("/hm-e2e/pin-lift/") && said.contains("/hm-e2e/pin-terminate/") ? "the touch was taken from the lifted row before it moved"
+          : "the app did not lift the row"
+        write("retry \(name): \(why) (no row moved, the list stood still)")
       }
     }
     // 4th up to 2nd.
@@ -105,13 +126,19 @@ final class PinOrder: XCTestCase {
     // press), rested before letting go so it does not fling.
     let listTop = el("settings").frame.maxY
     let by = row(1).frame.midY - listTop + row(1).frame.height
-    let header = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: 100, dy: el("space-new").frame.midY))
-    header.press(forDuration: 0.05, thenDragTo: header.withOffset(CGVector(dx: 0, dy: -by)), withVelocity: 300, thenHoldForDuration: 0.5)
-    sleep(2)
+    // Setup, not the step under test: a drag the CI simulator's busy app let pass without a scroll is written down
+    // ("retry …", shown by the script) and made once more.
+    for attempt in 1...2 {
+      let header = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: 100, dy: el("space-new").frame.midY))
+      header.press(forDuration: 0.05, thenDragTo: header.withOffset(CGVector(dx: 0, dy: -by)), withVelocity: 300, thenHoldForDuration: 0.5)
+      sleep(2)
+      if attempt == 2 || row(1).frame.minY <= listTop { break }
+      write("retry edge-setup: the drag from the Spaces header did not scroll (second row at \(Int(row(1).frame.minY)), list top \(Int(listTop)))")
+    }
     let edge = listTop + 8
     write("edge-setup second=\(Int(row(1).frame.minY)) top=\(Int(listTop))")
     let e = middle(row(4))
-    e.press(forDuration: 0.8, thenDragTo: e.withOffset(CGVector(dx: 0, dy: edge - row(4).frame.midY)), withVelocity: 300, thenHoldForDuration: 3)
+    e.press(forDuration: 1.5, thenDragTo: e.withOffset(CGVector(dx: 0, dy: edge - row(4).frame.midY)), withVelocity: 300, thenHoldForDuration: 3)
     sleep(2)
     top.press(forDuration: 0.05, thenDragTo: top.withOffset(CGVector(dx: 0, dy: 500)), withVelocity: 1500, thenHoldForDuration: 0)
     sleep(2)

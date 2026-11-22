@@ -122,7 +122,7 @@ lifted() { "$work/desktop-tool" scan "$1" 2>/dev/null | grep -q '^text .*Drag to
 ) &
 watcher=$!
 rc=0
-TEST_RUNNER_OUT="$out" TEST_RUNNER_AGENTS="$A $B $C $D $E" TEST_RUNNER_BEFORE="${BEFORE:-}" TEST_RUNNER_SCROLL_FIRST="${HM_PIN_SCROLL_FIRST:-}" TEST_RUNNER_SHOTS="${shots:+1}" \
+TEST_RUNNER_OUT="$out" TEST_RUNNER_SERVE_LOG="$work/serve.log" TEST_RUNNER_AGENTS="$A $B $C $D $E" TEST_RUNNER_BEFORE="${BEFORE:-}" TEST_RUNNER_SCROLL_FIRST="${HM_PIN_SCROLL_FIRST:-}" TEST_RUNNER_SHOTS="${shots:+1}" \
   perl -e 'alarm 600; exec @ARGV' xcodebuild test -quiet -project "$work/uitest/KeyboardCheck.xcodeproj" \
   -scheme UITests -only-testing:UITests/PinOrder -destination "id=$SIM_UDID" -derivedDataPath "$work/uitest/derived" \
   -resultBundlePath "$work/uitest/result.xcresult" > "$work/uitest/test.log" 2>&1 || rc=$?
@@ -138,11 +138,18 @@ fi
 # and its reason above it), its last lines, the steps the test got to, each failure's message from the result bundle
 # (-quiet leaves them out), and, with a folder for screenshots, XCTest's screenshots at the failures, the Companion's
 # log and the simulator's crash reports in its failure folder.
+# Any failure, without a folder for screenshots too (the main CI job has none): the steps and what the app said about
+# each touch on a Pinned row (src/ui/pin-drag.ts, sent to the Companion as /hm-e2e/pin-…: grant, lift, drop, release
+# or terminate), to tell a touch the app never got from one taken from it and from a drop in the wrong place.
+evidence() {
+  echo "steps: $(tr '\n' ';' < "$out" 2>/dev/null)"
+  echo "the app's pin diagnostics:"; grep -o '/hm-e2e/pin-[^ "]*' "$work/serve.log" 2>/dev/null | sed 's/^/  /' | head -60
+}
 if [ "$rc" != 0 ]; then
   echo "FAIL: the PinOrder test (xcodebuild test exit $rc)"
   grep -iE "error|xctassert|failed|failing|crash|timed out" "$work/uitest/test.log" | sed -E 's/#pair=[A-Za-z0-9_-]+/#pair=…/g' | head -15
   echo "the last lines xcodebuild wrote:"; tail -12 "$work/uitest/test.log" | sed -E 's/#pair=[A-Za-z0-9_-]+/#pair=…/g'
-  echo "steps: $(tr '\n' ';' < "$out")"
+  evidence
   "$app/e2e/ios-xcresult.sh" "$work/uitest/result.xcresult" ${shots:+"$shots/failure-$tag"} || true
   [ -z "$shots" ] || "$app/e2e/ios-failure-logs.sh" "$work/started" "$work/serve.log" "$shots/failure-$tag" || true
   exit 1
@@ -183,4 +190,5 @@ set -- $(line swipe | tr '=' ' '); [ "$4" -lt "$2" ] && say "ok: a quick swipe o
 is "$(rows after-swipe)" "$D $B $C $A $E" "the swipe moved no row"
 set -- $(line edge-setup | tr '=' ' '); [ "$2" -le "$4" ] && say "ok: the edge step starts with the first two Pinned rows out of sight" || say "FAIL: the edge step's setup did not scroll the first two Pinned rows out of sight (second row at $2, list top $4)"
 is "$(rows edge)" "$E $D $B $C $A" "a row taken to the top edge scrolls the list up and lands first"
+[ "$failed" = 0 ] || evidence
 exit $failed
