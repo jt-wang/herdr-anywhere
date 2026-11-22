@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.3.7
+
+iOS build 42. The Companion is the same as 0.3.6.
+
+- When the phone is set to connect in a way the computer hasn't turned on, the banner says so in one sentence and has Use Automatic beside Connection; Settings › Connection gives the same reason. Home, Settings and the terminal all say Not connected then, and the terminal offers no Try again, which could not work.
+- Home's header says Herdr Anywhere. Dim text (descriptions, times) is darker in light mode and lighter in dark mode, so it reads more easily.
+- Android: Settings no longer cuts off the end of a description after the terminal's input box was used (seen as "Your computer asks GitHub once a"). On Android 15 the input box left the system's text layout breaking lines by glyph outlines, while NativeShell had measured the text by its advances.
+
 ## v0.3.6
 
 iOS build 41. Update the phone and the computer together.

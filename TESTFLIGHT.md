@@ -2,6 +2,10 @@
 
 A cloud coding agent can request an iOS build through GitHub Actions. Apple signing credentials stay in the repository's `testflight` environment; the agent needs a GitHub token with **Actions: write** and **Contents: read**.
 
+## 0.3.7 (42)
+
+The Companion is the same as 0.3.6, and the steps below still apply. With Tailcat only picked against `--routes lan`, the banner says in one sentence that the computer hasn't turned that way on, and Use Automatic connects again; home, Settings and the terminal all say Not connected until then. On Android, open Settings, then a terminal's input box, then Settings again: every description shows whole (see CHANGELOG.md).
+
 ## 0.3.6 (41): TailPocket v0.3.3, Tailcat optional
 
 Built on TailPocket v0.3.3 (jt-wang/tailpocket@32c50f3aac847044030222fe9b498bb98e882133). Tailcat is now one route of three. Use the phone and Companion from the same build.
