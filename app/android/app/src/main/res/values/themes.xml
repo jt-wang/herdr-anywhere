@@ -2,6 +2,8 @@
 <resources>
     <style name="Herdr" parent="@android:style/Theme.Material.Light.NoActionBar">
         <item name="android:windowBackground">@color/background</item>
+        <!-- Text selection handles in the theme's ring blue (nsh.json), like the caret and the selection. -->
+        <item name="android:colorControlActivated">#2459c4</item>
     </style>
     <color name="background">#ffffff</color>
 </resources>

@@ -2,6 +2,15 @@
 
 A cloud coding agent can request an iOS build through GitHub Actions. Apple signing credentials stay in the repository's `testflight` environment; the agent needs a GitHub token with **Actions: write** and **Contents: read**.
 
+## 0.3.10 (45): the shared design
+
+Update the Companion too (it updates itself, or `herdr-anywhere start` after installing 0.3.10).
+
+1. **The new look.** Light and dark: home, a terminal, Settings, pairing and the chat views use the shared design (true-black dark, neutral light, Geist type). On an iPad or a wide window, the list sits beside the conversation; a draft survives resizing.
+2. **Working.** Only the current Working text slowly changes brightness; it stops when covered, offline, in the background, or with Reduce Motion or Low Power Mode on.
+3. **Oh My Pi 19 edits.** An Oh My Pi edit, also in its hashline mode, shows the file's name and a diff in the chat view.
+4. **Antigravity pictures** up to 12 MiB show in the chat view.
+
 ## 0.3.9 (44): TailPocket v0.3.6, Cursor and Oh My Pi chat
 
 Update the Companion too (it updates itself, or `herdr-anywhere start` after installing 0.3.9).

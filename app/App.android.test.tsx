@@ -153,10 +153,10 @@ test('away from the app, nothing is posted for a release the person did not let 
   expect(calls(app, 'page.notify')).toEqual([])
 })
 
-test('a menu puts the keyboard away as it opens, before its item opens another screen', async () => {
+for (const platform of ['android', 'ios'] as const) test(`${platform}: a menu puts the keyboard away before covering its input`, async () => {
   // The menu is a window of its own: a keyboard put away only once a picked item had opened Settings came back over
-  // Settings when the menu's window closed (android.sh, the Android × Linux suite).
-  const app = await android()
+  // Settings when the menu's window closed (android.sh, the Android × Linux suite). On iPad it covers the menu itself.
+  const app = await open('./fixtures/fake.tsx', { platform, host: { params: { scene: 'busy' } } })
   await app.waitFor('text:Needs you')
   await app.press('id:space-sp2')
   await app.waitFor('id:terminal-t3')

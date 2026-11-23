@@ -76,6 +76,54 @@ func step(t *testing.T, path, title string) string {
 
 const steps = "testdata/pi/1.4.0/steps.jsonl"
 
+func TestOMPHashlineEdit(t *testing.T) {
+	const path = "testdata/omp/19.0.0/hashline.jsonl"
+	r := &Reader{}
+	id := step(t, path, "notes.txt")
+	d, err := r.Detail(path, id)
+	want := &chat.Change{File: "notes.txt", Added: 2, Hunks: []chat.Hunk{{OldStart: 1, NewStart: 1, Lines: []string{" a", "+b", "+c"}}}}
+	if err != nil || !reflect.DeepEqual(d.Change, want) {
+		t.Fatalf("hashline edit: %+v, %v", d.Change, err)
+	}
+	ts, err := r.Turns(path)
+	if err != nil || ts[0].Steps[0].Added != 2 || ts[0].Steps[0].Deleted != 0 || ts[0].Steps[0].Failed {
+		t.Fatalf("hashline step: %+v, %v", ts, err)
+	}
+}
+
+func TestEditResultFormats(t *testing.T) {
+	for _, tc := range []struct {
+		details        string
+		added, deleted int
+	}{
+		{`{"diff":"-1|old\n+1|new"}`, 1, 1},
+		{`{"oldText":"old\n","newText":"new\n"}`, 1, 1},
+		{`{"oldText":"","newText":"new\n"}`, 1, 0},
+		{`{"oldText":"old\n","newText":""}`, 0, 1},
+		{`{"diff":""}`, 0, 0},
+		{`{}`, 0, 0},
+		{`{"diff":42}`, 0, 0},
+		{`{"patch":"@@ -1 +1 @@\n-old\n+new","diff":"+1|ignored"}`, 1, 1},
+	} {
+		diff := patchOf(json.RawMessage(tc.details))
+		added, deleted := patchCounts(diff)
+		if added != tc.added || deleted != tc.deleted {
+			t.Fatalf("%s: +%d -%d", tc.details, added, deleted)
+		}
+	}
+	// An absolute path on this system: on Windows, /work/acme has no drive and isn't one.
+	cwd := filepath.Join(t.TempDir(), "acme")
+	details, _ := json.Marshal(map[string]string{"resolvedPath": filepath.Join(cwd, "notes.txt")})
+	for _, name := range []string{"write", "read", "edit"} {
+		p := part{Name: name, Arguments: json.RawMessage(`{}`)}
+		result := &message{Details: details, IsError: true}
+		s := toolStep(p, result, cwd)
+		if s.Title != "notes.txt" || !s.Failed {
+			t.Fatalf("%s: %+v", name, s)
+		}
+	}
+}
+
 func TestDetails(t *testing.T) {
 	r := &Reader{}
 	d, err := r.Detail(steps, step(t, steps, "echo checking; echo 'one test failed' >&2; exit 3"))

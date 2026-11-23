@@ -381,6 +381,14 @@ const tapPicture = (store: Store) => { if (params.picture) setTimeout(() => stor
 // "unpaired": the computer refuses the saved token; a token from pairing again gets through.
 let forgot = 0
 const pipe = (l: Linker) => () => {
+  // A second fake computer can reuse terminal addresses, but must start a fresh framed connection.
+  if (params.freshPairedPipe === 'on' && l.link.get()?.token === 'new-token') {
+    const paired = new FakeCore()
+    paired.terms = new Map(core.terms)
+    paired.docs = new Map(core.docs)
+    paired.machines = [...core.machines]
+    return paired
+  }
   const forgotten = (scene === 'unpaired' && l.link.get()?.token === 'synthetic-token') || ((scene === 'link-forgotten' || scene === 'relaunch-forgotten') && !forgot++)
   if (forgotten) { const c = new FakeCore(); c.send = () => c.drop('unpaired'); return c }
   // "companion-off": through the tunnel nothing answers the saved link; a link from pairing again gets through.

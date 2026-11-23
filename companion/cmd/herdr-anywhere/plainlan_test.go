@@ -142,7 +142,16 @@ func TestPlainLANClosesWhenNoPhoneNeedsIt(t *testing.T) {
 	if !p.Until().IsZero() {
 		t.Fatal("still open with no phone that needs it")
 	}
-	if _, err := http.Get("http://" + addr + "/api/info"); err == nil {
+	// shut clears until before it closes the server: the port stops answering a moment later.
+	answers := func() bool {
+		c := &http.Client{Timeout: 500 * time.Millisecond, Transport: &http.Transport{DisableKeepAlives: true}}
+		_, err := c.Get("http://" + addr + "/api/info")
+		return err == nil
+	}
+	for answers() && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if answers() {
 		t.Fatal("plain port still answers")
 	}
 	code, _ = st.CreateCode("p", time.Minute)

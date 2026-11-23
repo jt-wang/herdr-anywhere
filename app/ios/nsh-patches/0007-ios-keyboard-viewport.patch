@@ -1,0 +1,51 @@
+diff --git a/crates/nsh-platform-ios/src/mount.rs b/crates/nsh-platform-ios/src/mount.rs
+--- a/crates/nsh-platform-ios/src/mount.rs
++++ b/crates/nsh-platform-ios/src/mount.rs
+@@ -693,6 +693,7 @@
+     }
+ 
+     fn apply_batch(&mut self, batch: MountBatch) {
++        let avoiding_before = self.avoiding_viewport();
+         let mut animation_changed = false;
+         for item in batch.items {
+             animation_changed |= self.apply_item(item);
+@@ -711,7 +712,15 @@
+             area.batch_applied();
+         }
+         self.focused_caret_moved();
++        let frames_applied = self.frames_applied;
+         self.settle_content_sizes();
++        // The app can move a sheet above the keyboard after its notification.
++        // Its scroll view must not keep the inset calculated at the old position.
++        // Only a changed viewport re-reveals focus: unrelated batches and user
++        // scrolling must not pull the content back to the input.
++        if frames_applied && avoiding_before != self.avoiding_viewport() {
++            self.avoid_keyboard(self.keyboard_motion);
++        }
+     }
+ 
+     /// Narrows the content size of a vertical scroll view to its width when
+@@ -1740,6 +1749,23 @@
+         self.avoid_keyboard(motion);
+     }
+ 
++    /// The keyboard-avoiding scroll's viewport in window coordinates.
++    fn avoiding_viewport(&self) -> Option<(NodeId, CGRect)> {
++        if self.keyboard <= 0.0 {
++            return None;
++        }
++        let id = self.avoiding?;
++        let Slot {
++            native: Native::Scroll(scroll),
++            ..
++        } = self.slot(id)?
++        else {
++            return None;
++        };
++        let parent = scroll.superview()?;
++        Some((id, parent.convertRect_toView(scroll.frame(), None)))
++    }
++
+     /// Keeps the focused input visible: gives its scroll view a bottom inset
+     /// as high as the part the keyboard covers, and scrolls to the input,
+     /// both moving as the keyboard does.

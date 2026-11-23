@@ -152,7 +152,7 @@ jobs:
     needs: plan
     if: needs.plan.outputs.android != '[]' || needs.plan.outputs.remote == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     outputs:
       prev: ${{ steps.prev.outputs.tag }}
     steps:
@@ -173,6 +173,7 @@ jobs:
           distribution: temurin
           java-version: "21"
       - run: app/e2e/ci/tools.sh nsh
+      - uses: ./.github/actions/nsh-android
       - name: The APK and the companion, as computers.yml builds them
         run: |
           (cd app && android/build.sh)
@@ -223,13 +224,20 @@ jobs:
           distribution: temurin
           java-version: "21"
       - run: app/e2e/ci/tools.sh nsh
+      - uses: ./.github/actions/nsh-android
       - run: app/e2e/update-files.sh "$RUNNER_TEMP/update"
+      # A release from before the matched runtime (its android/build.sh doesn't ask for one) is built as it was
+      # released: on the stock nsh from tools.sh, its own patch applied to the stock AAR.
       - name: The previous release's APK, from its tag
         run: |
           prev=$(app/e2e/ci/prev-tag.sh)
           echo "previous release: $prev"
           git worktree add "$RUNNER_TEMP/prev" "$prev"
-          (cd "$RUNNER_TEMP/prev/app" && android/build.sh)
+          if grep -q 'matched full runtime' "$RUNNER_TEMP/prev/app/android/build.sh"; then
+            (cd "$RUNNER_TEMP/prev/app" && android/build.sh)
+          else
+            (cd "$RUNNER_TEMP/prev/app" && env -u NSH_RUNTIME NSH_HOME="$HOME/.nsh" PATH="$HOME/.nsh/bin:$PATH" android/build.sh)
+          fi
           cp "$RUNNER_TEMP/prev/app/android/build/Herdr.apk" "$RUNNER_TEMP/update/prev.apk"
           echo "$prev" > "$RUNNER_TEMP/update/prev-tag"
       - run: app/e2e/ci/tools.sh shots
@@ -527,7 +535,9 @@ jobs:
     # zoom: about twice a Mac's run of its two suites with the simulator's start (e2e/ios-zoom.sh).
     # The edge groups: 288 swipes and a recording took 52 minutes on a Mac at a desk (26.5); twice that and the build.
     # title: about 10 minutes when it ran inside the b group (4.5 for the check itself).
-    timeout-minutes: ${{ matrix.key == 'chat27' && inputs.chat_away_cycles != '0' && inputs.chat_away_cycles && 150 || startsWith(matrix.key, 'edge') && 120 || matrix.key == 'ask' && 60 || matrix.key == 'subkeep' && 40 || matrix.key == 'title' && 45 || matrix.key == 'zoom' && 40 || 75 }}
+    # The rest 100: a branch's first run builds NativeShell (caches are per branch), 21 to 30 minutes; on ci-0310-rel11
+    # a and b passed their suites and were cancelled at 75 in the steps after them.
+    timeout-minutes: ${{ matrix.key == 'chat27' && inputs.chat_away_cycles != '0' && inputs.chat_away_cycles && 150 || startsWith(matrix.key, 'edge') && 120 || matrix.key == 'ask' && 60 || matrix.key == 'subkeep' && 40 || matrix.key == 'title' && 45 || matrix.key == 'zoom' && 40 || 100 }}
     strategy:
       fail-fast: false
       matrix:

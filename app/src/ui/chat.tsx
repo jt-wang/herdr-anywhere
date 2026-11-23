@@ -1,11 +1,11 @@
 // The chat view over a pane's terminal: the agent's turns as the computer reads them from the agent's own record
 // (model/chat.ts). It only reads; the composer under it still types into the terminal. When the computer isn't sure,
 // the view shows why and the way back, and none of the turns.
-import { cleanup, effect, Image, Keyboard, Scroll, signal, Text, untracked, Video, View } from 'nsh'
-import { Sheet, TextView } from 'nsh/base'
+import { cleanup, colorScheme, effect, Image, Keyboard, keyboardFrame, Scroll, signal, Text, untracked, Video, View } from 'nsh'
+import { TextView } from 'nsh/base'
 import type { Store } from '../store.ts'
 import { changeRows, clockText, pathsIn, sizeText, foldLine, outsideFold, workPreview, refreshEvery, shows, unknownText, setupChangedText, type ChatAnswer, type ChatSetup, type ChatChange, type ChatDetail, type ChatFile, type ChatPicture, type ChatRun, type ChatStep, type ChatTurn } from '../model/chat.ts'
-import { Glyph, IconButton, useRev, useSignal } from './kit.tsx'
+import { Glyph, IconButton, modalDepth, PANEL, PANEL_STYLE, ProgramIcon, Sheet, useRev, useSignal } from './kit.tsx'
 import { AskCard } from './ask-card.tsx'
 import { askCard } from '../model/ask.ts'
 import { t } from '../strings/index.ts'
@@ -17,9 +17,13 @@ type Opened = (id: string) => ReturnType<typeof closed>
 
 const STEP_GLYPH: Record<string, string> = { read: 'file-text', edit: 'square-pen', run: 'terminal', search: 'search', web: 'monitor', agent: 'layers', think: 'brain', plan: 'list-checks' }
 
-export function ChatView(props: { store: Store; address: string; status: () => string | undefined; back: () => void }) {
+export function ChatView(props: { store: Store; address: string; status: () => string | undefined; back: () => void; active?: () => boolean }) {
   const s = props.store
-  const active = useSignal(s.activity)
+  // The parent's keyed getter is already empty while its removed branch cleans up.
+  const attentionAddress = props.address
+  const foreground = useSignal(s.activity)
+  const connection = useSignal(s.conn)
+  const active = () => foreground() && (props.active?.() ?? true) && modalDepth() === 0
   const cached = s.cachedChat(props.address)
   const answer = signal<ChatAnswer | undefined>(cached)
   const offline = signal(s.conn.get() !== 'ready')
@@ -47,7 +51,7 @@ export function ChatView(props: { store: Store; address: string; status: () => s
   let asked = 0, shown = 0
   let lastPage: ChatAnswer | undefined
   const ask = async () => {
-    if (!s.appActive) return
+    if (!active()) return
     const n = ++asked
     try {
       const a = await s.chat!.get(props.address)
@@ -92,7 +96,7 @@ export function ChatView(props: { store: Store; address: string; status: () => s
   const opened: Opened = (id) => { let o = openedBy.get(id); if (!o) { o = closed(); openedBy.set(id, o) } return o }
   const schedule = () => {
     clearTimeout(timer)
-    if (!s.appActive) return
+    if (!active()) return
     const every = refreshEvery(props.status(), lastTurns?.at(-1)?.end === 'open')
     if (every) timer = setTimeout(() => { void ask(); if (alive) schedule() }, every)
   }
@@ -116,6 +120,46 @@ export function ChatView(props: { store: Store; address: string; status: () => s
   let contentTop = 0
   let offset = 0
   const rows = new Map<string, { y: number; height: number }>()
+  const workRows = new Map<string, { y: number; height: number }>()
+  const visibleWork = signal<string | null>(null)
+  const visibleDecision = signal(false)
+  let decision: { y: number; height: number } | null = null
+  // The decision card while its own answer is being written: kept in view down to its bottom edge (the box, Cancel,
+  // Send), with the content's bottom padding under it, never past the content's end.
+  let answering: { y: number; height: number } | null = null
+  let answerTimer: ReturnType<typeof setTimeout> | undefined
+  const answerShown = (y: number) => {
+    if (!answering) return y
+    const end = Math.max(0, content + contentTop * 2 - viewport())
+    return Math.max(y, Math.min(end, contentTop + answering.y + answering.height + 16 - viewport()))
+  }
+  const revealAnswer = () => {
+    const y = answerShown(offset)
+    if (y <= offset) return
+    scroller?.scrollTo({ y, animated: false })
+    offset = y
+    seeWork()
+  }
+  // Once the keyboard has moved: the native scroll that brings the focused box clear of it ran along its way.
+  const answerLater = () => { clearTimeout(answerTimer); answerTimer = setTimeout(revealAnswer, keyboardFrame().duration * 1000 + 50) }
+  effect(() => { keyboardFrame(); untracked(() => { if (answering) answerLater() }) })
+  cleanup(() => clearTimeout(answerTimer))
+  // Scroll is not virtualized. Gate native paint with the measured status line,
+  // not the whole turn (which may contain a long reply). No idle polling/frame loop.
+  const seeWork = () => {
+    if (!alive) return
+    const id = lastTurns?.at(-1)?.id
+    const row = id && rows.get(id), work = id && workRows.get(id)
+    const top = row && work ? contentTop + row.y + work.y - offset : -Infinity
+    visibleWork.set(id && work && viewport() > 0 && top < viewport() && top + work.height > 0 ? id : null)
+    const headingTop = decision ? contentTop + decision.y - offset : -Infinity
+    visibleDecision.set(!!decision && viewport() > 0 && headingTop < viewport() && headingTop + decision.height > 0)
+  }
+  const workLayout = (id: string, box: { y: number; height: number } | null) => {
+    if (box) workRows.set(id, box)
+    else workRows.delete(id)
+    seeWork()
+  }
   let layoutTimer: ReturnType<typeof setTimeout> | undefined
   let saveTimer: ReturnType<typeof setTimeout> | undefined
   let scrolling = false
@@ -129,9 +173,10 @@ export function ChatView(props: { store: Store; address: string; status: () => s
       const row = reading && rows.get(reading.turn)
       const y = pinned ? content + contentTop * 2 - viewport()
         : row ? contentTop + row.y + Math.min(reading!.offset, row.height - 1) : offset
-      const target = Math.max(0, Math.min(y, Math.max(0, content + contentTop * 2 - viewport())))
+      const target = answerShown(Math.max(0, Math.min(y, Math.max(0, content + contentTop * 2 - viewport()))))
       scroller?.scrollTo({ y: target, animated: false })
       offset = target
+      seeWork()
     }, 0)
   }
   const saveReading = () => {
@@ -205,6 +250,14 @@ export function ChatView(props: { store: Store; address: string; status: () => s
     const last = turns()?.at(-1)
     return askCard(s.term(props.address)?.status, s.menuFor(props.address), last?.end === 'open' ? last.ask : undefined)
   }
+  effect(() => {
+    const shown = active() && !unknown() && !!turns()?.length && !!card() && visibleDecision()
+    untracked(() => {
+      if (shown) s.chatAttention.set(attentionAddress)
+      else if (s.chatAttention.get() === attentionAddress) s.chatAttention.set(null)
+    })
+  })
+  cleanup(() => { if (s.chatAttention.get() === attentionAddress) s.chatAttention.set(null) })
   return (
     <View testID="chat-view" class="flex-1 bg-background">
       <If when={offline()}>
@@ -218,7 +271,7 @@ export function ChatView(props: { store: Store; address: string; status: () => s
         </View>
       </If>
       <If when={unknown()} else={
-        <Scroll testID="chat-scroll" ref={(r: any) => { scroller = r }} class="flex-1" contentClass="px-3 py-3 gap-4"
+        <Scroll testID="chat-scroll" ref={(r: any) => { scroller = r }} class="flex-1" contentClass="w-full max-w-[840px] self-center px-[22px] pt-[21px] pb-4 gap-4"
           /* After a prompt sent from the composer its box keeps focus with the keyboard down, and a Scroll that doesn't
              persist taps spent every tap on that focus: a fold or a step didn't open (seen on Android). */
           /* A view at the end that gets smaller goes to the end again: on Android a pane that opens in its chat is laid
@@ -229,9 +282,12 @@ export function ChatView(props: { store: Store; address: string; status: () => s
              Only a user's drag (including its momentum) changes the reading intent, not those callbacks. */
           onScrollDragStart={() => { scrolling = true }}
           scrollEventThrottle={64} onScroll={(e) => {
-            if (!scrolling) return
             const y = e?.offset?.y ?? 0
+            // A scroll no finger made while the own answer is open (Android revealing the focused box, which brings
+            // only the box into view, at its own time): the card's bottom edge back into view once it settles.
+            if (!scrolling) { offset = y; seeWork(); if (answering && answerShown(y) > y) answerLater(); return }
             offset = y; pinned = offset + viewport() >= content + contentTop * 2 - 40
+            seeWork()
             remember()
           }}>
           <View class="gap-4" onLayout={(b) => { content = b.size.height; contentTop = b.origin.y; place() }}>
@@ -243,8 +299,10 @@ export function ChatView(props: { store: Store; address: string; status: () => s
             <If when={earlierError()}><Text testID="chat-earlier-error" class="text-[12.5px] text-muted-foreground">{t(earlierError() === 'history-limit' ? 'chatHistoryLimit' : 'chatEarlierFailed')}</Text></If>
             <If when={turns()?.length} else={<If when={answer()}><Text class="text-[13px] text-muted-foreground text-center py-6">{t('chatEmpty')}</Text></If>}>
               <Each of={turns() ?? []} key={(x) => x.id}>{(x) => <TurnView store={s} address={props.address} turn={x()} carded={!!card()} back={props.back} opened={opened}
-                layout={(y, height) => { rows.set(x().id, { y, height }); place() }} inspect={() => { pinned = false; remember() }} />}</Each>
-              <If when={card()}>{(c) => <AskCard store={s} address={props.address} agent={s.program(props.address).name} card={c} back={props.back} />}</If>
+                working={active() && connection() === 'ready' && !offline() && visibleWork() === x().id && props.status() === 'working' && !card() && !x().ask && x().end === 'open' && x().id === turns()?.at(-1)?.id}
+                workLayout={workLayout} layout={(y, height) => { rows.set(x().id, { y, height }); place() }} inspect={() => { pinned = false; remember() }} />}</Each>
+              <If when={card()}>{(c) => <AskCard store={s} address={props.address} agent={s.program(props.address).name} card={c} back={props.back}
+                attentionLayout={(box) => { decision = box; seeWork() }} answering={(box) => { answering = box; if (box) { place(); answerLater() } }} />}</If>
               <If when={behind()}><Text testID="chat-updating" class="text-[12.5px] text-muted-foreground">{t('chatUpdating')}</Text></If>
             </If>
           </View>
@@ -321,7 +379,7 @@ function SetupPage(props: { store: Store; address: string; agent: string; needed
       <View role="button" testID="chat-terminal" onPress={props.back} class="self-start h-10 justify-center active:opacity-70">
         <Text class="text-[13.5px] text-muted-foreground">{t('showTerminal')}</Text>
       </View>
-      <Sheet open={asking()} side="bottom" onOpenChange={(o) => { if (!o) asking.set(false) }} popupClass="bg-background rounded-t-[16px] pb-[env(safe-area-inset-bottom)]">
+      <Sheet open={asking()} side="bottom" onOpenChange={(o) => { if (!o) asking.set(false) }} popupClass={`${PANEL} pb-[env(safe-area-inset-bottom)]`} popupStyle={PANEL_STYLE}>
         <View testID="chat-setup-ask" class="px-5 pt-5 pb-4 gap-3">
           <Text class="text-[17px] font-semibold text-foreground">{t('setupAskTitle', { name: name() })}</Text>
           <Text class="text-[14px] text-muted-foreground">{t('setupAskBody', { name: name() })}</Text>
@@ -339,7 +397,7 @@ function SetupPage(props: { store: Store; address: string; agent: string; needed
           </View>
         </View>
       </Sheet>
-      <Sheet open={changed()} side="bottom" onOpenChange={(o) => { if (!o) changed.set(false) }} popupClass="bg-background rounded-t-[16px] pb-[env(safe-area-inset-bottom)]">
+      <Sheet open={changed()} side="bottom" onOpenChange={(o) => { if (!o) changed.set(false) }} popupClass={`${PANEL} pb-[env(safe-area-inset-bottom)]`} popupStyle={PANEL_STYLE}>
         <View testID="chat-setup-changed" class="px-5 pt-5 pb-4 gap-3">
           <Text class="text-[17px] font-semibold text-foreground">{t('setupChangedTitle')}</Text>
           <Text testID="chat-setup-changed-body" class="text-[14px] text-muted-foreground">{setupChangedText(setup())}</Text>
@@ -355,11 +413,20 @@ function SetupPage(props: { store: Store; address: string; agent: string; needed
   )
 }
 
-function TurnView(props: { store: Store; address: string; turn: ChatTurn; carded: boolean; back: () => void; opened: Opened; inspect: () => void; layout: (y: number, height: number) => void }) {
+function TurnView(props: { store: Store; address: string; turn: ChatTurn; carded: boolean; working: boolean; back: () => void; opened: Opened; inspect: () => void; layout: (y: number, height: number) => void; workLayout: (id: string, box: { y: number; height: number } | null) => void }) {
   const expanded = props.opened(`turn ${props.turn.id}`)
   const turn = () => props.turn
   const show = () => shows(turn(), expanded())
   const preview = () => workPreview(turn())
+  const highlight = () => colorScheme() === 'dark' ? '#B8B8B8' : '#444444'
+  const id = props.turn.id
+  const foldY = signal<number | null>(null)
+  const summary = signal<{ y: number; height: number } | null>(null)
+  effect(() => {
+    const y = foldY(), box = summary()
+    if (show().fold && y !== null && box) props.workLayout(id, { y: y + box.y, height: box.height })
+  })
+  cleanup(() => props.workLayout(id, null))
   return (
     <View class="gap-2" onLayout={(b) => props.layout(b.origin.y, b.size.height)}>
       <If when={turn().from === 'you'} else={
@@ -368,22 +435,28 @@ function TurnView(props: { store: Store; address: string; turn: ChatTurn; carded
           <Text selectable class="text-[13px] text-muted-foreground">{turn().said}</Text>
         </View>
       }>
-        <View class="self-end max-w-[85%] items-end gap-1.5">
+        <View class="self-end max-w-[89%] items-end gap-1.5">
           <Each of={turn().images ?? []} key={(p) => p.id}>{(p) => <ChatImage store={props.store} address={props.address} picture={p()} end />}</Each>
           <If when={turn().said}>
-            <View class="px-3 py-2 rounded-[12px] bg-secondary">
-              <Text selectable class="text-[14px] text-foreground">{turn().said}</Text>
+            <View class="px-[14px] py-[11px] rounded-[18px] rounded-br-[5px] bg-secondary">
+              <Text selectable class="text-[15px] leading-[22px] text-foreground">{turn().said}</Text>
             </View>
           </If>
         </View>
       </If>
+      <If when={turn().reply || turn().steps?.length || turn().end === 'open'}>
+        <View class="flex-row items-center gap-2 min-h-[34px] mt-1">
+          <ProgramIcon icon={props.store.program(props.address).icon} size={15} />
+          <Text class="text-[12px] font-medium text-muted-foreground">{props.store.program(props.address).name}</Text>
+        </View>
+      </If>
       <Each of={outsideFold(turn(), expanded())} key={(x) => x.id}>{(x) => <StepView store={props.store} address={props.address} step={x()} opened={props.opened} inspect={props.inspect} />}</Each>
       <If when={show().fold}>
-        <View class="gap-1">
+        <View class="gap-1" onLayout={(b) => foldY.set(b.origin.y)}>
           <View role="button" testID={`fold-${turn().id}`} accessibilityState={{ expanded: expanded() }} onPress={() => { props.inspect(); expanded.set(!expanded()) }} class="min-h-[44px] justify-center gap-1 py-2 active:opacity-70">
-            <View class="flex-row items-center gap-1.5">
+            <View class="flex-row items-center gap-1.5" onLayout={(b) => summary.set({ y: b.origin.y, height: b.size.height })}>
               <Glyph name={expanded() ? 'chevron-down' : 'chevron-right'} size={13} />
-              <Text class="flex-1 text-[12.5px] text-muted-foreground">{foldLine(turn())}</Text>
+              <Text testID={`work-${turn().id}`} shimmer={props.working} shimmerColor={highlight()} class="flex-1 text-[12px] leading-[20px] text-muted-foreground">{foldLine(turn())}</Text>
               <If when={preview().failures}><Text testID={`failures-${turn().id}`} class="text-[11.5px] text-destructive">{`${t('chatFailed')} · ${preview().failures}`}</Text></If>
             </View>
             <If when={!expanded()}>
@@ -404,23 +477,23 @@ function TurnView(props: { store: Store; address: string; turn: ChatTurn; carded
         </View>
       </If>
       <If when={turn().reply}>
-        <TextView testID={`reply-${turn().id}`} markdown={turn().reply} selectable links="open" class="text-[14px] text-foreground" />
+        <TextView testID={`reply-${turn().id}`} markdown={turn().reply} selectable links="open" class="text-[15px] leading-[23px] text-foreground" />
         <FileCards store={props.store} address={props.address} text={turn().reply} />
       </If>
       {/* A question the phone can't answer from here (its screen's menu isn't read): its words, numbered, and the terminal. */}
       <If when={turn().end === 'open' && !props.carded ? turn().ask : undefined}>{(a) => (
-        <View testID={`ask-${turn().id}`} class="gap-1.5 px-3 py-2.5 rounded-[10px] border border-chart-2/40 bg-chart-2/10">
+        <View testID={`ask-${turn().id}`} class="gap-2 p-3 rounded-[18px] border border-border bg-card">
           <Text class="text-[14px] font-medium text-foreground">{a().questions?.[0]?.text ?? a().text}</Text>
           <Each of={a().questions?.[0]?.options.map((o) => o.label) ?? a().options} key={(o) => o}>{(o, i) => <Text class="text-[13.5px] text-foreground">{`${i() + 1}. ${o()}`}</Text>}</Each>
           <View class="flex-row items-center gap-3 pt-0.5">
             <Text class="flex-1 text-[12px] text-muted-foreground">{t('chatAnswerInTerminal')}</Text>
-            <View role="button" testID={`ask-terminal-${turn().id}`} onPress={props.back} class="h-8 px-3 justify-center rounded-[8px] bg-secondary border border-border active:bg-accent">
+            <View role="button" testID={`ask-terminal-${turn().id}`} onPress={props.back} class="min-h-11 px-3 justify-center rounded-[10px] bg-secondary border border-border active:bg-accent">
               <Text class="text-[12.5px] text-foreground">{t('showTerminal')}</Text>
             </View>
           </View>
         </View>
       )}</If>
-      <If when={turn().end === 'open' && !turn().ask && !props.carded && !show().fold}><Text class="text-[12.5px] text-muted-foreground">{t('chatWorking')}</Text></If>
+      <If when={turn().end === 'open' && !turn().ask && !props.carded && !show().fold}><Text testID={`work-${turn().id}`} shimmer={props.working} shimmerColor={highlight()} onLayout={(b) => props.workLayout(id, { y: b.origin.y, height: b.size.height })} class="text-[12px] leading-[20px] text-muted-foreground">{t('chatWorking')}</Text></If>
       <If when={turn().end === 'stopped'}><Text class="text-[12.5px] text-muted-foreground">{t('chatStopped')}</Text></If>
     </View>
   )
@@ -430,7 +503,7 @@ function StepView(props: { store: Store; address: string; step: ChatStep; opened
   // A message of yours the agent took while it worked: where it took it, as yours; nothing more to fetch.
   if (props.step.kind === 'you') return (
     <View testID={`you-${props.step.id}`} class="self-end max-w-[85%] items-end gap-1 py-1.5">
-      <View class="px-3 py-2 rounded-[12px] bg-secondary"><Text selectable class="text-[14px] text-foreground">{props.step.title}</Text></View>
+      <View class="px-[14px] py-[11px] rounded-[18px] rounded-br-[5px] bg-secondary"><Text selectable class="text-[15px] leading-[22px] text-foreground">{props.step.title}</Text></View>
       <Text class="text-[11.5px] text-muted-foreground">{t('chatTakenMidTurn')}</Text>
     </View>
   )
@@ -449,7 +522,7 @@ function StepView(props: { store: Store; address: string; step: ChatStep; opened
     <View>
       <View role="button" testID={`step-${props.step.id}`} onPress={() => void toggle()} class="flex-row items-center gap-2 min-h-[44px] active:opacity-70">
         <If when={STEP_GLYPH[props.step.kind]} else={<View style={{ width: 13 }} />}>{(g) => <Glyph name={g() as any} size={13} />}</If>
-        <Text class={`flex-1 text-[13px] ${props.step.kind === 'note' || props.step.kind === 'think' ? 'text-muted-foreground' : 'text-foreground'}`} numberOfLines={2}>{props.step.title}</Text>
+        <Text class="flex-1 text-[12px] leading-[18px] text-muted-foreground" numberOfLines={2}>{props.step.title}</Text>
         <If when={props.step.failed}><Text class="text-[11.5px] text-destructive">{t('chatFailed')}</Text></If>
         <If when={!props.step.failed && (props.step.added || props.step.deleted)}>
           <Text class="text-[11.5px] text-muted-foreground">{`+${props.step.added ?? 0} −${props.step.deleted ?? 0}`}</Text>
@@ -461,7 +534,7 @@ function StepView(props: { store: Store; address: string; step: ChatStep; opened
             <View class="gap-2">
               <If when={d().run} else={<If when={d().change} else={<If when={d().read} else={props.step.kind === 'plan' ? (
                 // A plan for review: the Markdown the agent wrote, formatted.
-                <TextView testID={`plan-${props.step.id}`} markdown={d().input} selectable links="open" class="text-[13px] text-foreground" />
+                <TextView testID={`plan-${props.step.id}`} markdown={d().input} selectable links="open" class="text-[15px] leading-[23px] text-foreground" />
               ) : (
                 <>
                   <Text selectable class={props.step.kind === 'note' || props.step.kind === 'think' ? 'text-[13px] text-foreground' : 'text-[11.5px] font-mono text-foreground'}>{d().input}</Text>
@@ -535,7 +608,7 @@ function FileCards(props: { store: Store; address: string; text: string }) {
         <Each of={files()} key={(f) => f.asked}>{(f) => (
           <If when={f().kind === 'video' && frames()[key(f())]} else={
           <View role="button" testID={`file-${f().asked}`} accessibilityLabel={f().name} onPress={() => press(f())}
-            class="flex-row items-center gap-2.5 px-2.5 py-2 rounded-[10px] border border-border bg-card active:bg-accent">
+            class="flex-row items-center gap-2.5 px-2.5 py-2 rounded-[11px] border border-border bg-card active:bg-accent">
             <View class="w-9 h-11 rounded-[6px] bg-secondary items-center justify-center"><Glyph name={FILE_GLYPH[f().kind] as any} size={18} /></View>
             <View class="flex-1 min-w-0 gap-0.5">
               <Text class="text-[13.5px] font-medium text-foreground" numberOfLines={1}>{f().name}</Text>
@@ -544,7 +617,7 @@ function FileCards(props: { store: Store; address: string; text: string }) {
             <Glyph name="chevron-right" size={15} />
           </View>}>
             <View role="button" testID={`file-${f().asked}`} accessibilityLabel={f().name} onPress={() => press(f())}
-              class="rounded-[10px] border border-border bg-card overflow-hidden active:opacity-80">
+              class="rounded-[11px] border border-border bg-card overflow-hidden active:opacity-80">
               <View class="w-full aspect-video bg-black">
                 <Image testID={`video-frame-${f().asked}`} src={frames()[key(f())]?.image ?? ''} resizeMode="cover" class="w-full h-full" />
                 <View class="absolute inset-0 items-center justify-center" pointerEvents="none">
@@ -613,7 +686,7 @@ function TextSheet(props: { store: Store; address: string; file: { (): ChatFile 
   })
   const markdown = () => /\.(md|markdown)$/i.test(props.file()?.name ?? '')
   return (
-    <Sheet open={props.file() !== null} side="bottom" onOpenChange={(o) => { if (!o) props.file.set(null) }} popupClass="bg-popover rounded-t-[14px] pb-[env(safe-area-inset-bottom)] h-[85%]">
+    <Sheet open={props.file() !== null} side="bottom" onOpenChange={(o) => { if (!o) props.file.set(null) }} popupClass={`${PANEL} pb-[env(safe-area-inset-bottom)] h-[85%]`} popupStyle={PANEL_STYLE}>
       <View class="flex-row items-center gap-2 pl-4 pr-1 py-1 border-b border-border">
         <Text class="flex-1 text-[14px] font-semibold text-foreground" numberOfLines={1}>{props.file()?.name ?? ''}</Text>
         <IconButton name="close" label={t('close')} testID="file-close" onPress={() => props.file.set(null)} />
@@ -621,8 +694,8 @@ function TextSheet(props: { store: Store; address: string; file: { (): ChatFile 
       <Scroll class="flex-1" contentClass="px-4 py-3">
         <If when={text() !== undefined}>
           <If when={text() !== null} else={<Text class="text-[13px] text-muted-foreground">{t('fileCantRead')}</Text>}>
-            <If when={markdown()} else={<Text selectable class="text-[12px] font-mono text-foreground">{text() ?? ''}</Text>}>
-              <TextView markdown={text() ?? ''} selectable links="open" class="text-[14px] text-foreground" />
+            <If when={markdown()} else={<Text selectable class="text-[12px] leading-[22px] font-mono text-foreground">{text() ?? ''}</Text>}>
+              <TextView markdown={text() ?? ''} selectable links="open" class="text-[15px] leading-[23px] text-foreground" />
             </If>
           </If>
         </If>
@@ -660,19 +733,18 @@ function RunView(props: { id: string; run: ChatRun }) {
   )
 }
 
-/** A change to a file (its line says how many lines were added and removed): its lines, numbered as in the file, an added one
- *  tinted blue and a removed one red (told apart by their marks too, not by colour alone). */
+/** A file's numbered changes use quiet tonal rows and explicit +/− marks, not another competing status accent. */
 function ChangeView(props: { id: string; change: ChatChange }) {
   const all = signal(false)
   const rows = () => changeRows(props.change)
   return (
     <View testID={`change-${props.id}`} class="gap-1.5">
-      <View class="rounded-[6px] overflow-hidden border border-border">
+      <View class="rounded-[11px] overflow-hidden border border-border">
         <Each of={all() ? rows() : rows().slice(0, CHANGE_SHOWN)} key={(r) => r.key}>{(r) => (
-          <View class={`flex-row ${r().mark === '+' ? 'bg-chart-3/10' : r().mark === '-' ? 'bg-destructive/10' : ''}`}>
-            <Text class="w-[34px] pr-1.5 text-right text-[11px] font-mono text-muted-foreground">{r().mark === 'gap' ? '' : String(r().num)}</Text>
-            <Text class="w-[12px] text-[11px] font-mono text-muted-foreground">{r().mark === 'gap' || r().mark === ' ' ? '' : r().mark === '-' ? '−' : '+'}</Text>
-            <Text selectable class="flex-1 pr-1.5 text-[11px] font-mono text-foreground">{r().text}</Text>
+          <View class={`flex-row ${r().mark === '+' ? 'bg-secondary' : r().mark === '-' ? 'bg-muted' : ''}`}>
+            <Text class="w-[34px] pr-1.5 text-right text-[12px] leading-[22px] font-mono text-muted-foreground">{r().mark === 'gap' ? '' : String(r().num)}</Text>
+            <Text class="w-[12px] text-[12px] leading-[22px] font-mono text-muted-foreground">{r().mark === 'gap' || r().mark === ' ' ? '' : r().mark === '-' ? '−' : '+'}</Text>
+            <Text selectable class="flex-1 pr-1.5 text-[12px] leading-[22px] font-mono text-foreground">{r().text}</Text>
           </View>
         )}</Each>
       </View>

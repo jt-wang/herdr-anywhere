@@ -109,6 +109,9 @@ wait_for 'Question 1 of 2' "the card does not say which question"
 for x in ask-row-1 ask-row-2 ask-row-3 ask-own ask-skip; do has "resource-id=\"$x\"" || fail "the card has no $x"; done
 has 'Answer it in the terminal' && fail "the card says to answer in the terminal"
 sleep 1; snap 2-card-question
+# Its own answer, opened three times with the real keyboard: the whole card above it each time without a finger on
+# the chat, and no keyboard-sized blank under it at the chat's end (NSH patch 0008, ui/chat.tsx).
+HM_OWN_SHOTS="$shot" python3 -I "$app/e2e/android-own-answer.py" || fail "the own answer's card is not whole above the keyboard"
 tap ask-row-2
 wait_for 'Question 2 of 2' "the card did not go on to the second question after 2"
 wait_for 'resource-id="ask-box-1-off"' "the second question's boxes do not show"

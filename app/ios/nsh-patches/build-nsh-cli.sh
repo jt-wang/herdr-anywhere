@@ -5,13 +5,17 @@
 set -eu
 here=$(cd "$(dirname "$0")" && pwd -P)
 base=76fa8a7fed47ea51aea01fa85bb40960be15d984
-for n in 1 2 3 4 5; do
-  (set -- "$here"/000$n-*.patch; [ "$#" -eq 1 ] && [ -f "$1" ]) || { echo "expected all five nsh patches" >&2; exit 1; }
+for n in 1 2 3 4 5 6 7 8; do
+  (set -- "$here"/000$n-*.patch; [ "$#" -eq 1 ] && [ -f "$1" ]) || { echo "expected all eight nsh patches" >&2; exit 1; }
 done
 key=$("$here/key.sh")
 verify() {
   [ "$(cat "$1/nsh-build.txt")" = "$key" ] || { echo "nsh CLI key does not match these patches" >&2; return 1; }
   [ -x "$1/bin/nsh" ] || { echo "nsh CLI executable is missing" >&2; return 1; }
+  files=$(awk 'NF != 2 || length($1) != 64 || $1 ~ /[^0-9a-f]/ { exit 1 } { print $2 }' "$1/SHA256SUMS") || return 1
+  [ "$(printf '%s\n' "$files" | LC_ALL=C sort)" = "$(printf '%s\n' bin/nsh nsh-build.txt)" ] || {
+    echo "nsh CLI checksum manifest must cover exactly the binary and build key" >&2; return 1
+  }
   (cd "$1" && shasum -a 256 -c SHA256SUMS)
 }
 if [ "${1:-}" = --verify ]; then verify "${2:?out folder}"; exit; fi

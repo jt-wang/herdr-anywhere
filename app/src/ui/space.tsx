@@ -3,7 +3,6 @@
 // header (the agent, where it is, Needs you), its terminal edge to edge, and one row under it (ui/pane-bar.tsx); the
 // title opens the switcher, and a flick across the terminal goes to the next or previous tab.
 import { cleanup, computed, effect, fontScale, keyboardFrame, safeAreaInsets, Scroll, signal, Text, untracked, View, windowSize } from 'nsh'
-import { AlertDialog, Sheet } from 'nsh/base'
 import { confirmClose, pickFrom } from './menu-sheet.tsx'
 import { keyboardGone } from './keyboard.ts'
 import type { Store } from '../store.ts'
@@ -11,10 +10,10 @@ import { layoutRects } from '../store.ts'
 import { addresses, find, panes, terminalOf, type Node } from '../model/layout.ts'
 import { focusedPaneOf, shownNode, spaceActiveTab, type Tab } from '../model/model.ts'
 import { gitTail } from '../model/marks.ts'
-import { ConnBanner, Glyph, IconButton, PANEL, PANEL_BACKDROP, ProgramIcon, SpaceBadge, StatusDot, StatusMark, shortPath, useRev, useSignal } from './kit.tsx'
+import { AlertDialog, ConnBanner, Glyph, IconButton, PANEL, PANEL_BACKDROP, PANEL_STYLE, ProgramIcon, Sheet, SpaceBadge, StatusDot, StatusMark, TOUCH_TARGET, shortPath, useRev, useSignal } from './kit.tsx'
 import { t } from '../strings/index.ts'
 import { TerminalView, WIDE } from './terminal.tsx'
-import { attachToTerminal, KEY_ROW_MAX_SCALE, PaneBar } from './pane-bar.tsx'
+import { attachToTerminal, PaneBar } from './pane-bar.tsx'
 import { AgentName, AgentRow, agentWords } from './agent-row.tsx'
 import { headerChipTight, showsAWord, titleWhole } from './header-fit.ts'
 import { ChatView } from './chat.tsx'
@@ -132,34 +131,35 @@ function PaneBody(props: { store: Store; spaceId: string; node: Node; actions: S
 /** A pane's frame on the canvas: rounded, its border the accent while it has focus (defaults/frame). */
 const frame = (focused: boolean) => `rounded-[10px] overflow-hidden border ${focused ? 'border-chart-5' : 'border-border'} bg-background`
 
-/** A phone: the focused pane, its header above it and its row under it. */
-function PhoneSpace(props: { store: Store; spaceId: string; tab: Tab; actions: SpaceActions; sessions: Map<string, TerminalSession>; back: () => void; menu: () => void; split: (pane: string, direction: 'right' | 'down') => void }) {
-  const s = props.store
+/** One availability probe belongs to the space, not to whichever layout currently renders it. */
+function usePaneChat(s: Store, addr: () => string | undefined, visible: () => boolean) {
   const rev = useRev(s)
-  const active = useSignal(s.activity)
-  const node = () => { rev(); const f = focusedPaneOf(props.tab); return f ? find(props.tab.root, f) : undefined }
-  const session = signal<TerminalSession | undefined>(undefined)
-  const switching = signal(false)
-  const whole = () => { rev(); return s.shownWhole.has(props.tab.id) && panes(props.tab.root).length > 1 }
+  const foreground = useSignal(s.activity)
+  const active = () => foreground() && visible()
   // Cursor has no status reports. Revalidate its availability while focused, including before its first hook.
-  const addr = () => { const n = node(); return n ? terminalOf(n) : undefined }
   const chat = { avail: signal(false), on: signal(false) }
   const setupRevision = useSignal(s.chatSetupRevision)
-  let asked = ''
+  // Pausing a request is not selecting a different pane or resetting its chosen chat/terminal view.
+  let selected = ''
+  let asked: string | undefined
+  let generation = 0
   let cursorTimer: ReturnType<typeof setTimeout> | undefined
-  cleanup(() => { asked = ''; clearTimeout(cursorTimer) })
+  cleanup(() => { ++generation; asked = undefined; clearTimeout(cursorTimer) })
   effect(() => {
     rev()
     const setup = setupRevision()
-    if (!active()) { asked = ''; clearTimeout(cursorTimer); return }
+    if (!active()) { ++generation; asked = undefined; clearTimeout(cursorTimer); return }
     const a = addr()
     const cursor = a ? s.cursorChatKey(a) : ''
     const key = a && s.chat && (s.isAgent(a) || cursor)
       ? cursor ? `${a} cursor ${cursor} ${setup}` : `${a} ${s.program(a).key} ${s.statusOf(a) ?? ''}` : ''
     if (key === asked) return
     clearTimeout(cursorTimer)
-    const moved = key.split(' ')[0] !== asked.split(' ')[0]
+    const selection = key.split(' ')[0]
+    const moved = selection !== selected
+    selected = selection
     asked = key
+    const cycle = ++generation
     if (moved) untracked(() => {
       // An open view closed with no tap: what the pane was then (src/diag.ts).
       if (!key && chat.on() && chat.avail()) diag('chat-closed', { addr: a ?? '', agent: String(!!a && s.isAgent(a)), program: a ? s.program(a).key : '', chat: String(!!s.chat) })
@@ -169,23 +169,38 @@ function PhoneSpace(props: { store: Store; spaceId: string; tab: Tab; actions: S
     const ask = async () => {
       try {
         const r = await s.chat!.get(a!)
-        if (asked !== key || !s.appActive || (cursor && cursor !== s.cursorChatKey(a!))) return
+        if (cycle !== generation || asked !== key || !active() || (cursor && cursor !== s.cursorChatKey(a!))) return
         if (!r.chat && untracked(() => chat.on() && chat.avail())) diag('chat-gone', { addr: a!, agent: String(s.isAgent(a)), program: s.program(a).key })
         s.acceptChatProgram(a!, cursor, r)
         if (!s.cachedChat(a!) || !r.chat || (r.unknown && r.unknown !== 'behind')) s.rememberChat(a!, r)
         chat.avail.set(r.chat)
       } catch {} finally {
-        if (cursor && asked === key && s.appActive && cursor === s.cursorChatKey(a!)) {
+        if (cursor && cycle === generation && asked === key && active() && cursor === s.cursorChatKey(a!)) {
           cursorTimer = setTimeout(() => void ask(), s.program(a!).key === 'cursor' || s.term(a!)?.labels['herdr-anywhere.chat.cursor.cwd'] ? 3000 : 10_000)
         }
       }
     }
     void ask()
   })
+  return chat
+}
+
+/** A phone: the focused pane, its header above it and its row under it. */
+function PhoneSpace(props: { store: Store; spaceId: string; tab: Tab; chat: ReturnType<typeof usePaneChat>; showChat: () => void; actions: SpaceActions; sessions: Map<string, TerminalSession>; back: () => void; menu: () => void; active?: () => boolean; canvas?: () => void; split: (pane: string, direction: 'right' | 'down') => void }) {
+  const s = props.store
+  const rev = useRev(s)
+  const node = () => { rev(); const f = focusedPaneOf(props.tab); return f ? find(props.tab.root, f) : undefined }
+  const session = signal<TerminalSession | undefined>(undefined)
+  const switching = signal(false)
+  const whole = () => { rev(); return s.shownWhole.has(props.tab.id) && panes(props.tab.root).length > 1 }
+  const addr = () => { const n = node(); return n ? terminalOf(n) : undefined }
+  const chat = props.chat
+  // The saved preference can stay on while the split canvas renders terminals instead.
+  const chatting = () => !whole() && chat.on() && chat.avail()
   return (
     <View class="flex-1 bg-background">
       <PhoneHeader store={s} spaceId={props.spaceId} tab={props.tab} node={node()} actions={props.actions} back={props.back} menu={props.menu}
-        openSwitcher={() => void keyboardGone().then(() => switching.set(true))} chat={chat} />
+        openSwitcher={() => void keyboardGone().then(() => switching.set(true))} chat={chat} chatting={chatting} showChat={props.showChat} canvas={props.canvas} />
       <ConnBanner store={s} />
       <If when={whole()} else={
         <View class="flex-1">
@@ -195,16 +210,16 @@ function PhoneSpace(props: { store: Store; spaceId: string; tab: Tab; actions: S
               <PaneBody store={s} spaceId={props.spaceId} node={n()} actions={props.actions} keys={false}
                 onSession={(t) => { session.set(t); props.sessions.set(t.address, t); cleanup(() => { if (session() === t) session.set(undefined); props.sessions.delete(t.address) }) }} />
               {/* over the terminal, which stays attached under it: the composer below still types into it */}
-              <If when={chat.on() && chat.avail() ? addr() : undefined}>{(a) => (
+              <If when={chatting() ? addr() : undefined}>{(a) => (
                 <View class="absolute left-0 right-0 top-0 bottom-0">
-                  <ChatView store={s} address={a()} status={() => { rev(); return s.statusOf(a()) }} back={() => chat.on.set(false)} />
+                  <ChatView store={s} address={a()} status={() => { rev(); return s.statusOf(a()) }} active={props.active} back={() => chat.on.set(false)} />
                 </View>
               )}</If>
             </View>
           )}</Each>
           <Each of={session() ? [session()!] : []}>{(t) => {
             const p = () => { rev(); return s.program(t().address) }
-            return <PaneBar store={s} session={t()} program={p().name} agent={(rev(), s.isAgent(t().address))} typeIn={props.actions.typeIn} keep={props.actions.keepTypeIn} chat={() => chat.on() && chat.avail()} />
+            return <PaneBar store={s} session={t()} program={p().name} agent={(rev(), s.isAgent(t().address))} typeIn={props.actions.typeIn} keep={props.actions.keepTypeIn} chat={chatting} />
           }}</Each>
         </View>
       }>
@@ -215,16 +230,14 @@ function PhoneSpace(props: { store: Store; spaceId: string; tab: Tab; actions: S
   )
 }
 
-/** The most the header's text grows with the system's text size: it has a fixed height and both lines stay whole at
- *  1.3, as the key row's labels do (checked at Android's largest size, font scale 2.0, at 360 dp). */
-const HEADER_MAX_SCALE = KEY_ROW_MAX_SCALE
-
-/** Two short lines: the agent and its status (the title opens the switcher), then where it is; +N waiting and ⋯. */
+/** Two short lines grow with the system text size, rather than capping text to fit a fixed-height bar.
+ *  The title opens the switcher; direct controls keep their platform touch targets. */
 function PhoneHeader(props: { store: Store; spaceId: string; tab: Tab; node: Node | undefined; actions: SpaceActions; back: () => void; menu: () => void; openSwitcher: () => void
-  chat: { avail: { (): boolean }; on: { (): boolean; set: (v: boolean) => void } } }) {
+  chat: { avail: { (): boolean }; on: { (): boolean; set: (v: boolean) => void } }; chatting: () => boolean; showChat: () => void; canvas?: () => void }) {
   const s = props.store
   const rev = useRev(s)
   const addr = () => (props.node ? terminalOf(props.node) : undefined)
+  const chatAttention = useSignal(s.chatAttention)
   const words = agentWords(s)
   // An agent by what home's row leads with; anything else by its pane's name.
   const name = () => { rev(); const a = addr(), ag = words.at(a); return ag ? words.main(ag) : a ? s.paneName(a) : t('panel') }
@@ -253,63 +266,69 @@ function PhoneHeader(props: { store: Store; spaceId: string; tab: Tab; node: Nod
   let activityWidth: number | undefined
   // The chip also goes tight once +N waiting has given way: at 360 dp "+1 ›" alone left the name 1 dp short ("Claude Co…").
   const tight = () => headerChipTight(fontScale()) || shortFor() === waitKey()
+  // A collapsed title has no measured width, so don't wait for its truncation callback to make room.
+  const compactWaiting = () => tight() || windowSize().width < 360
+  const stackActions = () => windowSize().width < 360 && (headerChipTight(fontScale()) || waiting().length > 0)
+    || windowSize().width < 480 && fontScale() >= 2.5
+  // Share line two with the direct controls when stacked: large text stays readable without a third toolbar row.
+  function Subtitle() {
+    return (
+      <View class="flex-row items-center gap-1 min-w-0 overflow-hidden" onLayout={(b) => lineWidth.set(Math.round(b.size.width))}>
+        <If when={status() === 'blocked'}>
+          <View testID="header-needs-you" class="shrink-0 mr-1">
+            <Text class="text-[12px] leading-[18px] text-muted-foreground" numberOfLines={1}>{t('needsYou')}</Text>
+          </View>
+        </If>
+        <If when={(rev(), words.at(addr()) && words.named(words.at(addr())!))}>
+          <Text testID="pane-program" class="shrink text-[12px] leading-[18px] text-sidebar-foreground" numberOfLines={1}>{(rev(), words.at(addr())?.programName ?? '')}</Text>
+          <If when={!cut()}><Text class="text-[11.5px] text-sidebar-foreground">·</Text></If>
+        </If>
+        <If when={!cut()}>
+          <Text testID="pane-activity" class="text-[12px] leading-[18px] text-sidebar-foreground" style={{ flexShrink: 100 }} numberOfLines={1} ellipsizeMode="middle"
+            onLayout={(b) => { activityWidth = b.size.width; if (!showsAWord(activity(), [{ text: activity() }], activityWidth)) cutFor.set(`${lineWidth()}|${activity()}`) }}
+            onTextLayout={(e) => { if (!showsAWord(activity(), e.lines, activityWidth)) cutFor.set(`${lineWidth()}|${activity()}`) }}>{activity()}</Text>
+        </If>
+      </View>
+    )
+  }
   return (
-    <View testID="pane-header" class="flex-row items-center h-[46px] pl-0.5 pr-1 gap-0.5 bg-sidebar border-b border-border">
+    <View testID="pane-header" class={`flex-row items-center min-h-[57px] shrink-0 py-1 pl-0.5 pr-1 gap-0.5 bg-sidebar border-b border-border ${stackActions() ? 'flex-wrap' : ''}`}>
       {/* The title as wide as it takes on one line, unseen: what the shown one is held against (titleWhole). */}
-      <Text accessible={false} importantForAccessibility="no" pointerEvents="none" maxFontSizeMultiplier={HEADER_MAX_SCALE} numberOfLines={1} class="absolute left-0 top-0 opacity-0 text-[14.5px] font-semibold"
+      <Text accessible={false} importantForAccessibility="no" pointerEvents="none" numberOfLines={1} class="absolute left-0 top-0 opacity-0 text-[15px] font-medium"
         onLayout={(b) => nameNatural.set(b.size.width)}>{name()}</Text>
       <IconButton name="chevron-left" label={t('back')} testID="back" onPress={props.back} />
-      <View role="button" testID="switcher" accessibilityLabel={t('switchPane', { name: name(), place: place() })} onPress={props.openSwitcher} class="flex-1 min-w-0 justify-center gap-[1px] active:opacity-70">
+      <View role="button" testID="switcher" accessibilityLabel={t('switchPane', { name: name(), place: place() })} onPress={props.openSwitcher} class="flex-1 justify-center gap-[1px] active:opacity-70" style={{ minHeight: TOUCH_TARGET, minWidth: stackActions() ? 120 : 0 }}>
         <View class={`flex-row items-center ${tight() ? 'gap-1' : 'gap-1.5'}`}>
-          {/* The title in a chip, as the tab bar draws a tab: it reads as this pane's name, not as words to act on. At the
-              largest text sizes the chip keeps its colour but loses its border and most of its padding, so the title
-              keeps the room it had without one. */}
-          <View testID="pane-title" class={`flex-row items-center shrink min-w-0 rounded-[6px] bg-secondary ${tight() ? 'gap-1 pl-1 pr-0.5' : 'gap-1.5 pl-1.5 pr-1 border border-border'}`}>
+          {/* One quiet title, not another card inside the navigation bar. Its chevron keeps the switcher direct. */}
+          <View testID="pane-title" class={`flex-row items-center shrink min-w-0 ${tight() ? 'gap-1' : 'gap-1.5'}`}>
             <ProgramIcon icon={(rev(), s.program(addr()).icon)} size={15} />
-            <Text maxFontSizeMultiplier={HEADER_MAX_SCALE} testID="pane-name" class="text-[14.5px] font-semibold text-foreground shrink" numberOfLines={1}
+            <Text testID="pane-name" class="text-[15px] leading-[18px] font-medium text-foreground shrink" numberOfLines={1}
               onLayout={(b) => nameShown.set(b.size.width)}>{name()}</Text>
             <Glyph name="chevron-down" size={13} />
           </View>
           <If when={status() === 'blocked'} else={<If when={status()}>{(st) => <StatusMark status={st()} size={7} />}</If>}>
-            <StatusDot status="blocked" size={7} />
+            <StatusDot status="blocked" size={7} attention={chatAttention() !== addr()} />
           </If>
         </View>
-        {/* Line 2: Needs you (a pill), the program's name (unless Settings hides it, as on home's row), then what it is doing, which
-            gives way first when the line is short. Line 1 is the title alone, so a narrow phone has room for it beside
-            +N waiting. */}
-        <View class="flex-row items-center gap-1 min-w-0 overflow-hidden" onLayout={(b) => lineWidth.set(Math.round(b.size.width))}>
-          <If when={status() === 'blocked'}>
-            {/* A pill, as +N waiting is, so it stands apart from the title above and the grey words after it. */}
-            <View testID="header-needs-you" class="shrink-0 mr-1 px-1.5 py-px rounded-[5px] bg-chart-2/15">
-              <Text maxFontSizeMultiplier={HEADER_MAX_SCALE} class="text-[11px] font-medium text-chart-2" numberOfLines={1}>{t('needsYou')}</Text>
-            </View>
-          </If>
-          <If when={(rev(), words.at(addr()) && words.named(words.at(addr())!))}>
-            <Text maxFontSizeMultiplier={HEADER_MAX_SCALE} testID="pane-program" class="shrink text-[11.5px] text-sidebar-foreground" numberOfLines={1}>{(rev(), words.at(addr())?.programName ?? '')}</Text>
-            <If when={!cut()}>
-              <Text maxFontSizeMultiplier={HEADER_MAX_SCALE} class="text-[11.5px] text-sidebar-foreground">·</Text>
-            </If>
-          </If>
-          <If when={!cut()}>
-            <Text maxFontSizeMultiplier={HEADER_MAX_SCALE} testID="pane-activity" class="text-[11.5px] text-sidebar-foreground" style={{ flexShrink: 100 }} numberOfLines={1}
-              onLayout={(b) => { activityWidth = b.size.width; if (!showsAWord(activity(), [{ text: activity() }], activityWidth)) cutFor.set(`${lineWidth()}|${activity()}`) }}
-              onTextLayout={(e) => { if (!showsAWord(activity(), e.lines, activityWidth)) cutFor.set(`${lineWidth()}|${activity()}`) }}>{activity()}</Text>
-          </If>
-        </View>
+        <If when={!stackActions()}><Subtitle /></If>
       </View>
       <If when={waiting().length}>
         <View role="button" testID="next-waiting" accessibilityLabel={t('moreWaitingOpen', { n: waiting().length })} onPress={() => props.actions.open(waiting()[0].address)}
-          class="px-2 h-7 justify-center rounded-[6px] bg-chart-2/15 active:opacity-70">
-          <Text maxFontSizeMultiplier={HEADER_MAX_SCALE} class="text-[11.5px] font-medium text-chart-2">{t(shortFor() === waitKey() ? 'plusWaitingShort' : 'plusWaiting', { n: waiting().length })}</Text>
+          class="px-2 shrink-0 justify-center rounded-[10px] active:bg-accent" style={{ minWidth: TOUCH_TARGET, minHeight: TOUCH_TARGET, maxWidth: compactWaiting() ? Math.max(TOUCH_TARGET, windowSize().width * (stackActions() ? 0.32 : 0.2)) : undefined }}>
+          <Text numberOfLines={1} class="text-center text-[12px] text-muted-foreground">{t(compactWaiting() ? 'plusWaitingShort' : 'plusWaiting', { n: waiting().length })}</Text>
         </View>
       </If>
-      <If when={props.chat.avail()}>
-        <If when={props.chat.on()} else={<IconButton name="chat" label={t('showChat')} testID="show-chat" onPress={() => void keyboardGone().then(() => { props.chat.on.set(true); s.chatFirst.set(true) })} />}>
-          <IconButton name="terminal" label={t('showTerminal')} testID="show-terminal" active onPress={() => { props.chat.on.set(false); s.chatFirst.set(false) }} />
+      <View testID="pane-header-actions" class={`flex-row items-center gap-0.5 shrink-0 ${stackActions() ? 'w-full justify-end' : ''}`}>
+        <If when={stackActions()}><View class="flex-1 min-w-0"><Subtitle /></View></If>
+        <If when={props.chat.avail()}>
+          <If when={props.chatting()} else={<IconButton name="chat" label={t('showChat')} testID="show-chat" onPress={() => void keyboardGone().then(props.showChat)} />}>
+            <IconButton name="terminal" label={t('showTerminal')} testID="show-terminal" active onPress={() => { props.chat.on.set(false); s.chatFirst.set(false) }} />
+          </If>
         </If>
-      </If>
-      <IconButton name="plus" label={t('addAgent')} testID="add-agent" onPress={() => void keyboardGone().then(() => props.actions.addAgent(props.spaceId))} />
-      <IconButton name="more" label={t('paneActions')} testID="space-more" onPress={props.menu} />
+        <If when={props.canvas}><IconButton name="unzoom" label={t('showAllPanes')} testID="show-workspace" onPress={() => props.canvas?.()} /></If>
+        <IconButton name="plus" label={t('addAgent')} testID="add-agent" onPress={() => void keyboardGone().then(() => props.actions.addAgent(props.spaceId))} />
+        <IconButton name="more" label={t('paneActions')} testID="space-more" onPress={props.menu} />
+      </View>
     </View>
   )
 }
@@ -343,7 +362,7 @@ function Switcher(props: { store: Store; spaceId: string; open: { (): boolean; s
   // A sub-agent has no pane of its own: open shows what it prints.
   const sub = (addr: string) => { close(); props.actions.open(addr) }
   return (
-    <Sheet open={props.open()} side="bottom" onOpenChange={(o) => props.open.set(o)} popupClass={`${PANEL} px-3 pt-3 pb-[env(safe-area-inset-bottom)]`} backdropClass={PANEL_BACKDROP}>
+    <Sheet open={props.open()} side="bottom" onOpenChange={(o) => props.open.set(o)} popupClass={`${PANEL} px-3 pt-3 pb-[env(safe-area-inset-bottom)]`} popupStyle={PANEL_STYLE} backdropClass={PANEL_BACKDROP}>
       <Scroll ref={(r: any) => { scroller = r }} class="max-h-[520px]" scrollable={rows() > viewport() + 1} onLayout={(b) => viewport.set(b.size.height)}
         scrollEventThrottle={16} onScroll={(e) => clamp(e.offset.y)} onMomentumEnd={(e) => clamp(e.y)} onScrollDragEnd={(e) => clamp(e.y)}>
       <View class="pb-2" onLayout={(b) => rows.set(b.size.height)}>
@@ -477,14 +496,14 @@ function SpaceStatus(props: { store: Store; spaceId: string }) {
         <View class="w-1.5 h-1.5 rounded-full bg-sidebar-foreground" />
         <Text class="text-[11.8px] text-muted-foreground" numberOfLines={1}>
           {`${counts().agents} ${counts().agents === 1 ? 'agent' : 'agents'}`}
-          <If when={counts().needsYou}><Text class="text-chart-2">{` · ${t('needYou', { n: counts().needsYou })}`}</Text></If>
+          <If when={counts().needsYou}><Text>{` · ${t('needYou', { n: counts().needsYou })}`}</Text></If>
         </Text>
       </View>
     </View>
   )
 }
 
-export function SpaceScreen(props: { store: Store; spaceId: string; actions: SpaceActions }) {
+export function SpaceScreen(props: { store: Store; spaceId: string; actions: SpaceActions; width?: () => number; active?: () => boolean }) {
   const s = props.store
   const rev = useRev(s)
   const words = agentWords(s)
@@ -499,22 +518,41 @@ export function SpaceScreen(props: { store: Store; spaceId: string; actions: Spa
     return ''
   }
   const color = () => { rev(); return s.spaceMarks()[props.spaceId] ?? '#22a99a' }
-  const wide = () => windowSize().width >= WIDE
+  const spacious = () => (props.width?.() ?? windowSize().width) >= WIDE
+  const chatFirst = () => s.chatFirst.get()
+  const chatAddress = () => {
+    rev()
+    const current = tab(), pane = current ? focusedPaneOf(current) : undefined
+    const address = pane ? s.model.addressOf(pane) : undefined
+    return address
+  }
+  const chat = usePaneChat(s, chatAddress, () => props.active?.() ?? true)
+  const canChat = () => chat.avail()
+  const showChat = () => {
+    const current = tab()
+    if (current) s.showWhole(current.id, false)
+    chat.on.set(true)
+    s.chatFirst.set(true)
+  }
+  const whole = () => { const current = tab(); return !!current && s.shownWhole.has(current.id) && panes(current.root).length > 1 }
+  // An explicit split canvas wins over the saved chat preference, even when focus returns to an agent.
+  const wide = () => spacious() && (whole() || !(chatFirst() && canChat()))
   const insets = safeAreaInsets()
   const typing = () => keyboardFrame().height > 0
   const sessions = new Map<string, TerminalSession>()
   /** Panes side by side on a small screen: what it costs, then the choice. */
   const accepts = async () => {
-    if (wide()) return true
+    if (spacious()) return true
     return await AlertDialog.show({ title: t('smallSplitTitle'), description: t('smallSplitDetail'), actions: [
       { id: 'cancel', label: t('cancel'), role: 'cancel' }, { id: 'go', label: t('smallSplitGo') }] }) === 'go'
   }
   const split = async (pane: string | undefined, direction: 'right' | 'down') => {
     if (!await accepts()) return
-    const current = tab()
+    // Splitting moves focus to a new shell; remember the presentation before its chat availability changes.
+    const current = tab(), revealSplit = !wide()
     try {
       await s.splitPane(pane, direction)
-      if (current && !wide()) s.showWhole(current.id, true)
+      if (current && revealSplit) s.showWhole(current.id, true)
     } catch (e: any) {
       s.toast({ title: t('couldntStart'), body: String(e?.message ?? e), level: 'error' })
     }
@@ -551,17 +589,18 @@ export function SpaceScreen(props: { store: Store; spaceId: string; actions: Spa
   return (
     // The key bar sits at the bottom: above the keyboard while it is up (NSH moves only scroll views clear of it).
     <View class="flex-1 bg-sidebar pt-[env(safe-area-inset-top)]" style={{ paddingBottom: typing() ? keyboardFrame().height : insets().bottom }}>
-      <If when={wide() || !space()}><View class="flex-row items-center h-11 pl-1 pr-1 gap-2">
+      <If when={wide() || !space()}><View class="flex-row items-center h-[57px] pl-1 pr-1 gap-2">
         <IconButton name="chevron-left" label={t('back')} testID="back" onPress={props.actions.back} />
         <SpaceBadge name={name()} color={color()} size={20} />
         <Text class="text-[15px] font-semibold text-foreground shrink" numberOfLines={1}>{name()}</Text>
         <Text class="flex-1 text-[12px] text-sidebar-foreground" numberOfLines={1}>{tail()}</Text>
+        <If when={canChat()}><IconButton name="chat" label={t('showChat')} testID="show-chat" onPress={showChat} /></If>
         <IconButton name="settings" label={t('spaceActions')} testID="space-more" onPress={() => void menu()} />
       </View></If>
       <If when={space()} else={<View class="flex-1 items-center justify-center"><Text class="text-sidebar-foreground">{t('spaceClosed')}</Text></View>}>
         <If when={wide()}><TabBar store={s} spaceId={props.spaceId} actions={props.actions} /></If>
         <Each of={tab() ? [tab()!] : []} key={(t) => t.id}>{(t) => (
-          <If when={wide()} else={<PhoneSpace store={s} spaceId={props.spaceId} tab={t()} actions={props.actions} sessions={sessions} back={props.actions.back} menu={() => void menu()} split={(p, d) => void split(p, d)} />}>
+          <If when={wide()} else={<PhoneSpace store={s} spaceId={props.spaceId} tab={t()} chat={chat} showChat={showChat} actions={props.actions} sessions={sessions} back={props.actions.back} menu={() => void menu()} active={props.active} canvas={spacious() ? () => { chat.on.set(false); s.chatFirst.set(false) } : undefined} split={(p, d) => void split(p, d)} />}>
             <WidePanes store={s} spaceId={props.spaceId} tab={t()} actions={props.actions} sessions={sessions} split={(p, d) => void split(p, d)} />
           </If>
         )}</Each>

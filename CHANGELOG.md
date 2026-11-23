@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.3.10
+
+iOS build 45. The phone app and the Companion both changed; an installed Companion updates itself.
+
+- A shared DSH-aligned design: true-black dark mode, neutral light mode, Geist type with real Medium and SemiBold weights, roomier rows with 44 pt (iPhone) and 48 dp (Android) touch targets, and a list beside the conversation on wide windows. Drafts survive resizing; a visible decision card owns the attention color instead of repeating it in the sidebar.
+- Only the current Working text gently changes brightness. It stays still when covered, disconnected or backgrounded, and under supported reduced-motion, high-contrast and native low-power settings. Apple floating controls use native glass; Android and web keep opaque surfaces.
+- Oh My Pi 19 edits show in the chat view with the file's name and a diff, also when Oh My Pi edits in its hashline mode.
+- Antigravity CLI pictures the chat view shows are read up to 12 MiB, as for Oh My Pi; a larger one isn't shown.
+- Every input box's cursor and selection use the theme's accent blue. On Android the cursor now shows in dark mode, where the system's dark teal barely did on the black input box, and the selection handles are blue too.
+- On the pairing screen, why pairing failed stays in view above the keyboard on iPhone; it was hidden under it.
+- An agent's choices (on Home and under its terminal) wrap onto more lines instead of scrolling sideways, so what each one allows or refuses is read whole before it is tapped. The terminal's subtitle keeps the file's name.
+- The terminal is pure black in dark mode, like the rest of the app; its sixteen colours are herdr's GRAPHITE as before, and the light terminal is unchanged.
+- New space's folder search keeps its title row and search box above the keyboard; on Android the title row scrolled away. On a short screen with very large text they scroll with the folders instead, so the folders keep room above the keyboard, and this follows the screen and text size when they change with the search open.
+- On a wide screen's side list, an agent's program name and title both show whole: the title goes under the name when the row is too narrow for both.
+- On Android, writing your own answer to an agent's question shows the whole card above the keyboard as it opens, the box, Cancel and Send included, and the chat no longer ends in a blank the size of the keyboard while it is up. The box and what you typed stay open when the agent redraws its screen, and the keyboard goes down with the box.
+
 ## v0.3.9
 
 iOS build 44. The phone app and the Companion both changed; an installed Companion updates itself.

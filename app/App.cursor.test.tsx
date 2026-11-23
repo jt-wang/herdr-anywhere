@@ -115,6 +115,51 @@ test('Cursor availability retries without status or foreground, including after 
 
 const labels = { 'herdr-anywhere.chat.pid': '4242', 'herdr-anywhere.chat.session': 'invented-session', 'herdr-anywhere.chat.cursor.cwd': '/synthetic/flowers' }
 
+test('the chat page terminal shortcut remains selected after Settings returns to the same pane', async () => {
+  const app = await pane({ chat: JSON.stringify({ chat: true, unknown: 'setup-needed', setup: 'cursor' }), setups: JSON.stringify([CURSOR]) })
+  await app.press('id:show-chat')
+  await app.waitFor('id:chat-terminal')
+  await app.press('id:chat-terminal')
+  await app.waitFor('id:show-chat')
+  await app.press('id:space-more')
+  await app.press('id:menu-settings')
+  await app.waitFor('id:setup-cursor-install')
+  await app.press('id:back')
+  await app.clock.runFor(100)
+  expect(app.count('id:show-chat')).toBe(1)
+  expect(app.count('id:chat-terminal')).toBe(0)
+})
+
+test('an unrelated foreground gained behind Settings clears the old chat availability on return', async () => {
+  const app = await pane({ argv: 'bash', setups: JSON.stringify([CURSOR]) })
+  await app.waitFor('id:show-chat')
+  await app.press('id:space-more')
+  await app.press('id:menu-settings')
+  await app.waitFor('id:setup-cursor-install')
+  await app.host.send('fake.foreground', { address: 't1', foreground: { pid: 3131, name: 'bash', argv: ['bash'] } })
+  await app.press('id:back')
+  await app.clock.runFor(100)
+  expect(app.count('id:show-chat')).toBe(0)
+})
+
+for (const hiddenFor of [100, 10_000]) test(`Cursor probes pause behind Settings and resume once, even across a late answer: hidden=${hiddenFor}`, async () => {
+  const app = await pane({ chat: JSON.stringify({ chat: false }), setups: JSON.stringify([CURSOR]) })
+  await app.host.send('fake.chat', { chat: false, slow: 1000 })
+  await app.clock.runFor(3000)
+  await app.press('id:space-more')
+  await app.press('id:menu-settings')
+  await app.waitFor('id:setup-cursor-install')
+  const covered = asks(app).length
+  await app.clock.runFor(hiddenFor)
+  expect(asks(app).length).toBe(covered)
+  await app.host.send('fake.chat', { chat: false })
+  await app.press('id:back')
+  await app.clock.runFor(100)
+  expect(asks(app).length).toBe(covered + 1)
+  await app.clock.runFor(6100)
+  expect(asks(app).length).toBe(covered + 3)
+})
+
 test('Cursor started in an open unreported shell offers setup without a metadata event', async () => {
   const app = await pane({ argv: 'bash', chat: JSON.stringify({ chat: false }), setups: JSON.stringify([CURSOR]) })
   expect(app.count('id:show-chat')).toBe(0)

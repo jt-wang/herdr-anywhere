@@ -7,6 +7,12 @@
 set -eu
 target=$1 dir=$2
 app=$(cd "$(dirname "$0")/.." && pwd)
+if [ "$target" = android ]; then
+  runtime=${NSH_RUNTIME:-${NSH_HOME:-}}
+  [ -n "$runtime" ] || { echo 'Set NSH_RUNTIME to a matched runtime built by app/scripts/nsh-runtime.sh android.' >&2; exit 1; }
+  sh "$app/scripts/nsh-runtime.sh" --verify-android "$runtime" >&2
+  export NSH_RUNTIME="$runtime" PATH="$runtime/cli/bin:$PATH"
+fi
 [ -n "${JAVA_HOME:-}" ] || [ ! -d "/Applications/Android Studio.app" ] || export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 # An entry at the app's root, so its fonts and icons are packed (as site-src/shots.sh does).
 params=picture-params; [ "${CHAT:-}" != 1 ] || params=chat-picture-params

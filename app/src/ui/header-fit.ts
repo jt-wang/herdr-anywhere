@@ -16,9 +16,8 @@ export function showsAWord(full: string, lines: { text: string }[], width?: numb
   return kept.length >= word.length
 }
 
-/** Whether the title's chip drops its border and most of its padding: from the text size where the header's text stops
- *  growing (`HEADER_MAX_SCALE`, 1.3x), where those few points are what the title needs to stay whole ("fix log…" at
- *  Android's largest size). Below it the chip keeps its tab look. */
+/** Compact spacing at larger system text sizes leaves more room for the uncapped title.
+ *  This changes spacing only; the header grows vertically with both text lines. */
 export function headerChipTight(scale: number): boolean {
   return scale >= 1.25
 }

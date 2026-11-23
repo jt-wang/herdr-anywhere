@@ -1,0 +1,4 @@
+{"type":"session","version":3,"id":"hashline","cwd":"/work/acme"}
+{"type":"message","id":"u1","parentId":null,"message":{"role":"user","content":[{"type":"text","text":"Add two notes."}]}}
+{"type":"message","id":"a1","parentId":"u1","message":{"role":"assistant","content":[{"type":"toolCall","id":"edit1","name":"edit","arguments":"[notes.txt#9585]\nPUT >1:\n+b\n+c"}]}}
+{"type":"message","id":"r1","parentId":"a1","message":{"role":"toolResult","toolCallId":"edit1","toolName":"edit","content":[{"type":"text","text":"Updated notes.txt"}],"details":{"path":"notes.txt","oldText":"a\n","newText":"a\nb\nc\n","diff":" 1|a\n+2|b\n+3|c"},"isError":false}}

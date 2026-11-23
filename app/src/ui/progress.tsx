@@ -124,7 +124,7 @@ export class ProgressData {
 // working, the rest (queued, done, dropped) as idle.
 const AS_STATUS: Record<string, string> = { waiting: 'blocked', stuck: 'blocked', review: 'done', doing: 'working' }
 const GROUP_DOT: Record<string, string> = {
-  waiting: 'bg-chart-2', stuck: 'bg-chart-2', review: 'bg-chart-5', doing: 'bg-chart-1', parked: 'bg-border', done: 'bg-chart-3', dropped: 'bg-border',
+  waiting: 'bg-chart-2', stuck: 'bg-chart-2', review: 'bg-chart-2', doing: 'bg-muted-foreground', parked: 'bg-border', done: 'bg-muted-foreground', dropped: 'bg-border',
 }
 const quiet = (group: string) => group === 'parked' || closed(group)
 
@@ -135,8 +135,8 @@ function StageWord(props: { group: string }) {
 /** A list's label, as the agent list's: small, with a count or note on the right. */
 function Section(props: { label: string; right?: string; tone?: string; rightID?: string }) {
   return (
-    <View class="flex-row items-center h-9 px-4 mt-1 gap-1.5">
-      <Text class={`text-[11.5px] font-medium ${props.tone ?? 'text-sidebar-foreground'}`}>{props.label}</Text>
+    <View class="flex-row items-center h-10 px-[22px] mt-1 gap-1.5">
+      <Text class="text-[12px] font-medium text-sidebar-foreground">{props.label}</Text>
       <View class="flex-1" />
       <If when={props.right}><Text testID={props.rightID} class="text-[11px] text-sidebar-foreground">{props.right}</Text></If>
     </View>
@@ -167,7 +167,7 @@ function TopBar(props: { title: string; back?: () => void; right?: any }) {
   )
 }
 
-const CARD = 'mx-3 mb-2 px-3.5 py-3 rounded-[12px] bg-background border border-border'
+const CARD = 'mx-3 mb-2 px-3 py-3 rounded-[18px] bg-card border border-border'
 const ROW = 'mx-2 px-2 min-h-9 py-1.5 justify-center rounded-[8px] active:bg-sidebar-accent'
 
 /** One task as one row (under a heading, `depth` steps in, lined up with the heading's title), the way the agent list shows an agent: its title, its stage in the status colours, and a line
@@ -181,10 +181,10 @@ function TaskRow(props: { task: Task; actions: ProgressActions; testID: string; 
       class={ROW} style={{ marginLeft: props.depth === undefined ? 8 : 24 + props.depth * 16 }}>
       <View class="flex-row items-center gap-2">
         <If when={closed(t().group)}><Text class="text-[14px] text-chart-3">{t().group === 'dropped' ? '–' : '✓'}</Text></If>
-        <Text class={`flex-1 text-[14.5px] ${quiet(t().group) ? 'text-muted-foreground' : 'text-foreground'}`} numberOfLines={2}>{t().outcome}</Text>
+        <Text class={`flex-1 text-[15px] leading-[21px] ${quiet(t().group) ? 'text-muted-foreground' : 'text-foreground'}`} numberOfLines={2}>{t().outcome}</Text>
         <If when={!closed(t().group)}><StageWord group={t().group} /></If>
       </View>
-      <If when={alert()}><Text class="text-[13px] text-chart-2" numberOfLines={2}>{plain(alert())}</Text></If>
+      <If when={alert()}><Text class="text-[12px] leading-[18px] text-muted-foreground" numberOfLines={2}>{plain(alert())}</Text></If>
     </View>
   )
 }
@@ -208,7 +208,7 @@ function SubHeading(props: { task: Task; actions: ProgressActions; depth: number
       <Fold id={t().id} actions={props.actions} />
       <View role="button" testID={`task-${t().id}`} onPress={() => props.actions.open({ name: 'task', id: t().id })}
         class="flex-1 flex-row items-center gap-2 min-h-9 py-1.5 pr-2 mr-2 rounded-[8px] active:bg-sidebar-accent">
-        <Text class="flex-1 text-[14.5px] font-semibold text-foreground" numberOfLines={2}>{t().outcome}</Text>
+        <Text class="flex-1 text-[15px] leading-[21px] font-medium text-foreground" numberOfLines={2}>{t().outcome}</Text>
         <Text class="text-[11.5px] text-sidebar-foreground">{`${t().done}/${t().total}`}</Text>
       </View>
     </View>
@@ -245,8 +245,8 @@ function NeedsRow(props: { task: Task; goal: string; actions: ProgressActions })
     <View class="flex-row items-center mx-2 pr-2">
       <View role="button" testID={`needs-task-${t().id}`} onPress={() => props.actions.open({ name: 'task', id: t().id })}
         class="flex-1 px-2 py-1.5 rounded-[8px] active:bg-sidebar-accent">
-        <Text class="text-[14.5px] text-foreground" numberOfLines={2}>{t().outcome}</Text>
-        <Text class="text-[13px] text-chart-2" numberOfLines={2}>
+        <Text class="text-[15px] leading-[21px] text-foreground" numberOfLines={2}>{t().outcome}</Text>
+        <Text class="text-[12px] leading-[18px] text-muted-foreground" numberOfLines={2}>
           <If when={props.goal}><Text class="text-sidebar-foreground">{`${props.goal} · `}</Text></If>
           {plain(subLine(t()))}
         </Text>
@@ -278,7 +278,7 @@ export function ProgressHome(props: { data: ProgressData; actions: ProgressActio
   const empty = () => !!home() && !home()!.loose.length && !home()!.groups.length && !home()!.after.length
   return (
     <View class="flex-1">
-      <View class="flex-row items-center h-12 pl-3 pr-1.5 gap-2">
+      <View class="flex-row items-center h-[57px] pl-3 pr-2 gap-2 border-b border-border">
         <View class="flex-1"><ViewSwitch {...props.actions.view()} /></View>
         <IconButton name="settings" label={w('settings')} testID="settings" onPress={props.actions.settings} />
       </View>
@@ -294,7 +294,7 @@ export function ProgressHome(props: { data: ProgressData; actions: ProgressActio
           </View>
         </If>
         <If when={tree()?.needsYou.length}>
-          <Section label={w('secNeedsYou')} tone="text-chart-2" right={String(tree()!.needsYou.length)} />
+          <Section label={w('secNeedsYou')} right={String(tree()!.needsYou.length)} />
           <Each of={tree()!.needsYou} key={(t) => t.id}>{(t) => <NeedsRow task={t()} goal={goalOf(tree()!, t())} actions={props.actions} />}</Each>
           <Divider />
         </If>
@@ -353,7 +353,7 @@ export function TaskScreen(props: { data: ProgressData; id: string; actions: Pro
             <StageWord group={t().group} />
             <If when={t().std}><Text class="text-[13px] text-muted-foreground">{w('doneWhen', { std: t().std ?? '' })}</Text></If>
             <If when={subLine(t())}><Said id={t().id} text={subLine(t())} /></If>
-            <Each of={flagsOf(t()).slice(subLine(t()) === flagsOf(t())[0] ? 1 : 0)}>{(f) => <Text class="text-[13px] text-chart-2">{f()}</Text>}</Each>
+            <Each of={flagsOf(t()).slice(subLine(t()) === flagsOf(t())[0] ? 1 : 0)}>{(f) => <Text class="text-[12px] leading-[18px] text-muted-foreground">{f()}</Text>}</Each>
             <If when={t().children.length}>
               <Text class="text-[12.5px] text-muted-foreground mt-1">{w('tasksUnder')}</Text>
               <Each of={t().children} key={(c) => c.id}>{(c) => (

@@ -162,6 +162,8 @@ jobs:
           cache-dependency-path: companion/go.sum
       - run: python3 ios/nsh-patches/build-nsh-cli.test.py
         working-directory: app
+      - run: python3 scripts/nsh-runtime.test.py
+        working-directory: app
       - run: sh app/e2e/ios-open-space-test.sh --mutations
       - run: nsh --version && nsh check && scripts/test.sh
         working-directory: app

@@ -1,22 +1,27 @@
 // Sheets over any screen: the "+" menu in two steps: the folder on the computer first
 // (folder-picker.tsx), then a terminal or an agent installed there, with its first task; and renaming a space or a tab.
-import { computed, effect, Keyboard, keyboardFrame, signal, Text, View, type Signal } from 'nsh'
-import { Input, Sheet } from 'nsh/base'
+import { computed, effect, Keyboard, keyboardFrame, safeAreaInsets, Scroll, signal, Text, View, windowSize, type Signal } from 'nsh'
+import { Input } from 'nsh/base'
 import type { Store } from '../store.ts'
 import { explain } from '../store.ts'
 import { startable, type Program } from '../model/programs.ts'
 import { tilde, type FolderApi } from '../model/folders.ts'
-import { Button, Glyph, PANEL, PANEL_BACKDROP, ProgramIcon, useRev } from './kit.tsx'
+import { Button, Glyph, PANEL, PANEL_BACKDROP, PANEL_STYLE, ProgramIcon, Sheet, TOUCH_TARGET, useRev } from './kit.tsx'
 import { t } from '../strings/index.ts'
 import { FolderPickerView } from './folder-picker.tsx'
 
-/** A sheet sits on the keyboard while it is up: NSH's Sheet stays at the screen's bottom, behind it (seen on Android). */
-const above = () => ({ marginBottom: keyboardFrame().height + 16 })
+/** Moving above the IME also reduces the content's available height; a tall picker must shrink, not move offscreen. */
+function useAboveKeyboard() {
+  const insets = safeAreaInsets()
+  return () => ({ ...PANEL_STYLE, marginBottom: keyboardFrame().height + 16,
+    maxHeight: Math.max(0, windowSize().height - keyboardFrame().height - insets().top - 16) })
+}
 
 /** Where "+" was pressed: the home screen starts a space, a space starts a tab in it. */
 export type NewTarget = { kind: 'space' } | { kind: 'tab'; space: string; agent?: boolean }
 
 export function NewSheet(props: { store: Store; target: Signal<NewTarget | null>; folders?: FolderApi; onStarted: (r: { space: string; pane: string }) => void }) {
+  const above = useAboveKeyboard()
   const s = props.store
   const rev = useRev(s)
   const picked = signal<Program | null>(null)
@@ -65,12 +70,13 @@ export function NewSheet(props: { store: Store; target: Signal<NewTarget | null>
   }
   return (
     <Sheet open={open()} side="bottom" onOpenChange={(o) => { if (!o) close() }} popupClass={`${PANEL} px-4 pt-3 pb-[env(safe-area-inset-bottom)]`} backdropClass={PANEL_BACKDROP} popupStyle={above()}>
-      <View class="gap-1">
+      <View class="gap-1 min-h-0 shrink">
         <If when={open() && picking() && local()}>
           <FolderPickerView title={title()} api={props.folders!} home={s.home} start={where()} recent={s.recentFolders()}
             onPick={(f) => { Keyboard.dismiss(); folder.set(f); picking.set(false) }} />
         </If>
         <If when={!(picking() && local())}>
+        <Scroll class="min-h-0" style={{ flexShrink: 1 }} contentClass="gap-1" keyboardShouldPersistTaps="handled">
         <Text class="text-[15px] font-semibold text-foreground" style={{ fontFamily: 'Geist Title' }}>{title()}</Text>
         {/* The folder chosen: a line that goes back to the first step */}
         <View role="button" testID="folder-chosen" disabled={!local()} accessibilityLabel={t('folderChosen', { path: tilde(where(), s.home) })} onPress={() => picking.set(true)}
@@ -81,14 +87,14 @@ export function NewSheet(props: { store: Store; target: Signal<NewTarget | null>
         </View>
         <If when={picked()} else={
           <View>
-            <View role="button" testID="new-terminal" onPress={() => void start(null)} class="flex-row items-center gap-3 h-11 px-2 rounded-(--radius) active:bg-sidebar-accent">
+            <View role="button" testID="new-terminal" onPress={() => void start(null)} style={{ minHeight: TOUCH_TARGET }} class="flex-row items-center gap-3 min-h-11 px-2 rounded-(--radius) active:bg-sidebar-accent">
               <ProgramIcon icon="terminal" size={18} />
-              <Text class="text-[14px] text-foreground">{t('terminal')}</Text>
+              <Text class="text-[15px] text-foreground">{t('terminal')}</Text>
             </View>
             <Each of={agents()} key={(p) => p.key}>{(p) => (
-              <View role="button" testID={`new-${p().key}`} onPress={() => picked.set(p())} class="flex-row items-center gap-3 h-11 px-2 rounded-(--radius) active:bg-sidebar-accent">
+              <View role="button" testID={`new-${p().key}`} onPress={() => picked.set(p())} style={{ minHeight: TOUCH_TARGET }} class="flex-row items-center gap-3 min-h-11 px-2 rounded-(--radius) active:bg-sidebar-accent">
                 <ProgramIcon icon={p().icon} size={18} />
-                <Text class="text-[14px] text-foreground">{p().name}</Text>
+                <Text class="text-[15px] text-foreground">{p().name}</Text>
               </View>
             )}</Each>
             <If when={!agents().length}><Text class="text-[12px] text-sidebar-foreground px-2 py-1">{t('agentsShowUp')}</Text></If>
@@ -100,12 +106,13 @@ export function NewSheet(props: { store: Store; target: Signal<NewTarget | null>
               <Text class="text-[14px] text-foreground">{p().name}</Text>
             </View>
             <Input testID="task" placeholder={t('taskPlaceholder')} value={task()} onChange={(t) => task.set(t)} multiline autoFocus
-              class="min-h-[72px] rounded-(--radius) border border-input bg-background px-3 py-2 text-[14px] text-foreground placeholder:text-sidebar-foreground" />
+              class="min-h-[72px] rounded-(--radius) border border-input bg-background px-3 py-2 text-[14px] text-foreground selection:bg-ring placeholder:text-sidebar-foreground" />
             <Button label={busy() ? t('starting') : t('startProgram', { name: p().name })} testID="start" disabled={busy()} onPress={() => void start(p())} />
             <Button label={t('back')} kind="plain" onPress={() => picked.set(null)} />
           </View>
         )}</If>
         <If when={error()}><Text testID="new-error" class="text-[13px] text-destructive mt-1">{error()}</Text></If>
+        </Scroll>
         </If>
       </View>
     </Sheet>
@@ -115,6 +122,7 @@ export function NewSheet(props: { store: Store; target: Signal<NewTarget | null>
 export type RenameTarget = { kind: 'space' | 'tab'; id: string; current: string }
 
 export function RenameSheet(props: { store: Store; target: Signal<RenameTarget | null> }) {
+  const above = useAboveKeyboard()
   const text = signal('')
   const save = () => {
     const t = props.target()
@@ -131,7 +139,7 @@ export function RenameSheet(props: { store: Store; target: Signal<RenameTarget |
         <Text class="text-[15px] font-semibold text-foreground">{props.target()?.kind === 'tab' ? t('renameTab') : t('renameSpace')}</Text>
         <Input testID="rename" value={text()} defaultValue={props.target()?.current ?? ''} onChange={(t) => text.set(t)} autoFocus submitBehavior="submit" onSubmit={save}
           placeholder={t('renamePlaceholder')}
-          class="rounded-(--radius) border border-input bg-background px-3 py-2.5 text-[15px] text-foreground placeholder:text-sidebar-foreground" />
+          class="rounded-(--radius) border border-input bg-background px-3 py-2.5 text-[15px] text-foreground selection:bg-ring placeholder:text-sidebar-foreground" />
         <Button label={t('save')} testID="rename-save" onPress={save} />
       </View>
     </Sheet>

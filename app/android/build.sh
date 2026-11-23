@@ -8,6 +8,18 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 export ANDROID_HOME="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
 export JAVA_HOME="${JAVA_HOME:-/Applications/Android Studio.app/Contents/jbr/Contents/Home}"
 app="$root/android/app"
+# Shimmer adds fields to the native batch protocol: Java AND Rust must match the CLI.
+# The installed v0.3.0 AAR is not compatible. Keep the rebuilt runtime separate from it.
+runtime=${NSH_HOME:-${XDG_CACHE_HOME:-$HOME/.cache}/herdr-nsh/$("$root/ios/nsh-patches/key.sh" | tr ' ' '-')/runtime}
+if [ -n "${NSH_HOME:-}" ]; then
+  sh "$root/scripts/nsh-runtime.sh" --verify-android "$runtime" || {
+    echo 'NSH_HOME needs a matched full runtime; see ios/nsh-patches/README.md' >&2; exit 1;
+  }
+else
+  sh "$root/scripts/nsh-runtime.sh" android "$(dirname "$runtime")/source" "$runtime"
+fi
+export NSH_HOME="$runtime"
+export PATH="$runtime/cli/bin:$PATH"
 "$root/scripts/tailpocket.sh" android >/dev/null
 # The release nsh.aar with our patches to its Java runtime (nsh-patches/patch-aar.sh).
 mkdir -p "$app/libs"

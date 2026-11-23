@@ -9,8 +9,11 @@
 # Passes when the keyboard comes up both times. Then the input box row's switch, and typing on the keyboard's keys
 # straight into the terminal, whose program (e2e/typing-raw.py) logs the bytes: letters, space, Return with no stray
 # backspace, a lowercase letter after "teh " (the keyboard switched Shift on there by itself), and no
-# form bar (˄ ˅ Done) over the keyboard. Its build and result stay in the run's temporary folder.
+# form bar (˄ ˅ Done) over the keyboard. Then e2e/ios-uitest's FolderSheet: New space's folder sheet over a home with
+# more folders than fit, and Rename space, keep their title, search, list, Use this folder and Save between the status
+# bar and the keyboard while the keyboard is up. Its build and result stay in the run's temporary folder.
 # Usage: SIM_UDID=<udid> e2e/ios-keyboard.sh [screenshot.png]
+# HM_WIDE_FOLDER=1 runs only the focused iPad-landscape folder/keyboard regression, not the phone TypeIn suite.
 # HM_MISS_SPACE=1 is a self-test: the first tap on the space misses, so the test must fail with its record of that
 # tap (e2e/ios-uitest/tests/OpenSpace.swift) and a second one.
 # SIM_UDID is required, so the run never lands on another simulator. Needs go, nsh, hc, idb, xcodegen and Xcode.
@@ -31,6 +34,8 @@ work=$(mktemp -d)
 run=$(mktemp -d /tmp/hmXXXX)
 mkdir -p "$work/sam/src/acme-api" "$work/state" "$work/config" "$work/data"
 : > "$work/sam/.zshrc"
+# More folders than New space's sheet shows over the keyboard (e2e/ios-uitest/tests/FolderSheet.swift).
+for i in $(seq -w 1 24); do mkdir "$work/sam/sample-$i"; done
 # Runs to the end and keeps the suite's status: under set -e a failed step in an EXIT trap ends the shell there (a
 # folder rm could not delete skipped the shutdown, and the next suites found a simulator they could not read).
 cleanup() {
@@ -100,24 +105,43 @@ screen | grep -q '"AXIdentifier":"pair"\|"AXUniqueId":"pair"' && { echo "FAIL: t
 cp -R "$app/e2e/ios-uitest" "$work/uitest"
 (cd "$work/uitest" && xcodegen generate --quiet)
 sh "$app/e2e/ios-touch-log.sh" --self-test || exit 1
-# The app's UIKit event dispatch while the test runs: whether a tap on the space reached the app at all.
-"$app/e2e/ios-touch-log.sh" --start "$SIM_UDID" "$work/uikit.log" & touchlog=$!
+if [ "${HM_WIDE_FOLDER:-}" != 1 ]; then
+  # The app's UIKit event dispatch while the test runs: whether a tap on the space reached the app at all.
+  "$app/e2e/ios-touch-log.sh" --start "$SIM_UDID" "$work/uikit.log" & touchlog=$!
+  rc=0
+  TEST_RUNNER_OUT="$work/typein.txt" TEST_RUNNER_MISS_SPACE="${HM_MISS_SPACE:-}" TEST_RUNNER_RAW="$work/sam/src/acme-api/hm-raw" perl -e 'alarm 600; exec @ARGV' xcodebuild test -quiet -project "$work/uitest/KeyboardCheck.xcodeproj" -scheme UITests -only-testing:UITests/TypeIn -destination "id=$SIM_UDID" -derivedDataPath "$work/uitest/derived" -resultBundlePath "$work/uitest/result.xcresult" > "$work/uitest/test.log" 2>&1 || rc=$?
+  { kill "$touchlog"; wait "$touchlog"; } 2>/dev/null || true; touchlog=
+  [ -n "$shot" ] && perl -e 'alarm 40; exec @ARGV' xcrun simctl io "$SIM_UDID" screenshot "${shot%.png}-keyboard.png" >/dev/null 2>&1
+  sed 's/^/  /' "$work/typein.txt" 2>/dev/null || true
+  [ -n "$shot" ] && { cp "$work/typein-terminal.png" "${shot%.png}-terminal.png" 2>/dev/null; cp "$work/uitest/test.log" "${shot%.png}-xctest.log" 2>/dev/null; } || true
+  if [ "$rc" != 0 ]; then
+    echo "FAIL: the keyboard test (xcodebuild test exit $rc)"
+    echo "the app's lines (each space it opened, in the Companion's log; e2e/ios-touch-app.sh):"
+    "$app/e2e/app-lines.sh" "/hm-e2e/openSpace/" "$work/serve.log"
+    # Every screenshot the test kept: the menu before and after each tap, and XCTest's own at the failure.
+    # The screen's elements around the tap on the space, as the test noted them (OpenSpace.swift).
+    [ -n "$shot" ] && { mkdir -p "${shot%.png}-failure"; for f in "$work"/typein.txt-*.txt; do [ -f "$f" ] && cp "$f" "${shot%.png}-failure/${f##*/typein.txt-}"; done; } || true
+    "$app/e2e/ios-xcresult.sh" "$work/uitest/result.xcresult" ${shot:+"${shot%.png}-failure"} all
+    [ -n "$shot" ] && "$app/e2e/ios-failure-logs.sh" "$work/started" "$work/serve.log" "${shot%.png}-failure" || true
+    "$app/e2e/ios-touch-log.sh" "$work/typein.txt" "$work/uikit.log" ${shot:+"${shot%.png}-failure"}
+    exit 1
+  fi
+fi
 rc=0
-TEST_RUNNER_OUT="$work/typein.txt" TEST_RUNNER_MISS_SPACE="${HM_MISS_SPACE:-}" TEST_RUNNER_RAW="$work/sam/src/acme-api/hm-raw" perl -e 'alarm 600; exec @ARGV' xcodebuild test -quiet -project "$work/uitest/KeyboardCheck.xcodeproj" -scheme UITests -only-testing:UITests/TypeIn -destination "id=$SIM_UDID" -derivedDataPath "$work/uitest/derived" -resultBundlePath "$work/uitest/result.xcresult" > "$work/uitest/test.log" 2>&1 || rc=$?
-{ kill "$touchlog"; wait "$touchlog"; } 2>/dev/null || true; touchlog=
-[ -n "$shot" ] && perl -e 'alarm 40; exec @ARGV' xcrun simctl io "$SIM_UDID" screenshot "${shot%.png}-keyboard.png" >/dev/null 2>&1
-sed 's/^/  /' "$work/typein.txt" 2>/dev/null || true
-[ -n "$shot" ] && { cp "$work/typein-terminal.png" "${shot%.png}-terminal.png" 2>/dev/null; cp "$work/uitest/test.log" "${shot%.png}-xctest.log" 2>/dev/null; } || true
+folder_suite=FolderSheet
+[ "${HM_WIDE_FOLDER:-}" != 1 ] || folder_suite=FolderViewport
+TEST_RUNNER_OUT="$work/folders.txt" perl -e 'alarm 600; exec @ARGV' xcodebuild test -quiet -project "$work/uitest/KeyboardCheck.xcodeproj" -scheme UITests -only-testing:UITests/"$folder_suite" -collect-test-diagnostics never -destination "id=$SIM_UDID" -derivedDataPath "$work/uitest/derived" -resultBundlePath "$work/uitest/folders.xcresult" > "$work/uitest/folders.log" 2>&1 || rc=$?
+sed 's/^/  /' "$work/folders.txt" 2>/dev/null || true
 if [ "$rc" != 0 ]; then
-  echo "FAIL: the keyboard test (xcodebuild test exit $rc)"
-  echo "the app's lines (each space it opened, in the Companion's log; e2e/ios-touch-app.sh):"
-  "$app/e2e/app-lines.sh" "/hm-e2e/openSpace/" "$work/serve.log"
-  # Every screenshot the test kept: the menu before and after each tap, and XCTest's own at the failure.
-  # The screen's elements around the tap on the space, as the test noted them (OpenSpace.swift).
-  [ -n "$shot" ] && { mkdir -p "${shot%.png}-failure"; for f in "$work"/typein.txt-*.txt; do [ -f "$f" ] && cp "$f" "${shot%.png}-failure/${f##*/typein.txt-}"; done; } || true
-  "$app/e2e/ios-xcresult.sh" "$work/uitest/result.xcresult" ${shot:+"${shot%.png}-failure"} all
-  [ -n "$shot" ] && "$app/e2e/ios-failure-logs.sh" "$work/started" "$work/serve.log" "${shot%.png}-failure" || true
-  "$app/e2e/ios-touch-log.sh" "$work/typein.txt" "$work/uikit.log" ${shot:+"${shot%.png}-failure"}
+  echo "FAIL: the folder sheet with the keyboard up (xcodebuild test exit $rc)"
+  # What xcodebuild said, before the cleanup deletes it: when the runner never started there are no notes or results.
+  echo "  xcodebuild's last lines:" >&2; tail -40 "$work/uitest/folders.log" | sed 's/^/    /' >&2
+  [ -n "$shot" ] && { mkdir -p "${shot%.png}-folders-failure"; cp "$work/uitest/folders.log" "${shot%.png}-folders-failure/"; } || true
+  "$app/e2e/ios-xcresult.sh" "$work/uitest/folders.xcresult" ${shot:+"${shot%.png}-folders-failure"} all
   exit 1
 fi
-echo "PASS: Type in the terminal brings the keyboard up, also after the key bar's hide button; typing straight into the terminal sends what was typed"
+if [ "${HM_WIDE_FOLDER:-}" = 1 ]; then
+  echo "PASS: iPad-wide FolderViewport passes with the real keyboard"
+else
+  echo "PASS: Type in the terminal brings the keyboard up, also after the key bar's hide button; typing straight into the terminal sends what was typed; $folder_suite passes with the real keyboard"
+fi

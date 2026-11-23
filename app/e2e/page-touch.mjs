@@ -412,7 +412,7 @@ for (const [width, scale] of [[360, 3], [384, 2.8125], [393, 3], [411, 2.625], [
 
 // The terminal's height is a whole number of rows; what is left over, and the page's padding, sit under the last row.
 // They show the terminal's own background, what the program paints in its last row: OpenCode paints its rows
-// rgb(10,10,10) on the default dark theme's #17191d, and a 20 px band of the page's colour showed under them on a
+// rgb(10,10,10) on the dark theme's background (then #17191d), and a 20 px band of the page's colour showed under them on a
 // 411 dp phone (measured).
 {
   const zlib = await import('node:zlib')
@@ -447,7 +447,7 @@ for (const [width, scale] of [[360, 3], [384, 2.8125], [393, 3], [411, 2.625], [
   for (const dark of [true, false]) {
     const look = dark ? 'dark' : 'light'
     const t = await open({ phone: true, dark })
-    const theme = dark ? [0x17, 0x19, 0x1d] : [0xff, 0xff, 0xff]
+    const theme = dark ? [0, 0, 0] : [0xff, 0xff, 0xff]
     await t.send({ t: 'write', data: 'Line 1 of the answer\r\n$ ' })
     let b = await band(t)
     check(`a shell (${look}): under the last row is its background, the theme's`, near(b.below, theme) && near(b.bottomEdge, theme) && near(b.lastRow, theme), b)

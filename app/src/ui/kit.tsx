@@ -1,10 +1,8 @@
 // What every screen shares: the store as NSH signals, herdr's status glyphs and icons, buttons.
-// NSH 0.3.0 makes classes only of shadcn's token names, so herdr's other colors (herdr-app settings.rs) sit on
-// these (nsh.json): sidebar = chrome (bars), sidebar-primary = canvas (behind cards), sidebar-accent = hover,
-// sidebar-foreground = dim text, accent = selected, secondary = raised; chart-1..4 = working, blocked, done,
-// idle; chart-5 = herdr's accent.
-import { cleanup, Clipboard, colorScheme, Image, openUrl, Scroll, signal, Text, View, type Accessor } from 'nsh'
-import { Sheet } from 'nsh/base'
+// Shared with DSH: black/white canvas, neutral surfaces and status words. chart-2 is only the small attention
+// glyph; ring/chart-5 is actual focus. Normal work, connection and completion are not accent colours.
+import { cleanup, Clipboard, colorScheme, effect, Image, openUrl, platform, signal, Text, untracked, View, type Accessor, type ViewStyle } from 'nsh'
+import { AlertDialog as NativeAlertDialog, Sheet as NativeSheet, type SheetProps } from 'nsh/base'
 import { SIGN_IN_CHECK_URL, type Conn, type Store, type ConnSubscriberSite } from '../store.ts'
 import type { Shown } from '../model/model.ts'
 import { duration } from '../model/agents.ts'
@@ -13,6 +11,28 @@ import { iconTinted } from '../model/programs.ts'
 import { UI } from '../data/ui.ts'
 import { t, type Key } from '../strings/index.ts'
 import { PHONE_UI } from './phone-glyphs.ts'
+
+/** Local popups cover chat without changing its route. Count nested and exiting sheets too. */
+export const modalDepth = signal(0)
+
+export function Sheet(props: SheetProps) {
+  let counted = false
+  const claim = () => { if (!counted) { counted = true; modalDepth.update((n) => n + 1) } }
+  const release = () => { if (counted) { counted = false; modalDepth.update((n) => n - 1) } }
+  effect(() => { const open = props.open ?? props.defaultOpen; if (open) untracked(claim) })
+  cleanup(release)
+  return <NativeSheet {...props}
+    onOpenChange={(open, reason) => { if (open) claim(); props.onOpenChange?.(open, reason) }}
+    onClose={() => { if (props.open !== true) release(); props.onClose?.() }} />
+}
+
+export const AlertDialog = {
+  async show(...args: Parameters<typeof NativeAlertDialog.show>) {
+    modalDepth.update((n) => n + 1)
+    try { return await NativeAlertDialog.show(...args) }
+    finally { modalDepth.update((n) => n - 1) }
+  },
+}
 
 /** The store's change counter as a signal: read `rev()` in a view to follow the store. */
 export function useRev(store: Store): Accessor<number> {
@@ -132,7 +152,7 @@ function StuckSheet(props: { store: Store; open: () => boolean; close: () => voi
   const copy = () => void Clipboard.writeText(s.restart?.command ?? '').then(() => s.toast({ title: t('copied'), level: 'info' }), () => {})
   return (
     <Sheet open={props.open()} side="bottom" onOpenChange={(o) => { if (!o) props.close() }}
-      popupClass={`${PANEL} px-4 pt-3 pb-[env(safe-area-inset-bottom)]`} backdropClass={PANEL_BACKDROP}>
+      popupClass={`${PANEL} px-4 pt-3 pb-[env(safe-area-inset-bottom)]`} popupStyle={PANEL_STYLE} backdropClass={PANEL_BACKDROP}>
       <View testID="stuck-sheet" class="gap-3 pb-2">
         <Text class="text-[15px] font-semibold text-foreground">{t('stuckSheetTitle')}</Text>
         <Each of={order()} key={(c) => c}>{(c) => (
@@ -191,10 +211,10 @@ function BannerButton(props: { testID: string; label: string; onPress: () => voi
 const STATUS_LABEL: Record<string, Key> = { blocked: 'needsYou', done: 'done', working: 'working', idle: 'idle', unknown: 'unknown' }
 export const statusLabel = (s: Shown | string | undefined) => (s ? (STATUS_LABEL[s] ? t(STATUS_LABEL[s]) : s) : '')
 
-/** herdr's status dot: needs you (red), done (blue), working (yellow), idle (grey ring). */
-export function StatusDot(props: { status: Shown | string | undefined; size?: number }) {
+/** Quiet, static list/header summaries; only a genuine needs-you mark gets the attention colour. */
+export function StatusDot(props: { status: Shown | string | undefined; size?: number; attention?: boolean }) {
   const size = () => props.size ?? 8
-  const color = () => ({ blocked: 'bg-chart-2', done: 'bg-chart-3', working: 'bg-chart-1' } as Record<string, string>)[props.status ?? ''] ?? ''
+  const color = () => props.status === 'blocked' ? props.attention === false ? 'bg-muted-foreground' : 'bg-chart-2' : props.status === 'done' || props.status === 'working' ? 'bg-muted-foreground' : ''
   return (
     <View accessibilityLabel={statusLabel(props.status)} testID={`status-${props.status ?? 'none'}`}
       class={`rounded-full ${color() || 'border border-chart-4'}`} style={{ width: size(), height: size() }} />
@@ -221,10 +241,13 @@ export function Glyph(props: { name: keyof typeof GLYPHS; size?: number; class?:
   return <Image src={GLYPHS[props.name]} class={props.class ?? 'tint-muted-foreground'} style={{ width: props.size ?? 18, height: props.size ?? 18 }} />
 }
 
+export const TOUCH_TARGET = platform.os === 'android' ? 48 : 44
+
 export function IconButton(props: { name: keyof typeof GLYPHS; label: string; testID?: string; onPress: () => void; active?: boolean; disabled?: boolean }) {
   return (
     <View role="button" accessibilityLabel={props.label} testID={props.testID} disabled={props.disabled} onPress={props.onPress}
-      class={`w-10 h-10 items-center justify-center rounded-(--radius) active:bg-accent ${props.active ? 'bg-accent' : ''} ${props.disabled ? 'opacity-40' : ''}`}>
+      style={{ width: TOUCH_TARGET, height: TOUCH_TARGET }}
+      class={`items-center justify-center rounded-(--radius) active:bg-accent focus-visible:ring-2 ring-ring transition-colors duration-100 motion-reduce:transition-none ${props.active ? 'bg-accent' : ''} ${props.disabled ? 'opacity-40' : ''}`}>
       <Glyph name={props.name} class={props.active ? 'tint-foreground' : 'tint-muted-foreground'} />
     </View>
   )
@@ -235,14 +258,21 @@ export const openPrivacy = () => void openUrl(PRIVACY_URL).catch(() => {})
 
 /** The app's panels from the bottom (a menu, Add an agent, renaming, the switcher…): a rounded panel with an edge,
  *  over the screen dimmed behind it, so it stands apart from a terminal of the same colour in light and dark. */
-export const PANEL = 'bg-popover rounded-t-[14px] border-t border-x border-border'
+export const appleMaterial = platform.os === 'ios' || platform.os === 'macos'
+/** Only the floating controls use Apple material; conversation and Android/web surfaces stay opaque. */
+export const COMPOSER_SURFACE = appleMaterial ? 'bg-card/80' : 'bg-card'
+export const COMPOSER_STYLE: ViewStyle = appleMaterial ? { glassEffect: 'regular', backdropFilter: 'blur(12px)' } : {}
+export const PANEL = `w-full max-w-[680px] self-center border-t border-x border-border ${platform.os === 'android' ? 'rounded-t-[28px]' : 'rounded-t-[24px]'} ${appleMaterial ? 'bg-popover/85' : 'bg-popover'}`
+/** Native Liquid Glass only on supported Apple OS versions, system material before that. No Android/web blur. */
+export const PANEL_STYLE: ViewStyle = appleMaterial ? { glassEffect: 'regular', backdropFilter: 'blur(16px)' } : {}
 export const PANEL_BACKDROP = 'bg-black/40'
 
 export function Button(props: { label: string; testID?: string; onPress: () => void; kind?: 'primary' | 'plain' | 'outline' | 'danger'; disabled?: boolean }) {
   const k = () => props.kind ?? 'primary'
   return (
     <View role="button" testID={props.testID} disabled={props.disabled} onPress={props.onPress}
-      class={`rounded-(--radius) px-4 py-3 items-center ${k() === 'primary' ? 'bg-primary active:opacity-80' : k() === 'outline' ? 'border border-input active:bg-accent' : 'active:bg-accent'} ${props.disabled ? 'opacity-50' : ''}`}>
+      style={{ minHeight: TOUCH_TARGET }}
+      class={`rounded-(--radius) px-4 py-3 items-center justify-center transition-colors duration-100 motion-reduce:transition-none ${k() === 'primary' ? 'bg-primary active:opacity-80' : k() === 'outline' ? 'border border-input active:bg-accent' : 'active:bg-accent'} ${props.disabled ? 'opacity-50' : ''}`}>
       <Text class={`text-[15px] font-medium ${k() === 'primary' ? 'text-primary-foreground' : k() === 'danger' ? 'text-destructive' : 'text-foreground'}`}>{props.label}</Text>
     </View>
   )
@@ -250,69 +280,50 @@ export function Button(props: { label: string; testID?: string; onPress: () => v
 
 export function SectionLabel(props: { label: string; right?: any }) {
   return (
-    <View class="flex-row items-center justify-between px-4 pt-5 pb-1.5">
-      <Text class="text-[11.5px] font-medium text-sidebar-foreground">{props.label}</Text>
+    <View class="flex-row items-center justify-between px-[22px] pt-5 pb-1.5">
+      <Text class="text-[12px] font-medium text-sidebar-foreground">{props.label}</Text>
       {props.right}
     </View>
   )
 }
 
-/** herdr's agent status mark (defaults/mods/agents): a spinner while working, "Needs you" when blocked (a "!" where
- * a header already says so), a blue dot when done, a grey ring when idle. */
-export function StatusMark(props: { status: Shown | string | undefined; compact?: boolean; size?: number }) {
+/** Summaries never loop. Active work animates only the foreground conversation's current-step text. */
+export function StatusMark(props: { status: Shown | string | undefined; compact?: boolean; size?: number; attention?: boolean }) {
   const size = () => props.size ?? 8
   return (
-    <If when={props.status === 'working'} else={
       <If when={props.status === 'blocked'} else={<StatusDot status={props.status} size={size()} />}>
         <If when={!props.compact} else={
-          <View accessibilityLabel={t('needsYou')} testID="status-blocked" class="w-[15px] h-[15px] items-center justify-center rounded-[4px] bg-chart-2/15">
-            <Text class="text-[10.5px] font-bold text-chart-2">!</Text>
+          <View accessibilityLabel={t('needsYou')} testID="status-blocked" class="w-[15px] h-[15px] items-center justify-center">
+            <Text class={`text-[10.5px] font-bold ${props.attention === false ? 'text-muted-foreground' : 'text-chart-2'}`}>!</Text>
           </View>
         }>
-          <View accessibilityLabel={t('needsYou')} testID="status-blocked" class="px-1.5 h-[18px] justify-center rounded-[5px] bg-chart-2/15">
-            <Text class="text-[10.5px] font-semibold text-chart-2">{t('needsYou')}</Text>
+          <View accessibilityLabel={t('needsYou')} testID="status-blocked" class="flex-row gap-1 items-center h-[18px]">
+            <Text class={`text-[10.5px] font-semibold ${props.attention === false ? 'text-muted-foreground' : 'text-chart-2'}`}>!</Text>
+            <Text class="text-[12px] text-muted-foreground">{t('needsYou')}</Text>
           </View>
         </If>
       </If>
-    }>
-      <Image src={UI.spinner} accessibilityLabel={t('working')} testID="status-working" class="tint-chart-1 animate-spin" style={{ width: size() + 6, height: size() + 6 }} />
-    </If>
   )
 }
 
-/** A space's badge (defaults/mods/spaces): its first letter, white on its colour (model/marks.ts). */
+/** Keep the identifying initial without turning every space into a competing accent. */
 export function SpaceBadge(props: { name: string; color: string; size?: number }) {
   const n = () => props.name.trim() || '?'
   const size = () => props.size ?? 18
   return (
-    <View class="items-center justify-center" style={{ width: size(), height: size(), borderRadius: size() * 5 / 18, backgroundColor: props.color }}>
-      <Text class="text-white font-bold" style={{ fontSize: size() * 10.5 / 18 }}>{[...n()][0].toUpperCase()}</Text>
+    <View class="items-center justify-center bg-secondary" style={{ width: size(), height: size(), borderRadius: size() * 5 / 18 }}>
+      <Text class="text-muted-foreground font-medium" style={{ fontSize: size() * 10.5 / 18 }}>{[...n()][0].toUpperCase()}</Text>
     </View>
   )
 }
 
 export { shortPath } from './paths.ts'
 
-// Strips of the bar's own color: maskImage draws no fade on Android (NSH 0.3.0, API 35 emulator).
-const FADE = ['bg-sidebar/20', 'bg-sidebar/45', 'bg-sidebar/70', 'bg-sidebar/90']
-
-/** A row of buttons that scrolls sideways: while more lies past its end, the end fades, so a button cut there reads as more to scroll to. */
+/** The choices, wrapped onto as many lines as they take, each label whole: what a choice allows ("during this
+ *  session") or refuses is read before it is tapped, not cut off at the screen's edge. */
 export function ChoiceRow(props: { testID?: string; children?: any }) {
   // Taken once: read in the JSX below, `props.children` would be made again (every button with it) each time what it
   // reads changes, such as the menu after any agent's report, and a button under a finger would lose its press.
   const children = props.children
-  const shown = signal(0), content = signal(0), offset = signal(0)
-  const more = () => content() - offset() - shown() > 1
-  return (
-    <View class="flex-1 min-w-0">
-      <Scroll horizontal scrollEventThrottle={16} scrollbar={false} onLayout={(b) => shown.set(b.size.width)} onScroll={(e) => offset.set(e.offset.x)}>
-        <View class="flex-row gap-1.5" onLayout={(b) => content.set(b.size.width)}>{children}</View>
-      </Scroll>
-      <If when={more()}>
-        <View testID={props.testID ? `${props.testID}-more` : undefined} pointerEvents="none" class="absolute right-0 top-0 bottom-0 flex-row">
-          {FADE.map((c) => <View class={`w-[7px] h-full ${c}`} />)}
-        </View>
-      </If>
-    </View>
-  )
+  return <View testID={props.testID} class="flex-1 min-w-0 flex-row flex-wrap gap-1.5">{children}</View>
 }

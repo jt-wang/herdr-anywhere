@@ -26,7 +26,7 @@ final class EdgeBack: XCTestCase {
   func paneName() -> String { let n = el("pane-name"); return n.exists ? n.label : "" }
   var tabName: [String: String] = [:]
   /** Space sp1 on tab `tab`: tb2 (Codex, working), whose terminal's own swipe goes to tb1 and so shows; tb1 (Claude Code,
-   *  asking), whose choices sit in a row that scrolls sideways (ui/kit.tsx ChoiceRow). */
+   *  asking), whose choices sit under its terminal (ui/kit.tsx ChoiceRow). */
   func onTab(_ tab: String) {
     if let n = tabName[tab], n == paneName() { return }
     el("switcher").tap()

@@ -376,7 +376,7 @@ typein "after the composer"
 # each player the app starts (dumpsys audio, "playback activity"); the emulator has no audio out, so this is the
 # player starting, not a sound heard.
 printf '%s\n' "touch hm-alert-ran; printf '\033]7501;state=idle\033\\\\'; sleep 3; printf '\033]7501;state=blocked\033\\\\'" > "$work/home/src/acme-api/hm-alert.sh"
-uid=$("$adb" shell pm list packages -U "$id" | grep -oE 'uid:[0-9]+' | head -1 | cut -d: -f2)
+uid=$("$adb" shell pm list packages -U "$id" | awk -v wanted="package:$id" '$1 == wanted' | grep -oE 'uid:[0-9]+' | head -1 | cut -d: -f2)
 [ -n "$uid" ] || { echo "FAIL: no uid for $id, which the audio log names the app's players by"; exit 1; }
 # Android keeps earlier runs' players in that log; count only the ones that appear after this point.
 before=$("$adb" shell dumpsys audio | grep -oE "new player piid:[0-9]+ uid/pid:$uid/" | grep -oE 'piid:[0-9]+' | tr '\n' ' ')
@@ -475,7 +475,7 @@ echo "ok: notifications away from the app: a question with who, what and where o
 # A new space's folder, picked by browsing: home, then src, then beta-web. The terminal starts there (hc ls: its cwd).
 started_in() {
   for _ in $(seq 1 15); do
-    "$hc" ls --json | python3 -c 'import json,sys; sys.exit(0 if any(t["cwd"].endswith(sys.argv[1]) for t in json.load(sys.stdin)["terminals"]) else 1)' "$1" && return 0
+    "$hc" ls --json | python3 -c 'import json,sys; prior=set(json.loads(sys.argv[2])); sys.exit(0 if any(t["address"] not in prior and t["cwd"].endswith(sys.argv[1]) for t in json.load(sys.stdin)["terminals"]) else 1)' "$1" "${2:-[]}" && return 0
     sleep 1
   done
   return 1
@@ -512,6 +512,20 @@ after=""; for _ in 1 2 3 4 5; do after=$(at switch-new-folder); [ -n "$after" ] 
 sleep 1
 echo "ok: a drag on the switcher leaves its rows in place"
 to_home # from the pane the notification opened
+# The keyboard plus 200% system text must not consume the entire folder-results viewport.
+# Only emulators have their display geometry changed; the helper restores every override.
+case "$ANDROID_SERIAL" in emulator-*)
+  ANDROID_SERIAL="$ANDROID_SERIAL" python3 "$app/e2e/android-folder-keyboard.py" acme-api
+  before_compact=$("$hc" ls --json | python3 -c 'import json,sys; print(json.dumps([t["address"] for t in json.load(sys.stdin)["terminals"]]))')
+  tap new-terminal
+  started_in /src/acme-api "$before_compact" || { echo "FAIL: compact folder picker did not create a new terminal in the selected folder"; exit 1; }
+  to_home
+  # The text size changed while the picker is open, both ways across where its title stops staying at the top. The
+  # sample folders make ~/src's list longer than the sheet at 1x, so a drag shows whether the title moves with it.
+  for n in 1 2 3 4 5 6; do mkdir -p "$work/home/src/sample-$n"; done
+  ANDROID_SERIAL="$ANDROID_SERIAL" python3 "$app/e2e/android-folder-resize.py" acme-api
+  for n in 1 2 3 4 5 6; do rmdir "$work/home/src/sample-$n"; done
+;; esac
 tap new
 # New space opens on the folder browser; the program comes after the folder.
 for _ in $(seq 1 10); do screen_has 'resource-id="folder-search"' && break; sleep 1; done

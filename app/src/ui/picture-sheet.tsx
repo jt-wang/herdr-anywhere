@@ -6,11 +6,10 @@
 // to it, and closes on a swipe down while it is not zoomed in; an image of the record is shown as the chat fetched it,
 // with no path when the record gives none.
 import { Clipboard, effect, Image, Scroll, signal, Text, untracked, View, windowSize, type YNode } from 'nsh'
-import { Sheet } from 'nsh/base'
 import type { Store } from '../store.ts'
 import type { Picture } from '../link.ts'
 import { copyPicture } from '../page.ts'
-import { IconButton, PANEL, PANEL_BACKDROP, useSignal } from './kit.tsx'
+import { IconButton, PANEL, PANEL_BACKDROP, PANEL_STYLE, Sheet, useSignal } from './kit.tsx'
 import { maxZoom, pictureZoom } from './picture-zoom.ts'
 import { t } from '../strings/index.ts'
 
@@ -80,7 +79,7 @@ export function PictureSheet(props: { store: Store }) {
   return (
     <Sheet open={asked() !== null} side="bottom" onOpenChange={(o) => { if (!o) close() }} closeOnSwipe={full() && !zoomedIn()}
       popupClass={full() ? 'bg-popover h-full pb-[env(safe-area-inset-bottom)]'
-        : `${PANEL} max-h-[88%] pb-[env(safe-area-inset-bottom)]`} backdropClass={PANEL_BACKDROP}>
+        : `${PANEL} max-h-[88%] pb-[env(safe-area-inset-bottom)]`} popupStyle={full() ? {} : PANEL_STYLE} backdropClass={PANEL_BACKDROP}>
       <If when={asked()}>
         <View testID="picture-sheet" class={full() ? 'flex-1 pt-[env(safe-area-inset-top)]' : 'shrink'}>
           <View class="self-center w-9 h-1 mt-2 rounded-full bg-border" />

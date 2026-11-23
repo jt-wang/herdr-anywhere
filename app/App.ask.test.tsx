@@ -83,6 +83,39 @@ test('my own answer: its row, then the text with Enter', async () => {
   expect(sent(app)).toEqual(['Ship on Friday'])
 })
 
+test("my own answer stays open with its words while the agent draws the same question again, and through a moment without it", async () => {
+  const app = await chatOn(Q1, QUESTION, asked)
+  await app.press('id:ask-own')
+  await app.type('id:ask-own-input', 'Ship on Friday')
+  // The keyboard resizes the terminal and the agent redraws it: the card is read again, the same question laid out anew.
+  const relaid = Q1.replace('One file changes; nothing else moves', 'One file changes;\n     nothing else moves')
+  expect(relaid).not.toBe(Q1)
+  await app.host.send('fake.screen', { address: 't1', screen: relaid })
+  await app.clock.runFor(3000)
+  expect(app.value('id:ask-own-input')).toBe('Ship on Friday')
+  // Read mid-redraw: no menu on the screen for a moment, so no card; then the question again.
+  await app.host.send('fake.screen', { address: 't1', screen: '' })
+  await app.clock.runFor(300)
+  await app.host.send('fake.screen', { address: 't1', screen: Q1 })
+  await app.clock.runFor(3000)
+  expect(app.value('id:ask-own-input')).toBe('Ship on Friday')
+  await app.press('id:ask-own-send')
+  await app.clock.runFor(3000)
+  expect(sent(app)).toEqual(['Ship on Friday'])
+})
+
+test('my own answer closes when the agent asks something else', async () => {
+  const app = await chatOn(Q1, QUESTION, asked)
+  await app.press('id:ask-own')
+  await app.type('id:ask-own-input', 'Ship on Friday')
+  await app.host.send('fake.screen', { address: 't1', screen: MULTI })
+  await app.clock.runFor(3000)
+  expect(app.count('id:ask-own-input')).toBe(0)
+  // Opened again for the new question: an empty box, not the words written for the last one.
+  await app.press('id:ask-own')
+  expect(app.value('id:ask-own-input')).toBe('')
+})
+
 test('my own answer in a multi-select question: the arrows to its row, the text, Enter; the card then shows it ticked, and Next from that row is Tab and Enter', async () => {
   const app = await chatOn(MULTI, QUESTION, asked)
   await app.host.send('fake.flow', { address: 't1', steps: [{ keys: ['down', 'down', 'down'] }, { text: 'Footer row', screen: OWN_TYPED }, { keys: ['enter'], screen: OWN_TICKED }, { keys: ['tab', 'enter'], screen: REVIEW }] })

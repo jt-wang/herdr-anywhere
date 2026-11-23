@@ -60,10 +60,10 @@ test('Ctrl from the key bar turns the next letter into its control character', (
   expect(ctrlKey('ab')).toBe('ab')
 })
 
-test("the terminal takes herdr's palette: graphite in the dark, paper in the light", () => {
-  expect(xtermTheme(true).background).toBe('#17191d')
+test("the terminal takes herdr's palette: graphite on pure black in the dark, paper in the light", () => {
+  expect(xtermTheme(true).background).toBe('#000000')
   // xterm's default is white: a bright line down a dark terminal's edge once it has been resized.
-  expect(xtermTheme(true).overviewRulerBorder).toBe('#17191d')
+  expect(xtermTheme(true).overviewRulerBorder).toBe('#000000')
   expect(xtermTheme(false).overviewRulerBorder).toBe('#ffffff')
   expect(xtermTheme(true).blue).toBe('#96b2d7')
   expect(xtermTheme(true).black).toBe('#45484f')

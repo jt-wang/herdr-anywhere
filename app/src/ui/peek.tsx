@@ -1,9 +1,8 @@
 // Peek: a terminal without a pane (an agent's sub-agent) watched from a sheet without taking its size;
 // keep it as a tab of its own, or close it (herdr-app defaults/mods/agents peek).
 import { Text, View, type Signal } from 'nsh'
-import { Sheet } from 'nsh/base'
 import type { Store } from '../store.ts'
-import { Button, PANEL, PANEL_BACKDROP, ProgramIcon, StatusDot, useRev } from './kit.tsx'
+import { Button, PANEL, PANEL_BACKDROP, PANEL_STYLE, ProgramIcon, Sheet, StatusDot, useRev } from './kit.tsx'
 import { t } from '../strings/index.ts'
 import { TerminalView } from './terminal.tsx'
 
@@ -14,7 +13,7 @@ export function PeekSheet(props: { store: Store; address: Signal<string | null>;
   const close = () => props.address.set(null)
   return (
     <Sheet open={props.address() !== null} side="bottom" onOpenChange={(o) => { if (!o) close() }}
-      popupClass={`${PANEL} h-[70%] pb-[env(safe-area-inset-bottom)] mb-3`} backdropClass={PANEL_BACKDROP}>
+      popupClass={`${PANEL} h-[70%] pb-[env(safe-area-inset-bottom)] mb-3`} popupStyle={PANEL_STYLE} backdropClass={PANEL_BACKDROP}>
       <If when={props.address()}>{(addr) => (
         <View class="flex-1">
           <View class="flex-row items-center gap-2 px-4 h-11">

@@ -7,13 +7,15 @@
 import { createRequire } from 'node:module'
 import { mkdirSync, readFileSync, readdirSync } from 'node:fs'
 import { inflateSync } from 'node:zlib'
-import { PageChannel, terminalPage } from '../src/ui/terminal-page.ts'
+import { PageChannel, terminalPage, xtermTheme } from '../src/ui/terminal-page.ts'
 import { KittyImages } from '../src/model/kitty.ts'
 
 const require = createRequire(process.env.PLAYWRIGHT_DIR + '/')
 const { chromium } = require('./index.js')
 const fixture = (name) => JSON.parse(readFileSync(new URL(`../fixtures/kitty/omp-18.18.3-${name}.json`, import.meta.url), 'utf8'))
 const debug = fixture('debug'), read = fixture('read')
+// The dark terminal's background, as [r, g, b]: what the cells with no picture and no marks show.
+const BG = xtermTheme(true).background.match(/\w\w/g).map((h) => parseInt(h, 16))
 const shots = new URL('out/kitty/', import.meta.url).pathname
 mkdirSync(shots, { recursive: true })
 
@@ -142,7 +144,7 @@ for (const dark of [true, false]) {
   }, r)
   const right = await pixels(t.page, { x: r.x + r.width, y: r.y, width: r.width / r.cols, height: r.height })
   let off = 0
-  for (let y = 0; y < right.h; y++) for (let x = 0; x < right.w; x++) { const p = right.at(x, y); if (Math.abs(p[0] - 0x17) + Math.abs(p[1] - 0x19) + Math.abs(p[2] - 0x1d) > 6) off++ }
+  for (let y = 0; y < right.h; y++) for (let x = 0; x < right.w; x++) { const p = right.at(x, y); if (Math.abs(p[0] - BG[0]) + Math.abs(p[1] - BG[1]) + Math.abs(p[2] - BG[2]) > 6) off++ }
   check('the cells right of the read picture show only the background', spaces === r.rows && off === 0, { spaces, off })
   await t.page.screenshot({ path: `${shots}after-read-dark.png` })
   await t.close()
@@ -168,7 +170,7 @@ for (const dark of [true, false]) {
   check('and drawn as before', same >= 44, same)
   const right = r ? await pixels(t.page, { x: r.x + r.width, y: r.y, width: r.width / r.cols, height: r.height }) : null
   let off = 0
-  for (let y = 0; right && y < right.h; y++) for (let x = 0; x < right.w; x++) { const p = right.at(x, y); if (Math.abs(p[0] - 0x17) + Math.abs(p[1] - 0x19) + Math.abs(p[2] - 0x1d) > 6) off++ }
+  for (let y = 0; right && y < right.h; y++) for (let x = 0; x < right.w; x++) { const p = right.at(x, y); if (Math.abs(p[0] - BG[0]) + Math.abs(p[1] - BG[1]) + Math.abs(p[2] - BG[2]) > 6) off++ }
   check('with only the background right of it', right && off === 0, off)
   await t.page.screenshot({ path: `${shots}after-read-cut-dark.png` })
   await t.close()
@@ -197,7 +199,7 @@ for (const dark of [true, false]) {
   const r = await block(t.page)
   const shot = r ? await pixels(t.page, r) : null
   let bg = 0, n = 0
-  for (let y = 2; shot && y < shot.h; y += 3) for (let x = 2; x < shot.w; x += 3) { n++; const p = shot.at(x, y); if (Math.abs(p[0] - 0x17) + Math.abs(p[1] - 0x19) + Math.abs(p[2] - 0x1d) <= 6) bg++ }
+  for (let y = 2; shot && y < shot.h; y += 3) for (let x = 2; x < shot.w; x += 3) { n++; const p = shot.at(x, y); if (Math.abs(p[0] - BG[0]) + Math.abs(p[1] - BG[1]) + Math.abs(p[2] - BG[2]) <= 6) bg++ }
   check('placeholders without their picture show no marks', n > 0 && bg === n, { bg, n })
   await t.page.screenshot({ path: `${shots}after-missing-dark.png` })
   await t.close()

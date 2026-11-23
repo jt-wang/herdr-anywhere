@@ -364,16 +364,66 @@ func patchCounts(diff string) (added, deleted int) {
 
 func patchOf(details json.RawMessage) string {
 	var d struct {
-		Patch string `json:"patch"`
+		Patch   string  `json:"patch"`
+		Diff    string  `json:"diff"`
+		OldText *string `json:"oldText"`
+		NewText *string `json:"newText"`
 	}
 	json.Unmarshal(details, &d)
-	return d.Patch
+	if d.Patch != "" {
+		return d.Patch
+	}
+	if strings.Contains(d.Diff, "@@ ") {
+		return d.Diff
+	}
+	var lines []string
+	for _, line := range strings.Split(d.Diff, "\n") {
+		if m := numberedDiff.FindStringSubmatch(line); m != nil {
+			if len(lines) == 0 {
+				lines = append(lines, "@@ -"+m[2]+" +"+m[2]+" @@")
+			}
+			lines = append(lines, m[1]+m[3])
+		}
+	}
+	if len(lines) > 0 {
+		return strings.Join(lines, "\n")
+	}
+	if d.OldText != nil && d.NewText != nil {
+		lines = append(lines, "@@ -1 +1 @@")
+		for i, text := range []string{*d.OldText, *d.NewText} {
+			if text == "" {
+				continue
+			}
+			for _, line := range strings.Split(strings.TrimSuffix(text, "\n"), "\n") {
+				lines = append(lines, []string{"-", "+"}[i]+line)
+			}
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+var numberedDiff = regexp.MustCompile(`^([ +\-])\s*(\d+)\|(.*)$`)
+
+func toolArgs(p part, result *message) args {
+	var a args
+	json.Unmarshal(p.Arguments, &a)
+	if a.Path == "" && result != nil {
+		var d struct {
+			Path         string `json:"path"`
+			ResolvedPath string `json:"resolvedPath"`
+		}
+		json.Unmarshal(result.Details, &d)
+		a.Path = d.Path
+		if a.Path == "" {
+			a.Path = d.ResolvedPath
+		}
+	}
+	return a
 }
 
 // toolStep: the step a tool call shows as. result is its toolResult, nil while it runs.
 func toolStep(p part, result *message, cwd string) chat.Step {
-	var a args
-	json.Unmarshal(p.Arguments, &a)
+	a := toolArgs(p, result)
 	failed := result != nil && result.IsError
 	s := chat.Step{ID: p.ID, Failed: failed}
 	switch p.Name {
@@ -604,8 +654,7 @@ func (r *Reader) Detail(path, step string) (chat.Detail, error) {
 	if call == nil {
 		return chat.Detail{}, chat.ErrNoStep
 	}
-	var a args
-	json.Unmarshal(call.Arguments, &a)
+	a := toolArgs(*call, result)
 	out := ""
 	if result != nil {
 		out = result.text()

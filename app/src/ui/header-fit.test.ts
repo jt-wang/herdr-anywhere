@@ -31,7 +31,7 @@ test("an activity squeezed to no width is cut, whatever its text layout says", (
   expect(showsAWord(BASH, [{ text: 'Bash…' }])).toBe(true)
 })
 
-test("the title's chip is tighter only from the text size where the header's text stops growing (1.3x)", () => {
+test('the title spacing compacts at larger text sizes without limiting their scale', () => {
   for (const scale of [0.85, 1, 1.15]) expect(headerChipTight(scale)).toBe(false)
   for (const scale of [1.3, 1.5, 2]) expect(headerChipTight(scale)).toBe(true)
 })

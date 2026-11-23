@@ -1,0 +1,33 @@
+name: NativeShell Android with the app's patches
+description: Matched CLI and full Rust/Java AAR; never combine new Java with the release's old libnsh.so.
+runs:
+  using: composite
+  steps:
+    - name: Key
+      id: key
+      shell: bash
+      run: |
+        echo "key=nsh-android-$(app/ios/nsh-patches/key.sh | tr ' ' '-')-${RUNNER_OS}-${RUNNER_ARCH}" >> "$GITHUB_OUTPUT"
+    - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      id: cache
+      with:
+        path: ${{ runner.temp }}/nsh-android
+        key: ${{ steps.key.outputs.key }}-${{ hashFiles('app/scripts/nsh-runtime.sh', 'app/ios/nsh-patches/build-nsh-cli.sh', 'app/android/nsh-patches/*') }}
+    - name: Build matched CLI and AAR
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;27.2.12479018" "platforms;android-35" "build-tools;35.0.0" >/dev/null
+        sh app/scripts/nsh-runtime.sh android "$RUNNER_TEMP/nsh-android-source" "$RUNNER_TEMP/nsh-android"
+    - name: Verify runtime and select its CLI
+      shell: bash
+      run: |
+        sh app/scripts/nsh-runtime.sh --verify-android "$RUNNER_TEMP/nsh-android"
+        echo "NSH_HOME=$RUNNER_TEMP/nsh-android" >> "$GITHUB_ENV"
+        echo "NSH_RUNTIME=$RUNNER_TEMP/nsh-android" >> "$GITHUB_ENV"
+        echo "$RUNNER_TEMP/nsh-android/cli/bin" >> "$GITHUB_PATH"
+    - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      if: steps.cache.outputs.cache-hit != 'true'
+      with:
+        path: ${{ runner.temp }}/nsh-android
+        key: ${{ steps.key.outputs.key }}-${{ hashFiles('app/scripts/nsh-runtime.sh', 'app/ios/nsh-patches/build-nsh-cli.sh', 'app/android/nsh-patches/*') }}

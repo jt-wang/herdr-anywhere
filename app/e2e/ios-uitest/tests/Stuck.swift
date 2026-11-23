@@ -1,12 +1,13 @@
 import XCTest
 // Run by e2e/ios-stuck.sh once the Companion has stopped: the banner that says the app still can't reach the computer
 // (kit.tsx ConnBanner) and the sheet its Other options opens (StuckSheet). Leaves $DIR/$THEME-1-banner.png and
-// $DIR/$THEME-2-sheet.png, then closes the sheet.
+// $DIR/$THEME-2-sheet.png, then closes the sheet. EXPECT=companion (the local network, where the stopped computer
+// refuses): the line under the banner says Companion may not be running, and the sheet lists Companion above the network.
 final class Stuck: XCTestCase {
   func test() {
     continueAfterFailure = false
     let env = ProcessInfo.processInfo.environment
-    let dir = env["DIR"] ?? "/tmp/stuck", theme = env["THEME"] ?? "light"
+    let dir = env["DIR"] ?? "/tmp/stuck", theme = env["THEME"] ?? "light", expect = env["EXPECT"] ?? ""
     let app = XCUIApplication(bundleIdentifier: "io.jingtao.herdranywhere")
     app.activate()
     func el(_ id: String) -> XCUIElement { app.descendants(matching: .any)[id].firstMatch }
@@ -19,12 +20,18 @@ final class Stuck: XCTestCase {
     // Shot once it says how old the screen is (60 s after the last update, kit.tsx age), as e2e/android-reconnect.sh
     // does: the light and the dark run, and the two phones, show the same banner.
     XCTAssertTrue(el("conn-age").waitForExistence(timeout: 90), "the banner never said how old the screen is")
+    if expect == "companion" {
+      XCTAssertEqual(el("stuck-likely").label, "Companion may not be running on the computer.", "the banner's likeliest cause")
+    }
     sleep(2); shot("1-banner")
     el("conn-options").tap()
     if !el("stuck-sheet").waitForExistence(timeout: 5), el("conn-options").exists { el("conn-options").tap() }
     XCTAssertTrue(el("stuck-sheet").waitForExistence(timeout: 10), "Other options opened no sheet")
     for id in ["conn-sign-in", "conn-command", "conn-copy", "conn-open-connection", "pair-again"] {
       XCTAssertTrue(el(id).exists, "the sheet has no \(id)")
+    }
+    if expect == "companion" {
+      XCTAssertLessThan(el("stuck-companion").frame.minY, el("stuck-network").frame.minY, "the sheet lists the network above Companion")
     }
     let scan = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Only scan the QR code")).firstMatch
     XCTAssertTrue(scan.exists, "the sheet does not say to scan only the computer's own code")

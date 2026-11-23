@@ -1017,8 +1017,18 @@ func (r *Reader) Image(path, id string) (string, []byte, error) {
 		if !ok {
 			return "", nil, chat.ErrNoStep
 		}
-		b, err := os.ReadFile(file)
+		f, err := os.Open(file)
 		if err != nil {
+			return "", nil, chat.ErrNoStep
+		}
+		defer f.Close()
+		const maxImage = 12 << 20
+		st, err := f.Stat()
+		if err != nil || !st.Mode().IsRegular() || st.Size() > maxImage {
+			return "", nil, chat.ErrNoStep
+		}
+		b, err := io.ReadAll(io.LimitReader(f, maxImage+1))
+		if err != nil || len(b) > maxImage {
 			return "", nil, chat.ErrNoStep
 		}
 		// What the file really is, not only what the record says it is.

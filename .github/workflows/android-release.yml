@@ -69,6 +69,7 @@ jobs:
         run: |
           app/e2e/ci/tools.sh nsh
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-36' 'build-tools;36.0.0'
+      - uses: ./.github/actions/nsh-android
       - name: Build without release signing credentials
         run: |
           unset HERDR_ANDROID_KEYSTORE HERDR_ANDROID_KEYSTORE_PASSWORD

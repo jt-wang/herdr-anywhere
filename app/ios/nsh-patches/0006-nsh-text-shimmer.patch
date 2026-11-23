@@ -1,0 +1,2159 @@
+diff --git a/Cargo.toml b/Cargo.toml
+index a12ad306..407789ed 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -260,6 +260,8 @@ objc2-ui-kit = { version = "0.3.2", default-features = false, features = [
+   "UIGeometry",
+   "UIGestureRecognizer",
+   "UIGraphics",
++  "UIGraphicsImageRenderer",
++  "UIGraphicsRenderer",
+   "UIImage",
+   "UIInterface",
+   "UILabel",
+diff --git a/crates/nsh-core/src/core/classes.rs b/crates/nsh-core/src/core/classes.rs
+index f9c3d98f..d3afefd7 100644
+--- a/crates/nsh-core/src/core/classes.rs
++++ b/crates/nsh-core/src/core/classes.rs
+@@ -1164,6 +1164,14 @@ impl<M: TextEngine> Core<M> {
+                 let id = node.id;
+                 self.color_changed.push((k, id));
+             }
++            if node.text_style.color.is_none()
++                && node
++                    .props
++                    .as_ref()
++                    .is_some_and(|p| p.text_shimmer && p.text_shimmer_color.is_none())
++            {
++                self.mark(k, dirty::VIEW_PROPS);
++            }
+             let node = &self.nodes[k as usize];
+             if node.text_style.color.is_none() {
+                 stack.extend_from_slice(&node.children);
+diff --git a/crates/nsh-core/src/core/mod.rs b/crates/nsh-core/src/core/mod.rs
+index 83527232..91510d02 100644
+--- a/crates/nsh-core/src/core/mod.rs
++++ b/crates/nsh-core/src/core/mod.rs
+@@ -619,6 +619,16 @@ impl Node {
+     /// screen readers skip a spare list cell.
+     fn mounted_props(&self) -> Box<ViewProps> {
+         let mut props = self.props.clone().unwrap_or_default();
++        if self.kind == Kind::Text {
++            props.text_shimmer_color = Some(props.text_shimmer_color.unwrap_or_else(|| {
++                crate::shimmer::highlight(
++                    self.text_style
++                        .color
++                        .or(self.inherited_color)
++                        .unwrap_or(Color::BLACK),
++                )
++            }));
++        }
+         if props.pointer_events == crate::props::PointerEvents::Auto {
+             props.pointer_events = self.class_pointer;
+         }
+@@ -2337,6 +2347,14 @@ impl<M: TextEngine> Core<M> {
+             self.needs_layout = true;
+         }
+         let mut flags = 0;
++        if color_passed
++            && self.nodes[key as usize]
++                .props
++                .as_ref()
++                .is_some_and(|p| p.text_shimmer && p.text_shimmer_color.is_none())
++        {
++            flags |= dirty::VIEW_PROPS;
++        }
+         if view_changed {
+             flags |= dirty::VIEW;
+             // A drawing filling with the view's background paints the new
+@@ -2977,6 +2995,18 @@ impl<M: TextEngine> Core<M> {
+                     self.mark_text_block(key);
+                 }
+             }
++            Prop::Shimmer(shimmer) => {
++                if node.props.as_ref().is_some_and(|p| p.text_shimmer) != shimmer {
++                    node.props.get_or_insert_default().text_shimmer = shimmer;
++                    flags |= dirty::VIEW_PROPS;
++                }
++            }
++            Prop::ShimmerColor(color) => {
++                if node.props.as_ref().and_then(|p| p.text_shimmer_color) != color {
++                    node.props.get_or_insert_default().text_shimmer_color = color;
++                    flags |= dirty::VIEW_PROPS;
++                }
++            }
+             Prop::AdjustsFontSizeToFit(_) | Prop::MinimumFontScale(_) => {
+                 let before = (node.paragraph.fit, node.paragraph.min_font_scale);
+                 match prop {
+diff --git a/crates/nsh-core/src/core/tests.rs b/crates/nsh-core/src/core/tests.rs
+index 5d3826c5..0367702a 100644
+--- a/crates/nsh-core/src/core/tests.rs
++++ b/crates/nsh-core/src/core/tests.rs
+@@ -17876,6 +17876,325 @@ fn audio_session_reaches_the_video() {
+     assert_eq!(props.audio_session, crate::AudioSession::Playback);
+ }
+ 
++#[test]
++fn shimmer_toggles_reuse_text_layouts() {
++    use crate::js::host::HostProps;
++
++    for (content, fit, hidden) in [
++        ("hello", false, false),
++        ("", false, false),
++        ("long enough to shrink", true, false),
++        ("hidden", false, true),
++    ] {
++        let mut c = core();
++        apply(
++            &mut c,
++            vec![
++                Op::Create {
++                    id: 2,
++                    tag: Tag::Text,
++                },
++                Op::CreateText {
++                    id: 4,
++                    text: content.into(),
++                },
++                Op::Insert {
++                    parent: 2,
++                    child: 4,
++                    before: None,
++                },
++                Op::Insert {
++                    parent: ROOT_ID,
++                    child: 2,
++                    before: None,
++                },
++                Op::SetProp {
++                    id: 2,
++                    prop: Prop::AdjustsFontSizeToFit(fit),
++                },
++                style_op(
++                    2,
++                    &[
++                        ("width", StyleValue::Number(30.0)),
++                        ("height", StyleValue::Number(16.0)),
++                    ],
++                ),
++            ],
++        );
++        if hidden {
++            apply(
++                &mut c,
++                vec![style_op(2, &[("display", StyleValue::Str("none"))])],
++            );
++        }
++        let batch = c.commit().unwrap();
++        let (old_text, old_layout) = batch
++            .items
++            .iter()
++            .find_map(|i| match i {
++                MountItem::Text {
++                    id: 2,
++                    text,
++                    layout,
++                    ..
++                } => Some((text.clone(), layout.clone())),
++                _ => None,
++            })
++            .unwrap();
++        assert!(!ViewProps::default().text_shimmer);
++        assert!(
++            !batch
++                .items
++                .iter()
++                .any(|i| matches!(i, MountItem::ViewProps { id: 2, .. }))
++        );
++        let layout_id = c.nodes[c.key(2).unwrap() as usize].layout.unwrap();
++        let cache = c.text_cx(layout_id).cache;
++        let counts = (
++            c.text_engine.prepares.get(),
++            c.text_engine.layouts.get(),
++            c.text_engine.measures.get(),
++        );
++        for prop in [
++            Prop::Shimmer(true),
++            Prop::Shimmer(false),
++            Prop::Shimmer(true),
++            Prop::Shimmer(true).reset().unwrap(),
++        ] {
++            let Prop::Shimmer(expected) = prop else {
++                panic!("shimmer reset")
++            };
++            apply(&mut c, vec![Op::SetProp { id: 2, prop }]);
++            let batch = c.commit().unwrap();
++            assert_eq!(batch.items.len(), 1, "paint-only update");
++            let MountItem::ViewProps { id: 2, props } = &batch.items[0] else {
++                panic!("paint update")
++            };
++            assert_eq!(props.text_shimmer, expected);
++            let cx = c.text_cx(layout_id);
++            let laid = cx.laid_out.as_ref().unwrap();
++            assert!(Arc::ptr_eq(&old_text, &laid.text));
++            assert!(Arc::ptr_eq(&old_layout.0, &laid.layout.0));
++            assert_eq!(cx.cache, cache);
++            assert_eq!(
++                (
++                    c.text_engine.prepares.get(),
++                    c.text_engine.layouts.get(),
++                    c.text_engine.measures.get()
++                ),
++                counts
++            );
++            assert!(c.commit().is_none());
++        }
++        apply(
++            &mut c,
++            vec![Op::SetProp {
++                id: 2,
++                prop: Prop::Shimmer(false),
++            }],
++        );
++        assert!(c.commit().is_none(), "unchanged prop does not mount");
++        for color in [Some(Color(0x123456ff)), None] {
++            apply(
++                &mut c,
++                vec![Op::SetProp {
++                    id: 2,
++                    prop: Prop::ShimmerColor(color),
++                }],
++            );
++            let batch = c.commit().unwrap();
++            assert!(
++                matches!(&batch.items[..], [MountItem::ViewProps { id: 2, props }]
++                if props.text_shimmer_color == Some(color.unwrap_or(Color::BLACK)))
++            );
++            assert_eq!(c.text_cx(layout_id).cache, cache);
++            assert_eq!(
++                (
++                    c.text_engine.prepares.get(),
++                    c.text_engine.layouts.get(),
++                    c.text_engine.measures.get()
++                ),
++                counts
++            );
++        }
++    }
++}
++
++#[test]
++fn shimmer_on_nested_spans_has_no_effect() {
++    let mut c = core();
++    apply(
++        &mut c,
++        vec![
++            Op::Create {
++                id: 2,
++                tag: Tag::Text,
++            },
++            Op::Create {
++                id: 4,
++                tag: Tag::Text,
++            },
++            Op::CreateText {
++                id: 6,
++                text: "nested".into(),
++            },
++            Op::SetProp {
++                id: 4,
++                prop: Prop::Shimmer(true),
++            },
++            Op::Insert {
++                parent: 4,
++                child: 6,
++                before: None,
++            },
++            Op::Insert {
++                parent: 2,
++                child: 4,
++                before: None,
++            },
++            Op::Insert {
++                parent: ROOT_ID,
++                child: 2,
++                before: None,
++            },
++        ],
++    );
++    let batch = c.commit().unwrap();
++    assert!(
++        !batch
++            .items
++            .iter()
++            .any(|i| matches!(i, MountItem::ViewProps { .. }))
++    );
++    let counts = (
++        c.text_engine.prepares.get(),
++        c.text_engine.layouts.get(),
++        c.text_engine.measures.get(),
++    );
++    apply(
++        &mut c,
++        vec![Op::SetProp {
++            id: 4,
++            prop: Prop::Shimmer(false),
++        }],
++    );
++    assert!(c.commit().is_none());
++    assert_eq!(
++        (
++            c.text_engine.prepares.get(),
++            c.text_engine.layouts.get(),
++            c.text_engine.measures.get()
++        ),
++        counts
++    );
++    apply(
++        &mut c,
++        vec![Op::SetProp {
++            id: 2,
++            prop: Prop::Shimmer(true),
++        }],
++    );
++    let batch = c.commit().unwrap();
++    assert!(
++        matches!(&batch.items[..], [MountItem::ViewProps { id: 2, props }] if props.text_shimmer)
++    );
++}
++
++#[test]
++fn shimmer_host_prop_is_text_only() {
++    use crate::js::host::{HostProps, on};
++
++    let mut types = crate::element::TsTypes::default();
++    let mut specs = Vec::new();
++    Prop::specs(&mut types, &mut specs);
++    let spec = specs.iter().find(|s| s.name == "shimmer").unwrap();
++    assert_eq!(spec.on, on::TEXT);
++    assert!(crate::js::host::declarations().contains("shimmer?: boolean"));
++    assert_eq!(Prop::Shimmer(true).reset(), Some(Prop::Shimmer(false)));
++    let spec = specs.iter().find(|s| s.name == "shimmerColor").unwrap();
++    assert_eq!(spec.on, on::TEXT);
++    assert!(crate::js::host::declarations().contains("shimmerColor?: Color"));
++    assert_eq!(
++        Prop::ShimmerColor(Some(Color::BLACK)).reset(),
++        Some(Prop::ShimmerColor(None))
++    );
++}
++
++#[test]
++fn shimmer_highlight_resolves_inherited_color_and_override() {
++    let mut c = core();
++    apply(
++        &mut c,
++        vec![
++            Op::Create {
++                id: 2,
++                tag: Tag::Text,
++            },
++            Op::CreateText {
++                id: 4,
++                text: "highlight".into(),
++            },
++            Op::Insert {
++                parent: 2,
++                child: 4,
++                before: None,
++            },
++            Op::Insert {
++                parent: ROOT_ID,
++                child: 2,
++                before: None,
++            },
++            Op::SetProp {
++                id: 2,
++                prop: Prop::Shimmer(true),
++            },
++            style_op(ROOT_ID, &[("color", StyleValue::Str("#929292"))]),
++        ],
++    );
++    let batch = c.commit().unwrap();
++    assert!(
++        batch
++            .items
++            .iter()
++            .any(|i| matches!(i, MountItem::ViewProps { id: 2, props }
++        if props.text_shimmer && props.text_shimmer_color == Some(Color(0xb8b8b8ff))))
++    );
++    for (op, expected) in [
++        (
++            style_op(ROOT_ID, &[("color", StyleValue::Str("#666666"))]),
++            Color(0x424242ff),
++        ),
++        (
++            Op::SetProp {
++                id: 2,
++                prop: Prop::ShimmerColor(Some(Color(0x123456ff))),
++            },
++            Color(0x123456ff),
++        ),
++        (
++            Op::SetProp {
++                id: 2,
++                prop: Prop::ShimmerColor(None),
++            },
++            Color(0x424242ff),
++        ),
++        (
++            style_op(2, &[("color", StyleValue::Str("#929292"))]),
++            Color(0xb8b8b8ff),
++        ),
++    ] {
++        apply(&mut c, vec![op]);
++        let batch = c.commit().unwrap();
++        assert!(
++            batch
++                .items
++                .iter()
++                .any(|i| matches!(i, MountItem::ViewProps { id: 2, props }
++            if props.text_shimmer_color == Some(expected)))
++        );
++    }
++}
++
+ #[test]
+ fn span_test_ids_reuse_fitted_and_hidden_layouts() {
+     for (fit, hidden) in [(true, false), (false, true)] {
+diff --git a/crates/nsh-core/src/element/builder.rs b/crates/nsh-core/src/element/builder.rs
+index e5b5f75d..975e39fd 100644
+--- a/crates/nsh-core/src/element/builder.rs
++++ b/crates/nsh-core/src/element/builder.rs
+@@ -1820,6 +1820,20 @@ impl Text {
+         self
+     }
+ 
++    /// Sweeps a highlight band over this text block; ignored on nested spans.
++    pub fn shimmer(mut self, shimmer: bool) -> Self {
++        super::host::set(&mut self.0, Prop::Shimmer(shimmer));
++        self
++    }
++
++    /// The shimmer band's color; unset derives it from the text's color.
++    pub fn shimmer_color(mut self, color: impl IntoReactive<Hsla>) -> Self {
++        super::host::bind_prop(&mut self.0, color, |c: Hsla| {
++            Prop::ShimmerColor(Some(Color::from(c)))
++        });
++        self
++    }
++
+     /// The highlight of its selection, when it is selectable.
+     pub fn selection_color(mut self, color: impl IntoReactive<Hsla>) -> Self {
+         super::host::bind_prop(&mut self.0, color, |c: Hsla| {
+diff --git a/crates/nsh-core/src/lib.rs b/crates/nsh-core/src/lib.rs
+index f8a1a9ce..5bb078db 100644
+--- a/crates/nsh-core/src/lib.rs
++++ b/crates/nsh-core/src/lib.rs
+@@ -46,6 +46,7 @@ pub mod runtime;
+ pub mod scroll;
+ pub mod selection;
+ pub mod shape;
++pub mod shimmer;
+ pub mod storage;
+ mod style;
+ #[cfg(feature = "svg")]
+diff --git a/crates/nsh-core/src/ops.rs b/crates/nsh-core/src/ops.rs
+index 538359c4..5fb20da7 100644
+--- a/crates/nsh-core/src/ops.rs
++++ b/crates/nsh-core/src/ops.rs
+@@ -2157,6 +2157,12 @@ pub enum Prop {
+     /// (`numberOfLines`) and box.
+     #[prop(js = "adjustsFontSizeToFit", on = TEXT)]
+     AdjustsFontSizeToFit(bool),
++    /// `shimmer`: a native highlight band over the whole text block. Ignored on nested spans.
++    #[prop(js = "shimmer", on = TEXT)]
++    Shimmer(bool),
++    /// `shimmerColor`: the band's color; unset derives it from the text's color.
++    #[prop(js = "shimmerColor", on = TEXT)]
++    ShimmerColor(Option<Color>),
+     /// `minimumFontScale`: how far `adjustsFontSizeToFit` shrinks at most (0..1).
+     #[prop(js = "minimumFontScale", min = 0, max = 1, on = TEXT)]
+     MinimumFontScale(f32),
+diff --git a/crates/nsh-core/src/props.rs b/crates/nsh-core/src/props.rs
+index a161d656..04720852 100644
+--- a/crates/nsh-core/src/props.rs
++++ b/crates/nsh-core/src/props.rs
+@@ -256,6 +256,10 @@ pub struct Ripple {
+ /// Non-style properties of a view that only the platform needs.
+ #[derive(Debug, Clone, PartialEq, Default)]
+ pub struct ViewProps {
++    /// A native highlight sweep over a Text block; ignored on other views and nested spans.
++    pub text_shimmer: bool,
++    /// The highlight override in the core; resolved to a color when mounted on a Text block.
++    pub text_shimmer_color: Option<crate::Color>,
+     /// Which touches the view and its subtree receive.
+     pub pointer_events: PointerEvents,
+     /// Extends the touch area beyond the view's bounds.
+diff --git a/crates/nsh-core/src/shimmer.rs b/crates/nsh-core/src/shimmer.rs
+new file mode 100644
+index 00000000..6026cef8
+--- /dev/null
++++ b/crates/nsh-core/src/shimmer.rs
+@@ -0,0 +1,45 @@
++//! Shared paint parameters for a text's native shimmer.
++
++use std::time::Duration;
++
++use crate::{Color, Hsla, Rgba, geometry::Percentage};
++
++/// Time for one linear left-to-right sweep, repeated indefinitely.
++pub const PERIOD: Duration = Duration::from_millis(2800);
++/// Band width as a fraction of the text block's width.
++pub const BAND_WIDTH: Percentage = Percentage(1.0 / 3.0);
++/// Highlight coverage at the leading edge, center and trailing edge of the band.
++pub const COVERAGE: [Percentage; 3] = [Percentage(0.0), Percentage(1.0), Percentage(0.0)];
++/// Amount of white or black mixed into the base color for the default highlight.
++pub const DEFAULT_MIX: Percentage = Percentage(0.35);
++
++/// Resolves a default highlight in sRGB, preserving the base color's alpha.
++pub fn highlight(base: Color) -> Color {
++    let target = if Hsla::from(base).l >= 0.5 { 1.0 } else { 0.0 };
++    let mut color = Rgba::from(base);
++    color.r += (target - color.r) * DEFAULT_MIX.0;
++    color.g += (target - color.g) * DEFAULT_MIX.0;
++    color.b += (target - color.b) * DEFAULT_MIX.0;
++    Color::from(color)
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    #[test]
++    fn highlight_follows_lightness_and_preserves_alpha() {
++        for (base, expected) in [
++            (0x929292ff, 0xb8b8b8ff),
++            (0x666666ff, 0x424242ff),
++            (0x808080ff, 0xacacacff),
++            (0x7f7f7fff, 0x535353ff),
++            (0xffffffff, 0xffffffff),
++            (0x000000ff, 0x000000ff),
++            (0x92929280, 0xb8b8b880),
++            (0x00000000, 0x00000000),
++        ] {
++            assert_eq!(highlight(Color(base)), Color(expected));
++        }
++    }
++}
+diff --git a/crates/nsh-js/src/protocol.rs b/crates/nsh-js/src/protocol.rs
+index f00284b5..4b46a62c 100644
+--- a/crates/nsh-js/src/protocol.rs
++++ b/crates/nsh-js/src/protocol.rs
+@@ -1017,6 +1017,37 @@ mod tests {
+         cx.with(|cx| f(Js(cx.eval(format!("({source})")).unwrap())))
+     }
+ 
++    #[test]
++    fn shimmer_host_prop_decodes_and_resets() {
++        for (source, expected) in [
++            ("true", Some(Prop::Shimmer(true))),
++            ("false", Some(Prop::Shimmer(false))),
++            ("undefined", Some(Prop::Shimmer(false))),
++            ("null", Some(Prop::Shimmer(false))),
++            ("'invalid'", Some(Prop::Shimmer(false))),
++        ] {
++            with_value(source, |value| {
++                let mut cx = HostCx::for_element(nsh_core::Tag::Text);
++                assert_eq!(Prop::decode("shimmer", &value, &mut cx), Some(expected));
++            });
++        }
++        for (source, expected) in [
++            ("'#123456'", Some(Color(0x123456ff))),
++            ("'hsl(0 100% 50%)'", Some(Color(0xff0000ff))),
++            ("undefined", None),
++            ("null", None),
++            ("'invalid'", None),
++        ] {
++            with_value(source, |value| {
++                let mut cx = HostCx::for_element(nsh_core::Tag::Text);
++                assert_eq!(
++                    Prop::decode("shimmerColor", &value, &mut cx),
++                    Some(Some(Prop::ShimmerColor(expected)))
++                );
++            });
++        }
++    }
++
+     fn layout(source: &str) -> LayoutAnimation {
+         with_value(source, |v| {
+             <LayoutAnimation as HostValue>::decode(&v, &mut HostCx::default()).unwrap()
+diff --git a/crates/nsh-platform-android/java/com/longbridge/nsh/Mounter.java b/crates/nsh-platform-android/java/com/longbridge/nsh/Mounter.java
+index 4a84488a..40200bb8 100644
+--- a/crates/nsh-platform-android/java/com/longbridge/nsh/Mounter.java
++++ b/crates/nsh-platform-android/java/com/longbridge/nsh/Mounter.java
+@@ -121,6 +121,12 @@ final class Mounter {
+     final NshView host;
+     final float density;
+     final Context context;
++    private ShimmerEnvironment shimmerEnvironment;
++
++    ShimmerEnvironment shimmerEnvironment() {
++        if (shimmerEnvironment == null) shimmerEnvironment = new ShimmerEnvironment(context);
++        return shimmerEnvironment;
++    }
+     final Images images;
+     final SparseArray<View> views = new SparseArray<>();
+     private final SparseArray<Dynamic> statics = new SparseArray<>();
+@@ -665,6 +671,7 @@ final class Mounter {
+         for (int i = 0; i < views.size(); i++) {
+             View v = views.valueAt(i);
+             if (v instanceof ComponentBox) ((ComponentBox) v).destroy();
++            if (v instanceof TextBox) ((TextBox) v).setShimmer(false, 0, 0, 0, 0, 0, 0);
+         }
+     }
+ 
+@@ -1376,6 +1383,17 @@ final class Mounter {
+     private void viewProps(ByteBuffer b, Object[] objects) {
+         int id = b.getInt();
+         View v = views.get(id);
++        boolean shimmer = b.getInt() != 0;
++        int shimmerColor = b.getInt();
++        int shimmerPeriod = shimmer ? b.getInt() : 0;
++        float shimmerWidth = shimmer ? b.getFloat() : 0;
++        float shimmerStart = shimmer ? b.getFloat() : 0;
++        float shimmerCenter = shimmer ? b.getFloat() : 0;
++        float shimmerEnd = shimmer ? b.getFloat() : 0;
++        if (v instanceof TextBox) {
++            ((TextBox) v).setShimmer(shimmer, shimmerColor, shimmerPeriod, shimmerWidth,
++                    shimmerStart, shimmerCenter, shimmerEnd);
++        }
+         int pointerEvents = b.getInt();
+         float[] slop = {b.getFloat() * density, b.getFloat() * density, b.getFloat() * density, b.getFloat() * density};
+         A11y a = new A11y(this, id);
+diff --git a/crates/nsh-platform-android/java/com/longbridge/nsh/ShimmerEnvironment.java b/crates/nsh-platform-android/java/com/longbridge/nsh/ShimmerEnvironment.java
+new file mode 100644
+index 00000000..440c1054
+--- /dev/null
++++ b/crates/nsh-platform-android/java/com/longbridge/nsh/ShimmerEnvironment.java
+@@ -0,0 +1,71 @@
++package com.longbridge.nsh;
++
++import android.animation.ValueAnimator;
++import android.content.BroadcastReceiver;
++import android.content.Context;
++import android.content.Intent;
++import android.content.IntentFilter;
++import android.database.ContentObserver;
++import android.os.Build;
++import android.os.Handler;
++import android.os.Looper;
++import android.os.PowerManager;
++import android.provider.Settings;
++import java.util.HashSet;
++
++/** One receiver and settings observer per surface, only while shimmer text is attached. */
++final class ShimmerEnvironment {
++    private final Context context;
++    private final HashSet<TextBox> views = new HashSet<>();
++    boolean animationsEnabled, powerSave, highContrast;
++
++    ShimmerEnvironment(Context context) {
++        this.context = context.getApplicationContext();
++    }
++
++    private final BroadcastReceiver power = new BroadcastReceiver() {
++        @Override
++        public void onReceive(Context context, Intent intent) {
++            refresh();
++        }
++    };
++    private final ContentObserver motion = new ContentObserver(new Handler(Looper.getMainLooper())) {
++        @Override
++        public void onChange(boolean selfChange) {
++            refresh();
++        }
++    };
++
++    void add(TextBox view) {
++        if (views.isEmpty()) {
++            IntentFilter filter = new IntentFilter(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED);
++            if (Build.VERSION.SDK_INT >= 33) context.registerReceiver(power, filter, Context.RECEIVER_NOT_EXPORTED);
++            else context.registerReceiver(power, filter);
++            context.getContentResolver().registerContentObserver(
++                    Settings.Global.getUriFor(Settings.Global.ANIMATOR_DURATION_SCALE), false, motion);
++            context.getContentResolver().registerContentObserver(
++                    Settings.Secure.getUriFor("high_text_contrast_enabled"), false, motion);
++            read();
++        }
++        views.add(view);
++    }
++
++    void remove(TextBox view) {
++        if (!views.remove(view) || !views.isEmpty()) return;
++        context.unregisterReceiver(power);
++        context.getContentResolver().unregisterContentObserver(motion);
++    }
++
++    private void read() {
++        animationsEnabled = (Build.VERSION.SDK_INT < 26 || ValueAnimator.areAnimatorsEnabled()) && Settings.Global.getFloat(
++                context.getContentResolver(), Settings.Global.ANIMATOR_DURATION_SCALE, 1f) != 0;
++        PowerManager manager = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
++        powerSave = manager != null && manager.isPowerSaveMode();
++        highContrast = Settings.Secure.getInt(context.getContentResolver(), "high_text_contrast_enabled", 0) != 0;
++    }
++
++    private void refresh() {
++        read();
++        for (TextBox view : views) view.updateShimmer();
++    }
++}
+diff --git a/crates/nsh-platform-android/java/com/longbridge/nsh/ShimmerMotion.java b/crates/nsh-platform-android/java/com/longbridge/nsh/ShimmerMotion.java
+new file mode 100644
+index 00000000..3bceb213
+--- /dev/null
++++ b/crates/nsh-platform-android/java/com/longbridge/nsh/ShimmerMotion.java
+@@ -0,0 +1,14 @@
++package com.longbridge.nsh;
++
++/** Paint-only shimmer geometry and lifecycle decisions, independent of Android. */
++final class ShimmerMotion {
++    static boolean canRun(boolean enabled, boolean attached, boolean visible, boolean inViewport, boolean hasText,
++                          boolean animationsEnabled, boolean powerSave, boolean highContrast) {
++        return enabled && attached && visible && inViewport && hasText && animationsEnabled && !powerSave && !highContrast;
++    }
++
++    static float bandStart(float width, float bandFraction, float progress) {
++        float band = width * bandFraction;
++        return -band + (width + band) * progress;
++    }
++}
+diff --git a/crates/nsh-platform-android/java/com/longbridge/nsh/TextBox.java b/crates/nsh-platform-android/java/com/longbridge/nsh/TextBox.java
+index e82d1a30..8e851202 100644
+--- a/crates/nsh-platform-android/java/com/longbridge/nsh/TextBox.java
++++ b/crates/nsh-platform-android/java/com/longbridge/nsh/TextBox.java
+@@ -17,6 +17,9 @@ final class TextBox extends android.view.ViewGroup implements Node {
+     final Decor decor = new Decor();
+     final int id;
+     boolean clip;
++    private TextShimmer shimmer;
++    private ShimmerEnvironment shimmerEnvironment;
++    private boolean shimmerVisible;
+     /** Accessibility from the app's properties, if any. */
+     A11y a11y;
+     private Layout layout;
+@@ -305,11 +308,79 @@ final class TextBox extends android.view.ViewGroup implements Node {
+ 
+     @Override
+     protected void onDetachedFromWindow() {
++        shimmerVisible = false;
++        if (shimmerEnvironment != null) {
++            shimmerEnvironment.remove(this);
++            shimmerEnvironment = null;
++        }
++        if (shimmer != null) {
++            shimmer.observeVisibility(false);
++            shimmer.setRunning(false);
++        }
+         clearSelection();
+         if (mounter.selectedArea != null) mounter.selectedArea.textChanged(this);
+         super.onDetachedFromWindow();
+     }
+ 
++    @Override
++    protected void onAttachedToWindow() {
++        super.onAttachedToWindow();
++        updateShimmer();
++    }
++
++    @Override
++    public void onVisibilityAggregated(boolean visible) {
++        super.onVisibilityAggregated(visible);
++        shimmerVisible = visible;
++        updateShimmer();
++    }
++
++    @Override
++    protected void onWindowVisibilityChanged(int visibility) {
++        super.onWindowVisibilityChanged(visibility);
++        updateShimmer();
++    }
++
++    void setShimmer(boolean enabled, int color, int period, float width, float start, float center, float end) {
++        if (enabled) {
++            if (shimmer == null) shimmer = new TextShimmer(this);
++            shimmer.configure(color, period, width, start, center, end);
++        } else if (shimmer != null) {
++            shimmer.observeVisibility(false);
++            shimmer.setRunning(false);
++            shimmer = null;
++        }
++        updateShimmer();
++        invalidate();
++    }
++
++    void updateShimmer() {
++        boolean attached = isAttachedToWindow();
++        if (shimmer != null && attached && shimmerEnvironment == null) {
++            shimmerEnvironment = mounter.shimmerEnvironment();
++            shimmerEnvironment.add(this);
++        } else if ((shimmer == null || !attached) && shimmerEnvironment != null) {
++            shimmerEnvironment.remove(this);
++            shimmerEnvironment = null;
++        }
++        if (shimmer == null) return;
++        shimmer.observeVisibility(attached);
++        boolean visible = shimmerVisible && isShown() && getWindowVisibility() == VISIBLE;
++        boolean inViewport = attached && shimmer.intersectsViewport();
++        boolean animations = shimmerEnvironment != null && shimmerEnvironment.animationsEnabled;
++        boolean powerSave = shimmerEnvironment != null && shimmerEnvironment.powerSave;
++        boolean highContrast = shimmerEnvironment != null && shimmerEnvironment.highContrast;
++        boolean running = ShimmerMotion.canRun(true, attached, visible, inViewport,
++                layout != null && layout.getText().length() > 0 && contentWidth > 0 && contentHeight > 0,
++                animations, powerSave, highContrast);
++        if (running != shimmer.running() && android.util.Log.isLoggable("NshShimmer", android.util.Log.DEBUG)) {
++            android.util.Log.d("NshShimmer", "view=" + id + " running=" + running + " attached=" + attached
++                    + " visible=" + visible + " animations=" + animations + " powerSave=" + powerSave
++                    + " highContrast=" + highContrast + " inViewport=" + inViewport);
++        }
++        shimmer.setRunning(running);
++    }
++
+     /** The selected text, without the placeholders of attachments. */
+     private String selectedText() {
+         return layout.getText().subSequence(selStart, selEnd).toString().replace("￼", "");
+@@ -514,6 +585,7 @@ final class TextBox extends android.view.ViewGroup implements Node {
+         this.contentY = y;
+         this.contentWidth = width;
+         this.contentHeight = height;
++        updateShimmer();
+         invalidate();
+     }
+ 
+@@ -540,6 +612,7 @@ final class TextBox extends android.view.ViewGroup implements Node {
+             layout.draw(canvas);
+             drawDecorations(canvas);
+         }
++        if (shimmer != null) shimmer.draw(canvas, layout, Math.max(contentWidth, layout.getWidth()), contentHeight);
+         canvas.restore();
+     }
+ 
+diff --git a/crates/nsh-platform-android/java/com/longbridge/nsh/TextShimmer.java b/crates/nsh-platform-android/java/com/longbridge/nsh/TextShimmer.java
+new file mode 100644
+index 00000000..4e97206f
+--- /dev/null
++++ b/crates/nsh-platform-android/java/com/longbridge/nsh/TextShimmer.java
+@@ -0,0 +1,120 @@
++package com.longbridge.nsh;
++
++import android.animation.ValueAnimator;
++import android.graphics.Canvas;
++import android.graphics.LinearGradient;
++import android.graphics.Matrix;
++import android.graphics.Paint;
++import android.graphics.PorterDuff;
++import android.graphics.PorterDuffXfermode;
++import android.graphics.Rect;
++import android.graphics.Shader;
++import android.text.Layout;
++import android.text.TextPaint;
++import android.view.ViewTreeObserver;
++import android.view.animation.LinearInterpolator;
++
++/** A single mask in the whole text's coordinates, driven on the UI thread. */
++final class TextShimmer implements ViewTreeObserver.OnScrollChangedListener, ViewTreeObserver.OnGlobalLayoutListener {
++    private final TextBox view;
++    private final Rect visibleBounds = new Rect();
++    private ViewTreeObserver visibilityTree;
++    private final ValueAnimator animator = ValueAnimator.ofFloat(0, 1);
++    private final Paint color = new Paint();
++    private final Paint mask = new Paint();
++    private final TextPaint savedPaint = new TextPaint();
++    private final Matrix matrix = new Matrix();
++    private final int[] coverage = new int[3];
++    private final float[] stops = {0, .5f, 1};
++    private LinearGradient gradient;
++    private float fraction, gradientWidth = -1;
++    private boolean running;
++
++    TextShimmer(TextBox view) {
++        this.view = view;
++        color.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.SRC_IN));
++        mask.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.DST_IN));
++        animator.setInterpolator(new LinearInterpolator());
++        animator.setRepeatCount(ValueAnimator.INFINITE);
++        animator.addUpdateListener(a -> view.invalidate());
++    }
++
++    void configure(int highlight, int period, float width, float start, float center, float end) {
++        color.setColor(highlight);
++        animator.setDuration(period);
++        int first = alpha(start), middle = alpha(center), last = alpha(end);
++        if (fraction != width || coverage[0] != first || coverage[1] != middle || coverage[2] != last) {
++            fraction = width;
++            coverage[0] = first; coverage[1] = middle; coverage[2] = last;
++            gradientWidth = -1;
++        }
++    }
++
++    private static int alpha(float coverage) {
++        return (Math.round(coverage * 255) << 24) | 0x00ffffff;
++    }
++
++    boolean running() {
++        return running;
++    }
++
++    void observeVisibility(boolean attached) {
++        if (attached && visibilityTree == null) {
++            visibilityTree = view.getViewTreeObserver();
++            visibilityTree.addOnScrollChangedListener(this);
++            visibilityTree.addOnGlobalLayoutListener(this);
++        } else if (!attached && visibilityTree != null) {
++            ViewTreeObserver tree = visibilityTree.isAlive() ? visibilityTree : view.getViewTreeObserver();
++            if (tree.isAlive()) {
++                tree.removeOnScrollChangedListener(this);
++                tree.removeOnGlobalLayoutListener(this);
++            }
++            visibilityTree = null;
++        }
++    }
++
++    boolean intersectsViewport() {
++        return view.getGlobalVisibleRect(visibleBounds) && !visibleBounds.isEmpty();
++    }
++
++    @Override
++    public void onScrollChanged() {
++        view.updateShimmer();
++    }
++
++    @Override
++    public void onGlobalLayout() {
++        view.updateShimmer();
++    }
++
++    void setRunning(boolean running) {
++        if (this.running == running) return;
++        this.running = running;
++        if (running) animator.start();
++        else animator.cancel();
++        view.invalidate();
++    }
++
++    void draw(Canvas canvas, Layout layout, float width, float height) {
++        if (!running || width <= 0 || height <= 0) return;
++        if (gradientWidth != width) {
++            gradientWidth = width;
++            gradient = new LinearGradient(0, 0, width * fraction, 0, coverage, stops, Shader.TileMode.CLAMP);
++            mask.setShader(gradient);
++        }
++        matrix.setTranslate(ShimmerMotion.bandStart(width, fraction, animator.getAnimatedFraction()), 0);
++        gradient.setLocalMatrix(matrix);
++        int layer = canvas.saveLayer(0, 0, width, height, null);
++        TextPaint paint = layout.getPaint();
++        savedPaint.set(paint);
++        paint.clearShadowLayer();
++        try {
++            layout.draw(canvas);
++        } finally {
++            paint.set(savedPaint);
++        }
++        canvas.drawRect(0, 0, width, height, color);
++        canvas.drawRect(0, 0, width, height, mask);
++        canvas.restoreToCount(layer);
++    }
++}
+diff --git a/crates/nsh-platform-android/src/encode.rs b/crates/nsh-platform-android/src/encode.rs
+index f593e364..a7d34441 100644
+--- a/crates/nsh-platform-android/src/encode.rs
++++ b/crates/nsh-platform-android/src/encode.rs
+@@ -995,6 +995,15 @@ fn screen_config(e: &mut Encoded, c: &ScreenConfig) {
+ }
+ 
+ fn view_props(e: &mut Encoded, p: &ViewProps) {
++    e.bool(p.text_shimmer);
++    e.int(argb(p.text_shimmer_color.unwrap_or(Color::BLACK)));
++    if p.text_shimmer {
++        e.int(nsh_core::shimmer::PERIOD.as_millis() as i32);
++        e.float(nsh_core::shimmer::BAND_WIDTH.0);
++        for coverage in nsh_core::shimmer::COVERAGE {
++            e.float(coverage.0);
++        }
++    }
+     e.int(match p.pointer_events {
+         PointerEvents::Auto => 0,
+         PointerEvents::None => 1,
+diff --git a/crates/nsh-platform-android/tests/java/com/longbridge/nsh/ShimmerMotionTest.java b/crates/nsh-platform-android/tests/java/com/longbridge/nsh/ShimmerMotionTest.java
+new file mode 100644
+index 00000000..1f788d4e
+--- /dev/null
++++ b/crates/nsh-platform-android/tests/java/com/longbridge/nsh/ShimmerMotionTest.java
+@@ -0,0 +1,30 @@
++package com.longbridge.nsh;
++
++/** Run with javac and java -ea; no Android runtime or test framework needed. */
++public final class ShimmerMotionTest {
++    public static void main(String[] args) {
++        for (int bits = 0; bits < 256; bits++) {
++            boolean enabled = (bits & 1) != 0, attached = (bits & 2) != 0, visible = (bits & 4) != 0;
++            boolean inViewport = (bits & 8) != 0, hasText = (bits & 16) != 0, animations = (bits & 32) != 0;
++            boolean powerSave = (bits & 64) != 0, highContrast = (bits & 128) != 0;
++            assert ShimmerMotion.canRun(enabled, attached, visible, inViewport, hasText, animations, powerSave, highContrast) == (bits == 63)
++                    : "gating combination " + bits;
++        }
++        near(ShimmerMotion.bandStart(300, 1f / 3, 0), -100);
++        near(ShimmerMotion.bandStart(300, 1f / 3, .25f), 0);
++        near(ShimmerMotion.bandStart(300, 1f / 3, .5f), 100);
++        near(ShimmerMotion.bandStart(300, 1f / 3, 1), 300);
++        near(ShimmerMotion.bandStart(0, 1f / 3, .5f), 0);
++        float previous = -Float.MAX_VALUE;
++        for (int i = 0; i <= 100; i++) {
++            float position = ShimmerMotion.bandStart(149, 1f / 3, i / 100f);
++            assert position > previous : "the band must move left to right";
++            previous = position;
++        }
++        System.out.println("PASS: 256 lifecycle combinations, band endpoints, empty width and linear sweep");
++    }
++
++    private static void near(float actual, float expected) {
++        assert Math.abs(actual - expected) < .001f : actual + " != " + expected;
++    }
++}
+diff --git a/crates/nsh-platform-ios/src/mount.rs b/crates/nsh-platform-ios/src/mount.rs
+index 7dfffc89..76090d72 100644
+--- a/crates/nsh-platform-ios/src/mount.rs
++++ b/crates/nsh-platform-ios/src/mount.rs
+@@ -15,7 +15,8 @@ use nsh_core::{
+ };
+ use nsh_engine::EngineControl;
+ use objc2::{
+-    MainThreadMarker, MainThreadOnly, Message, rc::Retained, runtime::ProtocolObject, sel,
++    DefinedClass, MainThreadMarker, MainThreadOnly, Message, rc::Retained, runtime::ProtocolObject,
++    sel,
+ };
+ use objc2_core_foundation::{CGFloat, CGPoint, CGRect, CGSize};
+ use objc2_quartz_core::{CAAnimation, CALayer, CAMediaTiming, CATransform3D};
+@@ -3189,6 +3190,14 @@ impl Mounter {
+         let (control, mtm) = (self.control.clone(), self.mtm);
+         let Some(s) = self.slot_mut(id) else { return };
+         s.long_press_delay = props.long_press_delay;
++        if let Native::Text(view) = &s.native {
++            let changed = view.ivars().shimmer.replace(props.text_shimmer) != props.text_shimmer;
++            let color = props.text_shimmer_color.unwrap_or(Color::BLACK);
++            let color_changed = view.ivars().shimmer_color.replace(color) != color;
++            if changed || (props.text_shimmer && color_changed) {
++                TextView::configure_shimmer(view);
++            }
++        }
+         s.pan_scroll_handoff = props.pan_scroll_handoff;
+         if let Some(pan) = &s.gestures.pan {
+             pan.setMaximumNumberOfTouches(if props.pan_scroll_handoff {
+diff --git a/crates/nsh-platform-ios/src/navigation.rs b/crates/nsh-platform-ios/src/navigation.rs
+index 8e40b2f3..c137a105 100644
+--- a/crates/nsh-platform-ios/src/navigation.rs
++++ b/crates/nsh-platform-ios/src/navigation.rs
+@@ -226,6 +226,9 @@ define_class!(
+             let _: () = unsafe { msg_send![super(self), viewDidAppear: animated] };
+             let id = self.ivars().id;
+             self.ivars().control.dispatch_event(id, EventKind::Show, EventPayload::None);
++            if let Some(view) = self.view() {
++                crate::text_view::recheck_shimmer_under(&view);
++            }
+         }
+ 
+         /// Escape on a hardware keyboard.
+@@ -628,6 +631,9 @@ define_class!(
+             // hierarchy after `reconcile` has sized what was there: the one
+             // it brought in is only reachable here.
+             size_screens(nav);
++            if let Some(view) = controller.view() {
++                crate::text_view::recheck_shimmer_under(&view);
++            }
+             defer_to_back_swipe(nav);
+             let stack = self.ivars().stack;
+             self.with_mounter(|m| m.stack_did_show(stack));
+diff --git a/crates/nsh-platform-ios/src/target.rs b/crates/nsh-platform-ios/src/target.rs
+index 6467726b..2d9338a4 100644
+--- a/crates/nsh-platform-ios/src/target.rs
++++ b/crates/nsh-platform-ios/src/target.rs
+@@ -326,6 +326,7 @@ define_class!(
+                 .control
+                 .scroll(id, point(px(offset.x as f32), px(offset.y as f32)), applied);
+             self.with_mounter(move |m| m.scrolled(id, offset));
++            crate::text_view::recheck_shimmer_under(scroll);
+             // A text area scrolling moves its caret.
+             if scroll.downcast_ref::<input::Area>().is_some() {
+                 self.caret_moved(scroll);
+diff --git a/crates/nsh-platform-ios/src/text_view.rs b/crates/nsh-platform-ios/src/text_view.rs
+index 1fa0822c..f05605c4 100644
+--- a/crates/nsh-platform-ios/src/text_view.rs
++++ b/crates/nsh-platform-ios/src/text_view.rs
+@@ -2,8 +2,8 @@ use std::{cell::RefCell, sync::Arc};
+ 
+ use nsh_core::{AttributedText, Bounds, Points, TextLayout, TextLink};
+ use objc2::{
+-    DefinedClass, MainThreadMarker, MainThreadOnly, Message, define_class, msg_send,
+-    rc::Retained,
++    AnyThread, DefinedClass, MainThreadMarker, MainThreadOnly, Message, define_class, msg_send,
++    rc::{Retained, Weak},
+     runtime::{AnyObject, ProtocolObject, Sel},
+     sel,
+ };
+@@ -14,8 +14,12 @@ use objc2_core_foundation::{
+ use objc2_core_graphics::{CGColor, CGContext};
+ use objc2_core_text::{CTFont, CTRun, kCTFontAttributeName};
+ use objc2_foundation::{
+-    NSArray, NSAttributedStringKey, NSComparisonResult, NSDictionary, NSInteger, NSObject,
+-    NSObjectProtocol, NSRange, NSString,
++    NSArray, NSAttributedStringKey, NSComparisonResult, NSDictionary, NSInteger,
++    NSNotificationCenter, NSNumber, NSObject, NSObjectProtocol, NSProcessInfo, NSRange, NSString,
++    ns_string,
++};
++use objc2_quartz_core::{
++    CABasicAnimation, CAGradientLayer, CALayer, CAMediaTiming, CAMediaTimingFunction,
+ };
+ use objc2_ui_kit::{
+     NSWritingDirection, UIAccessibilityTraitStaticText, UIAccessibilityTraits, UIColor,
+@@ -30,6 +34,73 @@ use crate::{
+     text_selection::{self, Selection},
+ };
+ 
++thread_local! {
++    static SHIMMER_VIEWS: RefCell<Vec<(usize, Weak<TextView>)>> = const { RefCell::new(Vec::new()) };
++}
++
++/// Rechecks only the shimmer texts under `scroll`, a scroll view whose bounds moved
++/// or a screen that finished moving in.
++pub(crate) fn recheck_shimmer_under(scroll: &UIView) {
++    SHIMMER_VIEWS.with(|registry| {
++        let mut registry = registry.borrow_mut();
++        if registry.is_empty() {
++            return;
++        }
++        let mut views = Vec::new();
++        registry.retain(|(_, weak)| {
++            let Some(view) = weak.load() else {
++                return false;
++            };
++            if view.isDescendantOfView(scroll) {
++                views.push(view);
++            }
++            true
++        });
++        drop(registry);
++        for view in views {
++            view.update_shimmer();
++        }
++    });
++}
++
++fn visible_intersection(a: CGRect, b: CGRect) -> Option<CGRect> {
++    let x = a.origin.x.max(b.origin.x);
++    let y = a.origin.y.max(b.origin.y);
++    let right = (a.origin.x + a.size.width).min(b.origin.x + b.size.width);
++    let bottom = (a.origin.y + a.size.height).min(b.origin.y + b.size.height);
++    (right > x && bottom > y)
++        .then(|| CGRect::new(CGPoint::new(x, y), CGSize::new(right - x, bottom - y)))
++}
++
++fn shimmer_debug(active: bool, view: &TextView) {
++    #[cfg(debug_assertions)]
++    {
++        use std::io::Write;
++        static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
++        if *ENABLED.get_or_init(|| std::env::var_os("NSH_SHIMMER_DEBUG").is_some())
++            && let Ok(mut file) = std::fs::OpenOptions::new()
++                .create(true)
++                .append(true)
++                .open(std::env::temp_dir().join("shim.log"))
++        {
++            let _ = writeln!(
++                file,
++                "shimmer anim {} {:p} w={} t={:?}",
++                if active { "on" } else { "off" },
++                view,
++                view.bounds().size.width,
++                std::time::SystemTime::now()
++                    .duration_since(std::time::UNIX_EPOCH)
++                    .unwrap()
++                    .as_millis()
++                    % 100000
++            );
++        }
++    }
++    #[cfg(not(debug_assertions))]
++    let _ = (active, view);
++}
++
+ /// Draws the decoration lines CoreText does not: strikethroughs, and
+ /// underlines with a style, thickness or offset (y-up text space).
+ fn draw_decorations(cx: &CGContext, line: &LaidLine) {
+@@ -173,6 +244,11 @@ pub(crate) struct TextViewIvars {
+     pub(crate) layout: RefCell<Option<(TextLayout, Bounds<Points>)>>,
+     /// The content, for accessibility and the block's shadow.
+     pub(crate) text: RefCell<Option<Arc<AttributedText>>>,
++    /// The block's native shimmer, independent of its typeset layout.
++    pub(crate) shimmer: std::cell::Cell<bool>,
++    pub(crate) shimmer_color: std::cell::Cell<nsh_core::Color>,
++    shimmer_layer: RefCell<Option<(Retained<CALayer>, Retained<CAGradientLayer>)>>,
++    shimmer_observers: RefCell<Vec<Retained<ProtocolObject<dyn NSObjectProtocol>>>>,
+     /// `selectable`: the range selection (`text_selection.rs`).
+     pub(crate) selection: Selection,
+     /// An animated `color` (`0xRRGGBBAA`): the whole text is drawn in it.
+@@ -182,6 +258,19 @@ pub(crate) struct TextViewIvars {
+     area_highlight: std::cell::Cell<Option<((usize, usize), nsh_core::Color)>>,
+ }
+ 
++impl Drop for TextViewIvars {
++    fn drop(&mut self) {
++        let key = self as *const Self as usize;
++        let _ = SHIMMER_VIEWS.try_with(|registry| {
++            registry.borrow_mut().retain(|(id, _)| *id != key);
++        });
++        for observer in self.shimmer_observers.get_mut().drain(..) {
++            // SAFETY: these are the tokens returned by NSNotificationCenter.
++            unsafe { NSNotificationCenter::defaultCenter().removeObserver(observer.as_ref()) };
++        }
++    }
++}
++
+ define_class!(
+     /// Draws a `CTFrame` laid out on the engine thread. No text layout
+     /// happens on the main thread.
+@@ -225,6 +314,21 @@ define_class!(
+             let _: () = unsafe { msg_send![super(self), didMoveToWindow] };
+             // Into or out of a selectable view, which selects instead.
+             self.update_own_selection();
++            self.update_shimmer();
++        }
++
++        #[unsafe(method(layoutSubviews))]
++        fn layout_subviews(&self) {
++            // SAFETY: calling UIView's layout implementation.
++            unsafe { let _: () = msg_send![super(self), layoutSubviews]; }
++            self.update_shimmer();
++        }
++
++        #[unsafe(method(setHidden:))]
++        fn set_hidden(&self, hidden: bool) {
++            // SAFETY: calling UIView's implementation.
++            unsafe { let _: () = msg_send![super(self), setHidden: hidden]; }
++            self.update_shimmer();
+         }
+ 
+         #[unsafe(method(canPerformAction:withSender:))]
+@@ -346,6 +450,7 @@ define_class!(
+                 CGContext::end_transparency_layer(c);
+             }
+             CGContext::restore_g_state(c);
++            self.draw_shimmer(text, *content);
+         }
+     }
+ 
+@@ -539,6 +644,229 @@ impl TextView {
+         view
+     }
+ 
++    pub(crate) fn configure_shimmer(view: &Retained<Self>) {
++        let key = view.ivars() as *const TextViewIvars as usize;
++        SHIMMER_VIEWS.with(|registry| {
++            let mut registry = registry.borrow_mut();
++            registry.retain(|(id, weak)| *id != key && weak.load().is_some());
++            if view.ivars().shimmer.get() {
++                registry.push((key, Weak::from_retained(view)));
++            }
++        });
++        let mut observers = view.ivars().shimmer_observers.borrow_mut();
++        let center = NSNotificationCenter::defaultCenter();
++        if !view.ivars().shimmer.get() {
++            for observer in observers.drain(..) {
++                // SAFETY: tokens returned by this notification center.
++                unsafe { center.removeObserver(observer.as_ref()) };
++            }
++        } else if observers.is_empty() {
++            let weak = objc2::rc::Weak::from_retained(view);
++            let block = block2::RcBlock::new(
++                move |_: std::ptr::NonNull<objc2_foundation::NSNotification>| {
++                    if let Some(view) = weak.load() {
++                        view.update_shimmer();
++                    }
++                },
++            );
++            // SAFETY: immutable system notification names; the main queue serializes
++            // callbacks with UIKit and the weak reference does not retain the view.
++            unsafe {
++                for name in [
++                    objc2_ui_kit::UIAccessibilityReduceMotionStatusDidChangeNotification,
++                    objc2_ui_kit::UIAccessibilityDarkerSystemColorsStatusDidChangeNotification,
++                    objc2_foundation::NSProcessInfoPowerStateDidChangeNotification,
++                    objc2_ui_kit::UIApplicationDidEnterBackgroundNotification,
++                    objc2_ui_kit::UIApplicationDidBecomeActiveNotification,
++                ] {
++                    observers.push(center.addObserverForName_object_queue_usingBlock(
++                        Some(name),
++                        None,
++                        Some(&objc2_foundation::NSOperationQueue::mainQueue()),
++                        &block,
++                    ));
++                }
++            }
++        }
++        drop(observers);
++        view.update_shimmer();
++        view.setNeedsDisplay();
++    }
++
++    fn shimmer_visible(&self) -> bool {
++        let Some(window) = self.window() else {
++            return false;
++        };
++        let Some(mut visible) = visible_intersection(
++            self.convertRect_toView(self.bounds(), Some(&window)),
++            window.bounds(),
++        ) else {
++            return false;
++        };
++        if self.isHidden() || self.alpha() <= 0.0 {
++            return false;
++        }
++        let mut ancestor = self.superview();
++        while let Some(view) = ancestor {
++            if view.isHidden() || view.alpha() <= 0.0 {
++                return false;
++            }
++            if view.clipsToBounds() || view.layer().masksToBounds() {
++                let clip = view.convertRect_toView(view.bounds(), Some(&window));
++                let Some(intersection) = visible_intersection(visible, clip) else {
++                    return false;
++                };
++                visible = intersection;
++            }
++            ancestor = view.superview();
++        }
++        true
++    }
++
++    pub(crate) fn update_shimmer(&self) {
++        let layers = self.ivars().shimmer_layer.borrow();
++        let Some((highlight, mask)) = layers.as_ref() else {
++            return;
++        };
++        let active = {
++            self.ivars().shimmer.get()
++                && self.shimmer_visible()
++                && !objc2_ui_kit::UIAccessibilityIsReduceMotionEnabled()
++                && !objc2_ui_kit::UIAccessibilityDarkerSystemColorsEnabled()
++                && !NSProcessInfo::processInfo().isLowPowerModeEnabled()
++                && objc2_ui_kit::UIApplication::sharedApplication(self.mtm()).applicationState()
++                    == objc2_ui_kit::UIApplicationState::Active
++        };
++        highlight.setHidden(!active);
++        if !active {
++            // SAFETY: only querying whether our own animation exists.
++            if unsafe { mask.animationForKey(ns_string!("shimmer")) }.is_some() {
++                shimmer_debug(false, self);
++            }
++            mask.removeAnimationForKey(ns_string!("shimmer"));
++        // SAFETY: the animation is only queried for its presence.
++        } else if unsafe { mask.animationForKey(ns_string!("shimmer")) }.is_none() {
++            let animation = CABasicAnimation::animationWithKeyPath(Some(ns_string!("position.x")));
++            let width = self.bounds().size.width;
++            // SAFETY: position.x takes NSNumber values.
++            unsafe {
++                animation.setFromValue(Some(&NSNumber::new_f64(-width / 6.0)));
++                animation.setToValue(Some(&NSNumber::new_f64(width * 7.0 / 6.0)));
++            }
++            animation.setDuration(nsh_core::shimmer::PERIOD.as_secs_f64());
++            animation.setRepeatCount(f32::INFINITY);
++            animation.setTimingFunction(Some(&CAMediaTimingFunction::functionWithName(
++                // SAFETY: immutable Core Animation constant.
++                unsafe { objc2_quartz_core::kCAMediaTimingFunctionLinear },
++            )));
++            mask.addAnimation_forKey(&animation, Some(ns_string!("shimmer")));
++            shimmer_debug(true, self);
++        }
++    }
++
++    fn draw_shimmer(&self, text: &CoreTextLayout, content: Bounds<Points>) {
++        if !self.ivars().shimmer.get() {
++            if let Some((layer, _)) = self.ivars().shimmer_layer.borrow_mut().take() {
++                layer.removeFromSuperlayer();
++            }
++            return;
++        }
++        let bounds = self.bounds();
++        if bounds.size.width <= 0.0 || bounds.size.height <= 0.0 {
++            return;
++        }
++        let renderer = objc2_ui_kit::UIGraphicsImageRenderer::initWithSize(
++            objc2_ui_kit::UIGraphicsImageRenderer::alloc(),
++            bounds.size,
++        );
++        let draw = block2::RcBlock::new(
++            |_: std::ptr::NonNull<objc2_ui_kit::UIGraphicsImageRendererContext>| {
++                // SAFETY: imageWithActions installs the current UIKit context;
++                // CoreText lines and their runs remain alive throughout the draw.
++                unsafe {
++                    let Some(cx) = UIGraphicsGetCurrentContext() else {
++                        return;
++                    };
++                    let c = Some(&*cx);
++                    CGContext::set_text_matrix(
++                        c,
++                        CGAffineTransform {
++                            a: 1.0,
++                            b: 0.0,
++                            c: 0.0,
++                            d: 1.0,
++                            tx: 0.0,
++                            ty: 0.0,
++                        },
++                    );
++                    CGContext::translate_ctm(
++                        c,
++                        content.origin.x.0 as CGFloat,
++                        (content.origin.y.0 + content.size.height.0) as CGFloat,
++                    );
++                    CGContext::scale_ctm(c, 1.0, -1.0);
++                    CGContext::begin_transparency_layer(c, None);
++                    for line in &text.lines {
++                        CGContext::set_text_position(c, line.origin.x, line.origin.y);
++                        line.line.draw(&cx);
++                        if text.strikethrough {
++                            draw_decorations(&cx, line);
++                        }
++                    }
++                    CGContext::set_blend_mode(c, objc2_core_graphics::CGBlendMode::SourceIn);
++                    CGContext::set_fill_color_with_color(
++                        c,
++                        crate::decor::cg_color(self.ivars().shimmer_color.get()).as_deref(),
++                    );
++                    CGContext::fill_rect(c, CGContext::clip_bounding_box(c));
++                    CGContext::end_transparency_layer(c);
++                }
++            },
++        );
++        // SAFETY: the drawing block is synchronous; contents accepts CGImage.
++        unsafe {
++            let image: Retained<objc2_ui_kit::UIImage> =
++                msg_send![&*renderer, imageWithActions: &*draw];
++            if let Some(image) = image.CGImage() {
++                objc2_quartz_core::CATransaction::begin();
++                objc2_quartz_core::CATransaction::setDisableActions(true);
++                let mut layers = self.ivars().shimmer_layer.borrow_mut();
++                let (highlight, mask) = layers.get_or_insert_with(|| {
++                    let highlight = CALayer::new();
++                    let mask = CAGradientLayer::new();
++                    let colors = [
++                        UIColor::clearColor().CGColor(),
++                        UIColor::whiteColor().CGColor(),
++                        UIColor::clearColor().CGColor(),
++                    ];
++                    let colors: Vec<Retained<AnyObject>> = colors
++                        .into_iter()
++                        .map(|c| Retained::cast_unchecked(c))
++                        .collect();
++                    mask.setColors(Some(&NSArray::from_retained_slice(&colors)));
++                    mask.setStartPoint(CGPoint::new(0.0, 0.5));
++                    mask.setEndPoint(CGPoint::new(1.0, 0.5));
++                    highlight.setMask(Some(&mask));
++                    self.layer().addSublayer(&highlight);
++                    (highlight, mask)
++                });
++                highlight.setFrame(bounds);
++                highlight.setContentsScale(self.contentScaleFactor());
++                highlight.setContents(Some(&*(&*image as *const _ as *const AnyObject)));
++                let frame = CGRect::new(
++                    CGPoint::new(-bounds.size.width / 3.0, 0.0),
++                    CGSize::new(bounds.size.width / 3.0, bounds.size.height),
++                );
++                if mask.frame() != frame {
++                    mask.removeAnimationForKey(ns_string!("shimmer"));
++                    mask.setFrame(frame);
++                }
++                objc2_quartz_core::CATransaction::commit();
++            }
++        }
++        self.update_shimmer();
++    }
++
+     /// Draws the whole text in `color` (an animated `color`), or in its
+     /// own colors.
+     pub(crate) fn set_color(&self, color: Option<nsh_core::Color>) {
+@@ -675,3 +1003,46 @@ impl TextView {
+         unsafe { msg_send![self, accessibilityElementsHidden] }
+     }
+ }
++
++#[cfg(test)]
++mod shimmer_visibility_tests {
++    use super::*;
++
++    fn rect(x: CGFloat, y: CGFloat, width: CGFloat, height: CGFloat) -> CGRect {
++        CGRect::new(CGPoint::new(x, y), CGSize::new(width, height))
++    }
++
++    #[test]
++    fn clips_in_window_coordinates_across_ancestors() {
++        let text = rect(10.0, 80.0, 100.0, 40.0);
++        let window = rect(0.0, 0.0, 400.0, 800.0);
++        let scroll = rect(0.0, 100.0, 200.0, 160.0);
++        let visible = visible_intersection(text, window).unwrap();
++        assert_eq!(
++            visible_intersection(visible, scroll),
++            Some(rect(10.0, 100.0, 100.0, 20.0))
++        );
++        let parent = rect(0.0, 130.0, 200.0, 100.0);
++        assert!(
++            visible_intersection(visible_intersection(visible, scroll).unwrap(), parent).is_none()
++        );
++    }
++
++    #[test]
++    fn fully_scrolled_out_and_empty_bounds_are_invisible() {
++        let viewport = rect(0.0, 0.0, 200.0, 160.0);
++        for text in [
++            rect(10.0, 160.0, 100.0, 40.0),
++            rect(10.0, -40.0, 100.0, 40.0),
++            rect(200.0, 10.0, 100.0, 40.0),
++            rect(10.0, 10.0, 0.0, 40.0),
++            rect(10.0, 10.0, 100.0, 0.0),
++        ] {
++            assert!(visible_intersection(text, viewport).is_none());
++        }
++        assert_eq!(
++            visible_intersection(rect(10.0, 20.0, 100.0, 40.0), viewport),
++            Some(rect(10.0, 20.0, 100.0, 40.0))
++        );
++    }
++}
+diff --git a/crates/nsh-platform-web/src/encode.rs b/crates/nsh-platform-web/src/encode.rs
+index 292f5aa8..7a5458ee 100644
+--- a/crates/nsh-platform-web/src/encode.rs
++++ b/crates/nsh-platform-web/src/encode.rs
+@@ -801,6 +801,22 @@ fn props_json(p: &ViewProps) -> String {
+     if p.selectable_view {
+         s.push_str(",\"selectableView\":true");
+     }
++    if p.text_shimmer {
++        s.push_str(",\"shimmer\":true");
++        let width = nsh_core::shimmer::BAND_WIDTH.0;
++        let [edge, center, end] = nsh_core::shimmer::COVERAGE.map(|p| p.0);
++        let _ = write!(
++            s,
++            ",\"shimmerPaint\":\"animation-duration:{}ms;mask-size:{}% 100%;mask-image:linear-gradient(to right,rgba(0,0,0,{edge}),rgba(0,0,0,{center}),rgba(0,0,0,{end}));--nsh-shimmer-start:{}%;--nsh-shimmer-end:{}%;\"",
++            nsh_core::shimmer::PERIOD.as_millis(),
++            width * 100.0,
++            -width / (1.0 - width) * 100.0,
++            100.0 / (1.0 - width)
++        );
++    }
++    if let Some(color) = p.text_shimmer_color {
++        let _ = write!(s, ",\"shimmerColor\":\"{}\"", css_color(color));
++    }
+     s.push('}');
+     s
+ }
+diff --git a/crates/nsh-platform-web/web/nsh.js b/crates/nsh-platform-web/web/nsh.js
+index 071da883..a3fec50c 100644
+--- a/crates/nsh-platform-web/web/nsh.js
++++ b/crates/nsh-platform-web/web/nsh.js
+@@ -93,6 +93,22 @@ const KEYFRAMES = `
+   50% { transform: translateY(0); animation-timing-function: cubic-bezier(0,0,0.2,1); }
+ }
+ @keyframes nsh-spinner { to { transform: rotate(360deg); } }
++@keyframes nsh-shimmer {
++  from { mask-position: var(--nsh-shimmer-start) 0; }
++  to { mask-position: var(--nsh-shimmer-end) 0; }
++}
++.nsh-shimmer {
++  position: absolute; inset: 0; pointer-events: none; user-select: none;
++  mask-repeat: no-repeat; animation: nsh-shimmer linear infinite;
++}
++.nsh-shimmer-run, .nsh-shimmer-run * {
++  color: var(--nsh-shimmer-color) !important; background: none !important;
++  text-shadow: none !important; text-decoration: none !important;
++}
++.nsh-reduce .nsh-shimmer { display: none !important; }
++@media (forced-colors: active), (prefers-contrast: more) {
++  .nsh-shimmer { display: none !important; }
++}
+ /* Reduced motion: style transitions and keyframes do not run, as on the
+    native backends. */
+ .nsh-reduce .nsh-v { transition: none !important; animation: none !important; }
+@@ -137,7 +153,7 @@ const KEYFRAMES = `
+ .nsh-bar { position: sticky; left: 0; top: 0; width: 0; height: 0; z-index: 2147483000; pointer-events: none; }
+ .nsh-bar > div { position: absolute; border-radius: 2px; background: rgba(0,0,0,.45); transition: opacity .3s; }
+ .nsh-dark .nsh-bar > div { background: rgba(255,255,255,.55); }
+-.nsh-run { position: absolute; white-space: pre; }
++.nsh-run, .nsh-shimmer-run { position: absolute; white-space: pre; }
+ .nsh-run-bg { position: absolute; pointer-events: none; }
+ .nsh-border { position: absolute; inset: 0; pointer-events: none; }
+ /* The mounter's own styles: no element has an inline style but its frame
+@@ -1171,6 +1187,7 @@ class Player {
+     this.started = false;
+     this.hostEvents ??= [];
+     this.fileOperations.clear();
++    for (const el of [...this.shimmerViews ?? []]) this.removeShimmer(el);
+     for (const id of [...this.requests.keys()]) this.fetchCancel(id);
+     for (const id of [...this.websockets.keys()]) this.websocketCancel(id);
+     clearTimeout(this.timer);
+@@ -1498,6 +1515,7 @@ class Player {
+     child._leftWith = null;
+     const host = parent._layer ?? parent;
+     host.insertBefore(child, before && before.parentNode === host ? before : null);
++    this.shimmerTree(child, true);
+     if (parent._kind === "stack") {
+       this.changedStacks.add(parent);
+       this.stackChanged(parent, child);
+@@ -1507,6 +1525,7 @@ class Player {
+   op_r([, id]) {
+     const el = this.view(id);
+     if (!el) return;
++    this.shimmerTree(el, false);
+     if (el._kind === "modal") {
+       this.dismiss(el);
+       return;
+@@ -1538,6 +1557,7 @@ class Player {
+   op_d([, id]) {
+     const el = this.view(id);
+     if (!el) return;
++    this.shimmerTree(el, false);
+     this.views.delete(id);
+     this.mouseTracked.delete(id);
+     if (el._video) {
+@@ -1698,6 +1718,87 @@ class Player {
+     swapClass(el, "_selection", this.styleClass(selection));
+     el._textLabel = runs.map((r) => r[2]).join("");
+     if (el._props?.label == null) el.setAttribute("aria-label", el._textLabel);
++    this.syncShimmer(el, true);
++  }
++
++  shimmerTree(el, mounted) {
++    if (!this.shimmerUsed) return;
++    for (const view of [el, ...el.querySelectorAll(".nsh-v")]) {
++      if (mounted) this.syncShimmer(view);
++      else this.removeShimmer(view);
++    }
++  }
++
++  syncShimmer(el, refresh = false) {
++    if (!el._shimmer || el._kind !== "text") {
++      this.removeShimmer(el);
++      return;
++    }
++    this.shimmerUsed = true;
++    const runs = [...el.querySelectorAll(":scope > .nsh-run")];
++    if (!runs.length) {
++      this.removeShimmer(el);
++      return;
++    }
++    if (!el._shimmerOverlay) {
++      const overlay = document.createElement("div");
++      overlay.className = "nsh-shimmer";
++      overlay.setAttribute("aria-hidden", "true");
++      overlay.inert = true;
++      el.append(overlay);
++      el._shimmerOverlay = overlay;
++      refresh = true;
++      if (!this.shimmerViews?.size) {
++        this.shimmerViews = new Set();
++        this.shimmerVisibility = () => {
++          for (const view of this.shimmerViews) this.shimmerMotion(view);
++        };
++        document.addEventListener("visibilitychange", this.shimmerVisibility);
++        if (typeof IntersectionObserver !== "undefined") {
++          this.shimmerObserver = new IntersectionObserver((entries) => {
++            for (const entry of entries) {
++              if (!this.shimmerViews.has(entry.target)) continue;
++              entry.target._shimmerVisible = entry.isIntersecting;
++              this.shimmerMotion(entry.target);
++            }
++          });
++        }
++      }
++      this.shimmerViews.add(el);
++      el._shimmerVisible = !this.shimmerObserver;
++      this.shimmerObserver?.observe(el);
++    }
++    const overlay = el._shimmerOverlay;
++    overlay.style.cssText = el._props?.shimmerPaint ?? "";
++    overlay.style.setProperty("--nsh-shimmer-color", el._shimmerColor);
++    if (refresh) overlay.replaceChildren(...runs.map((run) => {
++      const clone = run.cloneNode(true);
++      clone.classList.replace("nsh-run", "nsh-shimmer-run");
++      return clone;
++    }));
++    this.shimmerMotion(el);
++  }
++
++  shimmerMotion(el) {
++    const overlay = el._shimmerOverlay;
++    if (!overlay) return;
++    overlay.hidden = this.reduceMotion();
++    overlay.style.animationPlayState = document.hidden || !el.isConnected || !el._shimmerVisible || overlay.hidden
++      ? "paused" : "running";
++  }
++
++  removeShimmer(el) {
++    if (!el._shimmerOverlay) return;
++    el._shimmerOverlay.remove();
++    el._shimmerOverlay = null;
++    this.shimmerObserver?.unobserve(el);
++    this.shimmerViews.delete(el);
++    if (!this.shimmerViews.size) {
++      this.shimmerObserver?.disconnect();
++      this.shimmerObserver = null;
++      document.removeEventListener("visibilitychange", this.shimmerVisibility);
++      this.shimmerVisibility = null;
++    }
+   }
+ 
+   op_e([, id, events]) {
+@@ -1768,6 +1869,9 @@ class Player {
+     const el = this.view(id);
+     if (!el) return;
+     el._props = props;
++    el._shimmer = el._kind === "text" && !!props.shimmer;
++    el._shimmerColor = el._kind === "text" ? props.shimmerColor : undefined;
++    this.syncShimmer(el);
+     if (props.testID) el.dataset.testid = props.testID;
+     else delete el.dataset.testid;
+     const pe = props.pointerEvents;
+@@ -4382,6 +4486,7 @@ class Player {
+     this.root.classList.toggle("nsh-dark", this.shownDark);
+     this.root.classList.toggle("nsh-desktop", this.desktopUI);
+     this.root.classList.toggle("nsh-reduce", this.reduceMotion());
++    for (const el of this.shimmerViews ?? []) this.shimmerMotion(el);
+   }
+ 
+   /** The user asked for less motion (`Environment::reduce_motion`). */
+diff --git a/crates/nsh-platform-web/web/nsh.test.mjs b/crates/nsh-platform-web/web/nsh.test.mjs
+index 4306b69c..73594f53 100644
+--- a/crates/nsh-platform-web/web/nsh.test.mjs
++++ b/crates/nsh-platform-web/web/nsh.test.mjs
+@@ -12,6 +12,126 @@ const { Player } = await import(
+   `data:text/javascript,${encodeURIComponent(`${source}\nexport { Player };`)}`
+ );
+ 
++test("text props store and clear shimmer without glyph updates", () => {
++  const el = {
++    _kind: "text",
++    dataset: {},
++    classList: { toggle() {} },
++  };
++  const player = Object.create(Player.prototype);
++  player.view = () => el;
++  player.updateFocusable = () => {};
++  player.updateTouchAction = () => {};
++  player.syncShimmer = () => {};
++  for (const props of [{}, { shimmer: true }, { shimmer: false }, { shimmer: true }, {}]) {
++    player.op_vp(["vp", 2, props]);
++    assert.equal(el._shimmer, !!props.shimmer);
++  }
++  player.op_vp(["vp", 2, { shimmer: true, shimmerColor: "#123456" }]);
++  assert.equal(el._shimmerColor, "#123456");
++  player.op_vp(["vp", 2, {}]);
++  assert.equal(el._shimmerColor, undefined);
++  el._kind = "view";
++  player.op_vp(["vp", 2, { shimmer: true }]);
++  assert.equal(el._shimmer, false);
++});
++
++test("shimmer shares one mask, pauses when hidden, and releases observers", () => {
++  const listeners = new Map();
++  const observed = new Set();
++  let intersection;
++  let disconnected = false;
++  const document = {
++    hidden: false,
++    createElement: () => ({
++      style: { setProperty(name, value) { this[name] = value; } },
++      setAttribute(name, value) { this[name] = value; },
++      replaceChildren(...children) { this.children = children; },
++      remove() { this.removed = true; },
++    }),
++    addEventListener: (name, callback) => listeners.set(name, callback),
++    removeEventListener: (name, callback) => {
++      assert.equal(listeners.get(name), callback);
++      listeners.delete(name);
++    },
++  };
++  globalThis.document = document;
++  globalThis.IntersectionObserver = class {
++    constructor(callback) { intersection = callback; }
++    observe(el) { observed.add(el); }
++    unobserve(el) { observed.delete(el); }
++    disconnect() { disconnected = true; }
++  };
++  try {
++    const runs = ["Working", "…"].map((textContent) => ({
++      textContent,
++      cloneNode: () => ({ textContent, classList: { replace() {} } }),
++    }));
++    const el = {
++      _kind: "text", _shimmer: true, _shimmerColor: "#b8b8b8", isConnected: true,
++      _props: { shimmerPaint: "animation-duration:2800ms" },
++      querySelectorAll: () => runs,
++      append(overlay) { this.overlay = overlay; },
++    };
++    const player = Object.create(Player.prototype);
++    let reduced = false;
++    player.reduceMotion = () => reduced;
++    player.syncShimmer(el);
++    const overlay = el.overlay;
++    assert.equal(overlay["aria-hidden"], "true");
++    assert.equal(overlay.inert, true);
++    assert.deepEqual(overlay.children.map((r) => r.textContent), ["Working", "…"]);
++    assert.equal(observed.size, 1);
++    assert.equal(overlay.style.animationPlayState, "paused", "wait for intersection");
++    intersection([{ target: el, isIntersecting: true }]);
++    assert.equal(overlay.style.animationPlayState, "running");
++    intersection([{ target: el, isIntersecting: false }]);
++    assert.equal(overlay.style.animationPlayState, "paused");
++    intersection([{ target: el, isIntersecting: true }]);
++    document.hidden = true;
++    listeners.get("visibilitychange")();
++    assert.equal(overlay.style.animationPlayState, "paused");
++    document.hidden = false;
++    listeners.get("visibilitychange")();
++    assert.equal(overlay.style.animationPlayState, "running");
++    reduced = true;
++    player.shimmerMotion(el);
++    assert.equal(overlay.hidden, true);
++    assert.equal(overlay.style.animationPlayState, "paused");
++    reduced = false;
++    player.shimmerMotion(el);
++    assert.equal(overlay.hidden, false);
++    el._shimmerColor = "#424242";
++    player.syncShimmer(el, true);
++    assert.equal(el.overlay, overlay, "content updates preserve the animation");
++    assert.equal(overlay.style["--nsh-shimmer-color"], "#424242");
++    el._shimmer = false;
++    player.syncShimmer(el);
++    assert.equal(overlay.removed, true);
++    assert.equal(observed.size, 0);
++    assert.equal(listeners.size, 0);
++    assert.equal(disconnected, true);
++    el._shimmer = true;
++    player.syncShimmer(el);
++    const mounted = el.overlay;
++    player.views = new Map([[2, el]]);
++    player.mouseTracked = new Set();
++    player.detach = () => {};
++    player.screenGone = () => {};
++    el.contains = () => false;
++    player.op_d(["d", 2]);
++    assert.equal(mounted.removed, true, "unmount removes the overlay");
++    assert.equal(observed.size, 0);
++    assert.equal(listeners.size, 0);
++    el.querySelectorAll = () => [];
++    player.syncShimmer(el);
++    assert.equal(el._shimmerOverlay, null, "empty text has no overlay");
++  } finally {
++    delete globalThis.document;
++    delete globalThis.IntersectionObserver;
++  }
++});
++
+ /** A player on a fake engine; `sent` holds `[name, payload]` of the events it got. */
+ function fakePlayer(options = {}) {
+   const sent = [];
+diff --git a/crates/nsh-platform-web/web/shimmer-browser.test.mjs b/crates/nsh-platform-web/web/shimmer-browser.test.mjs
+new file mode 100644
+index 00000000..4af5de49
+--- /dev/null
++++ b/crates/nsh-platform-web/web/shimmer-browser.test.mjs
+@@ -0,0 +1,152 @@
++import assert from "node:assert/strict";
++import { execFileSync, spawn } from "node:child_process";
++import { mkdtemp, readFile, rm } from "node:fs/promises";
++import { tmpdir } from "node:os";
++import { join } from "node:path";
++import test from "node:test";
++import { inflateSync } from "node:zlib";
++
++let chromium;
++for (const candidate of [process.env.CHROME, "chromium", "chromium-browser", "google-chrome"].filter(Boolean)) {
++  try { execFileSync(candidate, ["--version"], { stdio: "ignore" }); chromium = candidate; break; } catch {}
++}
++
++// Chrome screenshots are non-interlaced, eight-bit RGB or RGBA PNGs.
++function pixels(png) {
++  const chunks = [];
++  let width, height, channels;
++  for (let at = 8; at < png.length;) {
++    const length = png.readUInt32BE(at);
++    const kind = png.toString("ascii", at + 4, at + 8);
++    const data = png.subarray(at + 8, at + 8 + length);
++    if (kind === "IHDR") {
++      width = data.readUInt32BE(0); height = data.readUInt32BE(4);
++      assert.equal(data[8], 8);
++      assert.ok(data[9] === 2 || data[9] === 6);
++      channels = data[9] === 2 ? 3 : 4;
++    }
++    if (kind === "IDAT") chunks.push(data);
++    at += length + 12;
++  }
++  const raw = inflateSync(Buffer.concat(chunks));
++  const stride = width * channels;
++  const out = Buffer.alloc(height * stride);
++  for (let y = 0; y < height; y++) {
++    const filter = raw[y * (stride + 1)];
++    for (let x = 0; x < stride; x++) {
++      const at = y * stride + x;
++      const a = x >= channels ? out[at - channels] : 0;
++      const b = y ? out[at - stride] : 0;
++      const c = y && x >= channels ? out[at - stride - channels] : 0;
++      const p = a + b - c;
++      const paeth = Math.abs(p - a) <= Math.abs(p - b) && Math.abs(p - a) <= Math.abs(p - c)
++        ? a : Math.abs(p - b) <= Math.abs(p - c) ? b : c;
++      out[at] = raw[y * (stride + 1) + 1 + x] + [0, a, b, Math.floor((a + b) / 2), paeth][filter];
++    }
++  }
++  return { width, height, channels, data: out };
++}
++
++test("a single moving mask highlights positioned runs without changing base pixels", { skip: !chromium, timeout: 60000 }, async () => {
++  const dir = await mkdtemp(join(tmpdir(), "nsh-shimmer-browser-"));
++  const browser = spawn(chromium, ["--headless", "--no-sandbox", "--disable-dev-shm-usage",
++    "--no-first-run", "--remote-debugging-port=0", "--user-data-dir=" + dir, "about:blank"],
++  { stdio: ["ignore", "ignore", "pipe"] });
++  let socket;
++  try {
++    const endpoint = await new Promise((resolve, reject) => {
++      let output = "";
++      const timeout = setTimeout(() => reject(Error("Chrome did not start: " + output)), 20000);
++      browser.once("error", reject);
++      browser.stderr.on("data", (data) => {
++        output += data;
++        const match = output.match(/DevTools listening on (ws:\/\/[^\s]+)/);
++        if (match) { clearTimeout(timeout); resolve(new URL(match[1])); }
++      });
++    });
++    const pages = await (await fetch(`http://${endpoint.host}/json/list`)).json();
++    socket = new WebSocket(pages.find((p) => p.type === "page").webSocketDebuggerUrl);
++    await new Promise((resolve, reject) => { socket.onopen = resolve; socket.onerror = reject; });
++    let id = 0;
++    const pending = new Map();
++    socket.onmessage = ({ data }) => {
++      const result = JSON.parse(data);
++      if (!result.id) return;
++      const { resolve, reject } = pending.get(result.id);
++      pending.delete(result.id);
++      if (result.error) reject(Error(JSON.stringify(result.error)));
++      else resolve(result.result);
++    };
++    const call = (method, params = {}) => new Promise((resolve, reject) => {
++      pending.set(++id, { resolve, reject });
++      socket.send(JSON.stringify({ id, method, params }));
++    });
++    const evaluate = async (expression) => {
++      const result = await call("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true });
++      assert.equal(result.exceptionDetails, undefined, JSON.stringify(result.exceptionDetails));
++      return result.result.value;
++    };
++    const source = await readFile(new URL("nsh.js", import.meta.url), "utf8");
++    const module = "data:text/javascript;base64," + Buffer.from(source + "\nexport { Player, KEYFRAMES };").toString("base64");
++    await call("Emulation.setDeviceMetricsOverride", { width: 384, height: 100, deviceScaleFactor: 1, mobile: false });
++    await evaluate(`(async () => {
++      const {Player, KEYFRAMES} = await import(${JSON.stringify(module)});
++      const style = document.createElement('style'); style.textContent = KEYFRAMES; document.head.append(style);
++      document.body.style.margin = '0';
++      window.root = document.createElement('div'); root.className = 'nsh-root'; root.style.cssText = 'width:384px;height:100px;background:black'; document.body.append(root);
++      window.el = document.createElement('div'); el.className = 'nsh-v'; el.style.cssText = 'width:384px;height:100px;color:#929292;font:80px monospace'; root.append(el);
++      for (const left of [0, 192]) { const run = document.createElement('span'); run.className = 'nsh-run'; run.textContent = 'MMMM'; run.style.left = left + 'px'; el.append(run); }
++      window.player = Object.create(Player.prototype); player.reducedMotion = {matches:true};
++      el._kind = 'text'; el._shimmer = true; el._shimmerColor = '#b8b8b8';
++      el._props = {shimmerPaint:'animation-duration:2800ms;mask-size:33.333333% 100%;mask-image:linear-gradient(to right,transparent,black,transparent);--nsh-shimmer-start:-50%;--nsh-shimmer-end:150%;'};
++      player.syncShimmer(el);
++    })()`);
++    const screenshot = async () => pixels(Buffer.from((await call("Page.captureScreenshot", { format: "png" })).data, "base64"));
++    const base = await screenshot();
++    assert.equal(await evaluate("el._shimmerOverlay.hidden"), true);
++    await evaluate(`player.reducedMotion.matches=false; el._shimmerVisible=true; player.shimmerMotion(el);
++      window.animation=el._shimmerOverlay.getAnimations()[0]; animation.pause(); animation.currentTime=1050;`);
++    const first = await screenshot();
++    await evaluate("animation.currentTime=1750");
++    const second = await screenshot();
++    const verifyBand = (image, from, to) => {
++      let changed = 0, fullBase = 0;
++      for (let y = 0; y < image.height; y++) for (let x = 0; x < image.width; x++) {
++        const at = (y * image.width + x) * image.channels;
++        const delta = image.data[at] - base.data[at];
++        if (x < from || x >= to) {
++          assert.equal(delta, 0, `base pixel changed outside band at ${x},${y}`);
++          if (base.data[at] === 146) fullBase++;
++        } else if (delta > 10) changed++;
++      }
++      assert.ok(changed > 200, "the moving band must repaint glyph pixels");
++      assert.ok(fullBase > 500, "normal-color glyph pixels remain outside the band");
++    };
++    verifyBand(first, 63, 193);
++    verifyBand(second, 191, 321);
++    assert.equal(await evaluate("getComputedStyle(el).color"), "rgb(146, 146, 146)");
++    assert.equal(await evaluate("el.querySelectorAll(':scope > .nsh-run').length"), 2);
++    assert.equal(await evaluate("el._shimmerOverlay.children.length"), 2);
++    await evaluate("root.classList.add('nsh-reduce')");
++    const reduced = await screenshot();
++    assert.deepEqual(reduced.data, base.data, "reduced motion shows base pixels only");
++    await evaluate("root.classList.remove('nsh-reduce')");
++    await call("Emulation.setEmulatedMedia", { features: [{ name: "prefers-contrast", value: "more" }] });
++    assert.equal(await evaluate("matchMedia('(prefers-contrast: more)').matches"), true);
++    assert.equal(await evaluate("getComputedStyle(el._shimmerOverlay).display"), "none");
++    const highContrast = await screenshot();
++    assert.deepEqual(highContrast.data, base.data, "more contrast shows base pixels only");
++    await call("Emulation.setEmulatedMedia", { features: [{ name: "forced-colors", value: "active" }] });
++    assert.equal(await evaluate("matchMedia('(forced-colors: active)').matches"), true);
++    assert.equal(await evaluate("getComputedStyle(el._shimmerOverlay).display"), "none");
++    await call("Emulation.setEmulatedMedia", { features: [] });
++    assert.equal(await evaluate("getComputedStyle(el._shimmerOverlay).display"), "block", "media changes apply live");
++    await evaluate("player.removeShimmer(el)");
++    assert.equal(await evaluate("player.shimmerViews.size"), 0);
++  } finally {
++    socket?.close();
++    browser.kill();
++    await new Promise((resolve) => browser.exitCode !== null ? resolve() : browser.once("exit", resolve));
++    await rm(dir, { recursive: true, force: true });
++  }
++});
+diff --git a/docs/dev/text.md b/docs/dev/text.md
+index 5238d6a2..86f9180d 100644
+--- a/docs/dev/text.md
++++ b/docs/dev/text.md
+@@ -1,5 +1,52 @@
+ # Text
+ 
++## Shimmer
++
++`<Text shimmer>` (Rust: `text("…").shimmer(true)`) opts the whole text block into a native,
++linear, repeating left-to-right highlight sweep. Base glyphs keep their normal color and opacity;
++the soft-edged band blends in `shimmerColor` at coverage 0 → 1 → 0. The default is off; removing the
++prop turns it off. A nested Text is a span: its own `shimmer` has no effect. Changing the flag is
++paint-only and reuses the text's measurements and final layout, including fitted font sizes.
++
++`shimmerColor` accepts any NSH color (Rust: `.shimmer_color(color)`). When unset, the core mixes
++the text's color 35% toward white if its HSL lightness is at least 50%, otherwise toward black,
++preserving its alpha (`#929292` → `#B8B8B8`, `#666666` → `#424242`). The resolved color is sent
++to each platform, not computed per frame.
++
++`nsh_core::shimmer` defines the shared 2.8-second period, one-third-width band and coverage.
++Reduced motion, high contrast or OS low-power mode leaves only the static base color, without a band;
++backgrounded, offscreen or detached text pauses. The web draws an inert, aria-hidden copy of
++the positioned runs under one CSS gradient mask, animated by shared CSS keyframes. Reduced
++motion hides that copy; live CSS media queries also hide it for `forced-colors: active` or
++`prefers-contrast: more`. Intersection and page visibility events pause its animation. Turning
++shimmer off, removing the text or stopping the app releases its observer entries and copy.
++
++iOS renders a highlight-colored glyph image only when text is painted, leaving the base
++glyphs unchanged. A single Core Animation gradient mask sweeps across the entire block;
++there is no display link or per-frame application work. Reduce Motion, Increase Contrast
++(darker system colors) and Low Power Mode notifications hide the copy and remove its animation.
++Detaching, hiding or fully clipping the Text also removes it, and returning restarts it.
++Visibility intersects its window-space bounds with the window and every clipping ancestor;
++hidden or transparent ancestors suppress the band too. Layout and scroll delegate events
++recheck a weak registry of shimmer texts, including attached overscan rows, without polling.
++Backgrounding explicitly removes the animation
++(`UIApplicationDidEnterBackgroundNotification`); becoming active re-adds it, so it cannot
++keep running in the render server while the app is backgrounded. Observer tokens use weak
++view references and are removed when shimmer is disabled or the view is released.
++
++Android draws a second glyph pass into a layer, repaints it with the highlight, and applies
++a reusable gradient mask with `DST_IN`. One view-owned `ValueAnimator` moves that mask;
++it does not rebuild the text layout. Attachment, aggregated visibility and window visibility
++gate the animator. Scroll/global-layout listeners check the global visible rectangle,
++so attached overscan or ancestor-clipped text stops until it intersects the viewport again.
++These listeners are removed on detach or when shimmer is disabled. No polling is used.
++A settings observer and power-save broadcast receiver shared per surface
++stop it live for disabled animations or power save, leaving the base pass only. The same observer
++watches the secure `high_text_contrast_enabled` setting and stops the band for High contrast text.
++The observers exist only while shimmer text is attached.
++
++## Text behavior
++
+ - **Text**: `<Text numberOfLines ellipsizeMode="tail|head|middle|clip">`; styles `fontFamily` (system or imported fonts:
+   `import Inter from "./Inter.ttf"` evaluates to the family name and registers the font before the first frame), `fontWeight`,
+   `fontStyle`, `letterSpacing`, `textDecorationLine` + `textDecorationColor`, `textTransform`, `lineHeight`, `textAlign`,
+diff --git a/examples/gallery/demos/TextDemo.tsx b/examples/gallery/demos/TextDemo.tsx
+index f71245cd..0bb820bc 100644
+--- a/examples/gallery/demos/TextDemo.tsx
++++ b/examples/gallery/demos/TextDemo.tsx
+@@ -1,4 +1,4 @@
+-import { Image, type JSX, signal, Text, View } from "nsh";
++import { Image, type JSX, Scroll, signal, Text, View } from "nsh";
+ import { fontScale } from "nsh";
+ import pacifico from "../fonts/Pacifico-Regular.ttf";
+ import logo from "../logo@2x.png";
+@@ -293,6 +293,31 @@ function Alignment() {
+ }
+ 
+ export function TextDemo() {
+-  const cards = [Links, Inline, Fonts, Scaling, Truncation, Cjk, RightToLeft, Alignment];
++  const cards = [Shimmer, Links, Inline, Fonts, Scaling, Truncation, Cjk, RightToLeft, Alignment];
+   return <DemoPage cards={cards} />;
+ }
++
++function Shimmer() {
++  return (
++    <Card icon="text" title="Shimmer" subtitle="A native highlight over the text’s own color">
++      <View style={{ backgroundColor: "#000", padding: 24, borderRadius: 12 }}>
++        <Text shimmer style={{ color: "#929292", fontSize: 32, alignSelf: "flex-start" }}>Working…</Text>
++      </View>
++      <View style={{ backgroundColor: "#fff", padding: 24, borderRadius: 12 }}>
++        <Text shimmer style={{ color: "#666666", fontSize: 32, alignSelf: "flex-start" }}>Working…</Text>
++      </View>
++      <Caption label="Scroll to row 21 to reveal the highlight, then past it to pause it." />
++      <Scroll testID="shimmer-scroll" style={{ height: 160, backgroundColor: "#000", borderRadius: 12 }}>
++        <View>
++          {Array.from({ length: 31 }, (_, i) => (
++            <View style={{ height: 40, flexShrink: 0, justifyContent: "center", paddingHorizontal: 16 }}>
++              {i === 20
++                ? <Text testID="shimmer-scroll-text" shimmer style={{ color: "#929292", fontSize: 24, alignSelf: "flex-start" }}>Working…</Text>
++                : <Text style={{ color: "#929292", fontSize: 14 }}>Row {i + 1}</Text>}
++            </View>
++          ))}
++        </View>
++      </Scroll>
++    </Card>
++  );
++}
+diff --git a/tests/compat/cases/props/props-text-lines.tsx b/tests/compat/cases/props/props-text-lines.tsx
+index edc8ff65..45725352 100644
+--- a/tests/compat/cases/props/props-text-lines.tsx
++++ b/tests/compat/cases/props/props-text-lines.tsx
+@@ -5,11 +5,12 @@
+ // the text fits, at most to `minimumFontScale` (text that fits keeps its
+ // size). Its script
+ // checks each.
+-import { Text, View } from "nsh";
++import { Text, View, signal } from "nsh";
+ 
+ const LONG = "One two three four five six seven eight nine ten eleven twelve";
+ 
+ function App() {
++  const shimmer = signal(true);
+   return (
+     <View style={{ flex: 1, paddingTop: 64, alignItems: "flex-start" }}>
+       <Text testID="two" numberOfLines={2} style={{ width: 100, fontSize: 10, lineHeight: 12 }}>
+@@ -42,6 +43,11 @@ function App() {
+         {LONG}
+       </Text>
+       <Text testID="plain">Plain</Text>
++      <Text testID="shimmer" shimmer={shimmer()}>Shimmer</Text>
++      <Text testID="shimmer-off" shimmer={false} shimmerColor="#123456">Static</Text>
++      <View testID="shimmer-toggle" onPress={() => shimmer.set(!shimmer())}>
++        <Text>Toggle shimmer</Text>
++      </View>
+     </View>
+   );
+ }
+diff --git a/tests/compat/cases/props/script.txt b/tests/compat/cases/props/script.txt
+index aac3d500..1463e60a 100644
+--- a/tests/compat/cases/props/script.txt
++++ b/tests/compat/cases/props/script.txt
+@@ -313,6 +313,15 @@ covers [props] ellipsizeMode
+ covers [props] selectable
+ covers [props] adjustsFontSizeToFit
+ covers [props] minimumFontScale
++prop id:shimmer shimmer true
++prop id:shimmer-off shimmer false
++prop id:shimmer-off shimmerColor #123456
++tap id:shimmer-toggle
++prop id:shimmer shimmer false
++tap id:shimmer-toggle
++prop id:shimmer shimmer true
++covers [props] shimmer
++covers [props] shimmerColor
+ # props-view-accessibility
+ tap id:case-props-view-accessibility
+ # for each view's accessibility.

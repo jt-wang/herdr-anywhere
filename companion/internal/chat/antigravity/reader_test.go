@@ -525,6 +525,33 @@ func TestImage(t *testing.T) {
 	}
 }
 
+func TestImageSize(t *testing.T) {
+	for _, size := range []int64{0, 12 << 20, (12 << 20) + 1} {
+		p, brain := withMedia(t, "$BRAIN/shot.png")
+		f, err := os.Create(filepath.Join(brain, "shot.png"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.Write(png1()); err != nil {
+			t.Fatal(err)
+		}
+		if err := f.Truncate(size); err != nil {
+			t.Fatal(err)
+		}
+		if err := f.Close(); err != nil {
+			t.Fatal(err)
+		}
+		_, b, err := (&Reader{}).Image(p, "0.m0")
+		if size == 12<<20 {
+			if err != nil || int64(len(b)) != size {
+				t.Fatalf("image at limit: %d bytes, %v", len(b), err)
+			}
+		} else if err != chat.ErrNoStep {
+			t.Fatalf("image of %d bytes: %v", size, err)
+		}
+	}
+}
+
 // A media URI written as a file: URL or with Windows separators still names the file it names, and nothing else.
 func TestImageURIs(t *testing.T) {
 	// An image file the record calls something else than an image is not sent.

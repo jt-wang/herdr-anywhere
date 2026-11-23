@@ -131,10 +131,16 @@ go build -o ~/.local/bin/herdr-anywhere ./cmd/herdr-anywhere    # needs Go 1.27.
 | Android | `app/android/build.sh` (needs a JDK, the Android SDK and NDK, and Go) | `app/android/build/Herdr.apk` |
 | iOS simulator | [Prepare NativeShell](app/ios/README.md#build-and-install), then `app/ios/build.sh App.tsx simulator` (needs Xcode, xcodegen and Go) | `app/ios/build/Herdr.app` |
 | iPhone, under your Apple account | [app/ios/README.md](app/ios/README.md) | `app/ios/build/Herdr.app` |
-| Web | `cd app && nsh package --target web -o dist/web` | `app/dist/web/Herdr Anywhere` |
+| Web | `sh app/scripts/package-web.sh` (builds and verifies the matched patched CLI and web runtime; needs Rust) | `app/dist/web/Herdr Anywhere` |
 | The release's companion | `cd companion && CGO_ENABLED=0 go build -buildvcs=false -trimpath -ldflags '-s -w' -o herdr-anywhere-macos-arm64 ./cmd/herdr-anywhere` (for an Intel Mac: `GOARCH=amd64` and `-o herdr-anywhere-macos-amd64`) | `companion/herdr-anywhere-macos-arm64` |
 
 Tests:
+
+For Android picture/zoom fixtures, first build a matched standalone runtime with
+`sh app/scripts/nsh-runtime.sh android <dedicated-source> <runtime-output>` and set `NSH_RUNTIME` to that
+absolute runtime output. It contains both the embedding AAR and the standalone DEX/ABI libraries; a stock CLI
+or an AAR alone does not exercise this app's patched engine. The Web wrapper builds its matched runtime into
+the user cache by default, or verifies the runtime selected by `NSH_RUNTIME`.
 
 ```sh
 cd companion && go test ./...

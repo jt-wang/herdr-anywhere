@@ -15,7 +15,7 @@ func TestZoomPackageRuntime(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("the packaging scripts run on macOS and Linux")
 	}
-	for _, target := range []string{"ios-simulator", "android", "stale-ios", "plain-ios"} {
+	for _, target := range []string{"ios-simulator", "android", "stale-android", "stale-ios", "plain-ios"} {
 		t.Run(target, func(t *testing.T) {
 			root := t.TempDir()
 			app := filepath.Join(root, "app")
@@ -53,7 +53,26 @@ func TestZoomPackageRuntime(t *testing.T) {
 			HC(t, bin, "xcodegen", Spec{})
 			nshCalls := filepath.Join(root, "nsh-calls")
 			HC(t, bin, "nsh", Spec{Calls: nshCalls})
+			matched := filepath.Join(root, "matched-runtime")
+			matchedCalls := filepath.Join(root, "matched-nsh-calls")
+			HC(t, filepath.Join(matched, "cli/bin"), "nsh", Spec{Calls: matchedCalls})
+			verifyCalls := filepath.Join(root, "verify-calls")
+			verify := Spec{Calls: verifyCalls}
+			if target == "stale-android" {
+				verify.Exit = 1
+			}
+			HC(t, filepath.Join(app, "scripts"), "runtime-check", verify)
+			write("app/scripts/nsh-runtime.sh", `#!/bin/sh
+# Preserve an ordering violation even if the packaging script's EXIT trap removes the entry.
+if [ -e "$(dirname "$0")/../.zoom-check.tsx" ]; then
+  touch "$(dirname "$0")/../entry-before-verify"
+fi
+exec "$(dirname "$0")/runtime-check" "$@"
+`)
 			arg := target
+			if target == "stale-android" {
+				arg = "android"
+			}
 			if target == "stale-ios" {
 				arg = "ios-simulator"
 				write("framework/nsh-build.txt", "old-engine\n")
@@ -62,10 +81,29 @@ func TestZoomPackageRuntime(t *testing.T) {
 			if target == "plain-ios" {
 				cmd = exec.Command("sh", filepath.Join(app, "ios/build.sh"), "App.tsx", "simulator")
 			}
-			cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "NSH_IOS_EMBED="+filepath.Join(root, "framework"), "NSH_IOS_APP_ID=", "CHAT=1")
+			cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "NSH_RUNTIME="+matched, "NSH_HOME=", "NSH_IOS_EMBED="+filepath.Join(root, "framework"), "NSH_IOS_APP_ID=", "CHAT=1")
 			out, err := cmd.CombinedOutput()
 			xcode, _ := os.ReadFile(calls)
 			nsh, _ := os.ReadFile(nshCalls)
+			matchedNsh, _ := os.ReadFile(matchedCalls)
+			if target == "android" || target == "stale-android" {
+				checked, _ := os.ReadFile(verifyCalls)
+				if string(checked) != "--verify-android "+matched+"\n" {
+					t.Fatalf("Android did not verify the selected runtime: %s", checked)
+				}
+				if _, err := os.Stat(filepath.Join(app, "entry-before-verify")); !os.IsNotExist(err) {
+					t.Fatal("temporary entry written before runtime verification")
+				}
+			}
+			if target == "stale-android" {
+				if err == nil || len(nsh) != 0 || len(matchedNsh) != 0 || len(xcode) != 0 {
+					t.Fatalf("stale Android runtime was not rejected before packaging: %v, nsh=%s matched=%s xcode=%s", err, nsh, matchedNsh, xcode)
+				}
+				if _, err := os.Stat(filepath.Join(app, ".zoom-check.tsx")); !os.IsNotExist(err) {
+					t.Fatal("temporary entry left behind after runtime rejection")
+				}
+				return
+			}
 			if target == "stale-ios" {
 				if err == nil || !strings.Contains(string(out), "no NativeShell built as") || len(xcode) != 0 {
 					t.Fatalf("stale framework was not rejected before building: %v, %s", err, out)
@@ -82,8 +120,8 @@ func TestZoomPackageRuntime(t *testing.T) {
 				return
 			}
 			if target == "android" {
-				if !strings.Contains(string(nsh), "package --target android") || len(xcode) != 0 {
-					t.Fatalf("Android changed build path: nsh=%s xcode=%s", nsh, xcode)
+				if !strings.Contains(string(matchedNsh), "package --target android") || len(nsh) != 0 || len(xcode) != 0 {
+					t.Fatalf("Android did not use the matched CLI: matched=%s fallback=%s xcode=%s", matchedNsh, nsh, xcode)
 				}
 				return
 			}

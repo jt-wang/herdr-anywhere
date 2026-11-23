@@ -1,0 +1,51 @@
+diff --git a/crates/nsh-platform-android/java/com/longbridge/nsh/Mounter.java b/crates/nsh-platform-android/java/com/longbridge/nsh/Mounter.java
+--- a/crates/nsh-platform-android/java/com/longbridge/nsh/Mounter.java
++++ b/crates/nsh-platform-android/java/com/longbridge/nsh/Mounter.java
+@@ -242,6 +242,7 @@ final class Mounter {
+     }
+ 
+     void apply(byte[] bytes, Object[] objects, long seq) {
++        int[] avoidingBefore = avoidingViewport();
+         ByteBuffer b = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN);
+         while (b.hasRemaining()) {
+             int op = b.getInt();
+@@ -552,6 +553,12 @@ final class Mounter {
+         }
+         created.clear();
+         finishNavigation();
++        // The app can move the focused scroll view clear of the keyboard after the insets came (a screen padded by
++        // the keyboard's height): its padding must not stay at what the old position needed. Only a moved viewport
++        // pads and reveals again; other batches and the user's scrolling leave the content where it is.
++        if (avoidingBefore != null && !java.util.Arrays.equals(avoidingBefore, avoidingViewport())) {
++            keyboard(keyboardTop);
++        }
+         outputs(Native.afterBatch(handle(), seq));
+     }
+ 
+@@ -2156,6 +2163,18 @@ final class Mounter {
+ 
+     /** The scroll view padded to clear the keyboard. */
+     private int avoided = -1;
++    /** The keyboard's top edge on screen, as {@link #keyboard} last had it. */
++    private int keyboardTop = Integer.MAX_VALUE;
++
++    /** Where the keyboard-avoiding scroll view is on screen (left, top, width, height), or null. */
++    private int[] avoidingViewport() {
++        if (avoided < 0 || keyboardTop == Integer.MAX_VALUE) return null;
++        View v = views.get(avoided);
++        if (!(v instanceof ScrollBox)) return null;
++        int[] at = new int[2];
++        v.getLocationOnScreen(at);
++        return new int[] {at[0], at[1], v.getWidth(), v.getHeight()};
++    }
+ 
+     /**
+      * The software keyboard's top edge moved, in screen coordinates
+@@ -2164,6 +2183,7 @@ final class Mounter {
+      * modal window).
+      */
+     void keyboard(int screenTop) {
++        keyboardTop = screenTop;
+         ScrollBox scroll = focused == null ? null : scrollAround(focused);
+         boolean hidden = screenTop == Integer.MAX_VALUE;
+         if (avoided >= 0) {

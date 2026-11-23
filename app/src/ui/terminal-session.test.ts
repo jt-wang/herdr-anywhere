@@ -372,7 +372,7 @@ test("attaching tells herdr-core the phone's colours, so a program that asks get
   s.page(JSON.stringify({ t: 'ready', cols: 80, rows: 24 }))
   await settle()
   const at = core.calls.find((c) => c.method === 'terminal.attach')!.params
-  expect(at.display).toEqual({ fg: '#d2d4d9', bg: '#17191d', cursor: '#d2d4d9' })
+  expect(at.display).toEqual({ fg: '#d2d4d9', bg: '#000000', cursor: '#d2d4d9' })
 })
 
 test('switching the theme while attached attaches again with the new colours', async () => {

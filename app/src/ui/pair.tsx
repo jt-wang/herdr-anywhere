@@ -1,8 +1,8 @@
 // The first launch: pair this phone with the computer that runs herdr-core.
-import { Scroll, signal, Text, View } from 'nsh'
+import { effect, keyboardFrame, Scroll, signal, Text, View, windowSize } from 'nsh'
 import { Input } from 'nsh/base'
 import { pairThrough, parseInvite, parsePairLink, pairWith, tunnelCode, type Link, type Tunnel } from '../link.ts'
-import { Button, openPrivacy } from './kit.tsx'
+import { Button, openPrivacy, TOUCH_TARGET } from './kit.tsx'
 import { t } from '../strings/index.ts'
 import { keyboardGone } from './keyboard.ts'
 
@@ -52,15 +52,30 @@ export function PairScreen(props: { onPaired: (l: Link) => void; device: string;
     void pair()
   }
   if (props.initial && (parsePairLink(props.initial) || (tunnel && parseInvite(props.initial)))) queueMicrotask(() => void pair())
+  // The keyboard covers the bottom of the screen (iOS 27, iPhone 17: the error under the Pair button, the only place
+  // that says why pairing failed). The content gets room under it, and an error under the keyboard scrolls up into view.
+  let scroller: any
+  let offset = 0
+  const errorNode = signal<any>(null)
+  effect(() => {
+    const kb = keyboardFrame().height, node = errorNode()
+    if (!error() || kb <= 0 || !node) return
+    void node.measure().then((m: any) => {
+      if (!m) return
+      const over = m.pagePosition.y + m.bounds.size.height + 12 - (windowSize().height - kb)
+      if (over > 0) scroller?.scrollTo({ y: offset + over, animated: true })
+    })
+  })
   return (
-    <Scroll class="flex-1 bg-background" keyboardShouldPersistTaps="handled" contentClass="px-6 pt-[env(safe-area-inset-top)] mt-12 pb-10 gap-3">
+    <Scroll ref={(r: any) => { scroller = r }} class="flex-1 bg-background" keyboardShouldPersistTaps="handled" contentClass="w-full max-w-[524px] self-center px-[22px] pt-[env(safe-area-inset-top)] mt-12 gap-3"
+      contentStyle={{ paddingBottom: 40 + keyboardFrame().height }} onScroll={(e) => { offset = e.offset.y }}>
       <If when={props.onBack}>
-        <View role="button" testID="pair-back" onPress={() => props.onBack!()} class="self-start -ml-2 -mt-8 px-2 py-2 active:opacity-60">
+        <View role="button" testID="pair-back" onPress={() => props.onBack!()} style={{ minWidth: TOUCH_TARGET, minHeight: TOUCH_TARGET }} class="self-start -ml-2 -mt-8 px-2 py-2 justify-center active:opacity-60">
           <Text class="text-[15px] text-foreground">‹ {t('back')}</Text>
         </View>
       </If>
       <Text class="text-[24px] font-semibold text-foreground tracking-[-0.4px]">{t('pairTitle')}</Text>
-      <Text class="text-[15px] leading-[22px] text-muted-foreground">
+      <Text class="text-[15px] leading-[23px] text-muted-foreground">
         {tunnel
           ? t('pairIntroTunnel')
           : t('pairIntroWeb')}
@@ -77,7 +92,7 @@ export function PairScreen(props: { onPaired: (l: Link) => void; device: string;
       </If>
       <Input testID="pair-link" placeholder={tunnel ? 'herdr1:… / herdr2:…' : origin ? t('linkOrCode') : 'http://…/#pair=…'} value={text()} onChange={(t) => text.set(t)}
         autoCapitalize="none" autoCorrect={false} keyboardType="url" submitBehavior="blurAndSubmit" onSubmit={() => void pair()}
-        class="mt-2 rounded-(--radius) border border-input bg-card px-3 py-3 text-[14px] font-mono text-foreground placeholder:text-sidebar-foreground" />
+        class="mt-2 rounded-(--radius) border border-input bg-card px-3 py-3 text-[14px] font-mono text-foreground selection:bg-ring placeholder:text-sidebar-foreground" />
       <Button label={busy() ? t('pairing') : t('pair')} testID="pair" disabled={busy()} onPress={() => void pair()} />
       <If when={busy() && emoji().length > 0}>
         <View testID="pair-emoji" class="items-center gap-2 rounded-(--radius) border border-border bg-card p-4">
@@ -85,7 +100,7 @@ export function PairScreen(props: { onPaired: (l: Link) => void; device: string;
           <Text class="text-[14px] leading-5 text-foreground text-center">{t('emojiCheck')}</Text>
         </View>
       </If>
-      <If when={error()}><Text testID="pair-error" class="text-[14px] leading-5 text-destructive">{error()}</Text></If>
+      <If when={error()}><Text testID="pair-error" class="text-[14px] leading-5 text-destructive" ref={(r: any) => errorNode.set(r)}>{error()}</Text></If>
       <If when={props.onTry}>
         <View class="mt-3 gap-2 border-t border-border pt-4">
           <Text class="text-[13px] leading-[18px] text-muted-foreground">{t('tryItHint')}</Text>

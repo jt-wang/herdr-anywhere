@@ -1,6 +1,6 @@
 // The app: pairing on first launch, then home ⇄ space ⇄ settings over one live store, with alerts and sheets
 // over every screen.
-import { cleanup, colorScheme, computed, createAnimatedValue, effect, Keyboard, platform, safeAreaInsets, setColorScheme, signal, Storage, Text, Video, View } from 'nsh'
+import { cleanup, colorScheme, computed, createAnimatedValue, effect, Keyboard, platform, safeAreaInsets, setColorScheme, signal, Storage, Text, Video, View, windowSize } from 'nsh'
 import { createNavStack, NavPage, NavStack } from 'nsh/base'
 import type { ViewSwitchProps } from './view-switch.tsx'
 import type { Store } from '../store.ts'
@@ -20,7 +20,7 @@ import { PictureSheet } from './picture-sheet.tsx'
 import { MenuSheet } from './menu-sheet.tsx'
 import { toastTop } from './toast-top.ts'
 import { makeDemo, type Demo } from '../demo.ts'
-import { useSignal } from './kit.tsx'
+import { Button, useSignal } from './kit.tsx'
 import { APP_VERSION, installProblem, Updates } from '../updates.ts'
 import { CHANNEL } from '../channel.ts'
 import { lang, langFor, setPhoneLanguages, setPicked, t } from '../strings/index.ts'
@@ -104,6 +104,10 @@ function Connected(props: { deps: RootDeps; store: Store; link: Link; unpaired: 
   const startOn = props.deps.prefs.prefs.get()
   const first: Route = startOn.progressFirst && startOn.homeView !== 'agents' ? { name: 'progress' } : { name: 'home' }
   const nav = createNavStack<Route>(props.deps.opensSettings ? [first, { name: 'settings' }] : [first])
+  // The same list and store at every size; opening a second column does not replace the navigation stack.
+  const wide = () => windowSize().width >= 840
+  const sidebarWidth = () => Math.min(320, Math.max(296, windowSize().width * 0.28))
+  const detailWidth = () => windowSize().width - (wide() ? sidebarWidth() : 0)
   const diagnosticStatus = signal(diagnostics.status)
   store.openConnection = () => nav.push({ name: 'connection' })
   store.useAutomatic = () => deps.prefs.set({ connection: 'auto' })
@@ -117,7 +121,6 @@ function Connected(props: { deps: RootDeps; store: Store; link: Link; unpaired: 
   const folders = folderApi(deps.linker, deps.fetcher)
   store.files = fileApi(deps.linker, deps.fetcher)
   store.chat = chatApi(deps.linker, deps.fetcher)
-  store.chatFirst = { get: () => deps.prefs.prefs.get().chatFirst, set: (v) => deps.prefs.set({ chatFirst: v }) }
   store.chatSetupAsked = {
     has: (agent) => deps.prefs.prefs.get().chatSetupAsked.includes(agent),
     add: (agent) => { const was = deps.prefs.prefs.get().chatSetupAsked; if (!was.includes(agent)) deps.prefs.set({ chatSetupAsked: [...was, agent] }) },
@@ -135,6 +138,7 @@ function Connected(props: { deps: RootDeps; store: Store; link: Link; unpaired: 
   const offInstall = followInstallFailures((m) => store.toast({ title: t('couldntUpdateApp'), body: installProblem(m), level: 'error' }))
   cleanup(() => { updates.stop(); offInstall() })
   const prefs = useSignal(deps.prefs.prefs)
+  store.chatFirst = { get: () => prefs().chatFirst, set: (v) => deps.prefs.set({ chatFirst: v }) }
   store.showNames = () => prefs().showAgentNames
   store.wants = (k) => (k === 'blocked' ? deps.prefs.prefs.get().alertBlocked : deps.prefs.prefs.get().alertDone)
   // The page (web-host.js) or the Android activity says whether the app is in front; on iOS it is while it runs.
@@ -219,6 +223,20 @@ function Connected(props: { deps: RootDeps; store: Store; link: Link; unpaired: 
       </View>
     </NavPage>
   )
+  const chatAttention = useSignal(store.chatAttention)
+  const home = (master = false) => (
+    <HomeScreen updates={updates} prefs={deps.prefs} store={store} plain={!!deps.tunnel && plainLink(props.link)} actions={{
+      // A home tap must reopen a space even while a native dismissal is still finishing.
+      openSpace: (id) => { nav.popToRoot(); openSpace(id) },
+      openAgent: (a) => { nav.popToRoot(); openTerminal(a.address) }, openSub: (addr) => { nav.popToRoot(); openTerminal(addr) },
+      addAgent: (space) => newTarget.set({ kind: 'tab', space, agent: true }), newMenu: () => newTarget.set({ kind: 'space' }),
+      settings: () => { if (nav.routes().at(-1)?.name !== 'settings') nav.push({ name: 'settings' }) },
+      rename: (kind, id, current) => renaming.set({ kind, id, current }), leaveDemo: props.leaveDemo,
+      doing: (addr) => (deps.prefs.prefs.get().progressFirst ? progress.taskOn(addr) : undefined),
+      view: master && nav.routes()[0]?.name !== 'home' ? undefined : view,
+      coveredAttention: (addr) => nav.routes().at(-1)?.name === 'space' && chatAttention() === addr,
+    }} />
+  )
   const page = (r: Route) => {
     // JS page construction, not a presented-frame timestamp. Native separately records the host's appearance.
     diag('ui-page', { route: r.name })
@@ -226,7 +244,8 @@ function Connected(props: { deps: RootDeps; store: Store; link: Link; unpaired: 
     : r.name === 'task' ? progressPage(r, <TaskScreen data={progress} id={r.id} actions={pactions} />)
     : r.name === 'space'
       ? <NavPage headerVisible={false} class="bg-sidebar">
-          <SpaceScreen store={store} spaceId={r.id} actions={{
+          <SpaceScreen store={store} spaceId={r.id} width={detailWidth}
+            active={() => { const top = nav.routes().at(-1); return top?.name === 'space' && top.id === r.id }} actions={{
             back: () => nav.pop(), newTab: (space) => newTarget.set({ kind: 'tab', space }), addAgent: (space) => newTarget.set({ kind: 'tab', space, agent: true }),
             rename: (kind, id, current) => renaming.set({ kind, id, current }), fontSize: () => prefs().fontSize,
             typeIn: () => deps.prefs.prefs.get().typeIn, keepTypeIn: (m) => deps.prefs.set({ typeIn: m }),
@@ -251,21 +270,22 @@ function Connected(props: { deps: RootDeps; store: Store; link: Link; unpaired: 
           <DiagnosticsScreen back={() => nav.pop()} changed={(s) => diagnosticStatus.set(s)} />
         </NavPage>
       : <NavPage headerVisible={false} class="bg-sidebar">
-          <HomeScreen updates={updates} prefs={deps.prefs} store={store} plain={!!deps.tunnel && plainLink(props.link)} actions={{
-            // A swipe can expose home before native reports the old page's dismissal. A home tap must reopen it,
-            // not take openSpace's same-page shortcut (which still preserves state for the in-page switcher).
-            openSpace: (id) => { nav.popToRoot(); openSpace(id) },
-            openAgent: (a) => { nav.popToRoot(); openTerminal(a.address) }, openSub: (addr) => { nav.popToRoot(); openTerminal(addr) },
-            addAgent: (space) => newTarget.set({ kind: 'tab', space, agent: true }), newMenu: () => newTarget.set({ kind: 'space' }), settings: () => nav.push({ name: 'settings' }),
-            rename: (kind, id, current) => renaming.set({ kind, id, current }), leaveDemo: props.leaveDemo,
-            doing: (addr) => (deps.prefs.prefs.get().progressFirst ? progress.taskOn(addr) : undefined),
-            view,
-          }} />
+          <If when={wide()} else={home()}>
+            <View testID="workspace-empty" class="flex-1 bg-background items-center justify-center gap-5 p-6">
+              <Text class="text-[24px] font-medium text-foreground">Herdr Anywhere</Text>
+              <Button label={t('newSpace')} testID="workspace-new" kind="outline" onPress={() => newTarget.set({ kind: 'space' })} />
+            </View>
+          </If>
         </NavPage>
   }
   return (
     <View class="flex-1 bg-sidebar">
-      <NavStack state={nav} class="flex-1">{(r) => page(r)}</NavStack>
+      <View class="flex-1 flex-row">
+        <If when={wide()}>
+          <View testID="workspace-sidebar" style={{ width: sidebarWidth() }} class="border-r border-border">{home(true)}</View>
+        </If>
+        <NavStack state={nav} class="flex-1">{(r) => page(r)}</NavStack>
+      </View>
       <NewSheet store={store} target={newTarget} folders={folders} onStarted={(r) => openSpace(r.space)} />
       <RenameSheet store={store} target={renaming} />
       <PeekSheet store={store} address={peeking} fontSize={() => prefs().fontSize} />

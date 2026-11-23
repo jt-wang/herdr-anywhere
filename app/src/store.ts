@@ -157,6 +157,17 @@ export class Store {
   /** Composer text typed while the line was down: sent, in order, once it is back. */
   readonly pending = new Signal<{ address: string; text: string }[]>([])
   readonly sending = new Signal<Sending[]>([])
+  /** Unsubmitted input belongs to this paired store, including while its composer is unmounted. Not persisted. */
+  private readonly composerDrafts = new Map<string, Signal<string>>()
+  composerDraft(addr: string) {
+    let draft = this.composerDrafts.get(addr)
+    if (!draft) { draft = new Signal(''); this.composerDrafts.set(addr, draft) }
+    return draft
+  }
+  private settleComposerDraft(addr: string, sent: string) {
+    const draft = this.composerDrafts.get(addr)
+    if (draft?.get().startsWith(sent)) draft.set(draft.get().slice(sent.length).trimStart())
+  }
   private broughtBack = false
   hello?: Hello
   home = ''
@@ -164,6 +175,8 @@ export class Store {
   slots = new Map<string, Slot>()
   /** What the person can see: the app is in front and a tab's panes are on screen. */
   readonly activity = new Signal(true)
+  /** The visible chat decision owns its attention accent; duplicate navigation summaries stay neutral. */
+  readonly chatAttention = new Signal<string | null>(null)
   readonly backgroundWatch = new Signal(true)
   get appActive() { return this.activity.get() }
   set appActive(front: boolean) {
@@ -1281,13 +1294,13 @@ export class Store {
    *  No time limit: herdr-core (from 0.1.20) answers once a person sends or clears what they typed in that terminal, up
    *  to 60 s after their last key by default, set per computer, and says nothing of it while it waits. It ends with
    *  the answer or when the line goes; then herdr-core drops it, its sender gone. */
-  async compose(addr: string, text: string) {
+  async compose(addr: string, text: string, fromComposer = false) {
     // One at a time: herdr-core runs each send it is given, so a second while the first is held would arrive too.
     if (this.sending.get().some((x) => x.address === addr && !x.failed)) return
     if (this.conn.get() !== 'ready' || !this.hc) {
       const draft = { address: addr, text }
       this.pending.set([...this.pending.get(), draft])
-      try { await this.saveContent() }
+      try { await this.saveContent(); if (fromComposer) this.settleComposerDraft(addr, text) }
       catch (e) { this.pending.set(this.pending.get().filter((x) => x !== draft)); throw e }
       return
     }
@@ -1307,6 +1320,8 @@ export class Store {
       await this.keepSending()
       await this.call('terminal.send', { terminal: addr, text, force: true }, { timeoutMs: 0 })
       going = false
+      // Every mounted composer follows the same draft, including a view reopened before this acknowledgement.
+      if (fromComposer) this.settleComposerDraft(addr, text)
       mark(null)
       void this.keepSending().catch((e) => this.cacheError(e))
     } catch (e) {

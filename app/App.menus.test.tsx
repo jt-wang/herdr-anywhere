@@ -59,7 +59,8 @@ test("an agent's long press: its menu titled with the row's words, Pin to the to
   expect([app.count('id:menu >> text:Codex'), app.count('id:menu >> text:api')]).toEqual([1, 1])
   await app.press('id:menu-pin')
   await app.waitFor('id:pinned-agent-t2')
-  expect(app.count('id:menu')).toBe(0)
+  // The core can publish the pin before the native sheet's exit transition completes.
+  await app.waitUntil(() => app.count('id:menu') === 0)
 })
 
 test("a space's long press: Rename opens the rename sheet", async () => {
@@ -83,7 +84,7 @@ for (const locale of ['zh-CN', 'zh-TW', 'es-ES', 'ko-KR', 'ja-JP', 'ru-RU']) {
 }
 
 test("a wide screen's tab, held: its menu renames it or closes it", async () => {
-  const app = await busy({ width: 1000 })
+  const app = await busy({ width: 1280 })
   await app.waitFor('text:Needs you')
   await app.press('id:space-sp1')
   await app.waitFor('id:tab-tb1')

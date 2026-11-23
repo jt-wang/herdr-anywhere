@@ -19,18 +19,6 @@ const onClock = async (scene: string) => {
   return app
 }
 
-test('a row of choices too long for the phone fades at its end until it is scrolled there, so no button reads as cut off', async () => {
-  const app = await busy()
-  await app.waitFor('id:needs-t1-choice-2')
-  await app.waitFor('id:needs-t1-choices-more')
-  await app.scroll('id:needs-t1-choice-1', 2000)
-  await app.waitUntil(() => app.count('id:needs-t1-choices-more') === 0)
-  const wide = await open('./fixtures/fake.tsx', { width: 1000, host: { params: { scene: 'busy' } } })
-  await wide.waitFor('id:needs-t1-choice-2')
-  await wide.wait(100)
-  expect(wide.count('id:needs-t1-choices-more')).toBe(0)
-})
-
 test('home puts Needs you first, oldest wait first: where each agent is, what it asks, its choices and Open; then the spaces and their agents', async () => {
   const app = await busy()
   await app.waitFor('id:needs-t1')
@@ -187,21 +175,21 @@ test("an agent's row leads with its title; the program's name is small before it
     const fg = look(app, FOREGROUND).color, muted = look(app, MUTED).color
     const title = look(app, 'id:space-agent-t1 >> text:fix login')
     const name = look(app, 'id:space-agent-t1 >> text:Claude Code')
-    expect([scheme, title.color, title.fontSize, title.fontWeight]).toEqual([scheme, fg, 14.5, 500])
-    expect([scheme, name.fontSize, name.fontWeight]).toEqual([scheme, 12.5, 400])
-    // What it is doing: the app's foreground at about 80 % (its own colours, not the palette), smaller and regular.
+    expect([scheme, title.color, title.fontSize, title.fontWeight]).toEqual([scheme, fg, 15, 500])
+    expect([scheme, name.fontSize, name.fontWeight]).toEqual([scheme, 12, 400])
+    // The shared DSH metadata tone: no permanent blue or brighter status text.
     const doing = look(app, 'id:space-agent-t1 >> text:Running the login tests')
-    expect([scheme, doing.color, doing.fontSize, doing.fontWeight]).toEqual([scheme, scheme === 'dark' ? '#c4c5c7ff' : '#3f3f42ff', 13, 400])
-    // Idle: the title and what it did one step down; its status word readable in light, as before in dark.
+    expect([scheme, doing.color, doing.fontSize, doing.fontWeight]).toEqual([scheme, scheme === 'dark' ? '#929292ff' : '#666666ff', 12, 400])
+    // Idle: the title, last activity and status word use the same quiet metadata hierarchy.
     expect([scheme, look(app, 'id:space-agent-t2 >> text:Billing refactor').color]).toEqual([scheme, muted])
     expect([scheme, look(app, 'id:space-agent-t2 >> text:Moved invoices to the new table').color]).toEqual([scheme, muted])
     const idle = look(app, 'id:space-agent-t2 >> text:Idle').color
-    expect([scheme, idle === muted]).toEqual([scheme, scheme === 'light'])
+    expect([scheme, idle]).toEqual([scheme, muted])
     // The switcher's rows are the same row.
     await app.press('id:space-sp1')
     await app.press('id:switcher')
     await app.waitFor('id:switch-tab-tb1')
-    expect([scheme, look(app, 'id:switch-tab-tb1 >> text:fix login').fontSize, look(app, 'id:switch-tab-tb1 >> text:Claude Code').fontSize]).toEqual([scheme, 14.5, 12.5])
+    expect([scheme, look(app, 'id:switch-tab-tb1 >> text:fix login').fontSize, look(app, 'id:switch-tab-tb1 >> text:Claude Code').fontSize]).toEqual([scheme, 15, 12])
   }
 })
 
@@ -219,7 +207,7 @@ test("with Show agent names off, rows on home, Pinned and the switcher drop the 
   expect(app.count('id:pinned-agent-t1 >> text:Claude Code')).toBe(0)
   expect(app.count('id:pinned-agent-t1 >> text:fix login')).toBe(1)
   // Codex has no title here: its name is what the row says.
-  expect(look(app, 'id:space-agent-t2 >> text:Codex').fontSize).toBe(14.5)
+  expect(look(app, 'id:space-agent-t2 >> text:Codex').fontSize).toBe(15)
   await app.press('id:space-sp1')
   await app.press('id:switcher')
   await app.waitFor('id:switch-tab-tb1')
@@ -265,7 +253,7 @@ test('the first time it connects, the app asks to post notifications; only once'
 })
 
 test('a wide screen shows what each agent is doing in its pane header', async () => {
-  const app = await open('./fixtures/fake.tsx', { width: 1000, host: { params: { scene: 'busy' } } })
+  const app = await open('./fixtures/fake.tsx', { width: 1280, host: { params: { scene: 'busy' } } })
   await app.waitFor('text:Needs you')
   await app.press('id:space-sp2')
   await app.waitFor('id:terminal-t3')
@@ -318,8 +306,11 @@ test('going to another screen puts the keyboard away: Settings is not left under
   await app.waitFor('text:Needs you')
   await app.press('id:space-sp2')
   await app.waitFor('id:terminal-t3')
+  await app.press('id:space-more')
+  await app.waitFor('id:menu')
+  // Menu presentation already dismissed the IME; navigating away must still dismiss it independently.
   const before = Number(app.storage()['keyboard-away'] ?? 0)
-  await pick(app, () => app.press('id:space-more'), 'settings')
+  await app.press('id:menu-settings')
   await app.waitFor('text:Appearance')
   await app.waitUntil(() => Number(app.storage()['keyboard-away'] ?? 0) === before + 1)
 })
@@ -629,13 +620,13 @@ test('settings change the terminal text size and keep it', async () => {
 test("a blocked pane says Needs you, and its composer row is the agent's own choices off its screen", async () => {
   const app = await busy()
   await app.waitFor('text:Needs you')
-  const red = app.spanStyle('text:Needs you >> nth=0').color
+  const metadata = app.spanStyle('id:status-line >> text:This computer').color
   await app.press('id:space-sp1')
   await app.waitFor('id:answers')
   expect(app.shows('id:header-needs-you')).toBe(true)
-  // A red pill at the start of line 2, apart from the grey words after it (no "·" between), so line 1 is the title alone.
+  // One attention mark beside the title; the descriptive words below remain neutral, without a coloured pill.
   expect(app.count('id:header-needs-you >> text:Needs you')).toBe(1)
-  expect(app.spanStyle('id:header-needs-you >> text:Needs you').color).toBe(red)
+  expect(app.spanStyle('id:header-needs-you >> text:Needs you').color).toBe(metadata)
   const head = app.texts().slice(0, app.texts().indexOf('Connecting…') >= 0 ? app.texts().indexOf('Connecting…') : undefined)
   expect(head.slice(head.indexOf('Needs you'), head.indexOf('Needs you') + 2)).toEqual(['Needs you', 'Claude Code'])
   expect(['id:choice-1', 'id:choice-2', 'id:choice-3'].map((id) => app.count(id))).toEqual([1, 1, 1])
@@ -959,11 +950,11 @@ test("a pane's header leads with what home's row does: the tab name or title, th
   expect([head('fix login'), head('Claude Code')]).toEqual([1, 1])
   // The title is line 1, alone, so a narrow phone has room for it; the name starts line 2, small and grey, then what
   // it is doing.
-  expect(app.spanStyle('id:switcher >> text:fix login').fontSize).toBe(14.5)
-  // The title sits in a chip, as a tab does, so it reads as this pane's name (and "Needs you" below as its state).
+  expect(app.spanStyle('id:switcher >> text:fix login').fontSize).toBe(15)
+  // A plain medium-weight title, with its state kept below it.
   expect(app.count('id:pane-title >> text:fix login')).toBe(1)
   expect([app.count('id:pane-program'), app.count('id:pane-header >> text:Claude Code')]).toEqual([1, 1])
-  expect(app.spanStyle('id:pane-header >> text:Claude Code').fontSize).toBe(11.5)
+  expect(app.spanStyle('id:pane-header >> text:Claude Code').fontSize).toBe(12)
   expect(app.count('id:pane-header >> text:Running the login tests')).toBe(1)
   expect(app.count('id:header-needs-you')).toBe(0)
   // Show agent names off: the label goes, the title stays.
@@ -979,7 +970,7 @@ test("a pane's header leads with what home's row does: the tab name or title, th
   await busyApp.press('id:space-agent-t2')
   await busyApp.waitFor('id:pane-header')
   expect(busyApp.count('id:switcher >> text:Codex')).toBe(1)
-  expect(busyApp.spanStyle('id:switcher >> text:Codex').fontSize).toBe(14.5)
+  expect(busyApp.spanStyle('id:switcher >> text:Codex').fontSize).toBe(15)
 })
 
 test("home's Needs you row and a wide pane's header name an agent as its row does", async () => {
@@ -987,12 +978,13 @@ test("home's Needs you row and a wide pane's header name an agent as its row doe
   await app.waitFor('id:needs-t1')
   // The tab's name leads, the program's name small before it; under it the space, without saying the name again.
   expect([app.count('id:needs-t1 >> text:fix login'), app.count('id:needs-t1 >> text:Claude Code'), app.count('id:needs-t1 >> text:api')]).toEqual([1, 1, 1])
-  expect(app.spanStyle('id:needs-t1 >> text:Claude Code').fontSize).toBe(12.5)
+  expect(app.spanStyle('id:needs-t1 >> text:Claude Code').fontSize).toBe(12)
   const off = await open('./fixtures/fake.tsx', { host: { params: { scene: 'busy', prefs: JSON.stringify({ showAgentNames: false }) } } })
   await off.waitFor('id:needs-t1')
   expect([off.count('id:needs-t1 >> text:fix login'), off.count('id:needs-t1 >> text:Claude Code')]).toEqual([1, 0])
 
-  const wide = await open('./fixtures/fake.tsx', { width: 1000, host: { params: { scene: 'busy' } } })
+  // Leave room for the shared sidebar as well as the native multi-pane canvas.
+  const wide = await open('./fixtures/fake.tsx', { width: 1280, host: { params: { scene: 'busy' } } })
   await wide.waitFor('id:space-sp1')
   await wide.press('id:space-sp1')
   await wide.waitFor('id:pane-name-p-tb1')

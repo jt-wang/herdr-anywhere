@@ -7,7 +7,10 @@
 #      itself with its old pairing;
 #   2. with the app closed, takes the phone off the computer (revoke): opened, the app gets the same nothing back as in 1
 #      (tailcat_lost_probe_test.go measured it), so it must show the same; Pair again opens pairing with Back, and a new
-#      invite pairs.
+#      invite pairs;
+#   3. pairs again on the local network alone (`serve --routes lan`) and stops the companion: the computer refuses the
+#      connection (TailPocket's lastFailure "refused"), so the line under the banner says Companion may not be running
+#      and the sheet lists Companion above the network.
 # Screenshots of each step in the light and the dark theme go to the output directory, with the banner's words.
 # HM_E2E_EXPECT=old only takes the screenshots (the app before the fix, which says neither).
 # Usage: ANDROID_SERIAL=emulator-5554 e2e/android-reconnect.sh <apk> <output dir>
@@ -57,12 +60,14 @@ trap 'exit 130' INT; trap 'exit 143' TERM
 "$adb" shell pm clear "$id" >/dev/null
 "$adb" shell pm grant "$id" android.permission.POST_NOTIFICATIONS >/dev/null 2>&1 || true
 
-serve() {
-  "$work/herdr-anywhere" serve --tailcat $(tailcat_no_lan "$work/herdr-anywhere") --listen "127.0.0.1:$port" --hc "$hc" --state "$state" >> "$work/serve.log" 2>&1 &
+routes="--tailcat $(tailcat_no_lan "$work/herdr-anywhere")"; ready="listening on Tailcat"
+serve() { # how many times serve.log must have said it is ready
+  # shellcheck disable=SC2086 # $routes is the flags, split
+  "$work/herdr-anywhere" serve $routes --listen "127.0.0.1:$port" --hc "$hc" --state "$state" >> "$work/serve.log" 2>&1 &
   serve_pid=$!
   i=0
-  until [ "$(grep -c "listening on Tailcat" "$work/serve.log" 2>/dev/null)" -ge "$1" ]; do
-    i=$((i + 1)); [ $i -gt 300 ] && { echo "FAIL: serve --tailcat did not start"; tail -5 "$work/serve.log"; exit 1; }
+  until [ "$(grep -c "$ready" "$work/serve.log" 2>/dev/null)" -ge "$1" ]; do
+    i=$((i + 1)); [ $i -gt 300 ] && { echo "FAIL: serve $routes did not start"; tail -5 "$work/serve.log"; exit 1; }
     sleep 0.1
   done
 }
@@ -78,6 +83,7 @@ tap() {
   "$adb" shell input tap $xy
 }
 screen_has() { dump | grep -qF "$1"; }
+top() { dump | tr '>' '\n' | grep -F "resource-id=\"$1\"" | head -1 | sed -E 's/.*bounds="\[[0-9]+,([0-9]+)\].*/\1/'; }
 wait_for() { # text, seconds
   for _ in $(seq 1 "$2"); do screen_has "$1" && return 0; sleep 1; done
   return 1
@@ -153,4 +159,22 @@ shot 2b-pair-again
 type_invite "$(invite)"
 wait_for acme-api 120 || { echo "FAIL: paired again, the app did not connect within 120 s"; exit 1; }
 shot 2c-paired-again
-echo "PASS: stopped companion and removed phone each say to run herdr-anywhere start and offer Pair again; the old pairing comes back by itself; pairing again connects"
+
+echo "3. on the local network alone, the companion stops"
+kill "$serve_pid"; wait "$serve_pid" 2>/dev/null || true; serve_pid=""
+rm -rf "$state"; state=$(mktemp -d /tmp/hmrcXXXX)
+routes="--routes lan"; ready="listening for phones on the local network"
+serve 1
+"$adb" shell am force-stop "$id"; "$adb" shell pm clear "$id" >/dev/null
+"$adb" shell pm grant "$id" android.permission.POST_NOTIFICATIONS >/dev/null 2>&1 || true
+"$adb" shell am start -W -n "$id/.MainActivity" >/dev/null
+type_invite "$(invite)"
+wait_for acme-api 120 || { echo "FAIL: not connected on the local network within 120 s"; exit 1; }
+kill "$serve_pid"; wait "$serve_pid" 2>/dev/null || true; serve_pid=""
+wait_for 'resource-id="conn-age"' 150 || { echo "FAIL: on the local network the banner never said how old the screen is"; exit 1; }
+shot 3-lan-stopped
+must 'Companion may not be running on the computer.' "on the local network the banner's likeliest cause isn't Companion"
+options 3a-lan-options
+c=$(top stuck-companion); n=$(top stuck-network)
+[ -n "$c" ] && [ -n "$n" ] && [ "$c" -lt "$n" ] || { echo "FAIL: on the local network the sheet doesn't list Companion above the network ($c, $n)"; exit 1; }
+echo "PASS: stopped companion and removed phone each say to run herdr-anywhere start and offer Pair again; the old pairing comes back by itself; pairing again connects; on the local network a stopped companion ranks Companion first"

@@ -8,12 +8,9 @@ import type { AgentInfo } from '../model/agents.ts'
 import { listOf } from '../strings/index.ts'
 import { ProgramIcon, StatusMark, statusLabel, useRev } from './kit.tsx'
 
-export const STATUS_TEXT: Record<string, string> = { working: 'text-chart-1', blocked: 'text-chart-2', done: 'text-chart-3', idle: 'text-chart-4' }
-/** What an agent is doing: the theme's foreground at about 80 % over the sidebar (#eeeeef on #101114, #1b1b1e on
- *  #f1f1ee), a step under the title and well above the greys. NSH has no `text-foreground/80`: it draws black. */
-export const DOING = { dark: '#c4c5c7', light: '#3f3f42' }
-/** A status word's colour. Idle's grey (chart-4) is too pale to read on the light theme: there it is muted-foreground. */
-export const statusText = (st: string | undefined) => (st === 'idle' && colorScheme() !== 'dark' ? 'text-muted-foreground' : STATUS_TEXT[st ?? ''] ?? 'text-sidebar-foreground')
+/** Metadata is neutral in every state. The attention glyph, not the whole label, carries colour. */
+export const DOING = { dark: '#929292', light: '#666666' }
+export const statusText = (_st: string | undefined) => 'text-muted-foreground'
 
 /** What a row says about an agent besides its program: the same words on every screen that lists it. */
 export function agentWords(s: Store) {
@@ -43,7 +40,7 @@ export function AgentName(props: { store: Store; a: AgentInfo; class: string; te
   const words = agentWords(props.store)
   return (
     <View testID={props.testID} class="flex-row items-center gap-1.5 shrink min-w-0">
-      <If when={words.named(props.a)}><Text class="shrink-0 text-[12.5px] text-sidebar-foreground" numberOfLines={1}>{props.a.programName}</Text></If>
+      <If when={words.named(props.a)}><Text class="shrink-0 text-[12px] leading-[18px] text-sidebar-foreground" numberOfLines={1}>{props.a.programName}</Text></If>
       <Text class={`shrink ${props.class}`} numberOfLines={1}>{words.main(props.a)}</Text>
     </View>
   )
@@ -74,13 +71,16 @@ export function AgentRow(props: {
         onPress={props.onPress} onLongPress={props.onLongPress} class={props.class} accessibilityActions={props.actions} {...(props.touch ?? {})}>
         <View class="flex-row items-center gap-2">
           <View style={{ opacity: idle() ? (colorScheme() === 'dark' ? 0.55 : 0.7) : 1 }}><ProgramIcon icon={s.program(a().address).icon} size={size()} /></View>
-          <If when={props.full}><Text class="shrink-0 max-w-[30%] text-[12.5px] text-sidebar-foreground" numberOfLines={1}>{a().space_name}</Text></If>
-          <If when={named()}><Text class="shrink-0 text-[12.5px] text-sidebar-foreground" numberOfLines={1}>{a().programName}</Text></If>
-          <Text class={`flex-1 text-[14.5px] font-medium ${idle() ? 'text-muted-foreground' : 'text-foreground'}`} numberOfLines={1}>{words.main(a())}</Text>
-          <Text class={`text-[12px] ${statusText(a().status)}`}>{statusLabel(a().status)}</Text>
+          <If when={props.full}><Text class="shrink-0 max-w-[30%] text-[12px] leading-[18px] text-sidebar-foreground" numberOfLines={1}>{a().space_name}</Text></If>
+          {/* Short of room for both (the wide layout's side list), the title wraps under the program's name, so both read whole. */}
+          <View class="flex-1 min-w-0 flex-row flex-wrap items-center gap-x-2">
+            <If when={named()}><Text class="text-[12px] leading-[18px] text-sidebar-foreground" numberOfLines={1}>{a().programName}</Text></If>
+            <Text class={`shrink text-[15px] leading-[21px] font-medium ${idle() ? 'text-muted-foreground' : 'text-foreground'}`} numberOfLines={1}>{words.main(a())}</Text>
+          </View>
+          <Text class={`text-[12px] leading-[18px] ${statusText(a().status)}`}>{statusLabel(a().status)}</Text>
         </View>
         <If when={words.line(a())}>
-          <Text testID={`activity-${a().address}`} class={`text-[13px] ${idle() ? 'text-muted-foreground' : ''}`}
+          <Text testID={`activity-${a().address}`} class={`text-[12px] leading-[18px] ${idle() ? 'text-muted-foreground' : ''}`}
             style={{ paddingLeft: size() + 8, ...(idle() ? {} : { color: DOING[colorScheme() === 'dark' ? 'dark' : 'light'] }) }} numberOfLines={1}>{words.line(a())}</Text>
         </If>
       </View>

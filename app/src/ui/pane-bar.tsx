@@ -14,7 +14,7 @@ import { optionCaption, type Option } from '../model/menu.ts'
 import type { BarKey } from './terminal-page.ts'
 import type { TerminalSession } from './terminal-session.ts'
 import type { TypeIn } from '../prefs.ts'
-import { ChoiceRow, Glyph, useRev, useSignal } from './kit.tsx'
+import { ChoiceRow, COMPOSER_STYLE, COMPOSER_SURFACE, Glyph, TOUCH_TARGET, useRev, useSignal } from './kit.tsx'
 import { t } from '../strings/index.ts'
 
 
@@ -80,10 +80,10 @@ export function PaneBar(props: { store: Store; session: TerminalSession; program
   }
   const hint = () => (blocked() && status()?.kind === 'question' && !menu() ? asks(status()) : '') || (props.agent ? t('tellProgram', { name: props.program }) : t('typeCommand'))
   return (
-    <View class="bg-sidebar border-t border-border">
+    <View class={`bg-sidebar ${mode() === 'compose' ? '' : 'border-t border-border'}`}>
       <If when={codexQuiet()}><Text testID="codex-quiet" class="px-3 pt-1.5 text-[12px] text-sidebar-foreground">{t('codexQuiet')}</Text></If>
       <If when={mode() === 'choices' ? menu() : undefined}>{(m) => (
-        <View testID="answers" class="flex-row items-center gap-1.5 pl-2 pr-1 py-1">
+        <View testID="answers" class="flex-row items-start gap-1.5 pl-2 pr-1 py-1.5">
           <ChoiceRow testID="choices">
             {/* in the terminal's order, as its numbers go */}
             <Each of={m().options} key={(o) => `${o.n}. ${o.full}`}>{(o) => choiceRow.button(o, pick, (title) => s.toast({ title, level: 'info' }))}</Each>
@@ -120,8 +120,8 @@ export const choiceRow = {
     return (
       <View role="button" testID={`choice-${o().n}`} accessibilityLabel={optionCaption(o(), 'full')} onPress={() => void pick(o())}
         onLongPress={() => toast(optionCaption(o(), 'full'))}
-        class={`h-9 max-w-[230px] px-3.5 justify-center rounded-[8px] ${o().selected ? 'bg-primary active:opacity-80' : 'bg-secondary border border-border active:bg-accent'}`}>
-        <Text class={`text-[14px] font-medium ${o().selected ? 'text-primary-foreground' : 'text-foreground'}`} numberOfLines={1}>{optionCaption(o(), 'label')}</Text>
+        class={`min-h-9 max-w-full px-3.5 py-1.5 justify-center rounded-[8px] ${o().selected ? 'bg-primary active:opacity-80' : 'bg-secondary border border-border active:bg-accent'}`}>
+        <Text class={`text-[14px] leading-[20px] font-medium ${o().selected ? 'text-primary-foreground' : 'text-foreground'}`}>{optionCaption(o(), 'label')}</Text>
       </View>
     )
   },
@@ -169,19 +169,22 @@ export function pickedWord(before: string, after: string): boolean {
 }
 /** An invisible character the box holds for a moment after such a pick: see the Composer. */
 const NUDGE = '\u200b'
-/** The box's text is this much narrower than the box: 12 each side (px-3) and its 1 px borders; 2 more, so the hidden
- *  copy of the hint wraps no later than the box's own. */
-const HINT_INSET = 28
+/** Eight each side of the text, plus two so the hidden hint wraps no later than the input itself. */
+const HINT_INSET = 18
 
 function Composer(props: { toTerminal: () => void; keepTerminal: () => boolean; store: Store; session: TerminalSession; hint: string; focus: boolean; focused: (f: boolean) => void }) {
   const addr = props.session.address
   const sendingAll = useSignal(props.store.sending)
   const mine = () => sendingAll().find((x) => x.address === addr)
   const queueing = signal(false)
+  const focused = signal(false)
   /** Sent and not yet answered: the text stays in the box, greyed, with no second send until it is. The box stays
    *  editable: made read-only, it lost its focus on Android and the keyboard went down with it. */
   const busy = () => queueing() || !!mine() && !mine()!.failed
-  const text = signal(mine()?.text ?? '')
+  const draft = props.store.composerDraft(addr)
+  if (!draft.get() && mine()?.text) draft.set(mine()!.text)
+  const current = useSignal(draft)
+  const text = Object.assign(() => current(), { set: (value: string) => draft.set(value) })
   // What the typed text measures; the hint as the box lays it out at this phone's text size, wrapped at the box's
   // width (the hidden copy below, as wide as the box's text); the box's width.
   const content = signal<number | undefined>(undefined)
@@ -194,7 +197,7 @@ function Composer(props: { toTerminal: () => void; keepTerminal: () => boolean; 
   effect(() => {
     const m = mine()
     if (m?.held) held = m.held
-    if (was && !was.failed && !m && text().startsWith(was.text)) { text.set(text().slice(was.text.length).trimStart()); content.set(undefined) }
+    if (was && !was.failed && !m) content.set(undefined)
     if (m?.failed) { if (!text()) text.set(m.text); props.store.forget(addr) }
     was = m
   })
@@ -205,11 +208,11 @@ function Composer(props: { toTerminal: () => void; keepTerminal: () => boolean; 
     if (!typed.trim() || busy()) return
     props.session.claim()
     held = undefined
-    const going = props.store.compose(addr, typed)
+    const going = props.store.compose(addr, typed, true)
     // An offline send leaves the box only after its pending text is durable.
     const queued = !props.store.sending.get().some((x) => x.address === addr)
     queueing.set(queued)
-    void going.then(() => { if (queued) { text.set(''); content.set(undefined) } })
+    void going.then(() => { if (queued) content.set(undefined) })
       .catch((e) => props.store.toast(e?.kind !== 'disconnected' ? { title: t('couldntSend'), body: `${String(e?.message ?? e)} ${t('stillInBox')}`, level: 'error' }
         : held === 'draft' ? { title: t('couldntSend'), body: t('sendLost'), level: 'error' } : { title: t('maybeNotSent'), body: t('sendLostUnsure'), level: 'error' }))
       .finally(() => queueing.set(false))
@@ -223,21 +226,16 @@ function Composer(props: { toTerminal: () => void; keepTerminal: () => boolean; 
   }
   const attach = () => attachFiles(props.store, addr, land)
   return (
-    <View>
+    <View class="w-full max-w-[840px] self-center">
       <If when={uploading()}><Text testID="uploading" class="px-3 pt-1 text-[11.5px] text-sidebar-foreground">{t('uploading')}</Text></If>
       <If when={waiting()}>
         <Text testID="pending" class="px-3 pt-1 text-[11.5px] text-sidebar-foreground">{t('pendingSend', { n: waiting() })}</Text>
       </If>
-      <View testID="composer" class="flex-row items-end gap-1.5 px-2 py-1">
+      <ComposerFrame focused={focused()}>
         <View pointerEvents="none" accessibilityElementsHidden onLayout={(b) => hintTall.set(b.size.height)}
           style={{ position: 'absolute', opacity: 0, ...(wide() > HINT_INSET ? { width: wide() - HINT_INSET } : {}) }}>
-          <Text class="text-[14px]">{props.hint}</Text>
+          <Text class="text-[15px]">{props.hint}</Text>
         </View>
-        <Key label="esc" testID="key-esc" grow={false} onPress={() => {
-          props.session.key('esc')
-          // Typing in the terminal goes on there, as after the row's keys.
-          if (props.keepTerminal()) props.session.focus()
-        }} />
         <Input testID="compose-input" value={text()} onChange={(t) => {
             const before = text()
             text.set(t)
@@ -250,26 +248,54 @@ function Composer(props: { toTerminal: () => void; keepTerminal: () => boolean; 
               setTimeout(() => { if (text() === t + NUDGE) text.set(t) }, 30)
             }
           }} placeholder={props.hint} autoFocus={props.focus}
-          multiline submitBehavior="newline" onFocus={() => { props.session.claim(); props.focused(true) }} onBlur={() => props.focused(false)}
+          multiline submitBehavior="newline" onFocus={() => { focused.set(true); props.session.claim(); props.focused(true) }} onBlur={() => { focused.set(false); props.focused(false) }}
           onLayout={(b) => wide.set(b.size.width)}
           onContentSizeChange={(e) => content.set(e.height)} style={{ height: composerHeight({ hint: hintTall(), content: text() ? content() : undefined }) }}
-          class={`flex-1 rounded-[8px] border border-input bg-background px-3 py-2 text-[14px] placeholder:text-sidebar-foreground ${busy() ? 'text-sidebar-foreground' : 'text-foreground'}`} />
-        <BarButton glyph="terminal" label={t('typeInTerminal')} testID="to-terminal" onPress={props.toTerminal} />
-        <BarButton glyph="plus" label={t('attach')} testID="attach" onPress={() => void attach()} />
-        <If when={text().trim() && !busy()}>
-          <BarButton glyph="send" label={t('send')} testID="compose-send" primary onPress={send} />
-        </If>
-        <If when={busy()}>
-          <View testID="compose-sending" accessibilityLabel={t('sending')} class="w-10 h-9 items-center justify-center rounded-[8px] bg-primary opacity-40">
-            <Glyph name="send" size={18} class="tint-primary-foreground" />
-          </View>
-        </If>
-      </View>
+          class={`px-2 py-2 text-[15px] selection:bg-ring placeholder:text-sidebar-foreground ${busy() ? 'text-sidebar-foreground' : 'text-foreground'}`} />
+        <View class="flex-row items-center gap-1" style={{ minHeight: TOUCH_TARGET }}>
+          <BarButton glyph="plus" label={t('attach')} testID="attach" onPress={() => void attach()} />
+          <BarButton glyph="terminal" label={t('typeInTerminal')} testID="to-terminal" onPress={props.toTerminal} />
+          <View class="flex-1" />
+          <View role="button" focusable={false} testID="key-esc" accessibilityLabel="esc" style={{ minWidth: TOUCH_TARGET, height: TOUCH_TARGET }}
+            class="items-center justify-center rounded-[10px] active:bg-accent" onPress={() => {
+              props.session.key('esc')
+              if (props.keepTerminal()) props.session.focus()
+            }}><Text class="text-[12px] text-muted-foreground">esc</Text></View>
+          <If when={text().trim() && !busy()}>
+            <BarButton glyph="send" label={t('send')} testID="compose-send" primary onPress={send} />
+          </If>
+          <If when={!text().trim() && !busy()}>
+            <View role="button" disabled accessibilityLabel={t('send')} style={{ width: TOUCH_TARGET, height: TOUCH_TARGET }} class="items-center justify-center rounded-full bg-primary opacity-40">
+              <Glyph name="send" size={18} class="tint-primary-foreground" />
+            </View>
+          </If>
+          <If when={busy()}>
+            <View testID="compose-sending" accessibilityLabel={t('sending')} style={{ width: TOUCH_TARGET, height: TOUCH_TARGET }} class="items-center justify-center rounded-full bg-primary opacity-40">
+              <Glyph name="send" size={18} class="tint-primary-foreground" />
+            </View>
+          </If>
+        </View>
+      </ComposerFrame>
       <If when={busy() && mine()?.held}>
         <Text testID="send-held" class="px-3 pb-1 text-[11.5px] text-sidebar-foreground">{mine()?.held === 'draft' ? t('sendHeldDraft') : t('sendHeldLine')}</Text>
       </If>
     </View>
   )
+}
+
+/** A plain stroke stays outside Apple's material, which otherwise washes out a restyled border.
+ *  Android keeps one opaque view; border colour updates immediately rather than through its colour transition. */
+function ComposerFrame(props: { focused: boolean; children?: any }) {
+  // Construct the input once; a keystroke or focus change must not replace the native first responder.
+  const children = props.children
+  const frame = () => `mx-3 my-2 rounded-[21px] border ${props.focused ? 'border-ring' : 'border-input'}`
+  const inset = 'pl-[6px] pr-[5px] pt-1 pb-1'
+  if (platform.os === 'ios' || platform.os === 'macos') {
+    return <View testID="composer" class={frame()}>
+      <View style={COMPOSER_STYLE} class={`${inset} rounded-[20px] overflow-hidden ${COMPOSER_SURFACE}`}>{children}</View>
+    </View>
+  }
+  return <View testID="composer" style={COMPOSER_STYLE} class={`${frame()} ${inset} ${COMPOSER_SURFACE}`}>{children}</View>
 }
 
 /** How the key row draws its keys. `word`: ctrl and ^C; `symbol`: ⌃ and ⌃C, as ⇧ is for Shift. `label`: each key as wide
@@ -351,7 +377,8 @@ function Key(props: { label: string; testID: string; onPress: () => void; grow?:
 function BarButton(props: { glyph: string; label: string; testID: string; onPress: () => void; primary?: boolean }) {
   return (
     <View role="button" focusable={false} testID={props.testID} accessibilityLabel={props.label} onPress={props.onPress}
-      class={`w-10 h-9 items-center justify-center rounded-[8px] ${props.primary ? 'bg-primary active:opacity-80' : 'active:bg-accent'}`}>
+      style={{ width: TOUCH_TARGET, height: TOUCH_TARGET }}
+      class={`items-center justify-center transition-colors duration-100 motion-reduce:transition-none ${props.primary ? 'rounded-full bg-primary active:opacity-80' : 'rounded-[10px] active:bg-accent'}`}>
       <Glyph name={props.glyph} size={18} class={props.primary ? 'tint-primary-foreground' : 'tint-muted-foreground'} />
     </View>
   )

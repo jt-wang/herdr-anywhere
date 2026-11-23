@@ -1,7 +1,7 @@
 // The first screen: every agent that waits on you, across the spaces, the longest wait first, with its own choices;
 // then the desktop sidebar's spaces with their git and their agents, and the status bar (herdr-app defaults/mods/spaces,
 // mods/agents, mods/workspace-status).
-import { colorScheme, computed, Image, Scroll, signal, Text, View, type YNode } from 'nsh'
+import { computed, Image, Scroll, signal, Text, View, type YNode } from 'nsh'
 import { confirmClose, pickFrom } from './menu-sheet.tsx'
 import { ViewSwitch, type ViewSwitchProps } from './view-switch.tsx'
 import type { Store } from '../store.ts'
@@ -14,7 +14,7 @@ import { gitTail } from '../model/marks.ts'
 import { ChecksQuestion, PlainNotice, UpdateBanner } from './update.tsx'
 import type { Updates } from '../updates.ts'
 import type { PrefStore } from '../prefs.ts'
-import { ChoiceRow, ConnBanner, connStatus, Glyph, IconButton, ProgramIcon, SpaceBadge, StatusMark, useRev, useSignal } from './kit.tsx'
+import { ChoiceRow, ConnBanner, connStatus, Glyph, IconButton, ProgramIcon, SpaceBadge, StatusMark, TOUCH_TARGET, useRev, useSignal } from './kit.tsx'
 import { AgentName, AgentRow, agentWords } from './agent-row.tsx'
 import { EdgeScroll, Hold, inList, shifts, targetIndex, type RowBox } from './pin-drag.ts'
 import { t } from '../strings/index.ts'
@@ -38,17 +38,14 @@ export type HomeActions = {
   doing?: (address: string) => { id: string; outcome: string } | undefined
   /** With the progress page on: the switch at the top, to the progress page and back. */
   view?: () => ViewSwitchProps | undefined
+  /** An actual visible chat card already explains this request. Keep its duplicate summary neutral. */
+  coveredAttention?: (address: string) => boolean
 }
-
-// The theme's ansi2 and ansi1 (herdr-app settings.rs, graphite and paper): ahead and behind.
-const AHEAD = { dark: '#a6bd91', light: '#1a7f37' }
-const BEHIND = { dark: '#dc8c95', light: '#c62a2a' }
-const tone = () => (colorScheme() === 'dark' ? 'dark' : 'light')
 
 function Header(props: { label: string; right?: any }) {
   return (
-    <View class="flex-row items-center justify-between gap-3 h-9 pl-4 pr-2 mt-1">
-      <Text class="shrink-0 text-[11.5px] font-medium text-sidebar-foreground">{props.label}</Text>
+    <View class="flex-row items-center justify-between gap-3 min-h-10 pl-[22px] pr-3 mt-1">
+      <Text class="shrink-0 text-[12px] leading-[18px] font-medium text-sidebar-foreground">{props.label}</Text>
       {props.right}
     </View>
   )
@@ -63,7 +60,7 @@ export function StatusLine(props: { store: Store }) {
   const why = useSignal(s.lostWhy)
   const problem = () => { rev(); const c = conn(); return c === 'ready' ? '' : connStatus(c, why()).word }
   return (
-    <View role="button" testID="status-line" onPress={() => s.reconnectNow()} class="flex-row items-center gap-2 h-9 px-4 border-t border-border bg-sidebar">
+    <View role="button" testID="status-line" onPress={() => s.reconnectNow()} style={{ minHeight: TOUCH_TARGET }} class="flex-row items-center gap-2 min-h-11 px-[22px] border-t border-border bg-sidebar">
       <Glyph name="monitor" size={13} />
       <Text class="text-[12px] text-muted-foreground shrink" numberOfLines={1}>{t('thisComputer')}</Text>
       <View class="flex-1" />
@@ -74,7 +71,7 @@ export function StatusLine(props: { store: Store }) {
           <View class="w-1.5 h-1.5 rounded-full bg-sidebar-foreground" />
           <Text class="text-[12px] text-muted-foreground" numberOfLines={1}>
             {counts().agents ? t('agents', { n: counts().agents }) : t('noAgentsRunning')}
-            <If when={counts().needsYou}><Text class="text-chart-2">{` · ${t('needYou', { n: counts().needsYou })}`}</Text></If>
+            <If when={counts().needsYou}><Text>{` · ${t('needYou', { n: counts().needsYou })}`}</Text></If>
           </Text>
         </View>
       </If>
@@ -102,33 +99,33 @@ function WaitingRow(props: { store: Store; a: AgentInfo; now: number; actions: H
     if (o.typed) { s.focusComposerOn(addr); open() }
   }
   return (
-    <View testID={`needs-${addr}`} class="flex-row gap-2.5 mx-2 px-2 py-2">
-      <View class="pt-[3px]"><ProgramIcon icon={s.program(addr).icon} size={16} /></View>
+    <View testID={`needs-${addr}`} class="flex-row gap-2.5 mx-3 px-2.5 py-2.5">
+      <View class="pt-[3px]"><StatusMark status="blocked" compact size={16} attention={!props.actions.coveredAttention?.(addr)} /></View>
       <View class="flex-1 min-w-0 gap-[2px]">
         <View role="button" accessibilityLabel={t('waitingOpen', { program: props.a.programName, place: s.place(props.a), age: wait() })} onPress={open} class="active:opacity-70 gap-[2px]">
           <View class="flex-row items-center gap-2">
-            <View class="flex-1 flex-row min-w-0"><AgentName store={s} a={props.a} class="text-[14px] font-semibold text-foreground" /></View>
+            <View class="flex-1 flex-row min-w-0"><AgentName store={s} a={props.a} class="text-[15px] leading-[21px] font-medium text-foreground" /></View>
             <If when={wait()}><Text class="text-[11px] text-sidebar-foreground">{wait()}</Text></If>
           </View>
           <Text class="text-[12px] text-sidebar-foreground" numberOfLines={1}>{(rev(), words.where(props.a))}</Text>
           <If when={asked()}><Text testID={`asks-${addr}`} class="text-[12.5px] text-muted-foreground" numberOfLines={2}>{asked()}</Text></If>
         </View>
-        <View class="flex-row items-center gap-1.5 mt-1.5">
+        <View class="flex-row mt-1.5">
           <ChoiceRow testID={`needs-${addr}-choices`}>
             <If when={menu()}>{(m) => (
               <Each of={shownOrder(m())} key={(o) => `${o.n}. ${o.full}`}>{(o) => (
                 <View role="button" testID={`needs-${addr}-choice-${o().n}`} accessibilityLabel={optionCaption(o(), 'full')} disabled={sending()} onPress={() => void pick(o())}
                   onLongPress={() => s.toast({ title: optionCaption(o(), 'full'), level: 'info' })}
-                  class={`h-8 max-w-[200px] px-3 justify-center rounded-[7px] ${o().selected ? 'bg-primary active:opacity-80' : 'bg-secondary border border-border active:bg-accent'} ${sending() ? 'opacity-50' : ''}`}>
-                  <Text class={`text-[13px] font-medium ${o().selected ? 'text-primary-foreground' : 'text-foreground'}`} numberOfLines={1}>{optionCaption(o(), 'label')}</Text>
+                  class={`min-h-11 max-w-full px-3 py-2 justify-center rounded-[10px] ${o().selected ? 'bg-primary active:opacity-80' : 'bg-card border border-border active:bg-accent'} ${sending() ? 'opacity-50' : ''}`}>
+                  <Text class={`text-[13px] leading-[18px] font-medium ${o().selected ? 'text-primary-foreground' : 'text-foreground'}`}>{optionCaption(o(), 'label')}</Text>
                 </View>
               )}</Each>
             )}</If>
+            <View role="button" testID={`needs-${addr}-open`} accessibilityLabel={t('open')} onPress={open}
+              class="min-h-11 px-3 justify-center rounded-[10px] bg-card border border-border active:bg-accent">
+              <Text class="text-[13px] font-medium text-foreground">{t('open')}</Text>
+            </View>
           </ChoiceRow>
-          <View role="button" testID={`needs-${addr}-open`} accessibilityLabel={t('open')} onPress={open}
-            class="h-8 px-3 justify-center rounded-[7px] bg-secondary border border-border active:bg-accent">
-            <Text class="text-[13px] font-medium text-foreground">{t('open')}</Text>
-          </View>
         </View>
       </View>
     </View>
@@ -142,9 +139,9 @@ function NeedsYouSection(props: { store: Store; actions: HomeActions }) {
   return (
     <If when={queue().length}>
       <View>
-        <View class="flex-row items-center h-9 px-4 mt-1 gap-1.5">
-          <Text class="text-[11.5px] font-medium text-chart-2">{t('needsYou')}</Text>
-          <Text class="text-[11.5px] font-medium text-sidebar-foreground">{String(queue().length)}</Text>
+        <View class="flex-row items-center h-10 px-[22px] mt-1 gap-1.5">
+          <Text class="text-[12px] font-medium text-sidebar-foreground">{t('needsYou')}</Text>
+          <Text class="text-[12px] text-sidebar-foreground">{String(queue().length)}</Text>
           <View class="flex-1" />
           <Text class="text-[11px] text-sidebar-foreground">{t('oldestFirst')}</Text>
         </View>
@@ -177,11 +174,11 @@ function AgentRows(props: { store: Store; agents: () => AgentInfo[]; full?: bool
     <Each of={props.agents()} key={(a) => a.address}>{(a) => (
       <View>
         <AgentRow store={s} a={a()} full={props.full} testID={`${props.idPrefix}-${a().address}`}
-          class={`mx-2 ${props.full ? 'pl-2' : 'pl-9'} pr-2 min-h-9 py-1.5 justify-center rounded-[8px] active:bg-sidebar-accent`}
+          class={`mx-3 ${props.full ? 'pl-2.5' : 'pl-[38px]'} pr-2.5 min-h-[57px] py-2 justify-center rounded-[10px] active:bg-sidebar-accent`}
           subPrefix="sub" subClass={`mx-2 ${props.full ? 'pl-7' : 'pl-14'} pr-2`}
           onPress={() => props.actions.openAgent(a())} onLongPress={() => void menu(a())} onSub={props.actions.openSub} />
         <If when={props.actions.doing?.(a().address)}>{(d) => (
-          <View testID={`doing-${a().address}`} class={`mx-2 ${props.full ? 'pl-[30px]' : 'pl-[58px]'} pr-2 pb-1.5 -mt-1`}>
+          <View testID={`doing-${a().address}`} class={`mx-3 ${props.full ? 'pl-[36px]' : 'pl-[64px]'} pr-2.5 pb-2 -mt-1`}>
             <Text class="text-[12px] text-chart-1" numberOfLines={1}>{t('doingLine', { task: d().outcome })}</Text>
           </View>
         )}</If>
@@ -299,12 +296,12 @@ function PinnedSection(props: { store: Store; actions: HomeActions; holding?: (o
         style={drag() ? { transform: lifted() ? [{ translateY: offset(addr()) }, { scale: 1.03 }] : [{ translateY: offset(addr()) }], zIndex: lifted() ? 1 : 0 } : AT_REST}
         class={lifted() ? 'mx-2 rounded-[10px] bg-background border border-border shadow-lg' : dropped() === addr() ? 'mx-2 rounded-[8px] bg-sidebar-accent' : ''}>
         <AgentRow store={s} a={p.a()} full testID={`pinned-agent-${addr()}`}
-          class="mx-2 pl-2 pr-2 min-h-9 py-1.5 justify-center rounded-[8px] active:bg-sidebar-accent"
+          class="mx-3 pl-2.5 pr-2.5 min-h-[57px] py-2 justify-center rounded-[10px] active:bg-sidebar-accent"
           subPrefix="sub" subClass="mx-2 pl-7 pr-2"
           onPress={() => { if (hold.pressed()) props.actions.openAgent(p.a()) }} onSub={props.actions.openSub}
           touch={touch} actions={actions()} />
         <If when={props.actions.doing?.(addr())}>{(dd) => (
-          <View testID={`doing-${addr()}`} class="mx-2 pl-[30px] pr-2 pb-1.5 -mt-1">
+          <View testID={`doing-${addr()}`} class="mx-3 pl-[36px] pr-2.5 pb-2 -mt-1">
             <Text class="text-[12px] text-chart-1" numberOfLines={1}>{t('doingLine', { task: dd().outcome })}</Text>
           </View>
         )}</If>
@@ -345,18 +342,18 @@ function SpaceRow(props: { store: Store; space: Space; color: string; actions: H
   return (
     <View role="button" testID={`space-${props.space.id}`} accessibilityLabel={name()}
       onPress={() => { diag('ui-handler', { action: 'open-space' }); props.actions.openSpace(props.space.id) }} onLongPress={menu}
-      class={`flex-row items-center gap-2.5 mx-2 pl-2 h-11 rounded-[8px] active:bg-sidebar-accent ${active() ? 'bg-accent' : ''}`}>
+      class={`flex-row items-center gap-2.5 mx-3 pl-2.5 min-h-[57px] rounded-[10px] active:bg-sidebar-accent ${active() ? 'bg-accent' : ''}`}>
       <SpaceBadge name={name()} color={props.color} />
-      <Text class="text-[14px] text-foreground shrink-0 max-w-[60%]" numberOfLines={1}>{name()}</Text>
+      <Text class="text-[15px] leading-[21px] font-medium text-foreground shrink-0 max-w-[60%]" numberOfLines={1}>{name()}</Text>
       <View class="flex-1 flex-row items-center justify-end gap-1.5 min-w-0">
         <If when={git()}>{(g) => (
           <View class="flex-row items-center gap-1.5 min-w-0">
             <If when={gitTail(name(), g())}><Text class="text-[12px] text-sidebar-foreground shrink" numberOfLines={1}>{gitTail(name(), g())}</Text></If>
-            <If when={g().ahead}><Text class="text-[12px]" style={{ color: AHEAD[tone()] }}>{`↑${g().ahead}`}</Text></If>
-            <If when={g().behind}><Text class="text-[12px]" style={{ color: BEHIND[tone()] }}>{`↓${g().behind}`}</Text></If>
+            <If when={g().ahead}><Text class="text-[12px] text-muted-foreground">{`↑${g().ahead}`}</Text></If>
+            <If when={g().behind}><Text class="text-[12px] text-muted-foreground">{`↓${g().behind}`}</Text></If>
           </View>
         )}</If>
-        <If when={status() === 'blocked' || status() === 'done'}><StatusMark status={status()} compact size={7} /></If>
+        <If when={status() === 'done'}><StatusMark status={status()} compact size={7} /></If>
       </View>
       <IconButton name="plus" label={t('addAgent')} testID={`add-agent-${props.space.id}`} onPress={() => props.actions.addAgent(props.space.id)} />
     </View>
@@ -377,7 +374,7 @@ function SpacesSection(props: { store: Store; actions: HomeActions }) {
   const marks = computed(() => { rev(); return props.store.spaceMarks() })
   const here = () => { rev(); return props.store.hello?.core?.name ?? t('thisComputer') }
   const add = (
-    <View role="button" testID="space-new" accessibilityLabel={t('newSpace')} onPress={props.actions.newMenu} class="w-9 h-8 items-center justify-center rounded-[6px] active:bg-sidebar-accent">
+    <View role="button" testID="space-new" accessibilityLabel={t('newSpace')} onPress={props.actions.newMenu} style={{ width: TOUCH_TARGET, height: TOUCH_TARGET }} class="items-center justify-center rounded-[10px] active:bg-sidebar-accent">
       <Glyph name="plus" size={14} />
     </View>
   )
@@ -428,10 +425,10 @@ export function HomeScreen(props: { store: Store; actions: HomeActions; updates?
   }
   return (
     <View class="flex-1 bg-sidebar pt-[env(safe-area-inset-top)]">
-      <View class={`flex-row items-center h-12 ${props.actions.view?.() ? 'pl-3' : 'pl-4'} pr-1.5 gap-2`}>
+      <View class={`flex-row items-center h-[57px] ${props.actions.view?.() ? 'pl-3' : 'pl-[22px]'} pr-2 gap-2 border-b border-border`}>
         <If when={props.actions.view?.()} else={<>
           <Image src={icon} accessibilityLabel="Herdr Anywhere" style={{ width: 22, height: 22 }} />
-          <Text class="text-[16px] font-semibold text-foreground flex-1" numberOfLines={1}>Herdr Anywhere</Text>
+          <Text class="text-[15px] leading-[18px] font-medium text-foreground flex-1" numberOfLines={1}>Herdr Anywhere</Text>
         </>}>
           <View class="flex-1"><ViewSwitch {...props.actions.view!()!} /></View>
         </If>

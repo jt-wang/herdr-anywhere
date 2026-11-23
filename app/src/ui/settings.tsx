@@ -1,6 +1,6 @@
 // Settings: how the app looks, which alerts show, and the computer it is paired with.
 import { cleanup, platform, Scroll, signal, Text, View } from 'nsh'
-import { AlertDialog } from 'nsh/base'
+import { AlertDialog } from './kit.tsx'
 import { explain, type Store } from '../store.ts'
 import { setupChangedText, type ChatSetup } from '../model/chat.ts'
 import { agentsLine, parseAgents, pickLine, switchLine, type AgentChoice } from '../model/progress.ts'
@@ -16,9 +16,9 @@ import { diagnostics, type DiagnosticCategory, type DiagnosticStatus, type Nativ
 function Row(props: { label: string; detail?: string; children?: any; testID?: string; onPress?: () => void }) {
   return (
     <View role={props.onPress ? 'button' : undefined} testID={props.testID} onPress={props.onPress}
-      class={`flex-row items-center min-h-12 px-4 gap-3 border-b border-border bg-card ${props.onPress ? 'active:bg-sidebar-accent' : ''}`}>
+      class={`flex-row items-center min-h-12 px-[22px] gap-3 border-b border-border bg-card ${props.onPress ? 'active:bg-sidebar-accent' : ''}`}>
       <View class="flex-1 py-2">
-        <Text class="text-[14px] text-foreground">{props.label}</Text>
+        <Text class="text-[15px] leading-[21px] text-foreground">{props.label}</Text>
         <If when={props.detail}><Text class="text-[12px] text-sidebar-foreground mt-0.5">{props.detail}</Text></If>
       </View>
       {props.children}
@@ -29,8 +29,8 @@ function Row(props: { label: string; detail?: string; children?: any; testID?: s
 /** A fact about the computer: its name on the left, its value on the right, with a smaller line under it if there is one. */
 function Fact(props: { label: string; value: string; under?: string; dot?: string; testID?: string }) {
   return (
-    <View testID={props.testID} class={`flex-row ${props.under ? 'items-start' : 'items-center'} min-h-12 px-4 py-2.5 gap-3 border-b border-border bg-card`}>
-      <Text class="text-[14px] text-foreground">{props.label}</Text>
+    <View testID={props.testID} class={`flex-row ${props.under ? 'items-start' : 'items-center'} min-h-12 px-[22px] py-2.5 gap-3 border-b border-border bg-card`}>
+      <Text class="text-[15px] leading-[21px] text-foreground">{props.label}</Text>
       <View class="flex-1 items-end gap-0.5">
         <View class="flex-row items-center gap-1.5">
           <If when={props.dot}><View class={`w-2 h-2 rounded-full ${props.dot}`} /></If>
@@ -215,9 +215,9 @@ export function DiagnosticsScreen(props: { back: () => void; controller?: Native
   ]
   return (
     <View class="flex-1 bg-sidebar pt-[env(safe-area-inset-top)]">
-      <View class="flex-row items-center h-12 pl-1 pr-3">
+      <View class="flex-row items-center h-[57px] pl-1 pr-3 border-b border-border">
         <IconButton name="chevron-left" label={t('back')} testID="diagnostic-back" onPress={props.back} />
-        <Text class="text-[16px] font-semibold text-foreground ml-1">{t('diagnosticTitle')}</Text>
+        <Text class="text-[15px] font-medium text-foreground ml-1">{t('diagnosticTitle')}</Text>
       </View>
       <Scroll class="flex-1" contentClass="pb-10">
         <If when={state().supported} else={<Row label={t('diagnosticTitle')} detail={t('diagnosticUnsupported')} testID="diagnostic-unsupported" />}>
@@ -259,9 +259,9 @@ export function LanguageScreen(props: { prefs: PrefStore; back: () => void; choo
   ]
   return (
     <View class="flex-1 bg-sidebar pt-[env(safe-area-inset-top)]">
-      <View class="flex-row items-center h-12 pl-1 pr-3">
+      <View class="flex-row items-center h-[57px] pl-1 pr-3 border-b border-border">
         <IconButton name="chevron-left" label={t('back')} testID="language-back" onPress={props.back} />
-        <Text class="text-[16px] font-semibold text-foreground ml-1">{t('language')}</Text>
+        <Text class="text-[15px] font-medium text-foreground ml-1">{t('language')}</Text>
       </View>
       <Scroll class="flex-1" contentClass="pb-10">
         <View class="mt-3 border-t border-border">
@@ -336,9 +336,9 @@ export function ConnectionScreen(props: { prefs: PrefStore; store: Store; linker
   const under = () => (conn() === 'ready' ? pathWord(route()) : why() === 'no-route' ? t('lostNoRoute') : '')
   return (
     <View class="flex-1 bg-sidebar pt-[env(safe-area-inset-top)]">
-      <View class="flex-row items-center h-12 pl-1 pr-3">
+      <View class="flex-row items-center h-[57px] pl-1 pr-3 border-b border-border">
         <IconButton name="chevron-left" label={t('back')} testID="connection-back" onPress={props.back} />
-        <Text class="text-[16px] font-semibold text-foreground ml-1">{t('connection')}</Text>
+        <Text class="text-[15px] font-medium text-foreground ml-1">{t('connection')}</Text>
       </View>
       <Scroll class="flex-1" contentClass="pb-10">
         <View class="mt-3 border-t border-border">
@@ -431,9 +431,9 @@ export function SettingsScreen(props: { updates?: Updates; store: Store; prefs: 
   const looks: { id: Appearance; label: Key }[] = [{ id: 'system', label: 'system' }, { id: 'light', label: 'light' }, { id: 'dark', label: 'dark' }]
   return (
     <View class="flex-1 bg-sidebar pt-[env(safe-area-inset-top)]">
-      <View class="flex-row items-center h-12 pl-1 pr-3">
+      <View class="flex-row items-center h-[57px] pl-1 pr-3 border-b border-border">
         <IconButton name="chevron-left" label={t('back')} testID="back" onPress={props.back} />
-        <Text class="text-[16px] font-semibold text-foreground ml-1">{t('settings')}</Text>
+        <Text class="text-[15px] font-medium text-foreground ml-1">{t('settings')}</Text>
       </View>
       <Scroll class="flex-1" contentClass="pb-10">
         <SectionLabel label={t('look')} />

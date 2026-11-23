@@ -52,8 +52,9 @@ const ANSI = ['black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'whi
 const NAMES = [...ANSI, ...ANSI.map((n) => 'bright' + n[0].toUpperCase() + n.slice(1))]
 const hex = (n: number) => '#' + n.toString(16).padStart(6, '0')
 
-// herdr-app src/settings.rs: GRAPHITE (the default dark) and PAPER (the default light).
-const GRAPHITE = { background: 0x17191d, foreground: 0xd2d4d9, selection: 0x394454, cursor: 0xd2d4d9,
+// herdr-app src/settings.rs: GRAPHITE (the default dark) and PAPER (the default light). The dark terminal is pure black,
+// as the app around it is (GRAPHITE's own background is 0x17191d); its sixteen colours are GRAPHITE's.
+const GRAPHITE = { background: 0x000000, foreground: 0xd2d4d9, selection: 0x394454, cursor: 0xd2d4d9,
   ansi: [0x45484f, 0xdc8c95, 0xa6bd91, 0xd8be87, 0x96b2d7, 0xb5a2ce, 0x8cbdc3, 0xd2d4d9, 0x818793, 0xf0a5ad, 0xbad5a2, 0xead2a1, 0xb0cbef, 0xcbb7e6, 0xa4d5db, 0xf0f0f2] }
 const PAPER = { background: 0xffffff, foreground: 0x25272c, selection: 0xcfdcf5, cursor: 0x25272c,
   ansi: [0x25272c, 0xc62a2a, 0x1a7f37, 0x8f5d00, 0x1f62d0, 0x7a45c8, 0x0f6f74, 0x5f6068, 0x7b7e87, 0xd1242f, 0x1f883d, 0x9a6700, 0x0969da, 0x8250df, 0x1b7c83, 0x111214] }

@@ -322,6 +322,7 @@ jobs:
           echo "$RUNNER_TEMP/nsh/bin" >> "$GITHUB_PATH"
           echo "NSH_HOME=$RUNNER_TEMP/nsh" >> "$GITHUB_ENV"
           sudo apt-get install -y -qq zsh >/dev/null # android.sh's terminals run zsh, as on a Mac
+      - uses: ./.github/actions/nsh-android
       - name: Build the APK
         working-directory: app
         run: android/build.sh
