@@ -18,12 +18,14 @@ export function TerminalView(props: { store: Store; address: string; fontSize?: 
   let web: any
   // Loading the page again makes a new WebView, with a new web process: the old one may have crashed.
   const load = signal(0)
+  const pictures = pictureTaps(props.store, props.address)
+  cleanup(() => pictures.dispose())
   const session = new TerminalSession(props.store, props.address, (m) => web?.postMessage(m), undefined, { observe: props.observe, reload: () => load.set(load() + 1), on: {
     swipe: (d) => props.swipe?.(d),
     tap: () => props.tap?.(),
     focused: () => showTerminalKeyboard(),
     link: (url) => { void openUrl(url).catch(() => {}) },
-    ...pictureTaps(props.store, props.address),
+    ...pictures,
     selected: (text) => { void Clipboard.writeText(text).then(() => props.store.toast({ title: t('copied'), level: 'info' })) },
   } })
   props.onSession?.(session)

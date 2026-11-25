@@ -2,6 +2,11 @@
 import type { Table } from './index.ts'
 
 export const ko: Table = {
+  pictureTimeout: "사진을 불러오는 시간이 초과되었습니다. 다시 시도하세요.",
+  pictureBusy: "컴퓨터가 다른 사진을 읽고 있습니다. 잠시 후 다시 시도하세요.",
+  pictureChecking: "사진 확인 중…",
+  pictureCancelCheck: "눌러서 취소",
+
   chatFirstMessage: '첫 메시지를 보내면 채팅이 표시돼요.',
   setupChangedFilesBody: '다음 설정 파일은 편집되었습니다. 아직 변경하지 않았습니다. 목록의 모든 파일을 교체하거나 삭제하려면 확인하세요:\n{files}',
   diagnosticTitle: '기기 내 진단', diagnosticRecord: '진단 기록',

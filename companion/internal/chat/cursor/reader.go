@@ -12,7 +12,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -268,8 +267,8 @@ func (r *Reader) pageMessages(path, before, target string) ([]message, string, e
 			return nil, "", &chat.Miss{Reason: chat.NoRecordYet}
 		}
 	}
-	u := url.URL{Scheme: "file", Path: filepath.ToSlash(path)}
-	d, err := sql.Open("sqlite", u.String()+"?mode=ro&_pragma=busy_timeout(2000)&_pragma=query_only(1)")
+	uri := chat.SQLiteFileURI(filepath.ToSlash(path))
+	d, err := sql.Open("sqlite", uri+"?mode=ro&_pragma=busy_timeout(2000)&_pragma=query_only(1)")
 	if err != nil {
 		return nil, "", err
 	}

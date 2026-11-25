@@ -2,6 +2,11 @@
 import type { Table } from './index.ts'
 
 export const zhHans: Table = {
+  pictureTimeout: "图片加载超时，请重试。",
+  pictureBusy: "电脑正在读取其他图片，请稍后重试。",
+  pictureChecking: "正在检查图片…",
+  pictureCancelCheck: "点击取消",
+
   chatFirstMessage: '发送第一条消息后即可看到聊天。',
   setupChangedFilesBody: '以下设置文件已被编辑，目前未作更改。确认后将替换或删除列出的所有文件：\n{files}',
   diagnosticTitle: '设备本地诊断', diagnosticRecord: '记录诊断日志',

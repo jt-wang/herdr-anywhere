@@ -65,7 +65,20 @@ func (s *Server) image(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	path, typ, data, err := s.readImage(r.URL.Query().Get("path"), r.URL.Query().Get("terminal"))
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	type picture struct {
+		path, typ string
+		data      []byte
+	}
+	result, err := runImageTask(ctx, s.imageReads, func() (picture, error) {
+		path, typ, data, err := s.readImage(ctx, r.URL.Query().Get("path"), r.URL.Query().Get("terminal"))
+		return picture{path, typ, data}, err
+	})
+	if errors.Is(err, context.Canceled) {
+		return
+	}
+	path, typ, data := result.path, result.typ, result.data
 	if err != nil {
 		var e *imageError
 		if !errors.As(err, &e) {
@@ -93,14 +106,14 @@ func (s *Server) image(w http.ResponseWriter, r *http.Request) {
 
 // readImage answers with the full path asked for ("~" and a relative path made full, symlinks kept as shown), the
 // picture's type and its bytes. Where it may read is judged on the path with its symlinks resolved.
-func (s *Server) readImage(asked, terminal string) (string, string, []byte, error) {
+func (s *Server) readImage(ctx context.Context, asked, terminal string) (string, string, []byte, error) {
 	if err := askedPath(asked); err != nil {
 		return "", "", nil, err
 	}
 	if machine, _, there := strings.Cut(terminal, "/"); there {
-		return s.readImageThere(machine, asked, terminal)
+		return s.readImageThere(ctx, machine, asked, terminal)
 	}
-	cwd, roots, err := s.allowed(terminal)
+	cwd, roots, err := s.allowedContext(ctx, terminal)
 	if err != nil {
 		return "", "", nil, err
 	}
@@ -109,6 +122,9 @@ func (s *Server) readImage(asked, terminal string) (string, string, []byte, erro
 		return path, "", nil, err
 	}
 	defer f.Close()
+	if err := ctx.Err(); err != nil {
+		return path, "", nil, err
+	}
 	if size > s.maxImage {
 		return path, "", nil, tooBig(s.maxImage)
 	}
@@ -141,6 +157,13 @@ func askedPath(asked string) error {
 // allowed gives the folder a relative path is from (the terminal's program's, or "" without a terminal) and the
 // folders pictures may be read from here.
 func (s *Server) allowed(terminal string) (string, []string, error) {
+	return s.allowedContext(context.Background(), terminal)
+}
+
+func (s *Server) allowedContext(ctx context.Context, terminal string) (string, []string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", nil, err
+	}
 	roots := []string{s.home()}
 	roots = append(roots, s.imageTemp()...)
 	if terminal == "" {
@@ -149,7 +172,7 @@ func (s *Server) allowed(terminal string) (string, []string, error) {
 	if !localAddress.MatchString(terminal) {
 		return "", nil, refuse(http.StatusBadRequest, "path", "not a terminal's address")
 	}
-	cwd, err := s.terminalFolder(terminal)
+	cwd, err := s.terminalFolder(ctx, terminal)
 	if err != nil {
 		return "", nil, err
 	}
@@ -209,13 +232,16 @@ var localAddress = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}$`)
 
 // terminalFolder is the folder the terminal's program is in now (`hc get`: foreground.cwd follows a cd, cwd is
 // where the terminal started; hc 0.1.19, measured), else where it started.
-func (s *Server) terminalFolder(addr string) (string, error) {
+func (s *Server) terminalFolder(parent context.Context, addr string) (string, error) {
 	if s.cfg.HC == "" {
 		return "", refuse(http.StatusServiceUnavailable, "no_core", "herdr-core isn't found on this computer")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(parent, 5*time.Second)
 	defer cancel()
 	out, errs, err := s.runHC(ctx, "get", addr, "--json")
+	if ctx.Err() != nil {
+		return "", ctx.Err()
+	}
 	if err != nil {
 		if hcError(errs) == "unavailable" { // its machine is out of reach now
 			return "", refuse(http.StatusBadGateway, "unreachable", "couldn't reach the terminal's machine")
@@ -328,13 +354,13 @@ var thereRefusals = map[int]*imageError{
 	14: {code: http.StatusForbidden, why: "unreadable", msg: "can't read this file"},
 }
 
-func (s *Server) readImageThere(machine, asked, terminal string) (string, string, []byte, error) {
-	cwd, err := s.terminalFolder(terminal)
+func (s *Server) readImageThere(ctx context.Context, machine, asked, terminal string) (string, string, []byte, error) {
+	cwd, err := s.terminalFolder(ctx, terminal)
 	if err != nil {
 		return "", "", nil, err
 	}
 	max := min(s.maxImage, maxThere)
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	// The path goes as an argument of its own, never into the script's text: hc sends argv to that machine as a JSON
 	// array and its core starts argv[0] with the rest as arguments, no shell between (herdr-core v0.1.19,
@@ -404,12 +430,16 @@ func (s *Server) imageCheck(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": fmt.Sprintf("a terminal and at most %d paths", maxCheck), "why": "path"})
 		return
 	}
-	var out []checked
-	var err error
-	if machine, _, there := strings.Cut(q.Terminal, "/"); there {
-		out, err = s.checkThere(machine, q.Terminal, q.Paths)
-	} else {
-		out, err = s.checkHere(q.Terminal, q.Paths)
+	ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
+	defer cancel()
+	out, err := runImageTask(ctx, s.imageChecks, func() ([]checked, error) {
+		if machine, _, there := strings.Cut(q.Terminal, "/"); there {
+			return s.checkThere(ctx, machine, q.Terminal, q.Paths)
+		}
+		return s.checkHere(ctx, q.Terminal, q.Paths)
+	})
+	if errors.Is(err, context.Canceled) {
+		return
 	}
 	if err != nil {
 		var e *imageError
@@ -431,13 +461,16 @@ func whyOf(err error) string {
 	return "unreadable"
 }
 
-func (s *Server) checkHere(terminal string, paths []string) ([]checked, error) {
-	cwd, roots, err := s.allowed(terminal)
+func (s *Server) checkHere(ctx context.Context, terminal string, paths []string) ([]checked, error) {
+	cwd, roots, err := s.allowedContext(ctx, terminal)
 	if err != nil {
 		return nil, err
 	}
 	out := make([]checked, len(paths))
 	for i, asked := range paths {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		out[i] = checked{Asked: asked}
 		if err := askedPath(asked); err != nil {
 			out[i].Why = whyOf(err)
@@ -448,6 +481,10 @@ func (s *Server) checkHere(terminal string, paths []string) ([]checked, error) {
 		if err != nil {
 			out[i].Why = whyOf(err)
 			continue
+		}
+		if err := ctx.Err(); err != nil {
+			f.Close()
+			return nil, err
 		}
 		head := make([]byte, 512)
 		n, _ := io.ReadFull(f, head)
@@ -464,8 +501,8 @@ func (s *Server) checkHere(terminal string, paths []string) ([]checked, error) {
 	return out, nil
 }
 
-func (s *Server) checkThere(machine, terminal string, paths []string) ([]checked, error) {
-	cwd, err := s.terminalFolder(terminal)
+func (s *Server) checkThere(ctx context.Context, machine, terminal string, paths []string) ([]checked, error) {
+	cwd, err := s.terminalFolder(ctx, terminal)
 	if err != nil {
 		return nil, err
 	}
@@ -473,6 +510,9 @@ func (s *Server) checkThere(machine, terminal string, paths []string) ([]checked
 	var ask []string // the paths that go there, as they may
 	var at []int
 	for i, asked := range paths {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		out[i] = checked{Asked: asked}
 		if err := askedPath(asked); err != nil {
 			out[i].Why = whyOf(err)
@@ -484,7 +524,7 @@ func (s *Server) checkThere(machine, terminal string, paths []string) ([]checked
 		return out, nil
 	}
 	max := min(s.maxImage, maxThere)
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	// As readImageThere: each path an argument of its own, never in the script's text.
 	args := append([]string{"exec", "--on", machine, "--json", "--timeout", "30", "--", "sh", "-c", thereCheck, "sh",
@@ -541,6 +581,9 @@ type execResult struct {
 // runThere runs `hc exec --on machine` (args from "exec" on) and gives what the program did there.
 func (s *Server) runThere(ctx context.Context, machine string, args []string) (*execResult, error) {
 	out, errs, err := s.runHC(ctx, args...)
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
 	if err != nil && hcError(errs) == "spawn_failed" { // no sh there
 		return nil, refuse(http.StatusBadRequest, "remote", "pictures on this machine can't be read")
 	}
@@ -569,4 +612,57 @@ func hcError(stderr []byte) string {
 	}
 	_ = json.Unmarshal(bytes.TrimSpace(stderr), &e)
 	return e.Error.Kind
+}
+
+// A timed-out filesystem call can keep running. Its slot stays occupied until it
+// actually returns, so retries cannot create an unbounded number of blocked workers.
+// Reads and background checks have separate slots to keep checks from starving taps.
+func runImageTask[T any](ctx context.Context, slots chan struct{}, work func() (T, error)) (T, error) {
+	var zero T
+	contextError := func() error {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return refuse(http.StatusGatewayTimeout, "timeout", "the picture request timed out; try again")
+		}
+		return ctx.Err()
+	}
+	if ctx.Err() != nil {
+		return zero, contextError()
+	}
+	select {
+	case slots <- struct{}{}:
+	default:
+		return zero, refuse(http.StatusServiceUnavailable, "busy", "picture requests are busy; try again")
+	}
+	type reply struct {
+		value T
+		err   error
+	}
+	done := make(chan reply, 1)
+	go func() {
+		var result reply
+		defer func() {
+			if recover() != nil {
+				result.err = refuse(http.StatusInternalServerError, "unreadable", "could not read the picture")
+			}
+			<-slots
+			done <- result
+		}()
+		if ctx.Err() != nil {
+			result.err = ctx.Err()
+			return
+		}
+		result.value, result.err = work()
+	}()
+	select {
+	case result := <-done:
+		if ctx.Err() != nil {
+			return zero, contextError()
+		}
+		if errors.Is(result.err, context.DeadlineExceeded) {
+			return zero, refuse(http.StatusGatewayTimeout, "timeout", "the picture request timed out; try again")
+		}
+		return result.value, result.err
+	case <-ctx.Done():
+		return zero, contextError()
+	}
 }

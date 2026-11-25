@@ -17,6 +17,10 @@ export type AgentInfo = {
   status: Shown | undefined
   app: string | null
   title: string
+  /** Explicit terminal name; the enclosing tab's explicit name still wins. */
+  terminalName?: string
+  /** Display-only saved session name, never an activity/status message. */
+  savedTitle?: string
   seq: number
   focused: boolean
   /** Pinned on the computer: herdr-core's label `herdr.pinned` on its terminal, which every Herdr screen reads. */
@@ -105,7 +109,8 @@ export class AgentList {
     // tell rows apart. A tab named after its program reads as unnamed, as on the desktop (agents mod title()).
     const label = (a: AgentInfo) => {
       if (a.named && a.tab_name !== a.programName) return a.tab_name
-      return tellingTitle(a.title, a.programName, a.programKey) || a.programName || a.tab_name
+      if (a.terminalName) return a.terminalName
+      return tellingTitle(a.title, a.programName, a.programKey) || a.savedTitle || a.programName || a.tab_name
     }
     const detail = new Map<string, string | null>(list.map((a) => [a.address, /^\d+$/.test(label(a)) ? null : label(a)]))
     const seen: Record<string, number> = {}

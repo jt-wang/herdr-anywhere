@@ -61,6 +61,8 @@ trap cleanup EXIT
 trap 'cleanup; exit 130' INT
 trap 'cleanup; exit 143' TERM HUP
 step="starting the fakes in herdr-core"
+# Pi's chat is read only with its setup file in Pi's folder, as the phone's Settings puts it there (pi.Reader.FindPane).
+case " $agents " in *" pi "*) clean "$bin" chat-setup install pi --hc "$hc" ;; esac
 for a in $agents; do
   s=$(printf %s "$a" | tr -d -)
   mkdir -p "$work/u/src/demo-$s"

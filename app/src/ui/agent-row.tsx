@@ -6,6 +6,7 @@ import { colorScheme, computed, Text, View } from 'nsh'
 import type { Store } from '../store.ts'
 import type { AgentInfo } from '../model/agents.ts'
 import { listOf } from '../strings/index.ts'
+import { shortPath } from './paths.ts'
 import { ProgramIcon, StatusMark, statusLabel, useRev } from './kit.tsx'
 
 /** Metadata is neutral in every state. The attention glyph, not the whole label, carries colour. */
@@ -20,6 +21,17 @@ export function agentWords(s: Store) {
   const title = (a: AgentInfo) => { const d = view().detail.get(a.address); return d && d !== a.programName ? d : null }
   // What it is doing or did. "Needs you" already shows what a blocked one asks.
   const line = (a: AgentInfo) => { rev(); const l = s.activityOf(a.address); return a.status === 'blocked' || l === title(a) ? '' : l }
+  // With no distinct activity, show the pane's actual location; never turn it into a status message.
+  const context = (a: AgentInfo) => {
+    rev()
+    if (a.status === 'blocked' || line(a)) return ''
+    const at = s.contextOf(a.address)
+    if (!at) return ''
+    const path = shortPath(at.cwd, s.home), parts = path.split(/[\\/]/).filter(Boolean)
+    const folder = path.length > 40 && parts.length > 2 ? `…/${parts.slice(-2).join('/')}` : path
+    const text = [...new Set([folder, at.branch].filter((part) => part && part !== main(a)))].join(' · ')
+    return text === main(a) ? '' : text
+  }
   const subs = (a: AgentInfo) => { rev(); return view().subs.get(a.address) ?? [] }
   // The row's main text: what tells it apart, or with nothing to tell, the program's name.
   const main = (a: AgentInfo) => title(a) ?? a.programName
@@ -31,7 +43,7 @@ export function agentWords(s: Store) {
   const where = (a: AgentInfo) => { const p = s.place(a), tail = ` › ${main(a)}`; return p.endsWith(tail) ? p.slice(0, -tail.length) : p }
   // The agent in a terminal, if one runs there.
   const at = (addr: string | undefined) => { rev(); return addr ? s.shown().agents.find((a) => a.address === addr) : undefined }
-  return { title, line, subs, main, named, menu, where, at }
+  return { title, line, context, subs, main, named, menu, where, at }
 }
 
 /** An agent's name as its row says it, on one line: the program's name small and grey (unless Settings hides it), then
@@ -82,6 +94,10 @@ export function AgentRow(props: {
         <If when={words.line(a())}>
           <Text testID={`activity-${a().address}`} class={`text-[12px] leading-[18px] ${idle() ? 'text-muted-foreground' : ''}`}
             style={{ paddingLeft: size() + 8, ...(idle() ? {} : { color: DOING[colorScheme() === 'dark' ? 'dark' : 'light'] }) }} numberOfLines={1}>{words.line(a())}</Text>
+        </If>
+        <If when={words.context(a())}>
+          <Text testID={`context-${a().address}`} class="text-[12px] leading-[18px] text-muted-foreground"
+            style={{ paddingLeft: size() + 8 }} numberOfLines={1}>{words.context(a())}</Text>
         </If>
       </View>
       {/* Kept by terminal: each change makes new sub-agent entries, and a row drawn again under the finger lost its press. */}

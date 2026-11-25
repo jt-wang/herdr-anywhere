@@ -59,3 +59,13 @@ test('the picture sits in a box that zooms; a double tap keeps the sheet and cop
   expect(app.shows('text:Picture copied')).toBe(false)
   expect(app.host.calls().some((c: any) => c.name === 'page.copyImage')).toBe(false)
 })
+
+
+test('a slow picture keeps its modal and loading feedback visible', async () => {
+  const app = await opened('slow.png')
+  await app.waitFor('id:picture-sheet')
+  expect(app.shows('id:picture-state')).toBe(true)
+  expect(app.shows('id:picture-image')).toBe(false)
+  await app.press('id:picture-close')
+  await app.waitUntil(() => !app.shows('id:picture-sheet'))
+})

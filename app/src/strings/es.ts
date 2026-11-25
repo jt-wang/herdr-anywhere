@@ -2,6 +2,11 @@
 import type { Table } from './index.ts'
 
 export const es: Table = {
+  pictureTimeout: "La imagen tardó demasiado en cargar. Inténtalo de nuevo.",
+  pictureBusy: "El ordenador está leyendo otras imágenes. Inténtalo de nuevo en unos instantes.",
+  pictureChecking: "Comprobando la imagen…",
+  pictureCancelCheck: "Toca para cancelar",
+
   chatFirstMessage: 'El chat aparecerá después de tu primer mensaje.',
   setupChangedFilesBody: 'Estos archivos de configuración fueron editados. No se han modificado. Confirma para reemplazar o eliminar todos los archivos de la lista:\n{files}',
   diagnosticTitle: 'Diagnóstico en el dispositivo', diagnosticRecord: 'Grabar diagnóstico',

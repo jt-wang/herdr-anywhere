@@ -6,7 +6,7 @@ import { HcClient, HcError, type Pipe, type Stream, type StreamHandlers, type He
 import { Model, type FolderInfo, type Space, type Tab, newTab, local, machineOfAddress, spaceActiveTab, shownNode, focusedPaneOf, withPane } from './model/model.ts'
 import { captureDoc, replaceDoc, captureView, applyView, type View } from './model/doc.ts'
 import { Terminals, cleanTitle, type Term } from './model/terminals.ts'
-import { AgentList, type AgentInfo } from './model/agents.ts'
+import { AgentList, tellingTitle, type AgentInfo } from './model/agents.ts'
 import { PIN_ORDER, missingPlaces, moveWrites, pinOrder, placeAfterLast, type Write } from './model/pin-order.ts'
 import { programOf, agentArgv, INSTALLED_PROBE, parseInstalled, startable, type Program } from './model/programs.ts'
 const AGENT_KEYS = new Set(startable().map((p) => p.key))
@@ -45,6 +45,7 @@ export type StoreIO = {
   setInterval?: typeof setInterval
   clearInterval?: typeof clearInterval
   setTimeout?: typeof setTimeout
+  clearTimeout?: typeof clearTimeout
   now?: () => number
   /** How long a call to herdr-core waits for its answer (HcClient's default, 10 s, when not set). */
   callTimeoutMs?: number
@@ -246,7 +247,7 @@ export class Store {
     this.content = new Content(io.content)
     this.io = {
       setInterval: globalThis.setInterval.bind(globalThis), clearInterval: globalThis.clearInterval.bind(globalThis),
-      setTimeout: globalThis.setTimeout.bind(globalThis), now: () => Date.now(), tunnelled: () => false, ...io,
+      setTimeout: globalThis.setTimeout.bind(globalThis), clearTimeout: globalThis.clearTimeout.bind(globalThis), now: () => Date.now(), tunnelled: () => false, ...io,
     }
     this.model.now = this.io.now
   }
@@ -257,6 +258,8 @@ export class Store {
     this.wantConnected = true
     this.attemptAt = this.io.now()
     this.attempt++
+    this.clearSavedTitles()
+    this.titleUnsupportedAttempt = undefined
     this.opened = false
     if (!this.downAt) {
       if (this.stuckLoop !== undefined) this.io.clearInterval(this.stuckLoop)
@@ -360,6 +363,7 @@ export class Store {
       this.placeRefused.clear()
       this.sync()
       this.conn.set('ready')
+      this.refreshTitles()
       this.keepHome()
       void this.flushPending()
       this.error.set('')
@@ -430,6 +434,7 @@ export class Store {
   }
 
   private stopLoops() {
+    this.clearSavedTitles()
     if (this.loop) this.io.clearInterval(this.loop)
     if (this.quietLoop) this.io.clearInterval(this.quietLoop)
     this.loop = this.quietLoop = undefined
@@ -781,6 +786,7 @@ export class Store {
     void this.flush()
     if (this.appActive) void this.refreshGit()
     this.polling()
+    this.refreshTitles()
     if (changed) this.bump()
   }
 
@@ -996,6 +1002,84 @@ export class Store {
   }
 
   private cursorPrograms = new Map<string, string>()
+  private savedTitles = new Map<string, { key: string; at: number; title?: string; session?: string; pending: boolean; controller: AbortController }>()
+  private titleRequests = new Set<AbortController>()
+  private titleUnsupportedAttempt?: number
+
+  private clearSavedTitles() {
+    const hadTitles = this.savedTitles.size > 0
+    this.savedTitles.clear()
+    for (const controller of this.titleRequests) controller.abort()
+    this.titleRequests.clear()
+    if (hadTitles) this.bump()
+  }
+
+  /** This is process ownership, not activity: working/done changes do not invalidate a saved name. */
+  private titleKey(addr: string): string {
+    const t = this.term(addr), pane = this.model.paneOf(addr), tab = pane ? this.model.tabOf(pane) : undefined
+    const p = this.program(addr)
+    if (addr.includes('/') || !t || t.state !== 'live' || !tab || (tab.name && tab.name !== p.name) || t.name || !['claude', 'codex', 'pi', 'omp', 'opencode', 'cursor', 'antigravity'].includes(p.key)) return ''
+    if (tellingTitle(cleanTitle(t.title), p.name, p.key)) return ''
+    // Match Companion Service.pane: only this app's reported session IDs, independent of record order/activity.
+    const sessions = Object.entries(t.records ?? {}).filter(([, record]) =>
+      typeof t.status?.app === 'string' && record !== null && typeof record === 'object'
+      && 'app' in record && record.app === t.status.app).map(([id]) => id).sort()
+    return JSON.stringify([this.attempt, p.key, t.pid, t.created_ms, t.argv, t.foreground?.pid, t.foreground?.argv,
+      t.identity, t.labels?.['herdr-anywhere.chat.pid'], t.labels?.['herdr-anywhere.chat.session'], sessions])
+  }
+
+  private savedTitle(addr: string): string | undefined {
+    const entry = this.savedTitles.get(addr)
+    return entry && entry.key === this.titleKey(addr) ? entry.title : undefined
+  }
+
+  /** Home needs names too. Reuse sync's existing foreground timer; at most two reads and one per pane per 30 s. */
+  private refreshTitles() {
+    let changed = false
+    for (const [addr, entry] of this.savedTitles) if (entry.key !== this.titleKey(addr)) {
+      this.savedTitles.delete(addr); entry.controller.abort(); changed ||= !!entry.title
+    }
+    if (changed) this.bump()
+    if (!this.connected || !this.appActive || !this.chat?.title || this.titleUnsupportedAttempt === this.attempt) return
+    for (const t of this.terms.list()) {
+      if (this.titleRequests.size >= 2) break
+      const key = this.titleKey(t.address)
+      if (!key) continue
+      const previous = this.savedTitles.get(t.address), now = this.io.now()
+      if (previous && (previous.pending || now - previous.at < 30_000)) continue
+      const controller = new AbortController()
+      const entry = { key, at: now, title: previous?.title, session: previous?.session, pending: true, controller }
+      this.savedTitles.set(t.address, entry)
+      this.titleRequests.add(controller)
+      const read = this.chat.title.bind(this.chat)
+      let abort: () => void = () => {}
+      const aborted = new Promise<never>((_, reject) => {
+        abort = () => reject(new Error('title-aborted'))
+        controller.signal.addEventListener('abort', abort, { once: true })
+      })
+      const timeout = this.io.setTimeout(() => controller.abort(), 5000)
+      void Promise.race([Promise.resolve().then(() => {
+        if (controller.signal.aborted) throw new Error('title-aborted')
+        return read(t.address, controller.signal)
+      }), aborted]).then((answer) => {
+        if (controller.signal.aborted || !this.connected || this.savedTitles.get(t.address) !== entry || key !== this.titleKey(t.address)) return
+        if (answer.unsupported) {
+          this.titleUnsupportedAttempt = this.attempt
+          this.clearSavedTitles()
+          return
+        }
+        const title = answer.session && answer.title?.trim() ? answer.title.trim() : undefined
+        entry.session = answer.session
+        if (entry.title !== title) { entry.title = title; this.bump() }
+      }).catch(() => {}).finally(() => {
+        this.io.clearTimeout(timeout)
+        controller.signal.removeEventListener('abort', abort)
+        entry.pending = false
+        this.titleRequests.delete(controller)
+        this.refreshTitles()
+      })
+    }
+  }
   readonly chatSetupRevision = new Signal(0)
 
   chatSetupChanged(agent: string) {
@@ -1032,6 +1116,16 @@ export class Store {
     if (!t) return ''
     const p = this.program(t.address)
     return p.agent ? this.asksOf(t.address) || activity(t.status, cleanTitle(t.title), p.name) : ''
+  }
+
+  /** Position metadata for a row, separate from activity and notification text. */
+  contextOf(addr: string): { cwd: string; branch?: string } | undefined {
+    const t = this.term(addr)
+    if (!t) return undefined
+    const cwd = t.foreground?.cwd || t.cwd
+    if (typeof cwd !== 'string' || !cwd) return undefined
+    // Only use Git metadata cached for this exact machine/folder, never a previous folder's branch.
+    return { cwd, branch: this.gitInfo.get(this.gitKey(t))?.branch }
   }
 
   /** What a blocked agent asks: the question on its screen once its choices were read there, else its report's words.
@@ -1109,7 +1203,7 @@ export class Store {
       if (!st && !AGENT_KEYS.has(p.key)) continue
       out.push({
         address: a, pane: n.id, space: s.id, space_name: this.spaceName(s), tab: c.id, tab_name: c.name || String(ti + 1), named: !!c.name,
-        status: st, app: t.status?.app ?? null, title: cleanTitle(t.title), seq: this.model.agents.get(a)?.seq ?? 0,
+        status: st, app: t.status?.app ?? null, title: cleanTitle(t.title), terminalName: t.name || undefined, savedTitle: this.savedTitle(a), seq: this.model.agents.get(a)?.seq ?? 0,
         focused: n.id === focusedPane, pinned: !!t.labels?.[PIN_LABEL], place: this.moving.get(a) ?? t.labels?.[PIN_ORDER], programName: p.name, programKey: p.key,
         kind: t.status?.state === 'blocked' ? t.status?.kind ?? null : null, msg: t.status?.state === 'blocked' ? t.status?.msg ?? '' : '',
       })

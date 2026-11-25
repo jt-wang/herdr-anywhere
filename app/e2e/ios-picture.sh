@@ -37,9 +37,10 @@ cleanup() {
   # The sampler first: a sample written while rm -rf runs makes load.txt again, and the folder is not deleted.
   { kill "$sampler"; wait "$sampler"; } 2>/dev/null || true
   [ -z "${touchlog:-}" ] || { kill "$touchlog"; wait "$touchlog"; } 2>/dev/null || true
+  [ -z "${restorer:-}" ] || { kill "$restorer"; wait "$restorer"; } 2>/dev/null || true
   companion_stop || status=1
   L "$hc" server stop >/dev/null 2>&1 || true
-  picture_cleanup
+  picture_cleanup || status=1
   chmod -R u+w "$work" 2>/dev/null; rm -rf "${work:?}" "${run:?}" || echo "NOTE: left after the cleanup: $(ls -A "$work" 2>/dev/null | head -5 | tr '\n' ' ')"
   autostart_guard_end || exit 1
   exit "$status"
@@ -81,13 +82,30 @@ picture() {
   "$app/e2e/ios-touch-log.sh" --start "$SIM_UDID" "$work/uikit-$1.log" & touchlog=$!
   space_miss=""; [ "$1" = light ] && space_miss=${HM_MISS_SPACE:-}
   TEST_RUNNER_OUT="$work/picture-$1.txt" TEST_RUNNER_SHOTS="${shots:-$work}/$1" TEST_RUNNER_SIZE="$size" TEST_RUNNER_SPACE="$space" \
-    TEST_RUNNER_TERMINAL="$term" TEST_RUNNER_FULL="$full" TEST_RUNNER_SWITCHED="$switched" TEST_RUNNER_MISS_FIRST="$miss" TEST_RUNNER_NO_TAP_FIRST="$no_tap" TEST_RUNNER_MISS_SPACE="$space_miss" \
+    TEST_RUNNER_DECODE_RETRY="${decode_retry:-}" TEST_RUNNER_RESTORED="$work/restored-ready" TEST_RUNNER_TERMINAL="$term" TEST_RUNNER_FULL="$full" TEST_RUNNER_SWITCHED="$switched" TEST_RUNNER_MISS_FIRST="$miss" TEST_RUNNER_NO_TAP_FIRST="$no_tap" TEST_RUNNER_MISS_SPACE="$space_miss" \
     perl -e 'alarm 600; exec @ARGV' xcodebuild test -quiet -project "$work/uitest/KeyboardCheck.xcodeproj" -scheme UITests \
     -only-testing:UITests/Picture -destination "id=$SIM_UDID" -derivedDataPath "$work/uitest/derived" \
     -resultBundlePath "$work/uitest/result-$1.xcresult" > "$work/uitest/test-$1.log" 2>&1 &
   t=$!
   [ -s "$size" ] || size_wait "$before" "$size" "$t"
+  restorer=
+  if [ "${decode_retry:-}" = 1 ]; then
+    # The test runner can read/write these host paths, as it already does SIZE and OUT.
+    # Restore only after XCUITest observed the native error, leaving the modal open.
+    (
+      while kill -0 "$t" 2>/dev/null; do
+        if grep -q 'decode restore requested' "$work/picture-$1.txt" 2>/dev/null; then
+          picture_restore || exit 1
+          : > "$work/restored-ready"
+          exit 0
+        fi
+        sleep 0.2
+      done
+      exit 1
+    ) & restorer=$!
+  fi
   rc=0; wait $t || rc=$?
+  if [ -n "$restorer" ]; then wait "$restorer" || rc=1; restorer=; fi
   { kill "$touchlog"; wait "$touchlog"; } 2>/dev/null || true; touchlog=
   sed 's/^/  /' "$work/picture-$1.txt" 2>/dev/null || true
   [ "$rc" = 0 ] && { echo "ok: $1"; return; }
@@ -106,5 +124,12 @@ appearance light
 picture light
 appearance dark
 picture dark "$(cat "$size")"
+# Keep the PNG signature so the backend accepts it, but the native decoder cannot.
+python3 -c 'import sys; open(sys.argv[2], "wb").write(open(sys.argv[1], "rb").read(16))' "$work/picture.png" "$work/truncated.png"
+picture_changed=1
+picture_bytes "$work/truncated.png"
+decode_retry=1
+picture decode-retry "$(cat "$size")"
+picture_restore
 xcrun simctl ui "$SIM_UDID" appearance light
 echo PASS

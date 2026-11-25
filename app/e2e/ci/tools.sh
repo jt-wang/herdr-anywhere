@@ -52,8 +52,15 @@ nsh() {
   echo "$HOME/.nsh/bin" >> "$path_"
 }
 
+# The runner image's package lists go stale: once Ubuntu replaces a package, installing from them answers 404
+# (pipewire's, which ffmpeg pulls in, did). Read them again once, before the first install.
+apt_install() {
+  [ -n "${apt_fresh:-}" ] || { sudo apt-get update -qq >/dev/null; apt_fresh=1; }
+  sudo apt-get install -y -qq "$@" >/dev/null
+}
+
 zsh_() {
-  if [ $os = linux ]; then sudo apt-get install -y -qq zsh >/dev/null; fi
+  if [ $os = linux ]; then apt_install zsh; fi
   zsh --version
 }
 
@@ -66,7 +73,7 @@ shots() {
   # tesseract on both: a Mac runner's Vision read no word of the self-test's picture, which Vision on a Mac at a desk
   # reads. Homebrew has no versioned tesseract formula, so the runner image's formula is taken (no update) and a
   # major version other than 5 stops here.
-  if [ $os = linux ]; then sudo apt-get install -y -qq tesseract-ocr ffmpeg >/dev/null
+  if [ $os = linux ]; then apt_install tesseract-ocr ffmpeg
   else HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 brew install -q tesseract >/dev/null; fi
   v=$(tesseract --version 2>&1 | sed -n 1p); echo "$v"
   case $v in "tesseract 5."*) ;; *) echo "FAIL: tesseract is not 5.x: $v"; exit 1 ;; esac
@@ -114,7 +121,7 @@ opencode() {
 
 # Homebrew has no versioned ffmpeg formula: the runner image's formula is taken, as for tesseract.
 video() {
-  command -v ffmpeg >/dev/null || if [ $os = linux ]; then sudo apt-get install -y -qq ffmpeg >/dev/null
+  command -v ffmpeg >/dev/null || if [ $os = linux ]; then apt_install ffmpeg
     else HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 brew install -q ffmpeg >/dev/null; fi
   ffmpeg -version | sed -n 1p
 }

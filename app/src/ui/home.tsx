@@ -347,7 +347,7 @@ function SpaceRow(props: { store: Store; space: Space; color: string; actions: H
       <Text class="text-[15px] leading-[21px] font-medium text-foreground shrink-0 max-w-[60%]" numberOfLines={1}>{name()}</Text>
       <View class="flex-1 flex-row items-center justify-end gap-1.5 min-w-0">
         <If when={git()}>{(g) => (
-          <View class="flex-row items-center gap-1.5 min-w-0">
+          <View class="flex-row items-center gap-1.5 min-w-0 shrink">
             <If when={gitTail(name(), g())}><Text class="text-[12px] text-sidebar-foreground shrink" numberOfLines={1}>{gitTail(name(), g())}</Text></If>
             <If when={g().ahead}><Text class="text-[12px] text-muted-foreground">{`↑${g().ahead}`}</Text></If>
             <If when={g().behind}><Text class="text-[12px] text-muted-foreground">{`↓${g().behind}`}</Text></If>

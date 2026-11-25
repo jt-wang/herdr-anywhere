@@ -1,6 +1,11 @@
 // The app's words, the source the other languages follow (index.ts). `{name}` is filled in; a { one, other } picks by `n`.
 // Herdr desktop has no translations, so its English words (Needs you, Working, space, tab, pane) are what these say.
 export const en = {
+  pictureTimeout: "The picture took too long to load. Try again.",
+  pictureBusy: "The computer is still reading other pictures. Try again shortly.",
+  pictureChecking: "Checking the picture…",
+  pictureCancelCheck: "Tap to cancel",
+
   chatFirstMessage: 'Chat appears after your first message.',
   setupChangedFilesBody: 'These setup files were edited. They have not been changed. Confirm to replace or remove every file listed:\n{files}',
   diagnosticTitle: 'On-device diagnostics', diagnosticRecord: 'Record diagnostics',

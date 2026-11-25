@@ -10,6 +10,7 @@ import { t as tr, type Key } from './strings/index.ts'
 import type { ChatAnswer, ChatApi, ChatChange, ChatPicture, ChatRead, ChatRun, ChatSetup } from './model/chat.ts'
 import { diag, diagnosticRequest } from './diag.ts'
 import { diagnosticFetch } from './request.ts'
+import { pictureRequest } from './picture-request.ts'
 
 /** `via: 'tailpocket'`: the computer is reached through TailPocket, which keeps its own link (with the phone's key).
  *  `via: 'demo'`: Try it's made-up computer (demo.ts). */
@@ -378,6 +379,20 @@ export function chatApi(linker: Linker, fetcher: typeof fetch = fetch): ChatApi 
     return { r, body: r.status === 304 ? undefined : (await r.json().catch(() => ({}))) as any }
   }
   return {
+    async title(address, signal) {
+      const pair = linker.link.get()
+      const base = await linker.baseUrl()
+      if (pair !== linker.link.get() || signal?.aborted) return {}
+      const r = await diagnosticFetch(fetcher, `${base}/api/chat/${encodeURIComponent(address)}/title`, {
+        cache: 'no-store', ...(signal ? { signal } : {}), headers: { authorization: `Bearer ${pair?.token ?? ''}` },
+      })
+      const body = await r.json().catch(() => ({})) as any
+      if (pair !== linker.link.get()) return {}
+      if (r.status === 404) return { unsupported: true }
+      if (!r.ok) throw new Error('title-unavailable')
+      if (typeof body?.title !== 'string' || !body.title.trim() || typeof body?.session !== 'string' || !body.session) return {}
+      return { title: body.title.trim(), session: body.session }
+    },
     async get(address, before) {
       const pair = linker.link.get(), n = ++sequence
       if (pair !== paired) { pages.clear(); paired = pair }
@@ -461,7 +476,7 @@ function setupOf(x: any): ChatSetup | null {
 /** A picture a terminal shows, read on the computer (GET /api/image): `path` is where it is there. */
 export type Picture = { path: string; url: string }
 // The computer's reasons (image.go `why`) said in the phone's language; the rest come down to "can't read it".
-const PICTURE_WHY: Record<string, Key> = { missing: 'pictureMissing', outside: 'pictureOutside', not_image: 'pictureNotImage', too_big: 'pictureTooBig', remote: 'pictureRemote', unreachable: 'pictureUnreachable' }
+const PICTURE_WHY: Record<string, Key> = { timeout: 'pictureTimeout', busy: 'pictureBusy', missing: 'pictureMissing', outside: 'pictureOutside', not_image: 'pictureNotImage', too_big: 'pictureTooBig', remote: 'pictureRemote', unreachable: 'pictureUnreachable' }
 // The limit the computer used, in whole MB (12 here, 8 from another machine: image.go maxImage, maxThere).
 function pictureWhy(body: any): string {
   const why = typeof body.why === 'string' && Object.prototype.hasOwnProperty.call(PICTURE_WHY, body.why) ? body.why : ''
@@ -472,43 +487,55 @@ function pictureWhy(body: any): string {
   return tr(why ? PICTURE_WHY[why] : 'pictureCantRead')
 }
 export type ImageApi = {
-  read(path: string, terminal: string): Promise<Picture>
+  read(path: string, terminal: string, signal?: AbortSignal): Promise<Picture>
   /** Which of the paths a terminal shows are pictures there, by path as asked; null: the computer is too old to say. */
-  check(terminal: string, paths: string[]): Promise<Record<string, boolean> | null>
+  check(terminal: string, paths: string[], signal?: AbortSignal): Promise<Record<string, boolean> | null>
 }
 
 /** The picture at a path a terminal shows: the computer finds the file, says whether it may be read and is a picture
  *  (companion/internal/server/image.go). Nothing is kept: the sheet holds it while it is open. */
 export function imageApi(linker: Linker, fetcher: typeof fetch = fetch): ImageApi {
+  const current = (pair: Link | null, signal: AbortSignal) => {
+    if (signal.aborted || pair !== linker.link.get()) throw new Error(tr('cantReachComputer'))
+  }
   return {
-    async read(path, terminal) {
-      const token = linker.link.get()?.token ?? ''
-      let r: Response
-      try {
-        r = await diagnosticFetch(fetcher, `${await linker.baseUrl()}/api/image?path=${encodeURIComponent(path)}&terminal=${encodeURIComponent(terminal)}`, { headers: { authorization: `Bearer ${token}` } })
-      } catch {
-        throw new Error(tr('cantReachComputer'))
-      }
-      const body: any = await r.json().catch(() => ({}))
-      if (!r.ok) throw new Error(pictureWhy(body))
-      if (typeof body.path !== 'string' || typeof body.url !== 'string' || !/^data:image\/(png|jpeg|gif|webp);base64,/.test(body.url)) throw new Error(tr('pictureCantRead'))
-      return { path: body.path, url: body.url }
+    async read(path, terminal, parent) {
+      const pair = linker.link.get()
+      return pictureRequest(async (signal) => {
+        current(pair, signal)
+        const base = await linker.baseUrl()
+        current(pair, signal)
+        let r: Response
+        try {
+          r = await diagnosticFetch(fetcher, `${base}/api/image?path=${encodeURIComponent(path)}&terminal=${encodeURIComponent(terminal)}`, { signal, headers: { authorization: `Bearer ${pair?.token ?? ''}` } })
+        } catch { throw new Error(tr('cantReachComputer')) }
+        const body: any = await r.json().catch(() => ({}))
+        current(pair, signal)
+        if (!r.ok) throw new Error(pictureWhy(body))
+        if (typeof body.path !== 'string' || typeof body.url !== 'string' || !/^data:image\/(png|jpeg|gif|webp);base64,/.test(body.url)) throw new Error(tr('pictureCantRead'))
+        return { path: body.path, url: body.url }
+      }, parent).catch((e) => { if (e?.message === 'picture-request-cancelled') throw new Error(tr('pictureTimeout')); throw e })
     },
-    async check(terminal, paths) {
-      let r: Response
-      try {
-        r = await diagnosticFetch(fetcher, `${await linker.baseUrl()}/api/image/check`, { method: 'POST', body: JSON.stringify({ terminal, paths }),
-          headers: { authorization: `Bearer ${linker.link.get()?.token ?? ''}`, 'content-type': 'application/json' } })
-      } catch {
-        throw new Error(tr('cantReachComputer'))
-      }
-      // A Companion from before the check has no such route.
-      if (r.status === 404 || r.status === 405) return null
-      const body: any = await r.json().catch(() => ({}))
-      if (!r.ok) throw new Error(pictureWhy(body))
-      const out: Record<string, boolean> = {}
-      for (const a of Array.isArray(body.paths) ? body.paths : []) if (typeof a?.asked === 'string') out[a.asked] = a.picture === true
-      return out
+    async check(terminal, paths, parent) {
+      const pair = linker.link.get()
+      return pictureRequest(async (signal) => {
+        current(pair, signal)
+        const base = await linker.baseUrl()
+        current(pair, signal)
+        let r: Response
+        try {
+          r = await diagnosticFetch(fetcher, `${base}/api/image/check`, { signal, method: 'POST', body: JSON.stringify({ terminal, paths }),
+            headers: { authorization: `Bearer ${pair?.token ?? ''}`, 'content-type': 'application/json' } })
+        } catch { throw new Error(tr('cantReachComputer')) }
+        current(pair, signal)
+        if (r.status === 404 || r.status === 405) return null
+        const body: any = await r.json().catch(() => ({}))
+        current(pair, signal)
+        if (!r.ok) throw new Error(pictureWhy(body))
+        const out: Record<string, boolean> = {}
+        for (const a of Array.isArray(body.paths) ? body.paths : []) if (typeof a?.asked === 'string') out[a.asked] = a.picture === true
+        return out
+      }, parent, 5000)
     },
   }
 }

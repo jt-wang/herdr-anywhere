@@ -6,6 +6,9 @@ export type Term = {
   name?: string | null
   state: string
   pid?: number | null
+  /** Core-owned creation/process identity, used to reject stale session metadata after a restart. */
+  created_ms?: number
+  identity?: unknown
   argv: string[]
   cwd: string
   labels: Record<string, string>

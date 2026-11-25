@@ -2,6 +2,14 @@
 
 A cloud coding agent can request an iOS build through GitHub Actions. Apple signing credentials stay in the repository's `testflight` environment; the agent needs a GitHub token with **Actions: write** and **Contents: read**.
 
+## 0.3.11 (46): agent names, the line under them, pictures
+
+Update the Companion too (it updates itself, or `herdr-anywhere start` after installing 0.3.11).
+
+1. **Names.** Open a Claude Code, Codex, OpenCode, Cursor, Pi, Oh My Pi or Antigravity CLI session that already has a conversation, in a pane with no title: Home shows the conversation's name. In OpenCode, switch to another session: the name follows.
+2. **The line under the name.** It says what the agent is doing, or its folder and branch.
+3. **Pictures.** Tap a picture's path in a terminal: the picture opens at once. A file that can't be read or shown says why within seconds and offers Retry.
+
 ## 0.3.10 (45): the shared design
 
 Update the Companion too (it updates itself, or `herdr-anywhere start` after installing 0.3.10).

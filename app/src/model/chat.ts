@@ -102,7 +102,12 @@ export function clockText(ms: number): string {
   return h ? `${h}:${two(m)}:${two(sec)}` : `${m}:${two(sec)}`
 }
 
+/** A saved name belonging to the current process's uniquely matched session. No transcript is returned. */
+export type ChatTitle = { title?: string; session?: string; unsupported?: boolean }
+
 export type ChatApi = {
+  /** Optional for older hosts; unsupported means this Companion has no title endpoint. */
+  title?(address: string, signal?: AbortSignal): Promise<ChatTitle>
   get(address: string, before?: string): Promise<ChatAnswer>
   /** null: the step is gone (the agent moved to another session) or the computer doesn't know it. */
   step(address: string, id: string): Promise<ChatDetail | null>

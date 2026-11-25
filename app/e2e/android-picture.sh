@@ -36,7 +36,7 @@ cleanup() {
   "$adb" shell cmd uimode night no >/dev/null 2>&1 || true
   "$adb" shell settings put system show_touches "${touches:-0}" >/dev/null 2>&1 || true
   [ -z "$serve_pid" ] || kill "$serve_pid" 2>/dev/null; "$hc" server stop >/dev/null 2>&1 || true
-  picture_cleanup
+  picture_cleanup || status=1
   chmod -R u+w "$work" 2>/dev/null; rm -rf "$work" "$run" "$state"
   autostart_guard_end || exit 1
   exit "$status"
@@ -126,6 +126,25 @@ for scheme in light dark; do
   done
   shot "$scheme-not-pictures"
 done
+
+# The MIME header is valid; the native decoder must reject the truncated payload and offer a retry.
+# Restore the original synthetic image and retry in the same modal, proving this action fetches again.
+python3 -c 'import sys; open(sys.argv[2], "wb").write(open(sys.argv[1], "rb").read(16))' "$work/picture.png" "$work/truncated.png"
+picture_changed=1
+picture_bytes "$work/truncated.png"
+"$adb" shell input tap $(cell 0 12)
+wait_for picture-retry
+has "The computer can't read this picture." && say "ok: native decode failure is visible" || say "FAIL: no native decode error"
+picture_restore
+tap picture-retry
+wait_for picture-image
+i=0
+while has 'resource-id="picture-state'; do
+  i=$((i + 1)); [ "$i" -le 50 ] || { say "FAIL: retry never finished decoding"; break; }
+  sleep 0.2
+done
+has 'resource-id="picture-retry' && say "FAIL: retry kept the decode error" || say "ok: retry loads the restored picture"
+tap picture-close; sleep 1
 
 # Timing (HM_PICTURE_TIMES=N taps): from the finger's lift to the picture, from a screen recording. show_touches draws
 # a dot while the finger is down; the lift is the frame it starts to fade; then the frame the sheet starts to come up

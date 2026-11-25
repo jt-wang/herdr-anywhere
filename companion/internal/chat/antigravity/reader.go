@@ -21,6 +21,7 @@ package antigravity
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -134,7 +135,9 @@ func descendants(pid int) []int {
 	if runtime.GOOS == "windows" {
 		return nil
 	}
-	out, err := exec.Command("ps", "-A", "-o", "pid=,ppid=").Output()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "ps", "-A", "-o", "pid=,ppid=").Output()
 	if err != nil {
 		return nil
 	}
@@ -189,7 +192,12 @@ func openFiles(pids []int) ([]string, error) {
 		lsof = "lsof"
 	}
 	// lsof exits 1 when one of the processes has gone; what it printed still holds.
-	out, _ := exec.Command(lsof, "-nP", "-Fn", "-p", strings.Join(ps, ",")).Output()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	out, _ := exec.CommandContext(ctx, lsof, "-nP", "-Fn", "-p", strings.Join(ps, ",")).Output()
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
 	var names []string
 	for _, l := range strings.Split(string(out), "\n") {
 		if strings.HasPrefix(l, "n/") {

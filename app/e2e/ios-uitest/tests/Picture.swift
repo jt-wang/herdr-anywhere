@@ -92,6 +92,37 @@ final class Picture: XCTestCase {
       cell(0, 12).tap()
       note("tapped the path, \(switched); terminal at \(NSCoder.string(for: frame))")
     }
+    if env["DECODE_RETRY"] == "1" {
+      guard el("picture-retry").waitForExistence(timeout: 25) else {
+        elements("decode-no-retry"); XCTFail("native decode failure offered no retry"); return
+      }
+      // A missing onError reaches the distinct timeout message. It must fail this assertion.
+      guard saying("The computer can't read this picture.").exists else {
+        elements("decode-wrong-error"); XCTFail("expected native decode error, not timeout"); return
+      }
+      shot("decode-error")
+      note("decode restore requested")
+      let restored = env["RESTORED"] ?? ""
+      let restoreStart = Date()
+      while !FileManager.default.fileExists(atPath: restored) && Date().timeIntervalSince(restoreStart) < 20 {
+        usleep(100_000)
+      }
+      guard !restored.isEmpty && FileManager.default.fileExists(atPath: restored) else {
+        XCTFail("the script never restored and verified the fixture"); return
+      }
+      el("picture-retry").tap()
+      guard el("picture-image").waitForExistence(timeout: 20) else {
+        elements("retry-no-image"); XCTFail("retry did not fetch the restored image"); return
+      }
+      let decoded = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: el("picture-state"))
+      XCTAssertEqual(XCTWaiter.wait(for: [decoded], timeout: 20), .completed, "retry never finished native decoding")
+      XCTAssertTrue(el("picture-image").exists, "retry removed the image")
+      XCTAssertFalse(el("picture-retry").exists, "retry kept the error")
+      shot("decode-retried")
+      note("native decode error and retry checked")
+      el("picture-close").tap()
+      return
+    }
     let first = el("picture-image").waitForExistence(timeout: 20)
     note("tap the path, picture shown: \(first)")
     var opened = first

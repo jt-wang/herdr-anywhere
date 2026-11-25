@@ -2,6 +2,11 @@
 import type { Table } from './index.ts'
 
 export const zhHant: Table = {
+  pictureTimeout: "圖片載入逾時，請重試。",
+  pictureBusy: "電腦正在讀取其他圖片，請稍後重試。",
+  pictureChecking: "正在檢查圖片…",
+  pictureCancelCheck: "點一下取消",
+
   chatFirstMessage: '傳送第一則訊息後即可看到聊天。',
   setupChangedFilesBody: '以下設定檔已被編輯，目前未作變更。確認後將取代或刪除列出的所有檔案：\n{files}',
   diagnosticTitle: '裝置本機診斷', diagnosticRecord: '記錄診斷日誌',

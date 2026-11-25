@@ -1,6 +1,7 @@
 package main
 
 import (
+	"herdr-anywhere/companion/internal/chat"
 	"testing"
 
 	"herdr-anywhere/companion/internal/chat/antigravity"
@@ -40,6 +41,11 @@ func TestChatReadersByApp(t *testing.T) {
 	}
 	if _, ok := r["omp"].(*pi.Reader); !ok {
 		t.Errorf("omp: %T", r["omp"])
+	}
+	for app, reader := range r {
+		if _, ok := reader.(chat.TitleReader); !ok {
+			t.Errorf("%s has no saved-title reader", app)
+		}
 	}
 	if len(r) != 7 {
 		t.Errorf("readers %v", r)

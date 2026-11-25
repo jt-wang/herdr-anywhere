@@ -159,3 +159,16 @@ func (s *Server) chatSetupSet(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, info)
 	}
 }
+
+// chatTitle exposes only existing session metadata, after the usual device authentication.
+func (s *Server) chatTitle(w http.ResponseWriter, r *http.Request) {
+	if !s.device(w, r) {
+		return
+	}
+	w.Header().Set("Cache-Control", "private, no-store")
+	a := chat.TitleAnswer{}
+	if s.cfg.Chat != nil {
+		a = s.cfg.Chat.Title(r.PathValue("addr"))
+	}
+	writeJSON(w, http.StatusOK, a)
+}

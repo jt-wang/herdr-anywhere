@@ -41,4 +41,30 @@ picture_terminal() {
   fi
 }
 
-picture_cleanup() { [ -z "$box" ] || "$docker" rm -f "$box" >/dev/null 2>&1 || true; }
+picture_cleanup() {
+  picture_cleanup_status=0
+  if [ "${picture_changed:-0}" = 1 ]; then picture_restore || picture_cleanup_status=1; fi
+  [ -z "$box" ] || "$docker" rm -f "$box" >/dev/null 2>&1 || picture_cleanup_status=1
+  return "$picture_cleanup_status"
+}
+
+# Replace only this test's picture. A truncated PNG passes MIME sniffing but must fail native decoding.
+picture_bytes() {
+  if [ -n "$box" ]; then
+    "$docker" cp "$1" "$box:/Users/sam/src/acme-app/art/sunset.png"
+  else
+    cp "$1" "$work/home/src/acme-app/art/sunset.png"
+  fi
+}
+
+# Cleanup also calls this if the decoder assertion fails before the normal restore.
+picture_restore() {
+  picture_bytes "$work/picture.png" || return 1
+  if [ -n "$box" ]; then
+    "$docker" cp "$box:/Users/sam/src/acme-app/art/sunset.png" "$work/restored.png" || return 1
+    cmp "$work/picture.png" "$work/restored.png" || return 1
+  else
+    cmp "$work/picture.png" "$work/home/src/acme-app/art/sunset.png" || return 1
+  fi
+  picture_changed=0
+}

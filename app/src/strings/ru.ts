@@ -2,6 +2,11 @@
 import type { Table } from './index.ts'
 
 export const ru: Table = {
+  pictureTimeout: "Время загрузки изображения истекло. Попробуйте снова.",
+  pictureBusy: "Компьютер ещё читает другие изображения. Повторите чуть позже.",
+  pictureChecking: "Проверка изображения…",
+  pictureCancelCheck: "Нажмите для отмены",
+
   chatFirstMessage: 'Чат появится после вашего первого сообщения.',
   setupChangedFilesBody: 'Эти файлы настройки были отредактированы. Они не изменены. Подтвердите замену или удаление всех перечисленных файлов:\n{files}',
   diagnosticTitle: 'Диагностика на устройстве', diagnosticRecord: 'Записывать диагностику',

@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.3.11
+
+iOS build 46. The phone app and the Companion both changed; an installed Companion updates itself.
+
+- An agent with no terminal title shows its conversation's name instead of an empty row: Claude Code, Codex, OpenCode, Cursor, Pi, Oh My Pi and Antigravity CLI read the title they saved for that session. A name you gave the pane still comes first, and an OpenCode that switches sessions shows the new session's title, never the old one's.
+- The line under an agent's name says what it is doing when the agent reports that; otherwise its folder and branch, a long path keeping its last two folders.
+- Tapping a picture's path in a terminal opens the picture at once when the Companion already found it. Otherwise the sheet opens with a spinner and gives up with a reason and Retry after at most 5 s to find the file, 15 s to read it and 15 s to show it, instead of waiting about a minute and showing nothing.
+
 ## v0.3.10
 
 iOS build 45. The phone app and the Companion both changed; an installed Companion updates itself.

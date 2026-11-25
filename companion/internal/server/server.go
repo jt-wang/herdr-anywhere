@@ -66,6 +66,8 @@ type Server struct {
 	maxUpload    int64
 	machineChunk int
 	maxImage     int64
+	imageReads   chan struct{}
+	imageChecks  chan struct{}
 	// Links a player opens a file by (POST /api/file/link): key → what it opens; a link ends after fileLinkIdle unused.
 	fileLinks    map[string]*fileLink
 	fileLinkIdle time.Duration
@@ -91,6 +93,8 @@ func New(cfg Config) *Server {
 		maxUpload:    maxUpload,
 		machineChunk: machineChunk,
 		maxImage:     maxImage,
+		imageReads:   make(chan struct{}, 2),
+		imageChecks:  make(chan struct{}, 2),
 	}
 	if cfg.WebDir != "" {
 		st, err := newStatic(cfg.WebDir)
@@ -121,6 +125,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/update/checks", s.updateChecks)
 	mux.HandleFunc("POST /api/update/check", s.updateCheck)
 	mux.HandleFunc("GET /api/chat/{addr}", s.chat)
+	mux.HandleFunc("GET /api/chat/{addr}/title", s.chatTitle)
 	mux.HandleFunc("GET /api/chat-setups", s.chatSetups)
 	mux.HandleFunc("PUT /api/chat-setups/{agent}", s.chatSetupSet)
 	mux.HandleFunc("DELETE /api/chat-setups/{agent}", s.chatSetupSet)

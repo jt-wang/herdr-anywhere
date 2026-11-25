@@ -124,6 +124,14 @@ if (scene === 'progress') {
 }
 // `scene: "twins"`: one space with two Claude Codes, told apart by a tab's name and an agent's title, one with a
 // sub-agent, and a shell; another space with one more Claude Code.
+if (scene === 'saved-title') {
+  const doc = { spaces: [] as any[] }
+  const command = params.titleProgram || 'codex'
+  const app = command === 'claude' ? 'claude-code' : command === 'cursor-agent' ? 'cursor' : command === 'agy' ? 'antigravity' : command
+  core.addSpace(doc, 'sp1', '/synthetic/example', 'Example', [{ id: 'tb1', argv: [command], status: 'working' }])
+  core.setStatus('t1', 'working', app)
+  core.docs.set('', { value: doc, version: 1 })
+}
 if (scene === 'twins') {
   const doc = { spaces: [] as any[] }
   core.addSpace(doc, 'sp1', '/Users/sam/src/api', '', [
@@ -372,6 +380,7 @@ function picture(url: string) {
   pictureAsks.push(`${terminal} ${path}`)
   void Storage.setItem('fake-pictures', JSON.stringify(pictureAsks))
   const real = path.startsWith('/') ? path : path.startsWith('~/') ? `/Users/sam/${path.slice(2)}` : `/Users/sam/src/api/${path}`
+  if (/slow\.png$/.test(path)) return new Promise(resolve => setTimeout(() => resolve(answer(200, { path: real, url: SAMPLE_PICTURE })), 3000))
   if (/notes\.png$/.test(path)) return answer(415, { error: 'not a picture', why: 'not_image', path: real })
   if (/gone\.png$/.test(path)) return answer(404, { error: 'no such file', why: 'missing', path: real })
   return answer(200, { path: real, url: SAMPLE_PICTURE })
@@ -473,6 +482,12 @@ mount(() => (
       if (url.includes('/api/files')) return answer(200, { path: landed(new URLSearchParams(url.split('?')[1]), init.body.size) })
       if (url.includes('/api/folders')) return folders(url, init)
       if (url.includes('/api/chat-setups')) return chatSetups(url, init)
+      if (/\/api\/chat\/[^/]+\/title$/.test(url)) {
+        const asked = JSON.parse(memory.get('fake-title-asks') ?? '[]')
+        asked.push(url.replace(/^https?:\/\/[^/]+/, ''))
+        await Storage.setItem('fake-title-asks', JSON.stringify(asked))
+        return params.savedTitle ? answer(200, JSON.parse(params.savedTitle)) : answer(404, {})
+      }
       if (url.includes('/api/chat/')) return chat(url)
       // POST /api/file/check and GET /api/file: the files of the chat answer's `files` ({ path: { kind, size, text } }),
       // each asked for recorded in `fake-file-asks`; any other path is missing.

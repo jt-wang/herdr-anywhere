@@ -7,8 +7,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"os"
 	"strings"
 )
 
@@ -83,11 +81,7 @@ func (s *Service) ChatPage(addr, before string) (Answer, error) {
 		return a, nil
 	}
 	// OpenCode paths include #session; file records use the inode as well, to reject rotation at the same path.
-	identity := app + "\x00" + addr + "\x00" + path
-	if st, e := os.Stat(path); e == nil {
-		identity += fmt.Sprint("\x00", Inode(st))
-	}
-	a.Session = base64.RawURLEncoding.EncodeToString(s.sign([]byte(identity)))
+	a.Session = s.sessionIdentity(app, addr, path)
 	if before != "" && cursor.Session != a.Session {
 		return Answer{}, ErrCursor
 	}

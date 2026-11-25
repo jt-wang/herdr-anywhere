@@ -2,6 +2,11 @@
 import type { Table } from './index.ts'
 
 export const ja: Table = {
+  pictureTimeout: "画像の読み込みがタイムアウトしました。再試行してください。",
+  pictureBusy: "コンピューターは他の画像を読み込んでいます。しばらくしてから再試行してください。",
+  pictureChecking: "画像を確認中…",
+  pictureCancelCheck: "タップしてキャンセル",
+
   chatFirstMessage: '最初のメッセージを送るとチャットが表示されます。',
   setupChangedFilesBody: '次の設定ファイルは編集されています。まだ変更していません。一覧のすべてのファイルを置き換えるか削除するには確認してください：\n{files}',
   diagnosticTitle: '端末内の診断', diagnosticRecord: '診断を記録',

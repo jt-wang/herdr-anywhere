@@ -6,6 +6,7 @@ package claude
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -75,7 +76,9 @@ func (r *Reader) Find(pid int) (string, string, error) {
 // ("Transcript saving is off", seen with 2.1.319), as when a herdr-core was first started from inside one
 // and passes that environment to every terminal. Otherwise, why.
 func noFile(pid int, why string) string {
-	out, _ := exec.Command("ps", "eww", "-o", "command=", "-p", fmt.Sprint(pid)).Output()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	out, _ := exec.CommandContext(ctx, "ps", "eww", "-o", "command=", "-p", fmt.Sprint(pid)).Output()
 	if bytes.Contains(out, []byte(" CLAUDE_CODE_CHILD_SESSION=1")) {
 		return chat.NoRecord
 	}
@@ -84,7 +87,9 @@ func noFile(pid int, why string) string {
 
 // startTime is how Claude Code writes procStart: ps's lstart in UTC (as Claude Code 2.1.319 writes it).
 func startTime(pid int) (string, error) {
-	cmd := exec.Command("ps", "-o", "lstart=", "-p", fmt.Sprint(pid))
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "ps", "-o", "lstart=", "-p", fmt.Sprint(pid))
 	cmd.Env = append(os.Environ(), "TZ=UTC")
 	out, err := cmd.Output()
 	return strings.TrimSpace(string(out)), err
