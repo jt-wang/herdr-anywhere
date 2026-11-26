@@ -21,7 +21,12 @@ final class ChatFold: XCTestCase {
     let all = { app.descendants(matching: .any) }
     let el = { (id: String) in all()[id].firstMatch }
     let saying = { (text: String) in all().matching(NSPredicate(format: "label == %@", text)).firstMatch }
-    let working = { saying("Working…").exists }
+    // While the agent works, its turn's fold line reads "Working… · N steps" (model/chat.ts foldLine; the button's label
+    // holds its texts), and the turn's steps show only once that line is opened.
+    let workLine = { all().matching(NSPredicate(format: "identifier BEGINSWITH 'fold-' AND label CONTAINS %@", "Working…")).firstMatch }
+    let working = { workLine().exists }
+    // Opens the working turn's steps once, when its line shows: true once it was tapped.
+    func openWork(_ opened: inout Bool) { if !opened && workLine().exists { workLine().tap(); opened = true } }
     let has = { (name: String) in FileManager.default.fileExists(atPath: "\(ctl)/\(name)") }
     let put = { (name: String) in _ = FileManager.default.createFile(atPath: "\(ctl)/\(name)", contents: nil) }
     func until(_ secs: Double, _ ok: () -> Bool) -> Bool {
@@ -41,7 +46,7 @@ final class ChatFold: XCTestCase {
       var ids: [String] = []
       func walk(_ e: XCUIElementSnapshot) {
         let id = e.identifier
-        if ["step-", "fold-", "you-", "chat-"].contains(where: { id.hasPrefix($0) }) { ids.append(id) }
+        if ["step-", "fold-", "you-", "chat-"].contains(where: { id.hasPrefix($0) }) { ids.append(id.hasPrefix("fold-") ? "\(id) '\(e.label)'" : id) }
         e.children.forEach(walk)
       }
       if let root = try? app.snapshot() { walk(root) }
@@ -65,7 +70,8 @@ final class ChatFold: XCTestCase {
     // output line 20, so the step shows about 85 s after the prompt and its output about 15 s later; the turn ends at
     // about 150 s. A step's details are fetched when it opens, so it is opened once its output is in, and the doubt
     // and its answers after it all come before the turn ends and folds its steps away.
-    guard until(180, { list.count > 0 && working() }) else { failed("fold: no command step while working"); return }
+    var listOpened = false
+    guard until(180, { openWork(&listOpened); return list.count > 0 && working() }) else { failed("fold: no command step while working"); return }
     sleep(16)
     let step = list.element(boundBy: list.count - 1).identifier
     guard el(step).exists else { failed("fold: the command step went away before it was opened"); return }
@@ -76,23 +82,24 @@ final class ChatFold: XCTestCase {
     put("no-status")
     guard el("chat-unknown").waitForExistence(timeout: 15) else { failed("fold: the answer that can't tell did not show"); return }
     sleep(1); shot("fold-2-doubt")
-    // Back from the doubt, and then the turn's end, which folds its steps away (when is up to the CI's pace): the
-    // turn's fold is opened, and its step shows open only if the view kept what was opened.
+    // Back from the doubt, and then the turn's end (when is up to the CI's pace): if the turn's steps are folded away,
+    // its fold is opened; its step shows open only if the view kept what was opened.
     let folds = all().matching(NSPredicate(format: "identifier BEGINSWITH 'fold-'"))
-    guard until(150, { folds.count > 0 && !el(step).exists }) else { failed("fold: the turn did not come back folded"); return }
-    folds.element(boundBy: folds.count - 1).tap()
+    guard until(150, { !working() && folds.count > 0 }) else { failed("fold: the turn did not finish"); return }
+    let kept = el(step).exists
+    if !kept { folds.element(boundBy: folds.count - 1).tap() }
     guard el(step).waitForExistence(timeout: 10) else { failed("fold: the turn's fold did not show its step"); return }
     sleep(3)
-    note("fold: the step open after the doubt and the turn's end: \(more.exists)")
+    note("fold: the turn's steps still shown after the doubt and the turn's end: \(kept); the step open: \(more.exists)")
     shot("fold-3-back")
-    guard until(150, { !working() }) else { failed("fold: the turn did not finish"); return }
 
     // late
     put("hold")
     say("EDIT a file for me")
     guard until(30, { has("held") }) else { failed("late: no answer of the turn working was held"); return }
     let edits = all().matching(NSPredicate(format: "identifier BEGINSWITH 'step-' AND identifier CONTAINS 'fake_write'"))
-    guard until(90, { edits.count > 0 }) else { failed("late: the newer answers did not show the write step"); return }
+    var editOpened = false
+    guard until(90, { openWork(&editOpened); return edits.count > 0 }) else { failed("late: the newer answers did not show the write step"); return }
     sleep(1); shot("late-1-newer")
     put("release")
     guard until(15, { has("released") }) else { failed("late: the held answer was not sent"); return }

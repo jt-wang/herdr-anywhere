@@ -141,6 +141,8 @@ export class FakeCore implements Pipe {
   /** Methods whose answers wait for `release()`: herdr-core reports a new terminal (`created`) before `terminal.run`
    *  answers, and the app may hear both in either order. */
   holding = new Set<string>()
+  // Methods the computer refuses, each with its message (fixtures/fake.tsx: fake.fail).
+  failing = new Map<string, string>()
   private held: (() => void)[] = []
   release() { for (const f of this.held.splice(0)) f() }
 
@@ -231,6 +233,7 @@ export class FakeCore implements Pipe {
     const fail = (kind: string, message: string) =>
       this.out(0, DATA, JSON.stringify({ jsonrpc: '2.0', id: msg.id, error: { code: -32000, message, data: { kind } } }))
     const pr = msg.params ?? {}
+    if (this.failing.has(msg.method)) return fail('refused', this.failing.get(msg.method)!)
     const term = (a: string) => this.terms.get(a) ?? [...this.terms.values()].find((t) => t.name === a)
     switch (msg.method) {
       case 'events.subscribe': {

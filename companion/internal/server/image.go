@@ -11,12 +11,13 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
-	"os/exec"
 	pathpkg "path"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
+
+	"herdr-anywhere/companion/internal/proc"
 )
 
 // --- /api/image --------------------------------------------------------------
@@ -596,7 +597,7 @@ func (s *Server) runThere(ctx context.Context, machine string, args []string) (*
 
 // runHC runs hc and gives what it wrote to stdout and to stderr.
 func (s *Server) runHC(ctx context.Context, args ...string) ([]byte, []byte, error) {
-	cmd := exec.CommandContext(ctx, s.cfg.HC, args...)
+	cmd := proc.CommandContext(ctx, s.cfg.HC, args...)
 	var out, errs bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errs
 	err := cmd.Run()

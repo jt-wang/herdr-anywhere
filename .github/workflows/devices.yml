@@ -11,7 +11,15 @@ name: Devices
 # and ios-menus-27 take pictures of the menus and the toast (app/e2e/ios-menus.sh), also only when named.
 # It runs on main, on release tags, on the public branch ci, where each release's commit must pass before main, and
 # on ci-* branches, where a change is tried on its own beside the others. Each branch has its own concurrency group.
+# Each night it runs the release groups on main (groups.sh: every group a push runs, and the named ones that assert
+# what the app does on the device), as a release must pass on its own commit before it goes out (app/e2e/ci/release-gate.py).
+# A dispatch's title lists the groups and every input that changes what runs (copies, self-tests, BEFORE pictures,
+# probes), as app/e2e/ci/release-gate.py takes only "Devices groups release" and "Devices nightly" as a release run.
+run-name: ${{ github.event_name == 'schedule' && 'Devices nightly' || github.event_name == 'workflow_dispatch' && format('Devices{0}{1}{2}{3}{4}{5}{6}{7}{8}{9}{10}{11}', inputs.groups && format(' groups {0}', inputs.groups) || '', (inputs.ios_main_repeat || '0') != '0' && format(' ios_main_repeat={0}', inputs.ios_main_repeat) || '', (inputs.ios_b_repeat || '0') != '0' && format(' ios_b_repeat={0}', inputs.ios_b_repeat) || '', (inputs.ios27_chat_repeat || '0') != '0' && format(' ios27_chat_repeat={0}', inputs.ios27_chat_repeat) || '', (inputs.chat_away_cycles || '0') != '0' && format(' chat_away_cycles={0}', inputs.chat_away_cycles) || '', (inputs.chat_away_selftest || 'none') != 'none' && format(' chat_away_selftest={0}', inputs.chat_away_selftest) || '', (inputs.ios_scroll_selftest || 'none') != 'none' && format(' ios_scroll_selftest={0}', inputs.ios_scroll_selftest) || '', (inputs.ios_picture_selftest || 'none') != 'none' && format(' ios_picture_selftest={0}', inputs.ios_picture_selftest) || '', (inputs.ios_open_space_selftest || 'none') != 'none' && format(' ios_open_space_selftest={0}', inputs.ios_open_space_selftest) || '', inputs.pin_order_before && ' pin_order_before' || '', inputs.ocr_probe && ' ocr_probe' || '', inputs.probe && ' probe' || '') || github.event.head_commit.message }}
 on:
+  schedule:
+    # 18:17 UTC, off the hour GitHub's scheduler is busiest at. Runs on main only.
+    - cron: "17 18 * * *"
   push:
     # A ci-try-* branch runs nothing when pushed: a trial is run by hand (workflow_dispatch), only what it needs. The
     # "!" pattern comes after "ci-*", as GitHub applies the patterns in order.
@@ -85,7 +93,7 @@ on:
         default: false
       # Some of the suite groups and not the others (app/e2e/ci/groups.sh has the names and what each runs).
       groups:
-        description: "Only these groups, by commas or spaces (empty: all but ios-onerror-27, ios-edge, ios-edge-27, ios-zoom, android-zoom, ios-menus, ios-menus-27, ios-title, android-title, ios-ask, ios-chat, ios27-chat, ios-chatfold, ios-kitty, android-ask, android-stuck, android-chat, ios-subkeep, android-subkeep, ios-notify, android-updnotify, ios-pinorder and android-pinorder): ios-main ios-b ios-onerror ios-zoom ios-title ios-onerror-27 ios-edge ios-edge-27 ios-menus ios-menus-27 ios-ask ios-chat ios27-chat ios-chatfold ios-kitty android-main android-panes android-tunnel android-notify android-progress android-picture android-zoom android-title android-ask android-stuck android-chat android-update remote-picture user-path ios-subkeep android-subkeep ios-notify android-updnotify ios-pinorder android-pinorder"
+        description: "Only these groups, by commas or spaces; release: every group a push runs and the named ones a release needs (empty: all but ios-onerror-27, ios-edge, ios-edge-27, ios-zoom, android-zoom, ios-menus, ios-menus-27, ios-title, android-title, ios-ask, ios-chat, ios27-chat, ios-chatfold, ios-kitty, android-ask, android-stuck, android-chat, ios-subkeep, android-subkeep, ios-notify, android-updnotify, ios-pinorder and android-pinorder): ios-main ios-b ios-onerror ios-zoom ios-title ios-onerror-27 ios-edge ios-edge-27 ios-menus ios-menus-27 ios-ask ios-chat ios27-chat ios-chatfold ios-kitty android-main android-panes android-tunnel android-notify android-progress android-picture android-zoom android-title android-ask android-stuck android-chat android-update remote-picture user-path ios-subkeep android-subkeep ios-notify android-updnotify ios-pinorder android-pinorder"
         type: string
         default: ""
       # The pinorder groups on the commit before Pinned order (the app as it was, with this commit's suites): only the
@@ -102,7 +110,7 @@ concurrency:
   # A run of copies has a group of its own, so it doesn't cancel the branch's usual run, nor that run it; copies of
   # the main, b and iOS 27 chat groups apart, as a run has only one of them (ios_main_repeat, then ios_b_repeat).
   # So does each scroll self-test, the pictures self-test, the open-the-space one, the OCR probe and a run of some groups.
-  group: devices-${{ github.ref }}${{ (inputs.ios_main_repeat || '0') != '0' && '-repeat-a' || (inputs.ios_b_repeat || '0') != '0' && '-repeat-b' || (inputs.ios27_chat_repeat || '0') != '0' && '-repeat-chat27' || '' }}${{ (inputs.ios_scroll_selftest || 'none') != 'none' && format('-{0}', inputs.ios_scroll_selftest) || '' }}${{ (inputs.ios_picture_selftest || 'none') != 'none' && '-picture-selftest' || '' }}${{ (inputs.ios_open_space_selftest || 'none') != 'none' && '-open-space-selftest' || '' }}${{ inputs.ocr_probe && '-ocr-probe' || '' }}${{ inputs.groups && '-groups' || '' }}
+  group: devices-${{ github.ref }}${{ (inputs.ios_main_repeat || '0') != '0' && '-repeat-a' || (inputs.ios_b_repeat || '0') != '0' && '-repeat-b' || (inputs.ios27_chat_repeat || '0') != '0' && '-repeat-chat27' || '' }}${{ (inputs.ios_scroll_selftest || 'none') != 'none' && format('-{0}', inputs.ios_scroll_selftest) || '' }}${{ (inputs.ios_picture_selftest || 'none') != 'none' && '-picture-selftest' || '' }}${{ (inputs.ios_open_space_selftest || 'none') != 'none' && '-open-space-selftest' || '' }}${{ inputs.ocr_probe && '-ocr-probe' || '' }}${{ inputs.groups && '-groups' || '' }}${{ github.event_name == 'schedule' && '-nightly' || '' }}
   cancel-in-progress: true
 
 env:
@@ -134,7 +142,7 @@ jobs:
           persist-credentials: false
       - id: groups
         env:
-          HM_GROUPS: ${{ inputs.groups }}
+          HM_GROUPS: ${{ github.event_name == 'schedule' && 'release' || inputs.groups }}
           MAIN_REPEAT: ${{ inputs.ios_main_repeat || '0' }}
           B_REPEAT: ${{ inputs.ios_b_repeat || '0' }}
           CHAT27_REPEAT: ${{ inputs.ios27_chat_repeat || '0' }}
@@ -209,7 +217,8 @@ jobs:
     needs: plan
     if: needs.plan.outputs.update == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # Two runtimes when the previous release has other nsh patches, each about 25 minutes to build when not cached.
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -226,15 +235,52 @@ jobs:
       - run: app/e2e/ci/tools.sh nsh
       - uses: ./.github/actions/nsh-android
       - run: app/e2e/update-files.sh "$RUNNER_TEMP/update"
-      # A release from before the matched runtime (its android/build.sh doesn't ask for one) is built as it was
-      # released: on the stock nsh from tools.sh, its own patch applied to the stock AAR.
-      - name: The previous release's APK, from its tag
+      # A release whose nsh patches differ from this commit's (its key.sh says another key) is built on a runtime made
+      # from its own patches: its android/build.sh refuses one made from another set. Cached by its tag and key.
+      - name: The previous release, and its runtime's key
+        id: prev
         run: |
           prev=$(app/e2e/ci/prev-tag.sh)
           echo "previous release: $prev"
           git worktree add "$RUNNER_TEMP/prev" "$prev"
+          own=""
           if grep -q 'matched full runtime' "$RUNNER_TEMP/prev/app/android/build.sh"; then
+            key=$("$RUNNER_TEMP/prev/app/ios/nsh-patches/key.sh")
+            [ "$key" = "$(app/ios/nsh-patches/key.sh)" ] || own=$(printf '%s' "$key" | tr ' ' '-')
+          fi
+          echo "tag=$prev" >> "$GITHUB_OUTPUT"
+          echo "own=$own" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: steps.prev.outputs.own != ''
+        id: prev-cache
+        with:
+          path: ${{ runner.temp }}/nsh-android-prev
+          key: nsh-android-prev-${{ steps.prev.outputs.tag }}-${{ steps.prev.outputs.own }}-${{ runner.os }}-${{ runner.arch }}
+      - name: The previous release's runtime, from its own patches
+        if: steps.prev.outputs.own != '' && steps.prev-cache.outputs.cache-hit != 'true'
+        run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;27.2.12479018" "platforms;android-35" "build-tools;35.0.0" >/dev/null
+          (cd "$RUNNER_TEMP/prev" && sh app/scripts/nsh-runtime.sh android "$RUNNER_TEMP/nsh-android-prev-source" "$RUNNER_TEMP/nsh-android-prev")
+          rm -rf "$RUNNER_TEMP/nsh-android-prev-source"
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: steps.prev.outputs.own != '' && steps.prev-cache.outputs.cache-hit != 'true'
+        with:
+          path: ${{ runner.temp }}/nsh-android-prev
+          key: nsh-android-prev-${{ steps.prev.outputs.tag }}-${{ steps.prev.outputs.own }}-${{ runner.os }}-${{ runner.arch }}
+      - name: The previous release's APK, from its tag
+        env:
+          OWN_RUNTIME: ${{ steps.prev.outputs.own }}
+          PREV_TAG: ${{ steps.prev.outputs.tag }}
+        run: |
+          prev=$PREV_TAG
+          if [ -n "$OWN_RUNTIME" ]; then
+            r="$RUNNER_TEMP/nsh-android-prev"
+            (cd "$RUNNER_TEMP/prev" && sh app/scripts/nsh-runtime.sh --verify-android "$r")
+            (cd "$RUNNER_TEMP/prev/app" && NSH_HOME="$r" NSH_RUNTIME="$r" PATH="$r/cli/bin:$PATH" android/build.sh)
+          elif grep -q 'matched full runtime' "$RUNNER_TEMP/prev/app/android/build.sh"; then
             (cd "$RUNNER_TEMP/prev/app" && android/build.sh)
+          # A release from before the matched runtime (its android/build.sh doesn't ask for one) is built as it was
+          # released: on the stock nsh from tools.sh, its own patch applied to the stock AAR.
           else
             (cd "$RUNNER_TEMP/prev/app" && env -u NSH_RUNTIME NSH_HOME="$HOME/.nsh" PATH="$HOME/.nsh/bin:$PATH" android/build.sh)
           fi

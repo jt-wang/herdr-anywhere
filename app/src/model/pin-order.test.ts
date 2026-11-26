@@ -27,8 +27,8 @@ test('a place is digits and lower-case letters not ending in 0; anything else so
 
 test('Pinned goes by place, a tie by terminal address, and agents with no place after them in the order they came', () => {
   const pins = [
-    { address: 't5' }, { address: 't1', place: 'r' }, { address: 't4', place: 'bad place' },
-    { address: 't3', place: 'i' }, { address: 't2', place: 'r' }, { address: 't9' },
+    { address: 't5' }, { address: 't2', place: 'r' }, { address: 't4', place: 'bad place' },
+    { address: 't3', place: 'i' }, { address: 't1', place: 'r' }, { address: 't9' },
   ]
   expect(pinOrder(pins).map((p) => p.address)).toEqual(['t3', 't1', 't2', 't5', 't4', 't9'])
 })
@@ -77,6 +77,8 @@ test('two neighbours with the same place (two phones filled one gap at once): th
 test('moving among rows with no place yet places every row it has to, so the move holds', () => {
   const order = pinOrder<Pin>([{ address: 't1' }, { address: 't2' }, { address: 't3' }])
   const writes = moveWrites(order, 't3', 0)
+  // The rows below it, with no place, sort after it anyway: nothing is written on them.
+  expect(writes.map((w) => w.address)).toEqual(['t3'])
   const after = pinOrder(order.map((p) => ({ ...p, place: writes.find((w) => w.address === p.address)?.place ?? p.place })))
   expect(after.map((p) => p.address)).toEqual(['t3', 't1', 't2'])
 })

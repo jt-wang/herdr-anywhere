@@ -34,6 +34,18 @@ test('three review notifications for one goal left unopened in 30 days stop that
   p.sent({ task: 'A', goal: 'G2', kind: 'review' }, 0); p.opened('A', 60_000)
   p.sent({ task: 'B', goal: 'G2', kind: 'review' }, 1); p.sent({ task: 'C', goal: 'G2', kind: 'review' }, 2)
   expect(p.muted('G2', 'review', 3 * day)).toBe(false)
+  // Muting is per goal: another goal's review notifications still ring.
+  expect(o.muted('文档改版', 'review', 3 * day)).toBe(false)
+  // Waiting ones ring however many were ignored.
+  for (let i = 0; i < 3; i++) o.sent({ task: `W${i}`, goal: 'Acme 1.0 发布', kind: 'wait' }, i * day)
+  expect(o.muted('Acme 1.0 发布', 'wait', 3 * day)).toBe(false)
+  // A task notified twice: opening it counts for the latest notification, and the earlier one stays ignored.
+  const q = new Outcomes()
+  q.sent({ task: 'A', goal: 'G3', kind: 'review' }, 0)
+  q.sent({ task: 'A', goal: 'G3', kind: 'review' }, 2 * 3_600_000)
+  q.opened('A', 2 * 3_600_000 + 60_000)
+  q.sent({ task: 'B', goal: 'G3', kind: 'review' }, 3 * 3_600_000)
+  expect(q.muted('G3', 'review', 3 * day)).toBe(false)
 })
 
 test('the record survives the app restarting and keeps only 30 days', () => {

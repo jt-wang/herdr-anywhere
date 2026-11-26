@@ -6,9 +6,10 @@ import (
 	"context"
 	"encoding/json"
 	"io"
-	"os/exec"
 	"sort"
 	"time"
+
+	"herdr-anywhere/companion/internal/proc"
 )
 
 // Pane is what herdr-core says about a terminal, for a reader that finds a session by more than its process.
@@ -85,7 +86,7 @@ func (s *Service) startFollow() {
 // breaks.
 func (s *Service) Follow(ctx context.Context) {
 	for ctx.Err() == nil {
-		cmd := exec.CommandContext(ctx, s.HC, "events", "--json")
+		cmd := proc.CommandContext(ctx, s.HC, "events", "--json")
 		out, err := cmd.StdoutPipe()
 		if err == nil && cmd.Start() == nil {
 			s.follow(out)

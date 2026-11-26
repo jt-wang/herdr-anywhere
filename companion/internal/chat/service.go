@@ -6,11 +6,12 @@ import (
 	"errors"
 	"log"
 	"os"
-	"os/exec"
 	"regexp"
 	"strings"
 	"sync"
 	"time"
+
+	"herdr-anywhere/companion/internal/proc"
 )
 
 // Answer is what the phone gets for one terminal. Chat false: no chat button. Unknown: there is a reader for this
@@ -93,7 +94,7 @@ func (s *Service) hcGet(addr string) ([]byte, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), limit)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, s.HC, "get", addr, "--json").Output()
+	out, err := proc.CommandContext(ctx, s.HC, "get", addr, "--json").Output()
 	if err != nil && ctx.Err() == context.DeadlineExceeded {
 		return nil, errSlow
 	}

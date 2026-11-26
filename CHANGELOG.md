@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.3.12
+
+iOS build 47. The phone app and the Companion both changed; an installed Companion updates itself.
+
+- A long Pi conversation in the chat view ends at its newest reply again, on iPhone and Android. Pi's icon was measured at its drawing's size, 800 points, which stretched the chat far below the last turn and to the side: the end of the chat was a large blank that didn't scroll back to the newest turn, and the chat moved sideways.
+- On Android, an input box left focused with the keyboard down no longer brings the keyboard back up when you return to the app.
+- Renaming a space or a tab starts with its current name in the box; the box opened empty.
+- On iPhone, fixed a swipe back from the left edge that now and then slid back to the page you were on, seen on a terminal with its keyboard box focused. The box is now let go once the swipe has begun rather than before; the keyboard still hides as you swipe.
+- Windows: the progress page works. The phone asked the computer's shell for a POSIX command line, which cmd.exe can't run, and showed its error in garbled characters; it now asks the Companion, which runs only the progress page's own commands and answers in UTF-8.
+- Windows: no console window flashes on the screen each time the Companion runs a program in the background, such as when a phone connects or opens a terminal.
+- Windows: the progress page's filing agent installed with npm starts in its pane as its own program rather than through the .cmd script npm wrote for it (Codex as its own exe). An agent installed only as a .cmd the Companion can't follow to its program is shown as not usable, with the reason.
+- Known issue: on iPhone, a swipe back from the left edge now and then still doesn't start and the page stays, as in 0.3.11 (about 1 swipe in 300 in our tests); swipe again.
+
 ## v0.3.11
 
 iOS build 46. The phone app and the Companion both changed; an installed Companion updates itself.

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"herdr-anywhere/companion/internal/hcbin"
+	"herdr-anywhere/companion/internal/proc"
 	"herdr-anywhere/companion/internal/track"
 	"herdr-anywhere/companion/internal/watch"
 )
@@ -501,7 +502,7 @@ func hcStatus(hc, addr string) (paneStatus, error) {
 func runFor(d time.Duration, name string, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), d)
 	defer cancel()
-	return exec.CommandContext(ctx, name, args...).Output()
+	return proc.CommandContext(ctx, name, args...).Output()
 }
 
 // fileTyped files one message typed into a pane: by rule, or into the queue.

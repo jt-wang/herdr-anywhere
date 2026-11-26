@@ -333,6 +333,28 @@ export async function companionVersion(linker: Linker, fetcher: typeof fetch = f
   }
 }
 
+export type CliResult = { code: number | null; stdout: string; stderr: string }
+
+/** Runs one command of the companion's own program (progress.ts Cli) through its /api/cli: no shell between, so it
+ *  runs the same on Windows. null: a companion older than /api/cli (404, or 405 from its web app's files). */
+export function companionCli(linker: Linker, fetcher: typeof fetch = fetch): (args: string[]) => Promise<CliResult | null> {
+  return async (args) => {
+    let r: Response
+    try {
+      r = await diagnosticFetch(fetcher, `${await linker.baseUrl()}/api/cli`, {
+        method: 'POST', body: JSON.stringify({ args }),
+        headers: { authorization: `Bearer ${linker.link.get()?.token ?? ''}`, 'content-type': 'application/json' },
+      })
+    } catch {
+      throw new Error(tr('cantReachComputer'))
+    }
+    if (r.status === 404 || r.status === 405) return null
+    const body: any = await r.json().catch(() => ({}))
+    if (!r.ok) throw new Error(typeof body.error === 'string' ? body.error : `HTTP ${r.status}`)
+    return { code: typeof body.code === 'number' ? body.code : null, stdout: String(body.stdout ?? ''), stderr: String(body.stderr ?? '') }
+  }
+}
+
 /** The companion's folder calls (companion/README.md): a folder's subfolders, and making one after the person asked. */
 export function folderApi(linker: Linker, fetcher: typeof fetch = fetch): FolderApi {
   const call = async (path: string, init?: RequestInit) => {

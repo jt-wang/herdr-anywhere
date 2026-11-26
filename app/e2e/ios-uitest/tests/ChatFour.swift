@@ -61,7 +61,11 @@ final class ChatFour: XCTestCase {
       while Date() < end { if ok() { return true }; usleep(250_000) }
       return ok()
     }
+    // The fake's turns so far, which it numbers -p<n> in its ids (testfake/replay): ios-chat-four.sh's -preload 40,
+    // then one for each prompt said.
+    var plays = 0
     func say(_ text: String) {
+      plays += 1
       let box = el("compose-input"); XCTAssertTrue(box.waitForExistence(timeout: 10), "no composer"); box.tap(); sleep(1)
       box.typeText(text); sleep(1)
       XCTAssertTrue(el("compose-send").waitForExistence(timeout: 5), "no send button"); el("compose-send").tap()
@@ -99,6 +103,7 @@ final class ChatFour: XCTestCase {
       return until(60) { FileManager.default.fileExists(atPath: "\(ctl)/\(done)") }
     }
     for (n, agent) in agents.enumerated() {
+      plays = 40
       let a = agent.replacingOccurrences(of: "-", with: "")
       guard el("space-spc" + a).waitForExistence(timeout: 40) else { XCTFail("\(agent): home does not list its space"); return }
       el("space-spc" + a).tap()
@@ -113,6 +118,14 @@ final class ChatFour: XCTestCase {
         let not = el("chat-unknown").waitForExistence(timeout: 20)
         note("\(agent) open: says it can't tell yet: \(not)")
         sent("HELLO again", "\(agent) open")
+      }
+      // Pi's chat needs Herdr Anywhere's file in Pi's folder: the first open asks, as for a person, and the test says yes
+      // there. A test that went on without it tapped the sheet's button by chance, after its 30 s.
+      if agent == "pi" {
+        let asked = el("chat-setup-yes").waitForExistence(timeout: 10)
+        note("\(agent) open: asks to install its chat setup: \(asked)")
+        XCTAssertTrue(asked, "\(agent): the chat did not ask to install Pi's setup")
+        if asked { el("chat-setup-yes").tap() }
       }
       let long = starting("040 ").firstMatch.waitForExistence(timeout: 30)
       note("\(agent) open: turn 040 shown: \(long)")
@@ -157,17 +170,29 @@ final class ChatFour: XCTestCase {
       note("\(agent) long: the last line shown: \(end)")
       shot("\(agent)-long"); alive("\(agent) long")
       // image
-      // A new picture: one whose id wasn't there (the chat holds 30 turns, so the oldest one's may go as one comes).
-      let names = { () -> Set<String> in Set(ids("image-").allElementsBoundByIndex.map { $0.identifier }.filter { !$0.hasPrefix("image-source-") }) }
-      let before = names()
+      // This turn's picture: the image- button (not image-source-) of the turn this prompt plays. Ids end in -p<turn>,
+      // with .n or #n for the record's own suffix (image-<uuid>-p42.1, image-call-p42, image-call|item-p42#1); an older
+      // picture's button, shown again after a redraw or preloaded, is another turn's.
+      // Read from one snapshot: a live query's elements, resolved one by one while the chat redraws, fail the test
+      // ("Failed to get matching snapshot") instead of being read again.
+      func turn(_ id: String) -> Int? {
+        guard let r = id.range(of: "-p[0-9]+([.#][0-9]+)?$", options: .regularExpression) else { return nil }
+        return Int(id[r].dropFirst(2).prefix { $0.isNumber })
+      }
       if agent == "claude-code" { sent("HELLO, what is in this picture?", "\(agent) image") } else {
         sent("LOOK at shot.png", "\(agent) image")
         XCTAssertTrue(openLast(), "\(agent) image: no fold")
         let look = all().matching(NSPredicate(format: "identifier BEGINSWITH 'step-' AND identifier CONTAINS 'fake_look'"))
         if look.count > 0 { look.element(boundBy: look.count - 1).tap() }
       }
-      let pics = until(20) { !names().subtracting(before).isEmpty }
-      note("\(agent) image: new pictures \(names().subtracting(before).sorted())")
+      let want = plays
+      var found: [String] = []
+      let pics = until(20) {
+        guard let s = chatSnapshot() else { return false }
+        found = s.ids.filter { $0.hasPrefix("image-") && !$0.hasPrefix("image-source-") && turn($0) == want }.sorted()
+        return !found.isEmpty
+      }
+      note("\(agent) image: pictures of turn \(want): \(found)")
       XCTAssertTrue(pics, "\(agent) image: no picture showed")
       shot("\(agent)-image"); alive("\(agent) image")
       // scroll: the chat holds the last 30 turns; the oldest is numbered 01x

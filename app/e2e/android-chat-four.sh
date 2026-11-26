@@ -61,8 +61,6 @@ trap cleanup EXIT
 trap 'cleanup; exit 130' INT
 trap 'cleanup; exit 143' TERM HUP
 step="starting the fakes in herdr-core"
-# Pi's chat is read only with its setup file in Pi's folder, as the phone's Settings puts it there (pi.Reader.FindPane).
-case " $agents " in *" pi "*) clean "$bin" chat-setup install pi --hc "$hc" ;; esac
 for a in $agents; do
   s=$(printf %s "$a" | tr -d -)
   mkdir -p "$work/u/src/demo-$s"
@@ -127,6 +125,8 @@ tap_last() { # resource-id prefix, and a part of it
 # would, stopping only when another swipe changes nothing. Also start each send at the end: the subsequent visible
 # prompt then checks that new messages follow, not that sending from the middle silently overrides an anchor.
 scroll_end() {
+  # Swipes on the keyboard type: back in the app after a while away, it can be up over the composer.
+  keys_down
   previous=$(xml)
   for _ in $(seq 1 40); do
     "$adb" shell input swipe $((w / 2)) $((h * 7 / 10)) $((w / 2)) $((h * 3 / 10)) 150
@@ -208,6 +208,11 @@ for a in $agents; do
   if [ "$a" = opencode ]; then
     wait_for 'resource-id="chat-unknown"' "$a: does not say it can't tell the conversation yet" 20
     sent "HELLO again" "$a open"
+  fi
+  # Pi's chat needs Herdr Anywhere's file in Pi's folder: the first open asks, as for a person, and the test says yes.
+  if [ "$a" = pi ]; then
+    wait_for 'resource-id="chat-setup-yes"' "$a: the chat did not ask to install Pi's setup" 10
+    tap_last 'chat-setup-yes"'; echo "ok: $a open: asks to install its chat setup, installed from the phone"
   fi
   wait_for 'text="040 ' "$a: the long conversation did not show"
   snap "$a-open"; alive "$a open"; echo "ok: $a open: turn 040 shown"

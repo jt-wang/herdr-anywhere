@@ -127,6 +127,24 @@ test('while the agent works the view asks again every 3 s, and shows what is new
   expect(asks(app).length).toBeGreaterThan(before)
 })
 
+// Stopping from the chat: its composer keeps esc while the agent works (the key goes through the terminal's page,
+// which src/ui/terminal-session.test.ts covers and this harness does not run), and the turn the reader then marks
+// stopped says so in place of the working line.
+test('the chat keeps esc while the agent works, and a turn that stopped says so in place of its working line', async () => {
+  const work = [{ id: 'u4', from: 'you', said: 'refactor the cart', end: 'open', reply: '', steps: [{ id: 'toolu_9', kind: 'run', title: 'npm test' }] }]
+  const app = await pane({ status: 'working', chat: JSON.stringify({ chat: true, turns: work }) })
+  await app.press('id:show-chat')
+  await app.waitFor('text:Working… · 1 step')
+  expect(app.texts()).not.toContain('Stopped')
+  expect(app.shows('id:key-esc')).toBe(true)
+  await app.press('id:key-esc')
+  await app.host.send('fake.chat', { chat: true, turns: [{ ...work[0], end: 'stopped' }] })
+  await app.host.send('fake.status', { address: 't1', state: 'idle' })
+  await pollUntil(app, 'Stopped')
+  expect(app.texts().filter((x: string) => x.startsWith('Working…'))).toEqual([])
+  expect(app.texts()).toContain('refactor the cart')
+})
+
 test('blocked activity and an unfinished record after terminal done both read late replies without waiting 30 s', async () => {
   for (const status of ['blocked', 'done']) {
     const app = await pane({ status, chat: JSON.stringify({ chat: true, turns: ask }) })

@@ -107,42 +107,49 @@ export function taskOn(tr: Tree, addr: string): Task | undefined {
   return best?.task
 }
 
+/** A command of the companion's own program: `runs` go one after another while each exits 0, through the
+ *  companion's /api/cli, no shell between (Windows too). `line` is the same as a POSIX shell line, for a companion
+ *  older than /api/cli, run through herdr-core's machine.exec (`sh -c`, which a Windows computer doesn't have). */
+export type Cli = { runs: string[][]; line: string }
+
 const q = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`
 // Where the README installs the companion; a shell started by machine.exec may not have ~/.local/bin on PATH.
 const BIN = `b="$HOME/.local/bin/herdr-anywhere"; [ -x "$b" ] || b=herdr-anywhere; "$b"`
+const cli = (...runs: string[][]): Cli => ({ runs, line: runs.map((r, i) => `${i ? '"$b"' : BIN} ${r[0]} ${r.slice(1).map(q).join(' ')}`).join(' && ') })
 
 /** A `herdr-anywhere track` command for herdr-core only: `--herdr -` skips old Herdr's agent list. */
-export function trackLine(args: string[]): string {
-  return `${BIN} track ${[...args, '--herdr', '-'].map(q).join(' ')}`
+export function trackLine(args: string[]): Cli {
+  return cli(['track', ...args, '--herdr', '-'])
 }
 
 /** Turns the computer's filing (the companion's progress loop) on or off with the page. */
-export function switchLine(on: boolean): string {
-  return `${BIN} progress ${q(on ? 'on' : 'off')}`
+export function switchLine(on: boolean): Cli {
+  return cli(['progress', on ? 'on' : 'off'])
 }
 
 /** The agents on the computer that can sort what the user says. */
-export function agentsLine(): string {
-  return `${BIN} progress ${q('agents')}`
+export function agentsLine(): Cli {
+  return cli(['progress', 'agents'])
 }
 
 /** Makes `id` the sorting agent, writing in the phone's language `lang`, and turns sorting on. */
-export function pickLine(id: string, lang: string): string {
-  return `${BIN} progress ${q('organizer')} ${q('--agent')} ${q(id)} ${q('--lang')} ${q(lang)} && "$b" progress ${q('on')}`
+export function pickLine(id: string, lang: string): Cli {
+  return cli(['progress', 'organizer', '--agent', id, '--lang', lang], ['progress', 'on'])
 }
 
 /** Tells the computer the phone's language changed: what the sorting agent writes in. */
-export function langLine(lang: string): string {
-  return `${BIN} progress ${q('lang')} ${q(lang)}`
+export function langLine(lang: string): Cli {
+  return cli(['progress', 'lang', lang])
 }
 
-/** `needs` and `version`: an agent too old to report its status, so the phone says so in its own language. */
-export type AgentChoice = { id: string; name: string; usable: boolean; note: string; needs: string; version: string }
+/** `needs` and `version`: an agent too old to report its status; `script`: on Windows, one installed as a .cmd script
+ *  whose program can't be found, which a pane can't start as the agent itself. The phone says either in its own language. */
+export type AgentChoice = { id: string; name: string; usable: boolean; note: string; needs: string; version: string; script: boolean }
 
 export function parseAgents(s: string): { agents: AgentChoice[]; chosen: string } {
   const v = JSON.parse(s) ?? {}
   const agents = list(v.agents, (a) => ({ id: String(a.id), name: String(a.name ?? a.id), usable: a.usable === true, note: typeof a.note === 'string' ? a.note : '',
-    needs: typeof a.needs === 'string' ? a.needs : '', version: typeof a.version === 'string' ? a.version : '' }))
+    needs: typeof a.needs === 'string' ? a.needs : '', version: typeof a.version === 'string' ? a.version : '', script: a.script === true }))
   return { agents: [...agents.filter((a) => a.usable), ...agents.filter((a) => !a.usable)], chosen: typeof v.chosen === 'string' ? v.chosen : '' }
 }
 

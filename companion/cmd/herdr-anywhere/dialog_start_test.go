@@ -228,6 +228,20 @@ func TestServeRefreshesAnInstalledDialog(t *testing.T) {
 	}
 }
 
+// A dialog without config.js is left as it is: this version's main.js would import a config.js that isn't there.
+func TestRefreshLeavesADialogWithoutItsConfig(t *testing.T) {
+	home := oldDialog(t, "")
+	if err := os.Remove(modFile(home, "config.js")); err != nil {
+		t.Fatal(err)
+	}
+	if changed, err := refreshDialog(home); err != nil || changed {
+		t.Fatalf("refresh: changed %v, %v", changed, err)
+	}
+	if read(t, modFile(home, "main.js")) != "// old main\n" {
+		t.Fatal("refresh wrote a main.js that imports a missing config.js")
+	}
+}
+
 // A dialog from 0.1.19 has no strings.js. Refreshing it brings strings.js, before the main.js that imports it.
 func TestRefreshingAnEnglishOnlyDialogBringsItsWords(t *testing.T) {
 	home := oldDialog(t, "")

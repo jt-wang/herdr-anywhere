@@ -30,6 +30,7 @@ test('a sound goes away when it ends, or after the time a player gets on the des
   alerts.ended(alerts.sounds.get()[0].id)
   expect(alerts.sounds.get().map((s) => s.kind)).toEqual(['done'])
   expect(timers[1].ms).toBe(SOUND_LIMIT_MS)
+  expect(SOUND_LIMIT_MS).toBe(15_000) // herdr-app src/sound.rs PLAYER_LIMIT
   timers[1].f()
   expect(alerts.sounds.get()).toEqual([])
 })

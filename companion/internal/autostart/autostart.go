@@ -15,12 +15,13 @@ import (
 	"fmt"
 	"maps"
 	"os"
-	"os/exec"
 	"os/user"
 	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
+
+	"herdr-anywhere/companion/internal/proc"
 )
 
 // Entry is the program the manager runs and how.
@@ -95,7 +96,7 @@ func (s *Service) command(name string, args ...string) ([]byte, error) {
 	if s.run != nil {
 		return s.run(name, args...)
 	}
-	out, err := exec.Command(name, args...).CombinedOutput()
+	out, err := proc.Command(name, args...).CombinedOutput()
 	if err != nil {
 		return out, fmt.Errorf("%s %s: %v: %s", name, strings.Join(args, " "), err, bytes.TrimSpace(out))
 	}

@@ -1,7 +1,7 @@
 // Every word in all seven languages, with the same blanks, and the formats each language writes its own way.
 import { expect, test } from 'nsh/test'
 import { en } from './en.ts'
-import { dayTime, formatsFor, LANGS, langFor, plural, TABLES, type Lang } from './index.ts'
+import { dayTime, formatsFor, LANGS, langFor, langForList, plural, setPhoneLanguages, systemLang, t, TABLES, type Lang } from './index.ts'
 
 const blanks = (s: string) => [...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort()
 const FORMS: Record<Lang, string[]> = { en: ['one', 'other'], es: ['one', 'other'], ru: ['one', 'few', 'many'], 'zh-Hans': ['other'], 'zh-Hant': ['other'], ja: ['other'], ko: ['other'] }
@@ -45,6 +45,21 @@ test('the phone\'s language picks the table: traditional Chinese by script or re
     ['es', 'es'], ['es-MX', 'es'], ['ko-KR', 'ko'], ['ja-JP', 'ja'], ['ru-RU', 'ru'], ['ru', 'ru'],
   ]
   for (const [tag, want] of cases) expect(`${tag} ${langFor(tag)}`).toBe(`${tag} ${want}`)
+  expect(langFor('zha')).toBe('en') // Zhuang, not Chinese
+})
+
+test("the phone's languages in order: the first the app has, English among them counts, none is English", () => {
+  expect(langForList(['de-DE', 'ja-JP', 'ko'])).toBe('ja')
+  expect(langForList(['de', 'en-GB', 'ja'])).toBe('en')
+  expect(langForList(['de', 'pt-BR'])).toBe('en')
+  setPhoneLanguages(['de-DE', 'ru-RU'])
+  expect(systemLang()).toBe('ru')
+  setPhoneLanguages(null)
+})
+
+test('a blank given no value stays as it is, so a missing word shows', () => {
+  expect(t('chatSteps', { n: 2 })).toBe('2 steps')
+  expect(t('chatSteps')).toBe('{n} steps')
 })
 
 test('counting follows each language: Russian has three forms, Chinese, Japanese and Korean one', () => {

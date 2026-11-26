@@ -153,6 +153,22 @@ test('away from the app, nothing is posted for a release the person did not let 
   expect(calls(app, 'page.notify')).toEqual([])
 })
 
+for (const platform of ['android', 'ios'] as const) test(`${platform}: leaving the app with the keyboard away ${platform === 'android' ? 'lets go of' : 'keeps'} the box's focus`, async () => {
+  // Back on Android after a while away, the app's window comes back as a new one, and Android raises the keyboard by
+  // itself for a box still focused (e2e/android-chat-four.sh, away 60 s). iOS never does, and keeps the focus.
+  const app = await open('./fixtures/fake.tsx', { platform, host: { params: { scene: 'busy' }, handlers: { 'page.front': true } } })
+  await app.waitFor('text:Needs you')
+  await app.press('id:space-sp2')
+  await app.waitFor('id:compose-input')
+  const before = Number(app.storage()['keyboard-away'] ?? 0)
+  await app.host.send('page.front', { front: false })
+  await app.wait(300)
+  expect(Number(app.storage()['keyboard-away'] ?? 0) - before).toBe(platform === 'android' ? 1 : 0)
+  await app.host.send('page.front', { front: true })
+  await app.wait(300)
+  expect(Number(app.storage()['keyboard-away'] ?? 0) - before).toBe(platform === 'android' ? 1 : 0)
+})
+
 for (const platform of ['android', 'ios'] as const) test(`${platform}: a menu puts the keyboard away before covering its input`, async () => {
   // The menu is a window of its own: a keyboard put away only once a picked item had opened Settings came back over
   // Settings when the menu's window closed (android.sh, the Android × Linux suite). On iPad it covers the menu itself.

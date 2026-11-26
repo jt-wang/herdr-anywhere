@@ -148,10 +148,15 @@ func TestSignRefusesAKeyTheCompanionDoesNotTrust(t *testing.T) {
 	if _, err := run(t, "keygen", key); err != nil {
 		t.Fatal(err)
 	}
-	mac := filepath.Join(dir, update.MacAsset)
-	os.WriteFile(mac, []byte("mac file"), 0o755)
-	if _, err := run(t, "sign", "-key", key, "-version", "0.1.8", "-out", dir, mac); err == nil {
-		t.Fatal("signed with a key the companion doesn't trust")
+	// Every computer's file, so the key is the only thing wrong.
+	var files []string
+	for _, n := range update.ReleaseFiles {
+		files = append(files, filepath.Join(dir, n))
+		os.WriteFile(files[len(files)-1], []byte(n), 0o644)
+	}
+	args := append([]string{"sign", "-key", key, "-version", "0.1.8", "-out", dir}, files...)
+	if _, err := run(t, args...); err == nil || !strings.Contains(err.Error(), "key") {
+		t.Fatalf("signed with a key the companion doesn't trust: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, update.ManifestFile)); err == nil {
 		t.Fatal("wrote a manifest anyway")

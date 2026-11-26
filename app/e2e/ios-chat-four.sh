@@ -157,8 +157,6 @@ PY_ACTIVITIES
   exit "$status"
 }
 trap cleanup EXIT; trap 'exit 130' INT; trap 'exit 143' TERM HUP
-# Pi's chat is read only with its setup file in Pi's folder, as the phone's Settings puts it there (pi.Reader.FindPane).
-case " $agents " in *" pi "*) L "$work/herdr-anywhere" chat-setup install pi --hc "$hc" ;; esac
 for a in $agents; do
   s=$(printf %s "$a" | tr -d -)
   mkdir -p "$work/h/src/demo-$s"

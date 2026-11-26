@@ -13,6 +13,7 @@ import (
 
 	"github.com/coder/websocket"
 
+	"herdr-anywhere/companion/internal/proc"
 	"herdr-anywhere/companion/internal/store"
 )
 
@@ -84,7 +85,7 @@ func (s *Server) hc(w http.ResponseWriter, r *http.Request) {
 	}
 	conn.SetReadLimit(readLimit)
 
-	cmd := exec.Command(s.cfg.HC, "connect") // env inherited: HC_SESSION, HC_SOCKET, XDG_* pass through
+	cmd := proc.Command(s.cfg.HC, "connect") // env inherited: HC_SESSION, HC_SOCKET, XDG_* pass through
 	stdin, err1 := cmd.StdinPipe()
 	stdout, err2 := cmd.StdoutPipe()
 	stderr, err3 := cmd.StderrPipe()

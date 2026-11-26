@@ -2,6 +2,14 @@
 
 A cloud coding agent can request an iOS build through GitHub Actions. Apple signing credentials stay in the repository's `testflight` environment; the agent needs a GitHub token with **Actions: write** and **Contents: read**.
 
+## 0.3.12 (47): Pi's long chats end at the newest reply, the progress page on Windows
+
+Update the Companion too (it updates itself, or `herdr-anywhere start` after installing 0.3.12).
+
+1. **Pi's chat view.** Open a long Pi conversation in the chat view and go to its end: the newest reply is at the bottom with no blank under it, and the chat doesn't move sideways.
+2. **Rename.** Rename a space or a tab: the box starts with its current name.
+3. **Windows.** With the Companion on a Windows computer, turn on the progress page: it lists the agents on the computer, and no console window flashes while the phone is connected.
+
 ## 0.3.11 (46): agent names, the line under them, pictures
 
 Update the Companion too (it updates itself, or `herdr-anywhere start` after installing 0.3.11).

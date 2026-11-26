@@ -21,6 +21,9 @@ case "$(uname -s)/$(uname -m)" in
   *) echo "no tools for $(uname -s)/$(uname -m)"; exit 2 ;;
 esac
 if command -v sha256sum >/dev/null; then sum() { sha256sum -c -; }; else sum() { shasum -a 256 -c -; }; fi
+# The runner image's package lists go stale: the security pocket drops a version they still name, which apt then fails
+# to fetch (404). They are read again first.
+apt_install() { sudo apt-get update -qq >/dev/null && sudo apt-get install -y -qq "$@" >/dev/null; }
 get() { # url, file, sha256
   curl -fsSL --retry 5 --retry-delay 10 "$1" -o "$tmp/$2"
   echo "$3  $tmp/$2" | sum
@@ -50,13 +53,6 @@ nsh() {
   "$HOME/.nsh/bin/nsh" --version
   echo "NSH_HOME=$HOME/.nsh" >> "$env_"
   echo "$HOME/.nsh/bin" >> "$path_"
-}
-
-# The runner image's package lists go stale: once Ubuntu replaces a package, installing from them answers 404
-# (pipewire's, which ffmpeg pulls in, did). Read them again once, before the first install.
-apt_install() {
-  [ -n "${apt_fresh:-}" ] || { sudo apt-get update -qq >/dev/null; apt_fresh=1; }
-  sudo apt-get install -y -qq "$@" >/dev/null
 }
 
 zsh_() {

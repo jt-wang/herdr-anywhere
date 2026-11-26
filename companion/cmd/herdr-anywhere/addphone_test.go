@@ -152,6 +152,10 @@ func TestDevicesJSON(t *testing.T) {
 	if len(ds) != 1 || ds[0]["id"] != d.ID || ds[0]["name"] != "Pixel" || ds[0]["created"] == nil {
 		t.Fatalf("devices %s", out)
 	}
+	// Never seen: no last_seen, which the dialog shows as never connected (a zero time would read thousands of years).
+	if _, ok := ds[0]["last_seen"]; ok {
+		t.Fatalf("a phone never seen has a last_seen: %s", out)
+	}
 	if strings.Contains(out, "nodekey") {
 		t.Fatalf("the Tailcat key is printed: %s", out)
 	}

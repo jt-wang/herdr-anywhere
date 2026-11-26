@@ -1,0 +1,819 @@
+{
+  "release": "v0.3.11",
+  "source": "7b5d714791b861f638f2711f2203d4c9e7e6c761",
+  "about": "Every route the v0.3.11 app calls, by the requests it sends (one or more samples a route, not every query it can build), as its app/src/link.ts, updates.ts and hc/ws.ts build them, what that app reads of each answer, and the v0.3.11 Companion's answer, recorded on its own source. companion/internal/server/contract_test.go sends these requests to the Companion of today and checks it still answers what the old app reads; app/src/contract.test.ts gives the app of today these answers and checks it reads them, and sends only these requests. {token}, {code}, {etag}, {before} and {confirmation} are filled in from the answers before them, and {home} and {box} in reads are the folders of this computer and of the other machine; a socket's send and its answer's text are the bytes, in base64. The answers name the fixture's home /Users/sam.",
+  "calls": [
+    {
+      "name": "pair",
+      "from": "link.ts pairWith",
+      "method": "POST",
+      "path": "/api/pair",
+      "headers": {
+        "content-type": "application/json"
+      },
+      "body": {
+        "code": "{code}",
+        "device": "Pixel"
+      },
+      "reads": [
+        "token:string",
+        "device:string",
+        "name:string"
+      ],
+      "answer": {
+        "status": 200,
+        "body": {
+          "device": "32efabee",
+          "name": "studio",
+          "token": "contract-token"
+        }
+      }
+    },
+    {
+      "name": "info",
+      "from": "link.ts companionVersion, updates.ts Updates.refresh (readInfo)",
+      "method": "GET",
+      "path": "/api/info",
+      "reads": [
+        "version:string",
+        "latest:string",
+        "canUpdate:boolean",
+        "autoUpdate:boolean",
+        "checks:string=ask|on|off",
+        "app.url:string",
+        "app.digest:string",
+        "app.bytes:number",
+        "plainUntil:time"
+      ],
+      "answer": {
+        "status": 200,
+        "body": {
+          "app": {
+            "bytes": 5,
+            "digest": "sha256:ab",
+            "url": "https://example.com/a.apk"
+          },
+          "autoUpdate": false,
+          "canUpdate": true,
+          "checks": "ask",
+          "hc": "hc 0.1.20",
+          "latest": "0.3.12",
+          "name": "studio",
+          "plainUntil": "2026-12-01T12:00:00Z",
+          "version": "0.3.11"
+        }
+      }
+    },
+    {
+      "name": "folders",
+      "from": "link.ts folderApi.list",
+      "method": "GET",
+      "path": "/api/folders",
+      "query": {
+        "path": "~/proj"
+      },
+      "headers": {
+        "authorization": "Bearer {token}"
+      },
+      "reads": [
+        "path:string",
+        "home:string",
+        "parent:string",
+        "git:boolean",
+        "folders[].name:string",
+        "folders[].git:boolean",
+        "folders[*].git:true"
+      ],
+      "answer": {
+        "status": 200,
+        "body": {
+          "folders": [
+            {
+              "git": true,
+              "name": "app"
+            },
+            {
+              "git": false,
+              "name": "src"
+            }
+          ],
+          "git": false,
+          "home": "/Users/sam",
+          "parent": "/Users/sam",
+          "path": "/Users/sam/proj"
+        }
+      }
+    },
+    {
+      "name": "folders hidden",
+      "from": "link.ts folderApi.list(path, true)",
+      "method": "GET",
+      "path": "/api/folders",
+      "query": {
+        "hidden": "1",
+        "path": "~/proj"
+      },
+      "headers": {
+        "authorization": "Bearer {token}"
+      },
+      "reads": [
+        "path:string",
+        "folders[].name:string",
+        "folders[].git:boolean",
+        "folders[*].hidden:true"
+      ],
+      "answer": {
+        "status": 200,
+        "body": {
+          "folders": [
+            {
+              "git": false,
+              "hidden": true,
+              "name": ".cache"
+            },
+            {
+              "git": true,
+              "name": "app"
+            },
+            {
+              "git": false,
+              "name": "src"
+            }
+          ],
+          "git": false,
+          "home": "/Users/sam",
+          "parent": "/Users/sam",
+          "path": "/Users/sam/proj"
+        }
+      }
+    },
+    {
+      "name": "folders missing",
+      "from": "link.ts folderApi.list, a path that is not there",
+      "method": "GET",
+      "path": "/api/folders",
+      "query": {
+        "path": "~/proj/nope"
+      },
+      "headers": {
+        "authorization": "Bearer {token}"
+      },
+      "reads": [
+        "missing:true",
+        "path:string",
+        "existing:string"
+      ],
+      "answer": {
+        "status": 404,
+        "body": {
+          "error": "no such folder",
+          "existing": "/Users/sam/proj",
+          "missing": true,
+          "path": "/Users/sam/proj/nope"
+        }
+      }
+    },
+    {
+      "name": "folder made",
+      "from": "link.ts folderApi.create",
+      "method": "POST",
+      "path": "/api/folders",
+      "headers": {
+        "authorization": "Bearer {token}",
+        "content-type": "application/json"
+      },
+      "body": {
+        "path": "~/proj/new"
+      },
+      "reads": [
+        "path:string"
+      ],
+      "answer": {
+        "status": 200,
+        "body": {
+          "created": true,
+          "path": "/Users/sam/proj/new"
+        }
+      }
+    },
+    {
+      "name": "chat",
+      "from": "link.ts chatApi.get",
+      "method": "GET",
+      "path": "/api/chat/t1",
+      "headers": {
+        "authorization": "Bearer {token}"
+      },
+      "reads": [
+        "header.etag:string",
+        "chat:true",
+        "before:string",
+        "turns[].id:string",
+        "turns[].from:string=you|other",
+        "turns[].said:string",
+        "turns[].steps[].id:string",
+        "turns[].steps[].kind:string",
+        "turns[].steps[].title:string",
+        "turns[].reply:string",
+        "turns[].end:string=open|done|stopped"
+      ],
+      "answer": {
+        "status": 200,
+        "headers": {
+          "etag": "\"64be60dac845e8c2d15351abbebe484e40144ea7ada83c2addf6ba4208cdf2bb\""
+        },
+        "body": {
+          "before": "eyJTZXNzaW9uIjoiZjRUOFJHZmFxaHh2YzFGaC14aTF6Mko5YzZtLW1vcjlnZnYyaHRlMFhQayIsIkJlZm9yZSI6InUxIn0.AHnws8IVl0opjwolKD3GFZjnkXhumMYBHsLpUa28obA",
+          "chat": true,
+          "session": "f4T8RGfaqhxvc1Fh-xi1z2J9c6m-mor9gfv2hte0XPk",
+          "turns": [
+            {
+              "end": "done",
+              "from": "you",
+              "id": "u1",
+              "reply": "hello",
+              "said": "hi",
+              "steps": [
+                {
+                  "id": "toolu_1",
+                  "kind": "run",
+                  "title": "List files"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "chat unchanged",
+      "from": "link.ts chatApi.get, again with the page's validator",
+      "method": "GET",
+      "path": "/api/chat/t1",
+      "headers": {
+        "authorization": "Bearer {token}",
+        "if-none-match": "{etag}"
+      },
+      "reads": [],
+      "answer": {
+        "status": 304,
+        "headers": {
+          "etag": "\"64be60dac845e8c2d15351abbebe484e40144ea7ada83c2addf6ba4208cdf2bb\""
+        }
+      }
+    },
+    {
+      "name": "chat earlier",
+      "from": "link.ts chatApi.get(address, before), chat.tsx loadEarlier",
+      "method": "GET",
+      "path": "/api/chat/t1",
+      "query": {
+        "before": "{before}"
+      },
+      "headers": {
+        "authorization": "Bearer {token}"
+      },
+      "reads": [
+        "turns[0].id:string=older",
+        "turns[].said:string",
+        "turns[].reply:string",
+        "turns[].end:string=open|done|stopped"
+      ],
+      "answer": {
+        "status": 200,
+        "headers": {
+          "etag": "\"043b19fc6decc7ed93505b42c713b5cebaf1110a8d0163966fe9645ae20b00dd\""
+        },
+        "body": {
+          "chat": true,
+          "session": "f4T8RGfaqhxvc1Fh-xi1z2J9c6m-mor9gfv2hte0XPk",
+          "turns": [
+            {
+              "end": "done",
+              "from": "you",
+              "id": "older",
+              "reply": "earlier answer",
+              "said": "earlier question",
+              "steps": []
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "chat step",
+      "from": "link.ts chatApi.step",
+      "method": "GET",
+      "path": "/api/chat/t1/steps/toolu_1",
+      "headers": {
+        "authorization": "Bearer {token}"
+      },
+      "reads": [
+        "input:string",
+        "output:string"
+      ],
+      "answer": {
+        "status": 200,
+        "body": {
+          "input": "ls",
+          "output": "a.txt"
+        }
+      }
+    },
+    {
+      "name": "chat image",
+      "from": "link.ts chatApi.image",
+      "method": "GET",
+      "path": "/api/chat/t1/images/toolu_1.0",
+      "headers": {
+        "authorization": "Bearer {token}"
+      },
+      "reads": [
+        "url:string^data:image/"
+      ],
+      "answer": {
+        "status": 200,
+        "body": {
+          "url": "data:image/png;base64,iVBORw=="
+        }
+      }
+    },
+    {
+      "name": "chat title",
+      "from": "link.ts chatApi.title, store.ts reading a terminal's saved session title",
+      "method": "GET",
+      "path": "/api/chat/t1/title",
+      "headers": {
+        "authorization": "Bearer {token}"
+      },
+      "reads": [
+        "title:string",
+        "session:string"
+      ],
+      "answer": {
+        "status": 200,
+        "body": {
+          "session": "f4T8RGfaqhxvc1Fh-xi1z2J9c6m-mor9gfv2hte0XPk",
+          "title": "Fix the login redirect"
+        }
+      }
+    },
+    {
+      "name": "file check",
+      "from": "link.ts chatApi.files",
+      "method": "POST",
+      "path": "/api/file/check",
+      "headers": {
+        "authorization": "Bearer {token}",
+        "content-type": "application/json"
+      },
+      "body": {
+        "terminal": "t1",
+        "paths": [
+          "NOTES.md",
+          "shot.png"
+        ]
+      },
+      "reads": [
+        "files[].asked:string",
+        "files[].path:string",
+        "files[].name:string",
+        "files[].kind:string=video|pdf|text|image|other",
+        "files[0].kind:string=text",
+        "files[1].kind:string=image",
+        "files[].size:number"
+      ],
+      "answer": {
+        "status": 200,
+        "body": {
+          "files": [
+            {
+              "asked": "NOTES.md",
+              "kind": "text",
+              "name": "NOTES.md",
+              "path": "/Users/sam/proj/NOTES.md",
+              "size": 15
+            },
+            {
+              "asked": "shot.png",
+              "kind": "image",
+              "name": "shot.png",
+              "path": "/Users/sam/proj/shot.png",
+              "size": 121
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "file link",
+      "from": "link.ts chatApi.fileLink",
+      "method": "POST",
+      "path": "/api/file/link",
+      "headers": {
+        "authorization": "Bearer {token}",
+        "content-type": "application/json"
+      },
+      "body": {
+        "terminal": "t1",
+        "path": "NOTES.md"
+      },
+      "reads": [
+        "url:string^/api/file?"
+      ],
+      "answer": {
+        "status": 200,
+        "body": {
+          "url": "/api/file?key=contract-key&path=NOTES.md&terminal=t1"
+        }
+      }
+    },
+    {
+      "name": "file text",
+      "from": "link.ts chatApi.fileText",
+      "method": "GET",
+      "path": "/api/file",
+      "query": {
+        "path": "NOTES.md",
+        "terminal": "t1"
+      },
+      "headers": {
+        "authorization": "Bearer {token}",
+        "range": "bytes=0-99"
+      },
+      "reads": [
+        "text:string^# Notes"
+      ],
+      "answer": {
+        "status": 206,
+        "text": "# Notes\n\n- one\n"
+      }
+    },
+    {
+      "name": "chat setups",
+      "from": "link.ts chatApi.setups",
+      "method": "GET",
+      "path": "/api/chat-setups",
+      "headers": {
+        "authorization": "Bearer {token}"
+      },
+      "reads": [
+        "setups[].agent:string",
+        "setups[].file:string",
+        "setups[].version:number",
+        "setups[].state:string=no-agent|absent|installed|old|changed",
+        "setups[0].state:string=absent"
+      ],
+      "answer": {
+        "status": 200,
+        "body": {
+          "setups": [
+            {
+              "agent": "pi",
+              "file": "/Users/sam/.pi/agent/extensions/herdr-anywhere.ts",
+              "name": "Pi",
+              "reload": "/reload",
+              "state": "absent",
+              "version": 2
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "chat setup on",
+      "from": "link.ts chatApi.setSetup(agent, true)",
+      "method": "PUT",
+      "path": "/api/chat-setups/pi",
+      "headers": {
+        "authorization": "Bearer {token}"
+      },
+      "reads": [
+        "agent:string",
+        "file:string",
+        "version:number",
+        "state:string=installed"
+      ],
+      "answer": {
+        "status": 200,
+        "body": {
+          "agent": "pi",
+          "file": "/Users/sam/.pi/agent/extensions/herdr-anywhere.ts",
+          "name": "Pi",
+          "reload": "/reload",
+          "state": "installed",
+          "version": 2
+        }
+      }
+    },
+    {
+      "name": "chat setup off",
+      "from": "link.ts chatApi.setSetup(agent, false)",
+      "method": "DELETE",
+      "path": "/api/chat-setups/pi",
+      "headers": {
+        "authorization": "Bearer {token}"
+      },
+      "reads": [
+        "agent:string",
+        "file:string",
+        "version:number",
+        "state:string=absent"
+      ],
+      "answer": {
+        "status": 200,
+        "body": {
+          "agent": "pi",
+          "file": "/Users/sam/.pi/agent/extensions/herdr-anywhere.ts",
+          "name": "Pi",
+          "reload": "/reload",
+          "state": "absent",
+          "version": 2
+        }
+      }
+    },
+    {
+      "name": "chat setup changed",
+      "from": "link.ts chatApi.setSetup(agent, true) over a file its person changed (settings.tsx)",
+      "method": "PUT",
+      "path": "/api/chat-setups/pi",
+      "headers": {
+        "authorization": "Bearer {token}"
+      },
+      "prepare": "edit-setup",
+      "reads": [
+        "agent:string",
+        "file:string",
+        "confirmation:string",
+        "state:string=changed"
+      ],
+      "answer": {
+        "status": 409,
+        "body": {
+          "agent": "pi",
+          "changedFiles": [
+            "/Users/sam/.pi/agent/extensions/herdr-anywhere.ts"
+          ],
+          "confirmation": "2b577c1e4e5b88aa1d961a09b1d2ddeebc0547c8fb7715f71787f3ed91786985",
+          "file": "/Users/sam/.pi/agent/extensions/herdr-anywhere.ts",
+          "name": "Pi",
+          "reload": "/reload",
+          "state": "changed",
+          "version": 2
+        }
+      }
+    },
+    {
+      "name": "chat setup forced",
+      "from": "link.ts chatApi.setSetup(agent, true, true, confirmation), after the person said replace it",
+      "method": "PUT",
+      "path": "/api/chat-setups/pi",
+      "query": {
+        "confirmation": "{confirmation}",
+        "force": "1"
+      },
+      "headers": {
+        "authorization": "Bearer {token}"
+      },
+      "reads": [
+        "agent:string",
+        "state:string=installed"
+      ],
+      "answer": {
+        "status": 200,
+        "body": {
+          "agent": "pi",
+          "file": "/Users/sam/.pi/agent/extensions/herdr-anywhere.ts",
+          "name": "Pi",
+          "reload": "/reload",
+          "state": "installed",
+          "version": 2
+        }
+      }
+    },
+    {
+      "name": "picture",
+      "from": "link.ts imageApi.read",
+      "method": "GET",
+      "path": "/api/image",
+      "query": {
+        "path": "shot.png",
+        "terminal": "t1"
+      },
+      "headers": {
+        "authorization": "Bearer {token}"
+      },
+      "reads": [
+        "path:string",
+        "url:string^data:image/png;base64,"
+      ],
+      "answer": {
+        "status": 200,
+        "body": {
+          "path": "/Users/sam/proj/shot.png",
+          "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAYAAAC09K7GAAAAQElEQVR4nAAzAMz/AgAAAAAAAAAAAAAAAAAAAAACAAAAAAAA//8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwA1qAIDfuZg8AAAAABJRU5ErkJggg=="
+        }
+      }
+    },
+    {
+      "name": "picture check",
+      "from": "link.ts imageApi.check",
+      "method": "POST",
+      "path": "/api/image/check",
+      "headers": {
+        "authorization": "Bearer {token}",
+        "content-type": "application/json"
+      },
+      "body": {
+        "terminal": "t1",
+        "paths": [
+          "shot.png",
+          "NOTES.md"
+        ]
+      },
+      "reads": [
+        "paths[].asked:string",
+        "paths[0].picture:true",
+        "paths[1].picture:false"
+      ],
+      "answer": {
+        "status": 200,
+        "body": {
+          "paths": [
+            {
+              "asked": "shot.png",
+              "path": "/Users/sam/proj/shot.png",
+              "picture": true
+            },
+            {
+              "asked": "NOTES.md",
+              "path": "/Users/sam/proj/NOTES.md",
+              "picture": false,
+              "why": "not_image"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "upload",
+      "from": "link.ts fileApi.sendPhoto",
+      "method": "POST",
+      "path": "/api/files",
+      "query": {
+        "name": "note.txt"
+      },
+      "headers": {
+        "authorization": "Bearer {token}",
+        "content-type": "application/octet-stream"
+      },
+      "text": "hello",
+      "reads": [
+        "path:string^{home}"
+      ],
+      "answer": {
+        "status": 200,
+        "body": {
+          "bytes": 5,
+          "path": "/Users/sam/.cache/herdr-anywhere/uploads/20261201-120000-0d5098edd77278d5/note.txt"
+        }
+      }
+    },
+    {
+      "name": "upload elsewhere",
+      "from": "link.ts fileApi.sendPhoto(file, on), a terminal on another machine",
+      "method": "POST",
+      "path": "/api/files",
+      "query": {
+        "name": "note.txt",
+        "on": "box"
+      },
+      "headers": {
+        "authorization": "Bearer {token}",
+        "content-type": "application/octet-stream"
+      },
+      "text": "hello",
+      "prepare": "remote-hc",
+      "needs": "sh",
+      "reads": [
+        "path:string^{box}"
+      ],
+      "answer": {
+        "status": 200,
+        "body": {
+          "bytes": 5,
+          "path": "/home/sam/.cache/herdr-anywhere/uploads/20261201-120000-a0c89beee0dfcc2e/note.txt"
+        }
+      }
+    },
+    {
+      "name": "update auto",
+      "from": "updates.ts Updates.setAuto",
+      "method": "POST",
+      "path": "/api/update/auto",
+      "headers": {
+        "authorization": "Bearer {token}",
+        "content-type": "application/json"
+      },
+      "body": {
+        "on": true
+      },
+      "reads": [],
+      "answer": {
+        "status": 200,
+        "body": {
+          "on": true
+        }
+      }
+    },
+    {
+      "name": "update checks",
+      "from": "updates.ts Updates.setChecks",
+      "method": "POST",
+      "path": "/api/update/checks",
+      "headers": {
+        "authorization": "Bearer {token}",
+        "content-type": "application/json"
+      },
+      "body": {
+        "on": true
+      },
+      "reads": [],
+      "answer": {
+        "status": 200,
+        "body": {
+          "checks": "on"
+        }
+      }
+    },
+    {
+      "name": "update check",
+      "from": "updates.ts Updates.checkNow",
+      "method": "POST",
+      "path": "/api/update/check",
+      "headers": {
+        "authorization": "Bearer {token}"
+      },
+      "reads": [
+        "latest:string"
+      ],
+      "answer": {
+        "status": 200,
+        "body": {
+          "latest": "0.3.12"
+        }
+      }
+    },
+    {
+      "name": "update",
+      "from": "updates.ts Updates.updateComputer",
+      "method": "POST",
+      "path": "/api/update",
+      "headers": {
+        "authorization": "Bearer {token}"
+      },
+      "reads": [
+        "version:string"
+      ],
+      "answer": {
+        "status": 200,
+        "body": {
+          "version": "0.3.12"
+        }
+      }
+    },
+    {
+      "name": "socket",
+      "from": "hc/ws.ts socketUrl(base, token, 'bin')",
+      "method": "GET",
+      "path": "/hc",
+      "query": {
+        "token": "{token}"
+      },
+      "socket": "bin",
+      "send": "AAEgaGVsbG8g/w==",
+      "reads": [],
+      "answer": {
+        "status": 101,
+        "text": "AAEgaGVsbG8g/w=="
+      }
+    },
+    {
+      "name": "socket base64",
+      "from": "hc/ws.ts socketUrl(base, token, 'b64')",
+      "method": "GET",
+      "path": "/hc",
+      "query": {
+        "enc": "b64",
+        "token": "{token}"
+      },
+      "socket": "b64",
+      "send": "AAEgaGVsbG8g/w==",
+      "reads": [],
+      "answer": {
+        "status": 101,
+        "text": "AAEgaGVsbG8g/w=="
+      }
+    }
+  ]
+}

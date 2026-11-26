@@ -141,6 +141,7 @@ test('a link to the companion\'s unencrypted port on the network is plain; loopb
   expect(plainLink(link('http://[::1]:7681'))).toBe(false)
   expect(plainLink(link('https://herdr.example'))).toBe(false)
   expect(plainLink(link('tailpocket:', 'tailpocket'))).toBe(false)
+  expect(plainLink(link('http://demo.invalid', 'demo'))).toBe(false)
   expect(plainLink(link('demo:', 'demo'))).toBe(false)
 })
 
@@ -174,6 +175,9 @@ test('an invite is the herdr1: or herdr2: text, alone or inside what was scanned
   expect(parseInvite('tailpocket2:eyJ2IjoxfQ')).toBe(null)
   expect(parseInvite('tailpocket1:eyJ2IjoxfQ')).toBe(null)
   expect(parseInvite('http://192.168.1.20:7681/#pair=K7QD-M2XP')).toBe(null)
+  // No part of a longer word: pairing with a piece of it would fail as an invalid invite.
+  expect(parseInvite(`x${INVITE}`)).toBe(null)
+  expect(parseInvite(`${INVITE}.more`)).toBe(null)
 })
 
 test('pairing through TailPocket keeps the token the computer put in its answer', async () => {

@@ -210,6 +210,10 @@ func TestInstallWritesOnceAndRemoveTakesItAway(t *testing.T) {
 		if !f.ran("launchctl bootstrap gui/"+strconv.Itoa(uid)+" "+s.Path()) || !f.ran("launchctl bootout gui/"+strconv.Itoa(uid)+"/io.example.test") {
 			t.Fatalf("launchctl calls: %v", f.calls)
 		}
+		// Start unloads a copy loaded before (perhaps of an older file) before loading this one.
+		if len(f.calls) < 2 || f.calls[0][1] != "bootout" || f.calls[1][1] != "bootstrap" {
+			t.Fatalf("start ran %v, not bootout then bootstrap", f.calls)
+		}
 	case "linux":
 		if !f.ran("systemctl --user enable io.example.test.service") || !f.ran("systemctl --user start io.example.test.service") ||
 			!f.ran("systemctl --user disable --now io.example.test.service") {

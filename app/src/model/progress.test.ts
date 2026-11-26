@@ -1,7 +1,7 @@
 // The progress page's model over `herdr-anywhere track tree --json`: one nestable structure, the task.
 // Version one is view only: the page shows, the computer decides.
 import { expect, test } from 'nsh/test'
-import { agentsLine, findTask, flagsOf, goalOf, homeOf, visibleRows, items, langLine, panesOf, parseAgents, pathOf, pickLine, stageText, subLine, taskOn, trackLine, type Task } from './progress.ts'
+import { agentsLine, findTask, flagsOf, goalOf, homeOf, visibleRows, items, langLine, paneOf, panesOf, parseAgents, pathOf, pickLine, stageText, subLine, switchLine, taskOn, trackLine, type Task } from './progress.ts'
 import { parseTree } from './progress.ts'
 
 // Real output of `track tree --json` for the sample scene: fixtures/make-tree-v2.sh writes it.
@@ -43,18 +43,31 @@ test('a task is found anywhere in the tree, with the titles above it', async () 
 })
 
 // herdr-core only: `--herdr -` keeps track from asking old Herdr for its agent list on the user's computer.
+// Through the companion's /api/cli: the arguments as they are, no shell (a Windows computer has cmd.exe).
+test('commands are the companion\'s own arguments, one list per run', () => {
+  expect(trackLine(['tree', "P'1 & %x%"]).runs).toEqual([['track', 'tree', "P'1 & %x%", '--herdr', '-']])
+  expect(agentsLine().runs).toEqual([['progress', 'agents']])
+  // Picking the filing agent turns filing on in the same go.
+  expect(pickLine('pi', 'ja').runs).toEqual([['progress', 'organizer', '--agent', 'pi', '--lang', 'ja'], ['progress', 'on']])
+  expect(switchLine(false).runs).toEqual([['progress', 'off']])
+  expect(langLine('zh-Hant').runs).toEqual([['progress', 'lang', 'zh-Hant']])
+})
+
+// For a companion older than /api/cli, through machine.exec.
 test('commands run the companion from where the README installs it, else from PATH, with every argument quoted', () => {
   const b = `b="$HOME/.local/bin/herdr-anywhere"; [ -x "$b" ] || b=herdr-anywhere; "$b"`
-  expect(trackLine(['tree', "P'1"])).toBe(`${b} track 'tree' 'P'\\''1' '--herdr' '-'`)
-  expect(agentsLine()).toBe(`${b} progress 'agents'`)
-  // Picking the filing agent turns filing on in the same go.
-  expect(pickLine('pi', 'ja')).toBe(`${b} progress 'organizer' '--agent' 'pi' '--lang' 'ja' && "$b" progress 'on'`)
-  expect(langLine('zh-Hant')).toBe(`${b} progress 'lang' 'zh-Hant'`)
+  expect(trackLine(['tree', "P'1"]).line).toBe(`${b} track 'tree' 'P'\\''1' '--herdr' '-'`)
+  expect(agentsLine().line).toBe(`${b} progress 'agents'`)
+  expect(pickLine('pi', 'ja').line).toBe(`${b} progress 'organizer' '--agent' 'pi' '--lang' 'ja' && "$b" progress 'on'`)
+  expect(langLine('zh-Hant').line).toBe(`${b} progress 'lang' 'zh-Hant'`)
 })
 
 test('the agents to pick from: the ones that can be picked first', () => {
-  const a = parseAgents(JSON.stringify({ agents: [{ id: 'codex', name: 'Codex', cmd: 'codex', usable: false, note: 'needs 0.163 or later', needs: '0.163', version: '0.150.0' }, { id: 'pi', name: 'Pi', cmd: 'pi', usable: true }], chosen: 'pi' }))
-  expect(a).toEqual({ agents: [{ id: 'pi', name: 'Pi', usable: true, note: '', needs: '', version: '' }, { id: 'codex', name: 'Codex', usable: false, note: 'needs 0.163 or later', needs: '0.163', version: '0.150.0' }], chosen: 'pi' })
+  const a = parseAgents(JSON.stringify({ agents: [{ id: 'codex', name: 'Codex', cmd: 'codex', usable: false, note: 'needs 0.163 or later', needs: '0.163', version: '0.150.0' },
+    { id: 'kimi-code', name: 'Kimi Code', cmd: 'kimi', usable: false, note: 'installed only as a .cmd script', script: true }, { id: 'pi', name: 'Pi', cmd: 'pi', usable: true }], chosen: 'pi' }))
+  expect(a).toEqual({ agents: [{ id: 'pi', name: 'Pi', usable: true, note: '', needs: '', version: '', script: false },
+    { id: 'codex', name: 'Codex', usable: false, note: 'needs 0.163 or later', needs: '0.163', version: '0.150.0', script: false },
+    { id: 'kimi-code', name: 'Kimi Code', usable: false, note: 'installed only as a .cmd script', needs: '', version: '', script: true }], chosen: 'pi' })
   expect(parseAgents('{}')).toEqual({ agents: [], chosen: '' })
 })
 
@@ -73,8 +86,28 @@ test('what is wrong with a task\'s panes is worded on the phone', () => {
   expect(flagsOf(task([{ id: 't2', name: 'api', state: 'live', status: 'idle', quiet: true, quiet_for_ms: 2 * 3_600_000 }]))).toEqual(['api: no new turn in 2h since handed this'])
   expect(flagsOf(task([{ id: 't3', state: 'missing' }, { id: 't4', state: 'live', status: 'blocked', handed_on: true }]))).toEqual(["Can't find t3"])
   expect(subLine(task([{ id: 't2', name: 'phone', state: 'live', status: 'error' }]))).toBe('phone hit an error')
+  // An error says so, however long the pane has been quiet; what the task waits on comes before the agent's words.
+  expect(flagsOf(task([{ id: 't2', name: 'api', state: 'live', status: 'error', quiet: true, quiet_for_ms: 3_600_000 }]))).toEqual(['api hit an error'])
+  expect(subLine({ ...task([]), waiting: 'push?', said: 'all done' })).toBe('push?')
 })
 
+// Small trees of our own, for what the sample scene does not have.
+const mk = (id: string, children: Task[] = [], more: Partial<Task> = {}): Task =>
+  ({ id, outcome: id, stage: 'doing', group: 'doing', evidence: [], pane_rows: [], notes: [], children, done: 0, total: 1, ...more })
+const treeOf = (...tasks: Task[]) => ({ needsYou: [], justDone: [], tasks, closed: [], queue: 0 })
+
+test('a dropped task is not one of its parent\'s; a pane is on the deepest task it was handed', () => {
+  expect(items(mk('P', [mk('A', [], { group: 'done' }), mk('B', [], { group: 'dropped' }), mk('C')]))).toEqual([
+    { done: true, text: 'A' }, { done: false, text: 'C' }])
+  const on = [{ id: 't9' }]
+  expect(taskOn(treeOf(mk('P', [mk('Q', [], { pane_rows: on })], { pane_rows: on })), 't9')?.id).toBe('Q')
+})
+
+test('rows go at most two steps in, and folding a heading leaves the headings beside it', () => {
+  const rows = homeOf(treeOf(mk('G', [mk('A', [mk('B', [mk('C', [mk('D')])])]), mk('E', [mk('E1')])]))).groups[0].rows
+  expect(rows.map((r) => `${r.task.id}${r.depth}`).sort()).toEqual(['A0', 'B1', 'C2', 'D2', 'E0', 'E11'])
+  expect(visibleRows(rows, new Set(['A'])).map((r) => r.task.id).sort()).toEqual(['A', 'E', 'E1'])
+})
 
 // Agents answer in Markdown. The page shows it as paragraphs and list items, without the marks:
 // a raw "**" or "- " on the phone reads as noise (seen on a real task page).
@@ -152,8 +185,11 @@ test('a task\'s panes: by name, and none once the task is closed', async () => {
   expect(panesOf(findTask(t, 'T1')!).map((p) => [p.label, p.kind, p.addr])).toEqual([['checkout', 'moved', 't2']])
   expect(panesOf(findTask(t, 'T9')!).map((p) => [p.label, p.kind, p.addr])).toEqual([['checkout', 'live', 't2']])
   expect(panesOf(findTask(t, 'P2')!)).toEqual([])
-  const two: Task = { ...findTask(t, 'T9')!, pane_rows: [{ id: 't2', name: 'web', found: true, state: 'live' }, { id: 't7', name: 'web', found: true, state: 'live' }, { id: 't8', found: false }] }
-  expect(panesOf(two).map((p) => [p.label, p.kind])).toEqual([['web · t2', 'live'], ['web · t7', 'live'], ['t8', 'missing']])
+  const two: Task = { ...findTask(t, 'T9')!, pane_rows: [{ id: 't2', name: 'web', found: true, state: 'live' }, { id: 't7', name: 'web', found: true, state: 'live' }, { id: 't8', found: false }, { id: 't6', found: false, state: 'live' }] }
+  expect(panesOf(two).map((p) => [p.label, p.kind])).toEqual([['web · t2', 'live'], ['web · t7', 'live'], ['t8', 'missing'], ['t6', 'missing']])
+  // A card opens the last pane handed the task that is still there and still on it.
+  const rows = [{ id: 'a', found: true, state: 'live' }, { id: 'z', found: true, state: 'live' }, { id: 'b', found: false, state: 'live' }, { id: 'c', found: true, state: 'live', handed_on: true }]
+  expect(paneOf({ ...two, pane_rows: rows })?.addr).toBe('z')
 })
 
 // A heading the user folded hides what is under it, down to the next row at its own depth or above.

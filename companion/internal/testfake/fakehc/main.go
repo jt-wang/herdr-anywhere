@@ -4,6 +4,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
@@ -29,7 +30,7 @@ type spec struct {
 }
 
 type reply struct {
-	If, Write, Append, Print, Cat, Exec, Fail, Sleep string
+	If, Write, Append, Stdin, Print, Cat, Exec, Fail, Sleep string
 }
 
 func main() {
@@ -77,6 +78,10 @@ func main() {
 			if r.Append != "" {
 				add(fill(r.Append), line)
 			}
+			if r.Stdin != "" {
+				in, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+				_ = os.WriteFile(fill(r.Stdin), []byte(in), 0o644)
+			}
 			if r.Print != "" {
 				fmt.Println(fill(r.Print))
 			}
@@ -100,7 +105,8 @@ func main() {
 		}
 		os.Exit(s.Exit)
 	}
-	if s.On != nil && arg != "--version" {
+	// A fake with both answers to subcommands and a connect does both (a terminal's details and its socket).
+	if s.On != nil && arg != "--version" && !(arg == "connect" && s.Connect != "") {
 		os.Exit(s.Else)
 	}
 	switch {

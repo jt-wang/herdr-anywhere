@@ -119,8 +119,8 @@ func TestPairDevicesRevoke(t *testing.T) {
 		t.Fatal("revoking an unknown id must fail")
 	}
 	out, _, _ = runCLI(t, "devices")
-	if strings.Contains(out, d.ID) {
-		t.Fatalf("revoked device still listed:\n%s", out)
+	if strings.Contains(out, d.ID) || !strings.Contains(out, "no paired devices") {
+		t.Fatalf("revoked device still listed, or no word that none is:\n%s", out)
 	}
 }
 
@@ -145,6 +145,9 @@ func TestUsage(t *testing.T) {
 	}
 	if _, _, code := runCLI(t, "revoke"); code != 2 {
 		t.Fatalf("revoke without id: exit %d", code)
+	}
+	if _, _, code := runCLI(t, "revoke", "a", "b"); code != 2 {
+		t.Fatalf("revoke with two ids: exit %d", code)
 	}
 }
 

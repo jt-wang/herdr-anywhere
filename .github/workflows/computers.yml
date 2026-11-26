@@ -49,6 +49,9 @@ env:
   # herdr-core from https://releases.herdr.dev/core/latest.json; each job's sha256 is in the
   # matrix. Update them together.
   HERDR_CORE_VERSION: "0.1.18"
+  # The held send (app/e2e/live-draft.test.ts) needs herdr-core 0.1.20 or later, which holds a send while the terminal
+  # has a half-typed line: that test alone runs on this one (sha256 in the app job's matrix, draft_sha256).
+  HERDR_CORE_DRAFT_VERSION: "0.1.22"
   HM_TAILCAT_LIVE: "1"
   # nsh from https://github.com/longbridge/nsh/releases/tag/v0.3.0; each file's sha256 (the digest GitHub lists
   # for it) is in the app job's matrix.
@@ -140,6 +143,19 @@ jobs:
           & "$env:SystemRoot\System32\tar.exe" -xf $zip -C $dir
           & "$dir\herdr-core.exe" --version
           "HM_TEST_HC=$dir\herdr-core.exe" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+      # Codex as a user gets it with npm (a .cmd shim and node's own platform package of Codex's exe), for the filing
+      # pane's test (TestRolePaneStartOnARealCore/npm_Codex). On Windows on Arm node, and so that package, is Arm64.
+      - name: Codex installed with npm (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $prefix = Join-Path $env:RUNNER_TEMP "npm-codex"
+          npm install -g --prefix $prefix @openai/codex@0.167.0
+          if ($LASTEXITCODE) { throw "npm install: $LASTEXITCODE" }
+          $arch = node -p process.arch
+          Write-Host "node: $arch"
+          if ("${{ matrix.os }}" -eq "windows-11-arm" -and $arch -ne "arm64") { throw "node is $arch on Windows on Arm" }
+          "HM_TEST_NPM_CODEX=$prefix" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
       - name: Build the release file
         working-directory: companion
         shell: bash
@@ -194,6 +210,15 @@ jobs:
       - name: LAN only sends nothing off this computer (Linux)
         if: matrix.os == 'ubuntu-latest'
         run: app/e2e/no-tailcat-packets.sh "$HM_TEST_HC"
+      # The background Companion on this desktop, started as `start` starts it, opens no console window when it starts
+      # hc connect or itself (GitHub #6): cmd/herdr-anywhere/console_live_windows_test.go watches for one.
+      - name: No console window from the background Companion (Windows)
+        if: runner.os == 'Windows'
+        working-directory: companion
+        shell: bash
+        env:
+          HM_CONSOLE_LIVE: "1"
+        run: go test -v -count=1 -run 'TestLiveNoConsoleWindow$' ./cmd/herdr-anywhere
       - run: go vet ./...
         working-directory: companion
       # cmd/herdr-anywhere cross-compiles each release file and vets two of them: on macos-26-intel that alone ran
@@ -201,7 +226,7 @@ jobs:
       - run: go test -v -timeout 30m ./...
         working-directory: companion
       # Releases carry one Windows file, for x64. On Windows on Arm it runs under Windows' x64 emulation: the same
-      # update tests, built for x64, run here on the Arm machine.
+      # update tests and the filing pane's (npm's Arm64 Codex included), built for x64, run here on the Arm machine.
       - name: The x64 release file on Windows on Arm
         if: matrix.os == 'windows-11-arm'
         working-directory: companion
@@ -213,7 +238,7 @@ jobs:
           echo "machine: $(go env GOHOSTARCH), building for: $(go env GOARCH)"
           go build -buildvcs=false -trimpath -ldflags="-s -w" -o herdr-anywhere-windows-amd64.exe ./cmd/herdr-anywhere
           ./herdr-anywhere-windows-amd64.exe --version
-          go test -v -run 'Update|Apply|Asset|Latest' ./internal/update ./cmd/herdr-anywhere
+          go test -v -run 'Update|Apply|Asset|Latest|RolePaneStartOnARealCore' ./internal/update ./cmd/herdr-anywhere
 
   # The phone app's own client code (app/e2e/live.test.ts: pair, connect, run, type, upload, git branch, revoke)
   # against a real companion and core. nsh has builds for macOS Arm, Linux x64 and Windows x64; live-app.tsx
@@ -229,12 +254,14 @@ jobs:
             timeout: 10
             core: herdr-core-macos-aarch64.tar.gz
             sha256: 77d8af092e25ae650f4424d6dad27514f6916a11d807fb0752858cd27c21e4fc
+            draft_sha256: 90798daadefa8d126b90ef0bcdbe9c7dda9c6cfbf011a247065ab5da348f350e
             nsh: nsh-macos-arm64.tar.gz
             nsh_sha256: 34fdd2ec43d5e22986723e7633acf9223e365bd5bace1a502b5ae24fb75c266c
           - os: ubuntu-latest
             timeout: 10
             core: herdr-core-linux-x86_64.tar.gz
             sha256: 5b2f97cb4b2a9d7a6b2cc5942628203ed9fbb7cc0c2b4b09ad8a6f5648e246b7
+            draft_sha256: 3054ec3992ce80c5715d721caa9dcefa6056721d15dc113f4750afce763ba5df
             nsh: nsh-linux-x86_64.tar.gz
             nsh_sha256: 539ecf9d76d156b5afa5a086212f23764bfc3945c7395a2119b73a3c66effed0
     runs-on: ${{ matrix.os }}
@@ -275,6 +302,29 @@ jobs:
       - run: HM_LIVE_TEST=e2e/live-subkeep.test.ts e2e/run.sh
         if: success() || failure()
         working-directory: app
+      # A wrong and an expired code refused, the companion stopped and started again taking the same pairing back,
+      # and a phone the computer revoked pairing again (app/e2e/live-reconnect.test.ts).
+      - run: HM_LIVE_TEST=e2e/live-reconnect.test.ts e2e/run.sh
+        if: success() || failure()
+        working-directory: app
+      # A send held by a half-typed line goes once and stays in the box until it arrives; one whose line drops says it
+      # did not go, stays in the box and is not sent later (app/e2e/live-draft.test.ts). On herdr-core 0.1.18 nothing
+      # holds the send, so it runs on HERDR_CORE_DRAFT_VERSION.
+      - name: HM_LIVE_TEST=e2e/live-draft.test.ts e2e/run.sh (herdr-core ${{ env.HERDR_CORE_DRAFT_VERSION }})
+        if: success() || failure()
+        working-directory: app
+        env:
+          CORE: ${{ matrix.core }}
+          CORE_SHA256: ${{ matrix.draft_sha256 }}
+        run: |
+          if command -v sha256sum >/dev/null; then sum="sha256sum"; else sum="shasum -a 256"; fi
+          dir="$RUNNER_TEMP/herdr-core-draft"
+          mkdir -p "$dir"
+          curl -fsSL --retry 5 --retry-delay 10 "https://releases.herdr.dev/core/$HERDR_CORE_DRAFT_VERSION/$CORE" -o "$RUNNER_TEMP/draft-$CORE"
+          echo "$CORE_SHA256  $RUNNER_TEMP/draft-$CORE" | $sum -c -
+          tar -xzf "$RUNNER_TEMP/draft-$CORE" -C "$dir"
+          "$dir/herdr-core" --version
+          HM_TEST_HC="$dir/herdr-core" HM_LIVE_TEST=e2e/live-draft.test.ts e2e/run.sh
 
   # The Android app on an emulator against a Linux computer: the release APK built here (debug-signed), herdr-core and
   # the companion on the runner, the emulator reaching them at 10.0.2.2. e2e/android.sh pairs by typing the link,
@@ -321,6 +371,7 @@ jobs:
           "$RUNNER_TEMP/nsh/bin/nsh" --version
           echo "$RUNNER_TEMP/nsh/bin" >> "$GITHUB_PATH"
           echo "NSH_HOME=$RUNNER_TEMP/nsh" >> "$GITHUB_ENV"
+          sudo apt-get update -qq >/dev/null # the image's package lists may name a version no longer served
           sudo apt-get install -y -qq zsh >/dev/null # android.sh's terminals run zsh, as on a Mac
       - uses: ./.github/actions/nsh-android
       - name: Build the APK

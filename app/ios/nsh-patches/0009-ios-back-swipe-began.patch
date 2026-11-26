@@ -1,0 +1,87 @@
+diff --git a/crates/nsh-platform-ios/src/navigation.rs b/crates/nsh-platform-ios/src/navigation.rs
+index c137a1059..a9563cc66 100644
+--- a/crates/nsh-platform-ios/src/navigation.rs
++++ b/crates/nsh-platform-ios/src/navigation.rs
+@@ -29,11 +29,11 @@ use objc2_quartz_core::{CAMediaTiming, CATransition};
+ use objc2_ui_kit::{
+     NSForegroundColorAttributeName, UIAdaptivePresentationControllerDelegate, UIBarButtonItem,
+     UIBarButtonSystemItem, UIBehavioralStyle, UIColor, UIEdgeInsets, UIGestureRecognizer,
+-    UIGestureRecognizerDelegate, UIInterfaceOrientationMask, UIModalPresentationStyle,
+-    UIModalTransitionStyle, UINavigationBar, UINavigationBarAppearance, UINavigationController,
+-    UINavigationControllerDelegate, UINavigationItem, UINavigationItemLargeTitleDisplayMode,
+-    UIPresentationController, UIResponder, UIScrollView, UIView, UIViewAutoresizing,
+-    UIViewController,
++    UIGestureRecognizerDelegate, UIGestureRecognizerState, UIInterfaceOrientationMask,
++    UIModalPresentationStyle, UIModalTransitionStyle, UINavigationBar, UINavigationBarAppearance,
++    UINavigationController, UINavigationControllerDelegate, UINavigationItem,
++    UINavigationItemLargeTitleDisplayMode, UIPresentationController, UIResponder, UIScrollView,
++    UIView, UIViewAutoresizing, UIViewController,
+ };
+ 
+ use crate::{mount::SharedMounter, native_view::NshView};
+@@ -646,6 +646,30 @@ define_class!(
+         }
+     }
+ 
++    impl StackDelegate {
++        /// A swipe back began: end editing on the page it takes away, so the
++        /// keyboard hides while the finger is still down. Not when the swipe
++        /// asks to begin: work that holds the main thread there (resigning a
++        /// web view's editor, and what the keyboard leaving brings) runs
++        /// before the swipe begins, which it then does from wherever the
++        /// finger has got to, and UIKit cancels a pop begun that far along
++        /// and let go without speed. Begun, the pop follows the finger from
++        /// where it started.
++        #[unsafe(method(nshBackBegan:))]
++        fn back_began(&self, recognizer: &UIGestureRecognizer) {
++            if recognizer.state() == UIGestureRecognizerState::Began
++                && let Some(view) = recognizer.view()
++                && let Some(editor) = first_responder(&view)
++            {
++                // The outgoing view stays attached until the pop ends.
++                self.ivars()
++                    .editor
++                    .replace(Some(Weak::from_retained(&editor)));
++                view.endEditing(true);
++            }
++        }
++    }
++
+     unsafe impl UIGestureRecognizerDelegate for StackDelegate {
+         /// Swipe back: only with something to go back to, if the top
+         /// screen allows it.
+@@ -657,18 +681,6 @@ define_class!(
+                 Ok(m) => m.as_ref().is_some_and(|m| m.stack_can_pop(stack)),
+                 Err(_) => false,
+             };
+-            if allowed
+-                && let Some(view) = recognizer.view()
+-                && let Some(editor) = first_responder(&view)
+-            {
+-                // The outgoing view stays attached until the pop ends.
+-                // Resign now, after the permission/root/transition guards,
+-                // so the keyboard hides while the finger is still down.
+-                self.ivars()
+-                    .editor
+-                    .replace(Some(Weak::from_retained(&editor)));
+-                view.endEditing(true);
+-            }
+             allowed
+         }
+     }
+@@ -793,11 +805,15 @@ impl StackHost {
+         // default delegate prevents popping with a hidden navigation bar.
+         if let Some(pop) = nav.interactivePopGestureRecognizer() {
+             pop.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
++            // SAFETY: the delegate lives as long as the stack.
++            unsafe { pop.addTarget_action(&delegate, objc2::sel!(nshBackBegan:)) };
+         }
+         if nav.respondsToSelector(objc2::sel!(interactiveContentPopGestureRecognizer))
+             && let Some(pop) = nav.interactiveContentPopGestureRecognizer()
+         {
+             pop.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
++            // SAFETY: the delegate lives as long as the stack.
++            unsafe { pop.addTarget_action(&delegate, objc2::sel!(nshBackBegan:)) };
+         }
+         Self {
+             container,

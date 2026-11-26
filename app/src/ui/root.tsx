@@ -1,6 +1,6 @@
 // The app: pairing on first launch, then home ⇄ space ⇄ settings over one live store, with alerts and sheets
 // over every screen.
-import { cleanup, colorScheme, computed, createAnimatedValue, effect, Keyboard, platform, safeAreaInsets, setColorScheme, signal, Storage, Text, Video, View, windowSize } from 'nsh'
+import { cleanup, colorScheme, computed, createAnimatedValue, effect, Keyboard, keyboardFrame, platform, safeAreaInsets, setColorScheme, signal, Storage, Text, Video, View, windowSize } from 'nsh'
 import { createNavStack, NavPage, NavStack } from 'nsh/base'
 import type { ViewSwitchProps } from './view-switch.tsx'
 import type { Store } from '../store.ts'
@@ -152,7 +152,11 @@ function Connected(props: { deps: RootDeps; store: Store; link: Link; unpaired: 
     const terminal = progress.paneFor(a.task)
     alerts.ring(a.kind === 'wait' ? 'blocked' : 'done', { id: 0, title: a.title, body: a.body, level: 'info', action: terminal ? { terminal } : undefined }, store.appActive)
   }
-  const offPage = followPage({ front: (f) => { store.appActive = f; if (f) void updates.inFront() }, open: (a) => openTerminal(a), home: () => nav.popToRoot(), network: () => store.networkChanged() })
+  // Android shows the keyboard by itself for a focused box when the app comes back as a new window, as it does after a
+  // while away (a snapshot first; dumpsys input_method: SHOW_AUTO_EDITOR_FORWARD_NAV). A box left focused with the
+  // keyboard put away lets go of its focus on the way out, so the keyboard stays away; one with it up keeps both.
+  const away = () => { if (platform.os === 'android' && keyboardFrame().height === 0) Keyboard.dismiss() }
+  const offPage = followPage({ front: (f) => { store.appActive = f; if (f) void updates.inFront(); else away() }, open: (a) => openTerminal(a), home: () => nav.popToRoot(), network: () => store.networkChanged() })
   const offConn = store.conn.sub((c) => { if (c === 'unpaired') props.unpaired() }, 'Root.unpaired')
   const conn = useSignal(store.conn)
   effect(() => store.setBackgroundWatch(prefs().stayConnected))

@@ -120,6 +120,7 @@ test('a computer that does not answer is not called connected, and shows no rout
   await app.waitFor('text:Reconnecting…')
   expect(app.texts()).not.toContain('Connected')
   expect(app.texts()).not.toContain('Direct to your computer')
+  expect(app.texts()).not.toContain('Finding the route…')
   expect(app.texts()).toContain(E2E)
 })
 
@@ -136,6 +137,18 @@ test('Forget still asks first, and says what it does only then: on the page it r
   await app.press('id:forget')
   expect(await asked).toBe('Forget studio?')
   expect(app.texts()).toContain('studio')
+})
+
+test('Forget, once the person says so, leaves the computer for the pairing screen, and a new code pairs again', async () => {
+  const app = await settings({})
+  app.onDialog(() => 'Forget')
+  await app.press('id:forget')
+  await app.waitFor('id:pair-link')
+  expect(app.count('id:settings')).toBe(0)
+  await app.type('id:pair-link', 'http://192.0.2.10:7681/#pair=GOOD-CODE')
+  await app.press('id:pair')
+  await app.waitFor('id:settings')
+  expect(app.count('id:pair-link')).toBe(0)
 })
 
 const WORDS: Record<string, [string, string]> = {

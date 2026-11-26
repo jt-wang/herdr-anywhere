@@ -86,6 +86,21 @@ jobs:
         run: |
           python3 app/e2e/ios-pin-pair.test.py
           python3 app/e2e/ios-title-pair.test.py
+      # The device suites' own blocks (cleanup, failure logs, the cut's socket check, evidence exports, the XCTest
+      # helpers that compile alone), run without a simulator.
+      - name: Device suites' blocks without a simulator
+        run: |
+          for t in background-expiry chat-away-only chat-cut chat-evidence chat-failure pin-evidence pin-logs subscriber-source zoom-logs; do
+            echo "== ios-$t.test.py"; python3 "app/e2e/ios-$t.test.py"
+          done
+          sh app/e2e/ios-zoom-baseline-test.sh
+          sh app/e2e/ios-pin-trace-test.sh
+      # The release groups (groups.sh release: what the nightly Devices run takes and a release must pass) and the
+      # check of one commit before a release (release-gate.py), on made-up runs.
+      - name: Release groups and the release check
+        run: |
+          sh app/e2e/ci/groups.sh --self-test
+          python3 -I app/e2e/ci/release-gate.py --self-test
       - name: Native diagnostic consent and upgrade defaults
         run: |
           swiftc app/ios/Sources/DiagnosticLog.swift app/ios/Tests/DiagnosticLogTests.swift -o "$RUNNER_TEMP/diagnostic-consent-tests"
@@ -168,6 +183,12 @@ jobs:
       - run: nsh --version && nsh check && scripts/test.sh
         working-directory: app
       - run: python3 e2e/chat-away-check.test.py
+        working-directory: app
+      # Where the chat leaves the reader when work opens, a poll lands while reading and a reply comes at the end.
+      - run: python3 e2e/chat-hierarchy-trace.test.py
+        working-directory: app
+      # The connection trace the iOS suites save (e2e/connection-evidence.ts): its own tests, outside scripts/test.sh's set.
+      - run: scripts/test.sh e2e/connection-evidence.test.ts e2e/connection-evidence-restart.test.ts e2e/connection-hook-boundary.test.ts e2e/connection-subscriber-evidence.test.ts
         working-directory: app
       - name: Keep nsh crash reports after a failed test
         if: failure()

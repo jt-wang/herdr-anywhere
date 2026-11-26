@@ -517,7 +517,9 @@ to_home # from the pane the notification opened
 case "$ANDROID_SERIAL" in emulator-*)
   ANDROID_SERIAL="$ANDROID_SERIAL" python3 "$app/e2e/android-folder-keyboard.py" acme-api
   before_compact=$("$hc" ls --json | python3 -c 'import json,sys; print(json.dumps([t["address"] for t in json.load(sys.stdin)["terminals"]]))')
-  tap new-terminal
+  # The helper has just put the screen size, density and text size back. On CI a tap right after left the sheet open
+  # with ~/src/acme-api chosen and Terminal still on it; suspected: the sheet laid out again after the tap's dump.
+  tap_steady new-terminal
   started_in /src/acme-api "$before_compact" || { echo "FAIL: compact folder picker did not create a new terminal in the selected folder"; exit 1; }
   to_home
   # The text size changed while the picker is open, both ways across where its title stops staying at the top. The

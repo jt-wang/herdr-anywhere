@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -67,6 +68,68 @@ func TestChatSetupInstallAndRemove(t *testing.T) {
 	}
 	if code, _ := setupReq(t, f, token, "PUT", "/api/chat-setups/nope"); code != 404 {
 		t.Fatalf("unknown agent: %d", code)
+	}
+}
+
+// plainSetup is an agent's setup without the confirmation Pi asks for (Cursor's): a changed file is replaced or
+// removed only with force; `broken` fails every write.
+type plainSetup struct {
+	agent        string
+	state        chat.SetupState
+	broken       bool
+	forcedWrites int
+}
+
+func (p *plainSetup) Agent() string            { return p.agent }
+func (p *plainSetup) Name() string             { return p.agent }
+func (p *plainSetup) File() string             { return "/x/" + p.agent }
+func (p *plainSetup) Reload() string           { return "" }
+func (p *plainSetup) Version() int             { return 1 }
+func (p *plainSetup) State() chat.SetupState   { return p.state }
+func (p *plainSetup) Install(force bool) error { return p.write(force, chat.Installed) }
+func (p *plainSetup) Remove(force bool) error  { return p.write(force, chat.Absent) }
+func (p *plainSetup) write(force bool, to chat.SetupState) error {
+	switch {
+	case p.broken:
+		return os.ErrPermission
+	case p.state == chat.Changed && !force:
+		return chat.ErrChanged
+	}
+	if force {
+		p.forcedWrites++
+	}
+	p.state = to
+	return nil
+}
+
+// A setup without a confirmation: force=1, and only that, replaces a changed file; a write that fails says so. The
+// list goes by agent.
+func TestChatSetupWithoutConfirmation(t *testing.T) {
+	plain := &plainSetup{agent: "cursor", state: chat.Changed}
+	setups := map[string]chat.Setup{"cursor": plain, "broken": &plainSetup{agent: "broken", state: chat.Absent, broken: true}}
+	for _, a := range []string{"e", "c", "a", "d"} {
+		setups[a] = &plainSetup{agent: a, state: chat.Absent}
+	}
+	f := newFixture(t, func(c *Config) { c.ChatSetups = setups })
+	_, token := f.pair(t)
+	_, b := setupReq(t, f, token, "GET", "/api/chat-setups")
+	var order []string
+	for _, x := range b["setups"].([]any) {
+		order = append(order, x.(map[string]any)["agent"].(string))
+	}
+	if got := fmt.Sprint(order); got != "[a broken c cursor d e]" {
+		t.Fatalf("listed %s", got)
+	}
+	for _, q := range []string{"", "?force=yes", "?force=true"} {
+		if code, b := setupReq(t, f, token, "PUT", "/api/chat-setups/cursor"+q); code != 409 || b["state"] != "changed" {
+			t.Fatalf("PUT%s on a changed file: %d %v", q, code, b)
+		}
+	}
+	if code, b := setupReq(t, f, token, "PUT", "/api/chat-setups/cursor?force=1"); code != 200 || b["state"] != "installed" || plain.forcedWrites != 1 {
+		t.Fatalf("forced PUT: %d %v (forced writes %d)", code, b, plain.forcedWrites)
+	}
+	if code, _ := setupReq(t, f, token, "PUT", "/api/chat-setups/broken"); code != 500 {
+		t.Fatalf("a failed write: %d", code)
 	}
 }
 

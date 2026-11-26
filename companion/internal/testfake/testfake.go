@@ -31,11 +31,12 @@ type Spec struct {
 	Else int `json:"else,omitempty"`
 }
 
-// Reply is one answer of a fake to a subcommand, done in this order: Write, Append, Print, Fail, Exec, Cat.
+// Reply is one answer of a fake to a subcommand, done in this order: Write, Append, Stdin, Print, Fail, Exec, Cat.
 type Reply struct {
 	If     string `json:"if,omitempty"`     // a file that must exist for this reply ("{2}" too)
 	Write  string `json:"write,omitempty"`  // a file the call's arguments are written to, as one line
 	Append string `json:"append,omitempty"` // a file the call's arguments are added to, as one line
+	Stdin  string `json:"stdin,omitempty"`  // a file the first line read on stdin is written to (a request to connect)
 	Print  string `json:"print,omitempty"`  // printed, with a newline after
 	Cat    string `json:"cat,omitempty"`    // a file printed as it is
 	// Fail: a file printed to stderr, and exit 5, as hc says an error (hc 0.1.19: {"error":{"kind":…}} on stderr).

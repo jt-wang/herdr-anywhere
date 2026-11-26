@@ -9,6 +9,7 @@ test('a finished turn folds its steps behind one line: how long it worked and ho
   expect(foldLine(turn({ steps: steps(5), secs: 130 }))).toBe('Worked for 2m · 5 steps')
   expect(foldLine(turn({ steps: steps(1), secs: 20 }))).toBe('Worked for <1m · 1 step')
   expect(foldLine(turn({ steps: steps(3) }))).toBe('3 steps')
+  expect(foldLine(turn({ end: 'open', steps: steps(2), secs: 130 }))).toBe('Working… · 2 steps')
 })
 
 test('open and finished turns fold their work until tapped; a turn with no work has no line', () => {
@@ -31,6 +32,7 @@ test('what you said while it worked stays out of the fold; the fold line counts 
 test('an agent that says its conversation only while it works: the view says so by its name, and that its next turn shows it', () => {
   expect(unknownText('not-reported', 'OpenCode')).toBe("Can't tell which conversation this is yet. It shows once OpenCode does some work.")
   expect(unknownText('ambiguous', 'OpenCode')).toBe("Can't tell for sure which conversation this is.")
+  expect(unknownText('behind')).toBe("The record hasn't caught up with the screen yet.")
 })
 
 test('the HTTP transcript stays live while working and uses a 30 s idle fallback', () => {
@@ -58,6 +60,9 @@ test('a file\'s size as people say it', () => {
 test('a change\'s lines numbered as in the file: a removed line by its old number, the rest by their new one', () => {
   const rows = changeRows({ file: 'a', added: 2, deleted: 1, hunks: [{ oldStart: 41, newStart: 41, lines: [' a', '-b', '+c', '+d'] }, { oldStart: 90, newStart: 91, lines: [' z'] }] })
   expect(rows.map((r) => `${r.mark}${r.num}`)).toEqual([' 41', '-42', '+42', '+43', 'gap0', ' 91'])
+  // Old and new numbers apart, and a line removed after two added: each kind counts only in its own file.
+  const apart = changeRows({ file: 'a', added: 2, deleted: 2, hunks: [{ oldStart: 41, newStart: 51, lines: [' a', '-b', '+c', '+d', '-e', ' f'] }] })
+  expect(apart.map((r) => `${r.mark}${r.num} ${r.text}`)).toEqual([' 51 a', '-42 b', '+52 c', '+53 d', '-43 e', ' 54 f'])
 })
 
 test('a video\'s length reads as a player shows it', () => {

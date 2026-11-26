@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -15,6 +14,7 @@ import (
 
 	"herdr-anywhere/companion/internal/chat"
 	"herdr-anywhere/companion/internal/chat/pi"
+	"herdr-anywhere/companion/internal/proc"
 )
 
 // PaneReport says what one pane did for one thing, read from the agent's own
@@ -368,7 +368,7 @@ func cut(s string, n int) string {
 func hcGet(hc, addr string) (HCDetail, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, hc, "get", addr, "--json").Output()
+	out, err := proc.CommandContext(ctx, hc, "get", addr, "--json").Output()
 	if err != nil {
 		return HCDetail{}, err
 	}
@@ -395,7 +395,7 @@ func hcGet(hc, addr string) (HCDetail, error) {
 func gitSince(cwd string, since time.Time) ([]string, int, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "git", "-C", cwd, "log", "--since=@"+strconv.FormatInt(since.Unix(), 10), "--format=%h %s").Output()
+	out, err := proc.CommandContext(ctx, "git", "-C", cwd, "log", "--since=@"+strconv.FormatInt(since.Unix(), 10), "--format=%h %s").Output()
 	if err != nil {
 		return nil, 0, err
 	}
@@ -405,7 +405,7 @@ func gitSince(cwd string, since time.Time) ([]string, int, error) {
 			commits = append(commits, l)
 		}
 	}
-	st, err := exec.CommandContext(ctx, "git", "-C", cwd, "status", "--porcelain").Output()
+	st, err := proc.CommandContext(ctx, "git", "-C", cwd, "status", "--porcelain").Output()
 	if err != nil {
 		return commits, 0, nil
 	}

@@ -14,6 +14,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"herdr-anywhere/companion/internal/proc"
 )
 
 // TUI is one program running in its own herdr-core.
@@ -56,7 +58,7 @@ func Start(t *testing.T, env []string, dir, bin string, args ...string) *TUI {
 }
 
 func (u *TUI) hcRun(args ...string) (string, error) {
-	cmd := exec.Command(u.hc, args...)
+	cmd := proc.Command(u.hc, args...)
 	cmd.Env = u.env
 	out, err := cmd.CombinedOutput()
 	return string(out), err

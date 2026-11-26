@@ -10,11 +10,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
+
+	"herdr-anywhere/companion/internal/proc"
 )
 
 var ErrNotFound = errors.New("herdr-core's hc not found (tried --hc, hc and herdr-core on PATH, and the same in ~/.local/bin, on Windows in %LOCALAPPDATA%\\Programs\\herdr-core)")
@@ -23,7 +24,7 @@ var ErrNotFound = errors.New("herdr-core's hc not found (tried --hc, hc and herd
 func Version(path string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, path, "--version").Output()
+	out, err := proc.CommandContext(ctx, path, "--version").Output()
 	if err != nil {
 		return "", fmt.Errorf("%s --version: %w", path, err)
 	}

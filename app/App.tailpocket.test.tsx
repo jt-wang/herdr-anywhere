@@ -52,6 +52,20 @@ test('Scan QR code reads the invite from the camera and pairs with it', async ()
   expect(calls(app, 'tailPocket.scan')).toEqual([{ prefix: 'herdr1:', prefix2: 'herdr2:' }])
 })
 
+test('a scan the person cancels says nothing; a phone that cannot scan says to paste', async () => {
+  let n = 0
+  const scan = () => { throw new Error(n++ === 0 ? 'cancelled' : 'unsupported') }
+  const app = await open('./App.tsx', { platform: 'ios', host: { handlers: handlers({ 'tailPocket.scan': scan }) }, network: { '*': { error: 'offline' } } })
+  await app.waitFor('id:pair-scan')
+  await app.press('id:pair-scan')
+  await app.waitUntil(() => calls(app, 'tailPocket.scan').length === 1)
+  await new Promise((r) => setTimeout(r, 200))
+  expect(app.shows('text:Scanning failed (cancelled).')).toBe(false)
+  await app.press('id:pair-scan')
+  await app.waitFor("text:This phone can't scan here. Paste the invite instead.")
+  expect(app.shows('id:pair-link')).toBe(true)
+})
+
 test('an expired invite says so, and the pairing screen stays', async () => {
   const expired = () => { throw new Error('expired') }
   const app = await open('./App.tsx', { platform: 'ios', host: { handlers: handlers({ 'tailPocket.pair': expired }) }, network: { '*': { error: 'offline' } } })

@@ -21,6 +21,7 @@ import (
 	"golang.org/x/term"
 	"rsc.io/qr"
 
+	"herdr-anywhere/companion/internal/proc"
 	"herdr-anywhere/companion/internal/tailcat"
 )
 
@@ -49,7 +50,7 @@ var openImage = func(path string) error {
 	if err != nil {
 		return err
 	}
-	return exec.Command(argv[0], argv[1:]...).Run()
+	return proc.Command(argv[0], argv[1:]...).Run()
 }
 
 // imageOpener is the command that shows path in the system's image viewer. Over ssh a Mac or Windows viewer would open

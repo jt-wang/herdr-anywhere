@@ -1,7 +1,7 @@
 # The app's matched NSH runtime
 
 The app remains on NSH v0.3.0 (`76fa8a7fed47ea51aea01fa85bb40960be15d984`),
-with patches0001–0008 and Rust1.99.1. `key.sh` hashes the actual patch files;
+with patches0001–0009 and Rust1.99.1. `key.sh` hashes the actual patch files;
 never write a new key onto an old binary or framework.
 
 0006 backports [`Text shimmer`](https://github.com/jt-wang/nsh/pull/1) from
@@ -28,6 +28,17 @@ needed stayed: about 190 dp of blank under the chat's end, and a decision
 card's own answer opened cut. Unmoved viewports and user scrolling do not
 re-reveal the input. The regression is `app/e2e/android-own-answer.py`
 (android-ask.sh runs it).
+
+0009 ends editing when an iOS swipe back has begun, not when it asks to
+begin. Resigning there runs before UIKit begins the swipe, as does main-thread
+work it brings: in CI's miss, on a terminal with its web editor focused, the
+swipe began about half a second late, from wherever the finger had got to,
+and UIKit cancelled a pop begun that far along and let go without speed
+(about 1 in 288 edge swipes). Begun, the
+pop follows the finger from where it started, and the keyboard still hides
+during the drag. Holding the main thread 500 ms there, the swipes went back
+9 of 24 times before and 24 of 24 after. The regression is
+`app/e2e/ios-edge-back.sh` (Devices' ios-edge groups).
 
 ## Android and web
 

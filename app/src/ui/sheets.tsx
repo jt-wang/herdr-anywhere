@@ -124,6 +124,8 @@ export type RenameTarget = { kind: 'space' | 'tab'; id: string; current: string 
 export function RenameSheet(props: { store: Store; target: Signal<RenameTarget | null> }) {
   const above = useAboveKeyboard()
   const text = signal('')
+  // The box starts on the current name. The sheet opens from a set target, which fires no onOpenChange.
+  effect(() => { const t = props.target(); if (t) text.set(t.current) })
   const save = () => {
     const t = props.target()
     if (!t) return
@@ -133,7 +135,7 @@ export function RenameSheet(props: { store: Store; target: Signal<RenameTarget |
     props.target.set(null)
   }
   return (
-    <Sheet open={props.target() !== null} side="bottom" onOpenChange={(o) => { if (!o) props.target.set(null); else text.set(props.target()?.current ?? '') }}
+    <Sheet open={props.target() !== null} side="bottom" onOpenChange={(o) => { if (!o) props.target.set(null) }}
       popupClass={`${PANEL} px-4 pt-3 pb-[env(safe-area-inset-bottom)]`} backdropClass={PANEL_BACKDROP} popupStyle={above()}>
       <View class="gap-2">
         <Text class="text-[15px] font-semibold text-foreground">{props.target()?.kind === 'tab' ? t('renameTab') : t('renameSpace')}</Text>

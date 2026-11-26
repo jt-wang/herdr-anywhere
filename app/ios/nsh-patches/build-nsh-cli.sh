@@ -5,8 +5,8 @@
 set -eu
 here=$(cd "$(dirname "$0")" && pwd -P)
 base=76fa8a7fed47ea51aea01fa85bb40960be15d984
-for n in 1 2 3 4 5 6 7 8; do
-  (set -- "$here"/000$n-*.patch; [ "$#" -eq 1 ] && [ -f "$1" ]) || { echo "expected all eight nsh patches" >&2; exit 1; }
+for n in 1 2 3 4 5 6 7 8 9; do
+  (set -- "$here"/000$n-*.patch; [ "$#" -eq 1 ] && [ -f "$1" ]) || { echo "expected all nine nsh patches" >&2; exit 1; }
 done
 key=$("$here/key.sh")
 verify() {

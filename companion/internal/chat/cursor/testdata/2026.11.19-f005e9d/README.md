@@ -14,7 +14,8 @@ Before copying, an exact-key scan found no matches in the source fixtures.
 The research CLI had persisted the key in a separate auth cache; that cache was
 removed, never copied. These exports contain no authentication files.
 
-Sanitization replaced home/host names and provider model identifiers, removed
+Sanitization replaced home/host names (including the Cursor project directory
+name derived from the workspace path) and provider model identifiers, removed
 opaque reasoning signatures and the session blob-encryption key. JSON blobs and
 protobuf reference hashes were recalculated; protobuf field layout and schema
 were preserved. No messages, tool results or errors were synthesized. The fixtures

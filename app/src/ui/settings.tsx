@@ -3,7 +3,7 @@ import { cleanup, platform, Scroll, signal, Text, View } from 'nsh'
 import { AlertDialog } from './kit.tsx'
 import { explain, type Store } from '../store.ts'
 import { setupChangedText, type ChatSetup } from '../model/chat.ts'
-import { agentsLine, parseAgents, pickLine, switchLine, type AgentChoice } from '../model/progress.ts'
+import { agentsLine, parseAgents, pickLine, switchLine, type AgentChoice, type Cli } from '../model/progress.ts'
 import { busyWord, runUpdate, useUpdates } from './update.tsx'
 import { APP_VERSION, type Updates } from '../updates.ts'
 import { companionVersion, type Link, type Linker, type Route } from '../link.ts'
@@ -370,8 +370,8 @@ export function SettingsScreen(props: { updates?: Updates; store: Store; prefs: 
   // version one); the page turns on once the computer has it.
   const picking = signal<AgentChoice[] | null>(null)
   const pickNote = signal('')
-  const run = async (line: string) => {
-    const r = await props.store.exec(line, { timeout: 20 })
+  const run = async (line: Cli) => {
+    const r = await props.store.companion(line, 20)
     if (r.code !== 0) throw new Error(r.stderr.trim() || `exit ${r.code}`)
     return r.stdout
   }
@@ -505,7 +505,7 @@ export function SettingsScreen(props: { updates?: Updates; store: Store; prefs: 
                 <View role="button" testID={`agent-${a().id}`} disabled={!a().usable} onPress={() => { if (a().usable) void pick(a()) }}
                   class={`min-h-10 py-1.5 justify-center ${a().usable ? 'active:opacity-70' : 'opacity-50'}`}>
                   <Text class="text-[14px] text-foreground">{a().name}</Text>
-                  <If when={a().needs ? t('agentTooOld', { need: a().needs, have: a().version }) : a().note}>{(n) => <Text class="text-[12px] text-sidebar-foreground">{n()}</Text>}</If>
+                  <If when={a().needs ? t('agentTooOld', { need: a().needs, have: a().version }) : a().script ? t('agentScriptOnly') : a().note}>{(n) => <Text class="text-[12px] text-sidebar-foreground">{n()}</Text>}</If>
                 </View>
               )}</Each>
             </If>

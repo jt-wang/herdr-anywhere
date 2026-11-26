@@ -14,7 +14,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -25,6 +24,7 @@ import (
 	"time"
 
 	"herdr-anywhere/companion/internal/chat"
+	"herdr-anywhere/companion/internal/proc"
 )
 
 // Reader reads the rollout files under Dir, Codex's home (CODEX_HOME, else ~/.codex).
@@ -111,7 +111,7 @@ func descendants(pid int) []int {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "ps", "-A", "-o", "pid=,ppid=").Output()
+	out, err := proc.CommandContext(ctx, "ps", "-A", "-o", "pid=,ppid=").Output()
 	if err != nil {
 		return nil
 	}
@@ -168,7 +168,7 @@ func openFiles(pids []int) ([]string, error) {
 	// lsof exits 1 when one of the processes has gone; what it printed still holds.
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	out, _ := exec.CommandContext(ctx, lsof, "-nP", "-Fn", "-p", strings.Join(ps, ",")).Output()
+	out, _ := proc.CommandContext(ctx, lsof, "-nP", "-Fn", "-p", strings.Join(ps, ",")).Output()
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}

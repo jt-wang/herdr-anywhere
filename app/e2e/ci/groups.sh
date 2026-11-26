@@ -28,10 +28,14 @@
 # version, and on iOS how long after leaving the screen it can still post; and ios-kitty (ios, key kitty: Oh My
 # Pi's pictures, e2e/ios-kitty.sh); and ios-pinorder and android-pinorder (key pinorder: Pinned order on an iPhone SE, 375 pt,
 # and at 360 dp, light and dark, with screenshots; pin_order_before takes those of the build before).
+# release: every group a push runs and the named ones that assert what the app does on the device (release_named),
+# as the nightly run takes them and a release must pass on its own commit (release-gate.py). Not in it:
+# ios-menus and ios-menus-27 (pictures only) and ios-edge-27 (ios-edge again on iOS 27, an hour).
 android_keys="main panes tunnel notify progress picture"
 android_named="ask stuck chat subkeep title zoom updnotify pinorder"
 ios_keys="a b onerror zoom title onerror27 edge edge27 menus menus27 ask chat chat27 chatfold subkeep notify kitty pinorder"
 all="ios-main ios-b ios-onerror $(for k in $android_keys; do printf 'android-%s ' "$k"; done)android-update remote-picture user-path"
+release_named="ios-onerror-27 ios-edge ios-ask android-ask android-stuck ios-chat ios27-chat android-chat ios-chatfold ios-subkeep android-subkeep ios-title android-title ios-zoom android-zoom android-updnotify ios-notify ios-kitty ios-pinorder android-pinorder"
 named_only="ios-onerror-27 ios-edge ios-edge-27 ios-ask android-ask android-stuck ios-chat ios27-chat android-chat ios-chatfold ios-subkeep android-subkeep ios-title android-title ios-menus ios-menus-27 ios-zoom android-zoom android-updnotify ios-notify ios-kitty ios-pinorder android-pinorder"
 
 json() { printf '['; sep=; for x in "$@"; do printf '%s"%s"' "$sep" "$x"; sep=,; done; printf ']\n'; }
@@ -46,6 +50,7 @@ plan() {
     return 0
   fi
   [ -n "$list" ] || list=$(printf '%s\n' $all)
+  if printf '%s\n' "$list" | grep -qx release; then list=$(printf '%s\n' $list $all $release_named | grep -vx release | sort -u); fi
   for g in $list; do
     case " $all $named_only " in *" $g "*) ;; *) echo "groups.sh: no group named $g; the groups: $all $named_only" >&2; return 2 ;; esac
   done
@@ -106,6 +111,10 @@ if [ "${1:-}" = --self-test ]; then
   check 'ios=["a"] android=["tunnel","picture"] update=false remote=false user_path=true' "android-picture, ios-main,android-tunnel user-path" 0 0
   check 'ios=[] android=[] update=true remote=true user_path=false' "android-update remote-picture" 0 0
   check 'ios=["subkeep"] android=["subkeep"] update=false remote=false user_path=false' "ios-subkeep android-subkeep" 0 0
+  check 'ios=["a","b","onerror","zoom","title","onerror27","edge","ask","chat","chat27","chatfold","subkeep","notify","kitty","pinorder"] android=["main","panes","tunnel","notify","progress","picture","ask","stuck","chat","subkeep","title","zoom","updnotify","pinorder"] update=true remote=true user_path=true' release 0 0
+  check 'ios=["a","b","onerror","zoom","title","onerror27","edge","menus","ask"' "release, ios-menus" 0 0
+  check 'takes no groups' release 1 0
+  for g in $release_named; do case " $named_only " in *" $g "*) ;; *) echo "FAIL: groups.sh self-test: release names $g, which is not a named group"; fail=1 ;; esac; done
   check 'no group named ios-mian' ios-mian 0 0
   check 'no group named android' android 0 0
   check 'ios=["a"] android=[] update=false remote=false user_path=false' "" 3 0

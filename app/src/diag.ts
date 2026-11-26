@@ -27,7 +27,7 @@ const request = {
   result: oneOf('ok', 'error', 'timeout', 'disconnected'),
 }
 const endpoints = ['/api/pair', '/api/info', '/api/folders', '/api/chat/:terminal', '/api/chat/:terminal/steps/:id',
-  '/api/chat/:terminal/images/:id', '/api/chat-setups', '/api/chat-setups/:agent', '/api/file', '/api/file/check',
+  '/api/chat/:terminal/images/:id', '/api/chat-setups', '/api/chat-setups/:agent', '/api/cli', '/api/file', '/api/file/check',
   '/api/file/link', '/api/files', '/api/image', '/api/image/check', '/api/update', '/api/update/check', '/api/update/checks', '/api/update/auto', 'other']
 const rpcMethods = ['hello', 'terminal.run', 'terminal.list', 'terminal.kill', 'terminal.label', 'terminal.attach',
   'terminal.keep', 'terminal.get', 'terminal.send', 'terminal.keys', 'terminal.read', 'doc.get', 'doc.set',

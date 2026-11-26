@@ -73,14 +73,14 @@ export class ProgressData {
   async tellLang() {
     const l = lang()
     if (!this.told || this.told.get() === l) return
-    const r = await this.store.exec(langLine(l), { timeout: 15 })
+    const r = await this.store.companion(langLine(l), 15)
     if (r.code === 0) this.told.set(l)
   }
 
   async refresh() {
     try {
       await this.tellLang()
-      const r = await this.store.exec(trackLine(['tree', '--json']), { timeout: 15 })
+      const r = await this.store.companion(trackLine(['tree', '--json']), 15)
       if (r.code !== 0) throw new Error(r.stderr.trim() || `exit ${r.code}`)
       const next = parseTree(r.stdout)
       const rang = alertsFor(this.tree(), next, this.outcomes, Date.now())

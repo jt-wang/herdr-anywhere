@@ -5,12 +5,15 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
 
 	"herdr-anywhere/companion/internal/hcbin"
+	"herdr-anywhere/companion/internal/proc"
 )
 
 // Which agent does the filing: the user picks one when turning the progress
@@ -29,6 +32,9 @@ type agentChoice struct {
 	// When it is too old: the version it needs and the one here, for the phone to say in its own language.
 	Needs   string `json:"needs,omitempty"`
 	Version string `json:"version,omitempty"`
+	// Script: on Windows it is installed only as a .cmd script that is not npm's, or whose program is missing, so a
+	// pane can't start the agent itself (scriptTarget); the phone says so in its own language.
+	Script bool `json:"script,omitempty"`
 }
 
 type knownAgent struct {
@@ -64,7 +70,7 @@ var agentPaths = func() map[string]string {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
-	out, _ := exec.CommandContext(ctx, sh, "-ic", script.String()).Output()
+	out, _ := proc.CommandContext(ctx, sh, "-ic", script.String()).Output()
 	found := map[string]string{}
 	for _, l := range strings.Split(string(out), "\n") {
 		k, v, ok := strings.Cut(strings.TrimSpace(l), "=")
@@ -82,11 +88,31 @@ var agentPaths = func() map[string]string {
 	return found
 }
 
-var agentVersion = func(path string) string {
+// goos is runtime.GOOS; a test sets another.
+var goos = runtime.GOOS
+
+// agentVersion is what the agent's program says with --version: argv is the program the pane starts (agentTarget).
+var agentVersion = func(argv []string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
-	out, _ := exec.CommandContext(ctx, path, "--version").Output()
+	out, _ := proc.CommandContext(ctx, argv[0], append(argv[1:len(argv):len(argv)], "--version")...).Output()
 	return strings.TrimSpace(string(out))
+}
+
+// agentTarget is the program a pane starts for the agent found at path: on Windows an npm .cmd shim's own program
+// (scriptTarget), found with the PATH given; false for a script whose program can't be found. Elsewhere path itself.
+// Its version is asked of the same program.
+func agentTarget(path, envPath string) ([]string, bool) {
+	if goos == "windows" && windowsScript(path) {
+		return scriptTarget(path, envPath)
+	}
+	return []string{path}, true
+}
+
+// panePath is the PATH a filing pane starts with: the companion's folder, then the companion's PATH (organizerPane).
+func panePath() string {
+	self, _ := os.Executable()
+	return filepath.Dir(self) + string(os.PathListSeparator) + os.Getenv("PATH")
 }
 
 var versionRe = regexp.MustCompile(`(\d+)\.(\d+)\.(\d+)`)
@@ -115,8 +141,15 @@ func organizerAgents() []agentChoice {
 			continue
 		}
 		c := agentChoice{ID: a.id, Name: a.name, Cmd: a.cmd, Usable: true}
+		argv, ok := agentTarget(p, panePath())
+		if !ok {
+			c.Usable, c.Script = false, true
+			c.Note = "installed only as a .cmd script whose program can't be found, which herdr-core can't start as an agent: " + p
+			out = append(out, c)
+			continue
+		}
 		if a.minVersion != ([3]int{}) {
-			if v, old := olderThan(agentVersion(p), a.minVersion); old {
+			if v, old := olderThan(agentVersion(argv), a.minVersion); old {
 				c.Usable = false
 				c.Needs, c.Version = fmt.Sprintf("%d.%d", a.minVersion[0], a.minVersion[1]), v
 				c.Note = fmt.Sprintf("needs %s or later to report whether it is busy; this computer has %s", c.Needs, v)

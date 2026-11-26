@@ -41,7 +41,7 @@ import (
 )
 
 // A var so a test can build two versions of this program.
-var version = "0.3.11"
+var version = "0.3.12"
 
 const defaultPort = "7681"
 
@@ -382,8 +382,12 @@ func serve(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		}
 	})
 	setups := chatSetups(hcPath)
+	self, err := thisFile()
+	if err != nil {
+		logger.Printf("warning: %v; the phone's progress page can't reach this companion", err)
+	}
 	srv := server.New(server.Config{
-		Store: st, HC: hcPath, HCVersion: hcVersion,
+		Store: st, HC: hcPath, HCVersion: hcVersion, Self: self,
 		Name: computerName(), Version: version, WebDir: *web, Logger: logger,
 		Updates: updates, PlainUntil: plain.Until,
 		// The chat view's readers, by the app name each agent reports to herdr-core.

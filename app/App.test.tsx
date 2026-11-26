@@ -52,6 +52,8 @@ test('a choice on a home row answers there; Open, or a choice that wants text, o
   await app.waitUntil(() => app.storage()['fake-keys'] === JSON.stringify([['t1', ['1']]]))
   // Claude Code goes on working: it leaves the queue.
   await app.waitUntil(() => app.count('id:needs-t1') === 0)
+  // A choice that wants no text is answered on home: the pane does not open.
+  expect(app.shows('id:pane-header')).toBe(false)
 
   const typed = await busy()
   await typed.waitFor('id:needs-t1-choice-3')
@@ -65,6 +67,15 @@ test('a choice on a home row answers there; Open, or a choice that wants text, o
   await opened.waitFor('id:needs-t1-open')
   await opened.press('id:needs-t1-open')
   await opened.waitFor('id:answers')
+
+  // An answer the computer refuses leaves the row where it was: the pane does not open.
+  const refused = await busy()
+  await refused.waitFor('id:needs-t1-choice-3')
+  await refused.host.send('fake.fail', { method: 'terminal.keys', message: 'gone' })
+  await refused.press('id:needs-t1-choice-3')
+  await new Promise((r) => setTimeout(r, 500))
+  expect(refused.shows('id:pane-header')).toBe(false)
+  expect(refused.shows('id:needs-t1')).toBe(true)
 })
 
 test('a lost line says so on home and in the pane, with how old what you see is', async () => {
@@ -102,11 +113,15 @@ test("the title opens the switcher: this space's tabs, the other spaces' agents,
   for (const id of ['id:switch-agent-t1', 'id:switch-agent-t2', 'id:switch-new-claude', 'id:switch-new-shell']) expect(app.shows(id)).toBe(true)
   await app.press('id:switch-agent-t1')
   await app.waitFor('id:terminal-t1')
+  await app.waitUntil(() => app.count('id:switch-new-shell') === 0)
   await app.press('id:switcher')
   await app.waitFor('id:switch-tab-tb2')
+  // This space's agents are its tabs, not other spaces' agents too.
+  expect(app.count('id:switch-agent-t2')).toBe(0)
   await app.press('id:switch-tab-tb2')
   await app.waitFor('id:terminal-t2')
   expect(app.shows('id:terminal-t1')).toBe(false)
+  await app.waitUntil(() => app.count('id:switch-new-shell') === 0)
 })
 
 test('the switcher tells two Claude Codes apart as home does: the tab name or title, the status word, what each is doing, its sub-agents', async () => {
@@ -128,9 +143,14 @@ test('the switcher tells two Claude Codes apart as home does: the tab name or ti
   // Its sub-agent under it, and the shell tab as before.
   expect(app.shows('id:switch-sub-t5')).toBe(true)
   expect(app.count('id:switch-tab-tb3 >> text:Terminal')).toBe(1)
-  // A row still opens its tab.
+  // A row still opens its tab, and a sub-agent's row what it prints; either puts the switcher away.
   await app.press('id:switch-tab-tb2')
   await app.waitFor('id:terminal-t2')
+  await app.waitUntil(() => app.count('id:switch-new-shell') === 0)
+  await app.press('id:switcher')
+  await app.waitFor('id:switch-sub-t5')
+  await app.press('id:switch-sub-t5')
+  await app.waitUntil(() => app.count('id:switch-new-shell') === 0)
 })
 
 test('a sub-agent kept as a tab opens that tab from its row on home, with no peek and no second Keep', async () => {
@@ -250,6 +270,27 @@ test('the first time it connects, the app asks to post notifications; only once'
   await app.press('id:back')
   await app.waitFor('text:Needs you')
   expect(app.host.calls().filter((c) => c.name === 'page.allowNotifications').length).toBe(1)
+  // Kept with the phone's settings, so the next launch does not ask again.
+  expect(JSON.parse(app.storage()['fake-prefs'] ?? '{}').askedNotifications).toBe(true)
+})
+
+test('notifications the phone already allows are not asked for; a browser asks only from a tap in Settings', async () => {
+  const allowed = await open('./fixtures/fake.tsx', { host: { params: { scene: 'busy' }, handlers: { 'page.notifications': 'granted', 'page.allowNotifications': 'granted' } } })
+  await allowed.waitFor('text:Needs you')
+  await allowed.waitUntil(() => allowed.host.calls().some((c) => c.name === 'page.notifications'))
+  expect(allowed.host.calls().some((c) => c.name === 'page.allowNotifications')).toBe(false)
+  const web = await open('./fixtures/fake.tsx', { platform: 'web', host: { params: { scene: 'busy' }, handlers: { 'page.notifications': 'default', 'page.allowNotifications': 'granted' } } })
+  await web.waitFor('text:Needs you')
+  await new Promise((r) => setTimeout(r, 300))
+  expect(web.host.calls().some((c) => c.name.startsWith('page.') && c.name.includes('otifications'))).toBe(false)
+})
+
+test('a paired phone that cannot reach its computer does not ask to post notifications yet', async () => {
+  const link = JSON.stringify({ url: 'http://192.0.2.10:7681', token: 't', device: 'd', name: 'studio', enc: 'bin' })
+  const app = await open('./App.tsx', { platform: 'ios', storage: { link }, host: { handlers: { 'page.notifications': 'default', 'page.allowNotifications': 'granted' } }, network: { '*': { error: 'offline' } } })
+  await app.waitFor('text:Connecting…')
+  await new Promise((r) => setTimeout(r, 500))
+  expect(app.host.calls().some((c) => c.name === 'page.notifications' || c.name === 'page.allowNotifications')).toBe(false)
 })
 
 test('a wide screen shows what each agent is doing in its pane header', async () => {
@@ -337,6 +378,36 @@ test('+ offers the agents installed on the computer and starts one with its task
   await app.type('id:task', 'fix the login bug')
   await app.press('id:start')
   await app.waitFor('id:terminal-t1')
+})
+
+test('+ starts the program picked, with its task; one that does not start says why, and the sheet starts over next time', async () => {
+  const app = await open('./fixtures/fake.tsx', { host: { params: { scene: 'empty' } } })
+  await app.waitFor('text:Start a terminal or an agent')
+  await app.press('id:new')
+  await app.waitFor('id:folder-src')
+  await app.press('id:folder-src')
+  await app.waitFor('id:folder-demo-app')
+  await app.press('id:folder-use')
+  await app.press('id:new-claude')
+  await app.type('id:task', 'fix the login bug')
+  await app.host.send('fake.fail', { method: 'terminal.run', message: 'claude: command not found' })
+  await app.press('id:start')
+  await app.waitFor('id:new-error')
+  expect(app.texts()).toContain('claude: command not found')
+  expect(app.count('id:terminal-t1')).toBe(0)
+  // The same sheet tries again once the computer can start it.
+  await app.host.send('fake.fail', { method: 'terminal.run' })
+  await app.press('id:start')
+  await app.waitFor('id:terminal-t1')
+  expect(JSON.parse(app.storage()['fake-runs']).at(-1).slice(-2)).toEqual(['claude', 'fix the login bug'])
+  // Opened again, it starts over: on the home folder, with no task.
+  await app.press('id:back')
+  await app.waitFor('id:new')
+  await app.press('id:new')
+  await app.waitFor('id:folder-src')
+  await app.press('id:folder-use')
+  await app.press('id:new-claude')
+  expect(app.value('id:task')).toBe('')
 })
 
 // New space and New tab open on the folder picker (fixtures/fake.tsx answers /api/folders over a made-up home); the
@@ -483,10 +554,12 @@ test('renaming a space from its menu changes it everywhere', async () => {
   await app.waitFor('id:space-more')
   await pick(app, () => app.press('id:space-more'), 'rename')
   await app.waitFor('id:rename')
+  expect(app.value('id:rename')).toBe('web')
   await app.clear('id:rename')
   await app.type('id:rename', 'frontend')
   await app.press('id:rename-save')
   await app.waitFor('text:frontend › Terminal')
+  await app.waitUntil(() => app.count('id:rename') === 0)
 })
 
 test('a computer that forgot this phone shows pairing again, and a good code pairs', async () => {
@@ -835,6 +908,15 @@ test('the switcher goes on working after it started an agent', async () => {
     await app.waitUntil(() => app.count(`id:switch-new-${key}`) === 0)
     await app.wait(300)
   }
+  // Each started what was picked: Claude Code, a shell, Claude Code.
+  expect(JSON.parse(app.storage()['fake-runs']).slice(-3).map((a: string[]) => a.includes('claude'))).toEqual([true, false, true])
+  // One the computer can't start says so.
+  await app.host.send('fake.fail', { method: 'terminal.run', message: 'claude: command not found' })
+  await app.press('id:switcher')
+  await app.waitFor('id:switch-new-claude')
+  await app.press('id:switch-new-claude')
+  await app.waitFor("text:Couldn't start it")
+  expect(app.texts()).toContain('claude: command not found')
 })
 
 test('an agent pinned on the desktop shows under Pinned on top, and leaves its space; unpinned there, it goes back', async () => {

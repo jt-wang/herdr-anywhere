@@ -26,6 +26,8 @@ type Config struct {
 	HC string
 	// HCVersion is `hc --version`'s output; empty reports "hc": null.
 	HCVersion string
+	// Self is this companion's own program, which /api/cli runs; empty answers 404.
+	Self string
 	// Name is this computer's name, shown to the phone.
 	Name    string
 	Version string
@@ -126,6 +128,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/update/check", s.updateCheck)
 	mux.HandleFunc("GET /api/chat/{addr}", s.chat)
 	mux.HandleFunc("GET /api/chat/{addr}/title", s.chatTitle)
+	mux.HandleFunc("POST /api/cli", s.cli)
 	mux.HandleFunc("GET /api/chat-setups", s.chatSetups)
 	mux.HandleFunc("PUT /api/chat-setups/{agent}", s.chatSetupSet)
 	mux.HandleFunc("DELETE /api/chat-setups/{agent}", s.chatSetupSet)

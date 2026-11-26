@@ -216,7 +216,10 @@ is "$(order)" "$C $E $D $B $A" "a move on another phone shows here"
 before=$(labels "$A" "$B" "$C" "$D" "$E")
 "$adb" shell am force-stop "$id"; "$adb" shell am start -W -n "$id/.MainActivity" >/dev/null
 wait_for "pinned-agent-$E" 40 || say "FAIL: Pinned did not come back after a restart"
-sleep 3
+sleep 3; shot restarted
+# Started again, home is at its top: under Needs you, Pinned's last rows can sit below a 360 dp screen, where the
+# dump has no row. A short swipe up brings them in; on a list that fits, it moves nothing.
+"$adb" shell input swipe 540 1500 540 900 250; sleep 2; shot restarted-scrolled
 is "$(order)" "$C $E $D $B $A" "the app started again shows the same order"
 [ "$before" = "$(labels "$A" "$B" "$C" "$D" "$E")" ] && say "ok: starting again wrote no label" || say "FAIL: starting again changed labels"
 

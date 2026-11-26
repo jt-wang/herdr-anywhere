@@ -193,6 +193,16 @@ test('a layout written by another screen replaces ours, keeping our focus where 
   expect(panes(store.model.tabs()[0].root).map((n) => n.id)).toEqual([a.pane, b.pane])
 })
 
+test('a new tab makes its space the active one', async () => {
+  const { store } = setup()
+  await store.connect()
+  const a = await store.newSpace({ name: 'a' })
+  await store.newSpace({ name: 'b' })
+  expect(store.model.active).not.toBe(a.space)
+  await store.newTab({ space: a.space })
+  expect(store.model.active).toBe(a.space)
+})
+
 test('a stale write loses to the other screen and says so', async () => {
   const { core, store } = setup()
   await store.connect()
@@ -1679,4 +1689,38 @@ test('a Companion restarted on the computer: the phone retries at 1, 2, 4, 8, th
   // In 90 s down it would try 9 times: 1 + 2 + 4 + 8 + 15 × 5 = 90.
   const schedule = [1, 2, 4, 8, 16, 32, 64, 128, 256].map((s) => Math.min(s * 1000, 15_000))
   expect(schedule.reduce((a, b) => a + b, 0)).toBe(90_000)
+})
+
+// The progress page's commands (progress.ts Cli) go through the companion's /api/cli, a run after the other while each
+// exits 0; a companion older than it (the first call answers null) gets the POSIX shell line through machine.exec
+// instead, and never after a run has gone through /api/cli.
+test('a companion command goes through /api/cli, and through machine.exec only to a companion without it', async () => {
+  const cmd = { runs: [['progress', 'organizer', '--agent', 'pi'], ['progress', 'on']], line: 'LINE' }
+  const core = new FakeCore()
+  const lines: string[] = []
+  core.onExec = (line) => { if (line !== 'LINE') return undefined; lines.push(line); return { stdout: 'from exec' } }
+  const calls: string[][] = []
+  let answer: (args: string[]) => { code: number; stdout: string; stderr: string } | null = (args) => ({ code: 0, stdout: args.join(' '), stderr: '' })
+  const store = new Store({ pipe: () => core, setInterval: (() => 0) as any, clearInterval: (() => {}) as any, cli: async (args) => { calls.push(args); return answer(args) } })
+  await store.connect()
+  await settle()
+  expect(await store.companion(cmd)).toEqual({ code: 0, stdout: 'progress on', stderr: '' })
+  expect(calls).toEqual(cmd.runs)
+  expect(lines).toEqual([])
+
+  calls.length = 0
+  answer = () => ({ code: 2, stdout: '', stderr: 'no such agent' })
+  expect(await store.companion(cmd)).toEqual({ code: 2, stdout: '', stderr: 'no such agent' })
+  expect(calls).toEqual([cmd.runs[0]])
+
+  answer = () => null
+  expect((await store.companion(cmd)).stdout).toBe('from exec')
+  expect(lines).toEqual(['LINE'])
+
+  // The first run went through /api/cli; the shell line would run it a second time.
+  calls.length = 0
+  answer = (args) => (args[1] === 'on' ? null : { code: 0, stdout: '', stderr: '' })
+  await expect(() => store.companion(cmd)).rejects.toThrow(tr('cantReachComputer'))
+  expect(calls).toEqual(cmd.runs)
+  expect(lines).toEqual(['LINE'])
 })

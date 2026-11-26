@@ -1,6 +1,6 @@
 // Starts the app over the device's storage: App.tsx for every build, and ios-e2e.tsx with a pairing link to open.
 import { host, mount, platform, Storage } from 'nsh'
-import { Linker } from './link.ts'
+import { companionCli, Linker } from './link.ts'
 import { dropPairFromPage, pageAddress } from './page.ts'
 import { PrefStore } from './prefs.ts'
 import { Store } from './store.ts'
@@ -28,7 +28,7 @@ export function start(o: { pairLink?: string; opensSettings?: boolean; updateEve
       linker: new Linker({ ...io, tunnel }),
       prefs: new PrefStore(io),
       makeStore: (l) => {
-        const store = new Store({ pipe: () => l.pipe(), tunnelled: () => l.link.get()?.via === 'tailpocket', load: io.load, save: io.save, content: l.content() })
+        const store = new Store({ pipe: () => l.pipe(), tunnelled: () => l.link.get()?.via === 'tailpocket', load: io.load, save: io.save, content: l.content(), cli: companionCli(l) })
         store.dialFailure = l.failure
         o.traceConnection?.(store.conn)
         return store

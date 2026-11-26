@@ -229,16 +229,19 @@ export function programIconKey(icon: string | undefined, scheme: 'light' | 'dark
   return scheme === 'light' && ICONS[`${icon}-light`] ? `${icon}-light` : icon
 }
 
+// NativeShell 0.3.0 counts an image's own size (Pi's icon: 800 points) in a scroll view's content, beside where it is
+// drawn, however small it is drawn: a chat with Pi in it ended a screen of nothing below its last turn.
+// `overflow-hidden` keeps an icon's own size out of it.
 export function ProgramIcon(props: { icon: string | undefined; size?: number }) {
   const src = () => ICONS[programIconKey(props.icon, colorScheme() === 'dark' ? 'dark' : 'light')]
   // As herdr's tabs draw them: a one-colour icon in the muted text colour, the others in their own colours.
-  return <Image src={src()} class={iconTinted(props.icon) ? 'tint-muted-foreground' : undefined} style={{ width: props.size ?? 16, height: props.size ?? 16 }} />
+  return <Image src={src()} class={`overflow-hidden ${iconTinted(props.icon) ? 'tint-muted-foreground' : ''}`} style={{ width: props.size ?? 16, height: props.size ?? 16 }} />
 }
 
 const GLYPHS: Record<string, any> = { ...UI, ...PHONE_UI }
 
 export function Glyph(props: { name: keyof typeof GLYPHS; size?: number; class?: string }) {
-  return <Image src={GLYPHS[props.name]} class={props.class ?? 'tint-muted-foreground'} style={{ width: props.size ?? 18, height: props.size ?? 18 }} />
+  return <Image src={GLYPHS[props.name]} class={`overflow-hidden ${props.class ?? 'tint-muted-foreground'}`} style={{ width: props.size ?? 18, height: props.size ?? 18 }} />
 }
 
 export const TOUCH_TARGET = platform.os === 'android' ? 48 : 44

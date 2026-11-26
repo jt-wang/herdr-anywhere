@@ -1,7 +1,7 @@
 // The decision card: what the agent asked (its record, from the computer) laid over where its terminal is now (the
 // screen, model/menu.ts), and the keys each tap sends. Keys as measured on Claude Code 2.1.325 (model/ask.ts).
 import { expect, test } from 'nsh/test'
-import { askCard, ownSteps } from './ask.ts'
+import { askCard, joinWrapped, ownSteps } from './ask.ts'
 import { readMenu } from './menu.ts'
 import { LONG, MULTI, ON_SUBMIT, OWN_TYPED, PLAN, Q1, QONE, REVIEW, TOUCH } from '../testing/screens/claude-2.1.325.ts'
 import * as CX from '../testing/screens/codex-0.167.1.ts'
@@ -34,7 +34,7 @@ test("the first of two questions: the record's words, the terminal's numbers, a 
     [3, 'Only tell the team', 'No change to the code', false],
   ])
   expect(c.rows.map((r) => r.steps)).toEqual([[{ keys: ['1'] }], [{ keys: ['2'] }], [{ keys: ['3'] }]])
-  expect(c.own?.n).toBe(4)
+  expect(c.own).toEqual({ n: 4 }) // "Type something." is no answer of its own yet
   expect(ownSteps(c, 'Ship on Friday')).toEqual([{ keys: ['4'] }, { text: 'Ship on Friday' }])
   expect([c.skip?.n, c.skip?.steps]).toEqual([5, [{ keys: ['5'] }]])
   expect(c.next).toBe(undefined)
@@ -79,6 +79,9 @@ test('a question the record does not have (yet): the screen alone, first line th
 test("a permission: what it wants to run from its report, each option whole, No asks for words after", () => {
   const c = card(TOUCH, undefined, { state: 'blocked', app: 'claude-code', kind: 'permission', msg: 'approve Bash: touch made-by-fake.txt' })!
   expect([c.kind, c.tool, c.what, c.question]).toEqual(['permission', 'Bash', 'touch made-by-fake.txt', 'Do you want to proceed?'])
+  // Claude Code's screen does not say what it is for; its report's tool does.
+  expect(c.action).toBe('run')
+  expect(card(TOUCH, undefined, { state: 'blocked', app: 'claude-code', kind: 'permission', msg: 'approve Write: notes.txt' })!.action).toBe('edit')
   expect(c.rows.map((r) => [r.n, r.label, r.afterNo ?? false])).toEqual([
     [1, 'Yes', false],
     [2, 'Yes, and always allow access to /work/fake-lab/projects/src/fake-shop from this project', false],
@@ -221,4 +224,19 @@ test("a screen's label with the mark in another language still meets the record'
   const screen = AG.Q1_46.replace('(Recommended) Blue', '（推荐）Blue')
   const c = agy(screen, 'Which color should the button be?', 'question', AGY)!
   expect(rows(c)).toEqual([[1, 'Blue', '', true], [2, 'Red', '', false]])
+})
+
+test("the record's question is found however its words wrapped; a record with other options leaves the screen's", () => {
+  const wrapped = { ...RECORD, questions: [{ ...RECORD.questions![0], text: 'Which plan should the\nfake shop  use?' }, RECORD.questions![1]] }
+  expect(card(Q1, wrapped)!.index).toBe(1)
+  const fewer = { ...RECORD, questions: [{ ...RECORD.questions![0], options: RECORD.questions![0].options.slice(0, 2) }, RECORD.questions![1]] }
+  expect(rows(card(Q1, fewer)!).map((r: any) => r[2])).toEqual(rows(card(Q1)!).map((r: any) => r[2]))
+})
+
+test('wrapped lines join with a space, but not between two CJK characters; a wrapped label is not its detail', () => {
+  expect(joinWrapped(['Ship the small', 'fix now'])).toBe('Ship the small fix now')
+  expect(joinWrapped(['发布前先', '跑一遍测试'])).toBe('发布前先跑一遍测试')
+  const opt = (n: number, label: string, lines: string[]) => ({ n, label, full: lines.join(' '), selected: n === 1, typed: false, keys: [String(n)], lines })
+  const c = askCard(asking, { question: 'Which one?', options: [opt(1, 'A label that wraps', ['A label', 'that wraps', 'Its detail']), opt(2, 'B', ['B'])] }, undefined)!
+  expect(c.rows.map((r) => [r.label, r.detail ?? ''])).toEqual([['A label that wraps', 'Its detail'], ['B', '']])
 })

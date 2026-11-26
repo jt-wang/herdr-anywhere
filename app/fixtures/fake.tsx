@@ -180,6 +180,10 @@ if (scene === 'site') {
   ].join('\n'))
   core.docs.set('', { value: doc, version: 1 })
 }
+// What each started terminal runs, in order (terminal.run's argv), where a test reads them (`app.storage()['fake-runs']`).
+const runs: string[][] = []
+const run = core.run.bind(core)
+core.run = (p: any) => { runs.push(p.argv ?? []); void Storage.setItem('fake-runs', JSON.stringify(runs)); return run(p) }
 // Keys pressed in a terminal, where a test reads them (`app.storage()['fake-keys']`); an answered agent goes on working.
 const pressed: [string, string[]][] = []
 core.onKeys = (addr, keys) => {
@@ -347,6 +351,8 @@ host.on('fake.latest', (d: any) => { said = { ...said, latest: d.version } })
 // `app.host.send('fake.hold', { method })`, then `app.host.send('fake.release', {})`.
 host.on('fake.hold', (d: any) => core.holding.add(d.method))
 host.on('fake.release', () => { core.holding.clear(); core.release() })
+// A method the computer refuses from now on with this message: `app.host.send('fake.fail', { method, message })`; no message takes it back.
+host.on('fake.fail', (d: any) => { if (d.message) core.failing.set(d.method, d.message); else core.failing.delete(d.method) })
 // Text the app sent (`terminal.send`), where a test reads it (`app.storage()['fake-sent']`).
 const sent: [string, string, boolean][] = []
 core.onSend = (addr, text, force) => { sent.push([addr, text, force]); void Storage.setItem('fake-sent', JSON.stringify(sent)); flowed(addr, { text }) }

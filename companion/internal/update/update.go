@@ -15,13 +15,14 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"herdr-anywhere/companion/internal/proc"
 )
 
 const (
@@ -280,7 +281,7 @@ func (c Client) Apply(ctx context.Context, rel Release, exe string) error {
 	try, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	var out bytes.Buffer
-	cmd := exec.CommandContext(try, tmp.Name(), "--version")
+	cmd := proc.CommandContext(try, tmp.Name(), "--version")
 	cmd.Stdout = &out
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("the new file doesn't run: %w", err)

@@ -56,15 +56,17 @@ final class EdgeBack: XCTestCase {
 
   /** A swipe that did not go back, as it looked: the screen and the element tree a second after the finger lifted, next
    *  to OUT, then whether it went back after all within 3 s more (late=1: the pop was only slow to finish, the counted
-   *  miss is the test's 1 s wait; late=0: it never began or was undone). The count does not change: late or not, the
-   *  script counts back=0. */
+   *  miss is the test's 1 s wait; late=0: it never began or was undone), and whether the page it started on was still
+   *  the one shown, with the one below it not, both then and at the end (stayed=1). The count does not change: late or
+   *  not, the script counts back=0. */
   func miss(_ tag: String, on: () -> Bool, under: () -> Bool) {
     let base = ((env["OUT"] ?? "/tmp/edge-back.txt") as NSString).deletingPathExtension + "-miss-" + tag
     try? XCUIScreen.main.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: base + ".png"))
     try? app.debugDescription.write(toFile: base + ".tree.txt", atomically: true, encoding: .utf8)
-    var late = false
+    var stayed = on() && !under(), late = false
     for _ in 0..<6 where !late { usleep(500_000); late = !on() && under() }
-    write("miss \(tag) late=\(late ? 1 : 0) shot=\((base as NSString).lastPathComponent).png")
+    stayed = stayed && !late && on() && !under()
+    write("miss \(tag) late=\(late ? 1 : 0) stayed=\(stayed ? 1 : 0) shot=\((base as NSString).lastPathComponent).png")
   }
 
   func swipe(y: CGFloat, x: CGFloat, v: CGFloat) {

@@ -1,7 +1,7 @@
 """Check the explicit background entry and execute its Swift completion predicate."""
 from pathlib import Path
-import hashlib
 import json
+import re
 import shlex
 import os
 import subprocess
@@ -80,17 +80,55 @@ class AwayOnlyTest(unittest.TestCase):
         self.assertLess(source.index('XCTAssertTrue(long'), start)
         self.assertIn('if awayOnly { return }\n      // cut', source)
 
-    def test_default_regression_blocks_are_preserved(self):
+    # The default run (CHAT_AWAY_ONLY unset) still takes the long conversation, its picture, scrolling and reading
+    # anchor, and then the cut, each with its hard assertion, in this order. Away-only skips only these.
+    LONG = ['sent("LIST the files here"', 'XCTAssertTrue(openLast(), "\\(agent) long: no fold")',
+            'XCTAssertTrue(more, ', 'XCTAssertTrue(pics, ', 'XCTAssertTrue(top, ',
+            'let anchorY = ', 'el("show-terminal").tap()', 'el("show-chat").tap()', 'let restored = until(15)',
+            'abs(row.frame.minY - el("chat-scroll").frame.minY - anchorY) < 3\n', 'XCTAssertTrue(restored, ',
+            'XCTAssertTrue(bottom, ']
+    CUT = ['if ctlDo("stop", "stopped") {', 'XCTAssertTrue(off, ', 'XCTAssertTrue(kept, ',
+           'XCTAssertTrue(ctlDo("start", "started")', 'XCTAssertTrue(on, ', 'sent("CHANGE after the restart"']
+
+    def in_order(self, text, markers, what):
+        at = 0
+        for m in markers:
+            i = text.find(m, at)
+            self.assertGreaterEqual(i, 0, f'{what}: no {m} (after the steps before it)')
+            at = i + len(m)
+
+    def no_early_return(self, text, what):
+        # A bare return ends the test: only a failure branch may take it, after its XCTFail. (A return with a value
+        # belongs to a closure, such as until's.)
+        for m in re.finditer(r'\breturn(?=\s*[}\n;])', text):
+            depth, start = 0, None
+            for i in range(m.start() - 1, -1, -1):
+                if text[i] == '}': depth += 1
+                elif text[i] == '{':
+                    if depth == 0: start = i; break
+                    depth -= 1
+            branch = text[start:m.start()] if start is not None else ''
+            self.assertIn('XCTFail(', branch, f'{what}: a return the default run can take: ...{text[max(0, m.start() - 80):m.end()]!r}')
+
+    def test_default_long_and_cut_steps_are_kept(self):
         source = SWIFT.read_text()
-        for begin, end, digest in [
-            ('      // long\n', '      // away\n', 'c8591c976790013acefe410b811c7307decf873d64cd881afa7895da776f8f3d'),
-            ('      // cut\n', '      el("back").tap()', 'edba94e3ce4375d51de4f8fac43fa194d8e0a84dc81bede5b9c29330aacbb710')]:
-            value = source[source.index(begin):source.index(end)]
-            # Only the new wrapper ends after the original long/image/scroll body.
-            if begin.endswith('long\n') and value.rstrip().endswith('}'):
-                value = value[:value.rfind('}')]
-            normalized = '\n'.join(line.strip() for line in value.splitlines()).rstrip()
-            self.assertEqual(hashlib.sha256(normalized.encode()).hexdigest(), digest)
+        start = source.index('if awayOnly {', source.index('shot("\\(agent)-open")'))
+        close = source.index('{', start) + 1 + len(block(source, start))
+        rest = source[close + 1:]
+        self.assertTrue(rest.lstrip().startswith('else {'), 'the long conversation is no longer the default branch')
+        default_at = close + 1 + rest.index('else {')
+        default = block(source, default_at)
+        self.in_order(default, self.LONG, 'default long')
+        self.no_early_return(default, 'default long')
+        after = close + 1 + rest.index('else {') + len('else {') + len(default) + 1
+        cut_at = source.index('      // cut\n', after)
+        self.assertEqual(source[after:cut_at].count('if awayOnly'), 1, 'away-only must skip only the cut')
+        away = source[after:cut_at].rstrip()
+        self.assertTrue(away.endswith('if awayOnly { return }'), 'the cut is not the default path')
+        self.no_early_return(away[:-len('if awayOnly { return }')], 'default away')
+        cut = source[cut_at:source.index('el("back").tap()', cut_at)]
+        self.in_order(cut, self.CUT, 'default cut')
+        self.no_early_return(cut, 'default cut')
 
     def test_background_cut_and_resume_contract_still_present(self):
         source = SWIFT.read_text()

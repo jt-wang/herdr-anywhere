@@ -3,15 +3,19 @@
 import { expect, open, test } from 'nsh/test'
 
 const PRIVACY = 'https://herdr-anywhere.jingtao.io/privacy/'
-const phone = () => open('./App.tsx', { platform: 'ios', host: { handlers: {} }, network: { '*': { error: 'offline' } } })
+const phone = () => open('./App.tsx', { platform: 'ios', host: { handlers: { 'page.notifications': 'default', 'page.allowNotifications': 'granted' } }, network: { '*': { error: 'offline' } } })
+const askedNotifications = (app: any) => app.host.calls().some((c: any) => c.name === 'page.notifications' || c.name === 'page.allowNotifications')
 const tunnelCalls = (app: any) => app.host.calls().filter((c: any) => c.name.startsWith('tailPocket.'))
 
 test('Try it opens the app on sample agents without pairing, the network or the tunnel, and saves no link', async () => {
   const app = await phone()
   await app.waitFor('id:try-it')
+  // Nothing is connected yet, and the sample data has nobody to hear from: neither asks to post notifications.
+  expect(askedNotifications(app)).toBe(false)
   await app.press('id:try-it')
   await app.waitFor('id:needs-t1')
   await app.waitFor('id:demo-notice')
+  expect(askedNotifications(app)).toBe(false)
   const words = app.texts()
   for (const s of ['Needs you', 'Spaces', 'fix login']) expect(words).toContain(s)
   // It answers as the computer would: a choice reaches the agent, which goes on working, then finishes.

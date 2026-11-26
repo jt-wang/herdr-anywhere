@@ -71,6 +71,34 @@ func TestConfirmWaitsForTheUsersAnswer(t *testing.T) {
 	}
 }
 
+// While the computer's user is asked about one phone, a second one asking the same window is a no at once, and the
+// user's yes still goes to the first.
+func TestConfirmAsksAboutOnePhoneAtATime(t *testing.T) {
+	s := &Service{}
+	id, w := s.windows.add()
+	first := confirmAsync(w, context.Background())
+	asking(t, s, id)
+	select {
+	case ok := <-confirmAsync(w, context.Background()):
+		if ok {
+			t.Fatal("a second phone was confirmed while the user was asked about the first")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("a second phone waits on a window that is already asking")
+	}
+	if err := s.Answer(id, true); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case ok := <-first:
+		if !ok {
+			t.Fatal("the first phone did not get the user's yes")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the first phone never heard the user's yes")
+	}
+}
+
 // A phone that goes away (or the 55 s that run out) is no yes, and leaves nothing to answer.
 func TestConfirmIsNoWhenThePhoneLeaves(t *testing.T) {
 	s := &Service{}

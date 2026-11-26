@@ -1,7 +1,8 @@
 // The live connection to herdr-core and the world it shows, driven the way herdr-app's window is
 // (herdr-app/src/window.rs): every change folds into the model, the model is reconciled with the core's
 // terminals, and this machine's layout document is written back with compare-and-set.
-import type { FileApi, ImageApi } from './link.ts'
+import type { CliResult, FileApi, ImageApi } from './link.ts'
+import type { Cli } from './model/progress.ts'
 import { HcClient, HcError, type Pipe, type Stream, type StreamHandlers, type Hello } from './hc/client.ts'
 import { Model, type FolderInfo, type Space, type Tab, newTab, local, machineOfAddress, spaceActiveTab, shownNode, focusedPaneOf, withPane } from './model/model.ts'
 import { captureDoc, replaceDoc, captureView, applyView, type View } from './model/doc.ts'
@@ -56,6 +57,8 @@ export type StoreIO = {
   save?: (key: string, value: string) => void
   /** Pairing-scoped content, separate from the older phone-wide view preferences. */
   content?: ContentIO
+  /** Runs a command of the companion's own program (link.ts companionCli); null from a companion without it. */
+  cli?: (args: string[]) => Promise<CliResult | null>
 }
 
 /** A send from the input box unanswered this long is told apart: herdr-core holding it, or a slow line. herdr-core 0.1.20
@@ -206,7 +209,7 @@ export class Store {
   showNames: () => boolean = () => true
 
   private hc?: HcClient
-  private io: Required<Omit<StoreIO, 'load' | 'save' | 'content' | 'callTimeoutMs' | 'slowSendMs'>> & Pick<StoreIO, 'load' | 'save' | 'content' | 'callTimeoutMs' | 'slowSendMs'>
+  private io: Required<Omit<StoreIO, 'load' | 'save' | 'content' | 'callTimeoutMs' | 'slowSendMs' | 'cli'>> & Pick<StoreIO, 'load' | 'save' | 'content' | 'callTimeoutMs' | 'slowSendMs' | 'cli'>
   private content: Content
   /** The restored layout is display-only until a complete fresh snapshot replaces it. */
   private restored = false
@@ -1819,6 +1822,21 @@ export class Store {
     this.menus.set(addr, menu)
     if (!menu) void this.readChoices(addr, 3)
     this.bump()
+  }
+
+  /** A command of the companion's own program: each of its runs through the companion's /api/cli while they exit 0;
+   *  from a companion older than that, its POSIX shell line through machine.exec. */
+  async companion(c: Cli, timeout = 30): Promise<CliResult> {
+    let r: CliResult | null = null
+    for (const [i, args] of c.runs.entries()) {
+      r = this.io.cli ? await this.io.cli(args) : null
+      // The shell line is every run again: only before the first has run. A companion that stops answering
+      // /api/cli after that (replaced by an older one meanwhile) fails the command instead.
+      if (!r && !i) return this.exec(c.line, { timeout })
+      if (!r) throw new Error(tr('cantReachComputer'))
+      if (r.code !== 0) break
+    }
+    return r!
   }
 
   async exec(line: string, o: { on?: string; cwd?: string; timeout?: number } = {}) {

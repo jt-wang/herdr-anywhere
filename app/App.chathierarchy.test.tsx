@@ -84,3 +84,22 @@ test('reading older work stays put through a poll; scrolling to the end follows 
   await app.clock.runFor(3202)
   expect(app.texts()).toContain('The last check has passed.')
 })
+
+// Pi's icon is 800 points of its own, drawn at 15. NativeShell 0.3.0 counted that in the scroll view's
+// content: a screen of nothing below the last turn, and a chat that scrolled sideways. e2e/chat-hierarchy-trace.test.py
+// reads the trace of this.
+test('a long Pi chat scrolled to its end ends at its last reply', async () => {
+  const turns = Array.from({ length: 12 }, (_, n) => ({ id: `pi-${n}`, from: 'you', said: `Check orchard ${n}`,
+    reply: `Orchard ${n}: ${'The apple trees are healthy. '.repeat(6)}`, end: 'done', steps: [] }))
+  const app = await open('./fixtures/fake.tsx', { width: 375, height: 812, host: { params: { scene: 'single', argv: 'pi', status: 'done', chat: JSON.stringify({ chat: true, turns }) } }, clock: {} })
+  await app.clock.runFor(100)
+  await app.press('id:space-sp1')
+  await app.waitFor('id:terminal-t1')
+  await app.press('id:show-chat')
+  await app.waitFor('id:reply-pi-11')
+  // Opened at its end by the app; then to the top and back by hand, as far as the scroll view goes.
+  await app.scroll('id:chat-scroll', -100000)
+  await app.clock.runFor(300)
+  await app.scroll('id:chat-scroll', 100000)
+  await app.clock.runFor(300)
+})

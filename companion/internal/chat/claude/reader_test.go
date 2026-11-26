@@ -503,9 +503,9 @@ func miss(t *testing.T, err error) string {
 	return m.Reason
 }
 
-// proc starts a process with only these environment variables, as a terminal of a herdr-core started with them. It
+// helperProc starts a process with only these environment variables, as a terminal of a herdr-core started with them. It
 // is this test binary (TestHelperProcess): ps shows no environment of a system program such as /bin/sleep.
-func proc(t *testing.T, env ...string) int {
+func helperProc(t *testing.T, env ...string) int {
 	cmd := exec.Command(os.Args[0], "-test.run=^TestHelperProcess$")
 	cmd.Env = append([]string{"PATH=/usr/bin:/bin", "CHAT_HELPER=1"}, env...)
 	out, _ := cmd.StdoutPipe()
@@ -531,7 +531,7 @@ func TestFind(t *testing.T) {
 		// session (how Claude Code writes procStart on Windows is not measured).
 		t.Skip("the start time comes from ps, which Windows lacks")
 	}
-	pid := proc(t)
+	pid := helperProc(t)
 	good := map[string]any{"pid": pid, "sessionId": sid, "procStart": psStart(t, pid), "version": "2.1.319", "kind": "interactive"}
 	with := func(k string, v any) map[string]any {
 		m := map[string]any{}
@@ -599,7 +599,7 @@ func TestFind(t *testing.T) {
 	}
 	// A Claude Code started where another Claude Code runs (a herdr-core first started from inside one passes its
 	// environment to every terminal) saves no transcript (seen with 2.1.319): none will come.
-	child := proc(t, "CLAUDE_CODE_CHILD_SESSION=1")
+	child := helperProc(t, "CLAUDE_CODE_CHILD_SESSION=1")
 	childFile := with("pid", child)
 	childFile["procStart"] = psStart(t, child)
 	for _, c := range []struct {

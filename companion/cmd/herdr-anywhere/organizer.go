@@ -319,7 +319,8 @@ Anything the user types here that is not a batch is the user correcting the page
 // rolePaneStart starts a labelled helper pane (the filing pane) if no
 // live one carries the label. Its rules and settings are this companion's:
 // written on every call, so an update reaches a pane that already runs.
-// It runs with this binary's folder on PATH so the rules can say herdr-anywhere.
+// It runs with this binary's folder on PATH so the rules can say herdr-anywhere, and with env: herdr-core starts
+// a program with its own environment, and takes another only through its API (hcStart).
 func rolePaneStart(hc string, cfg rolePane, role, rules, settings string, env ...string) (string, error) {
 	if err := os.MkdirAll(filepath.Join(cfg.Dir, ".claude"), 0o700); err != nil {
 		return "", err
@@ -346,21 +347,28 @@ func rolePaneStart(hc string, cfg rolePane, role, rules, settings string, env ..
 	if err != nil {
 		return "", err
 	}
-	self, _ := os.Executable()
-	env = append([]string{"env", "PATH=" + filepath.Dir(self) + string(os.PathListSeparator) + os.Getenv("PATH")}, env...)
-	args := append([]string{"run", "--bg", "--outlive-parent", "--no-parent", "--json", "--name", cfg.Name,
-		"--label", roleLabel + "=" + role, "--cwd", cfg.Dir}, append(env, argv...)...)
-	out, err := runFor(30*time.Second, hc, args...)
-	if err != nil {
-		return "", fmt.Errorf("hc run: %v %s", err, strings.TrimSpace(string(out)))
+	vars := map[string]string{"PATH": panePath()}
+	for _, kv := range env {
+		k, v, _ := strings.Cut(kv, "=")
+		vars[k] = v
 	}
-	var r struct {
-		Address string `json:"address"`
+	// The program itself, found on that PATH as env would: herdr-core starts it, so it is the pane's program in
+	// front, whose status herdr-core reports. An npm .cmd shim on Windows is started as what it runs (scriptTarget).
+	// One the companion's PATH lacks is where `progress agents` found it (agentPaths: the user's shell's PATH, where
+	// some installers add their folder), with its folder on the pane's PATH for what it runs beside it, such as node.
+	if p, err := lookPathIn(argv[0], vars["PATH"]); err == nil {
+		argv[0] = p
+	} else if p := agentPaths()[argv[0]]; p != "" {
+		argv[0] = p
+		vars["PATH"] = filepath.Dir(p) + string(os.PathListSeparator) + vars["PATH"]
 	}
-	if json.Unmarshal(out, &r) != nil || r.Address == "" {
-		return "", fmt.Errorf("hc run: unexpected output %q", strings.TrimSpace(string(out)))
+	t, ok := agentTarget(argv[0], vars["PATH"])
+	if !ok {
+		return "", fmt.Errorf("%s is a script (%s) whose program can't be found; herdr-core starts only a program", cfg.Name, argv[0])
 	}
-	return r.Address, nil
+	argv = append(t, argv[1:]...)
+	return hcStart(hc, map[string]any{"argv": argv, "env": vars, "name": cfg.Name, "cwd": cfg.Dir,
+		"labels": map[string]string{roleLabel: role}, "no_parent": true, "outlive_parent": true})
 }
 
 // organizerWaits is the filing pane when it is up but reports no status: it

@@ -10,11 +10,12 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 	"unicode"
+
+	"herdr-anywhere/companion/internal/proc"
 )
 
 const (
@@ -139,7 +140,7 @@ func (s *Server) toMachine(ctx context.Context, on, dir, name, path string) (str
 			args = append(args, "-i")
 		}
 		args = append(args, "--on", on, "--timeout", fmt.Sprint(machineChunkSeconds))
-		cmd := exec.CommandContext(ctx, s.cfg.HC, append(args, argv...)...)
+		cmd := proc.CommandContext(ctx, s.cfg.HC, append(args, argv...)...)
 		cmd.Stdin = in
 		var out, errs bytes.Buffer
 		cmd.Stdout, cmd.Stderr = &out, &errs

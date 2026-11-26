@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -13,6 +12,7 @@ import (
 	"time"
 
 	"herdr-anywhere/companion/internal/chat"
+	"herdr-anywhere/companion/internal/proc"
 )
 
 type process struct {
@@ -53,7 +53,7 @@ func processInfo(pid int) (process, bool) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
-	b, e := exec.CommandContext(ctx, "ps", "-p", strconv.Itoa(pid), "-o", "ppid=", "-o", "command=").Output()
+	b, e := proc.CommandContext(ctx, "ps", "-p", strconv.Itoa(pid), "-o", "ppid=", "-o", "command=").Output()
 	if e != nil {
 		return process{}, false
 	}
@@ -131,7 +131,7 @@ func processTree() map[int]process {
 	} else if runtime.GOOS == "darwin" {
 		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 		defer cancel()
-		out, err := exec.CommandContext(ctx, "ps", "-axo", "pid=,ppid=,command=").Output()
+		out, err := proc.CommandContext(ctx, "ps", "-axo", "pid=,ppid=,command=").Output()
 		if err != nil {
 			return tree
 		}
@@ -223,7 +223,7 @@ func Hook(input io.Reader, hc string) {
 	if !filepath.IsAbs(hc) {
 		return
 	}
-	cmd := exec.CommandContext(ctx, hc, "label", terminal, chat.LabelPid+"="+strconv.Itoa(pid), chat.LabelSession+"="+p.Conversation, LabelCwd+"="+cwd)
+	cmd := proc.CommandContext(ctx, hc, "label", terminal, chat.LabelPid+"="+strconv.Itoa(pid), chat.LabelSession+"="+p.Conversation, LabelCwd+"="+cwd)
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
 	_ = cmd.Run()

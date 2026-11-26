@@ -63,6 +63,15 @@ test('hello refuses a core older than the desktop app accepts', async () => {
   const core = new FakeCore()
   core.hello.version = '0.1.9'
   await expect(() => new HcClient(core).hello()).rejects.toThrow('0.1.11')
+  const oldest = new FakeCore()
+  oldest.hello.version = '0.1.11'
+  expect((await new HcClient(oldest).hello()).version).toBe('0.1.11')
+})
+
+test('hello refuses a core of another protocol generation', async () => {
+  const core = new FakeCore()
+  core.hello.generation = 2
+  await expect(() => new HcClient(core).hello()).rejects.toThrow('generation 2')
 })
 
 test('hello refuses a core that lacks a method the app needs', async () => {

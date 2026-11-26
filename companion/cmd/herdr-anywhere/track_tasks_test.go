@@ -351,17 +351,23 @@ func TestTheFilingPaneUsesTheCompanionsProgressFile(t *testing.T) {
 	hc := testfake.HC(t, d, "hc", testfake.Spec{Version: "hc 0.1.18", On: map[string][]testfake.Reply{
 		"ls": {{If: ran, Print: `{"terminals":[{"address":"t9","name":"herdr-organizer","state":"live","status":"working","turn":0,"agent":"claude-code"}]}`},
 			{Print: `{"terminals":[]}`}},
-		"get": {{Print: `{"address":"t9","state":"live","labels":{"herdr.role":"organizer"},"status":{"state":"working"}}`}},
-		"run": {{Write: ran, Print: `{"address":"t9"}`}},
+		"get":     {{Print: `{"address":"t9","state":"live","labels":{"herdr.role":"organizer"},"status":{"state":"working"}}`}},
+		"connect": {{Stdin: ran, Print: `{"jsonrpc":"2.0","id":1,"result":{"address":"t9"}}`}},
 	}})
 	if _, err := organizerKick(hc, state, st, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	b, _ := os.ReadFile(filepath.Join(d, "ran"))
-	for _, want := range []string{"HERDR_ANYWHERE_STATE=" + state, "HERDR_TRACK_HERDR=-", "--label herdr.role=organizer"} {
-		if !strings.Contains(string(b), want) {
-			t.Fatalf("hc run lacks %q: %s", want, b)
+	var req struct {
+		Method string
+		Params struct {
+			Env    map[string]string
+			Labels map[string]string
 		}
+	}
+	if err := json.Unmarshal(b, &req); err != nil || req.Method != "terminal.run" || req.Params.Env["HERDR_ANYWHERE_STATE"] != state ||
+		req.Params.Env["HERDR_TRACK_HERDR"] != "-" || req.Params.Labels["herdr.role"] != "organizer" {
+		t.Fatalf("the filing pane was started with %s", b)
 	}
 	// Version one asks the user nothing: the rules never send anything to be ticked.
 	rules, _ := os.ReadFile(filepath.Join(state, "organizer", "CLAUDE.md"))

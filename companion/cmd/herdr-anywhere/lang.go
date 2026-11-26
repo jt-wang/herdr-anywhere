@@ -14,10 +14,11 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"regexp"
 	"runtime"
 	"strings"
+
+	"herdr-anywhere/companion/internal/proc"
 )
 
 // dialogLangs are the phone app's languages (app/src/strings/index.ts) and the dialog's (dialog/strings.js).
@@ -117,7 +118,7 @@ func posixLanguages(getenv func(string) string) []string {
 }
 
 func readAppleLanguages() ([]byte, error) {
-	return exec.Command("defaults", "read", "-g", "AppleLanguages").Output()
+	return proc.Command("defaults", "read", "-g", "AppleLanguages").Output()
 }
 
 func systemLanguage() string {

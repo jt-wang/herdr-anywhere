@@ -52,15 +52,15 @@ class CliBuildTest(unittest.TestCase):
         self.assertFalse((self.out / 'nsh-build.txt').exists())
         self.assertFalse((self.out / 'SHA256SUMS').exists())
 
-    def test_builds_eight_patches_with_key_and_checksum(self):
+    def test_builds_nine_patches_with_key_and_checksum(self):
         r = self.run_builder()
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertTrue((self.out / 'bin/nsh').is_file(), 'builder did not publish CLI')
         self.assertEqual((self.out / 'nsh-build.txt').read_text().strip(), self.key)
         calls = self.calls().splitlines()
         applied = [line for line in calls if ' apply ' in line and '--check' not in line]
-        self.assertEqual(len(applied), 8)
-        self.assertIn('0008-', applied[-1])
+        self.assertEqual(len(applied), 9)
+        self.assertIn('0009-', applied[-1])
         self.assertEqual(len([line for line in calls if line.startswith('rustup ')]), 1)
         subprocess.run(['shasum', '-a', '256', '-c', 'SHA256SUMS'], cwd=self.out, check=True, capture_output=True)
         self.assertEqual(self.run_builder(verify=True).returncode, 0)
@@ -90,6 +90,13 @@ class CliBuildTest(unittest.TestCase):
         next(self.patches.glob('0008-*.patch')).unlink()
         r = self.run_builder()
         self.assertNotEqual(r.returncode, 0, 'missing Android keyboard viewport patch accepted')
+        self.assertNotIn('rustup ', self.calls())
+        self.assert_not_published()
+
+    def test_missing_back_swipe_patch_rejected_before_build(self):
+        next(self.patches.glob('0009-*.patch')).unlink()
+        r = self.run_builder()
+        self.assertNotEqual(r.returncode, 0, 'missing back swipe patch accepted')
         self.assertNotIn('rustup ', self.calls())
         self.assert_not_published()
 

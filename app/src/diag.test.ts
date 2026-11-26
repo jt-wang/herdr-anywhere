@@ -165,7 +165,7 @@ test('HTTP observation preserves arguments, responses and errors and uses only e
     expect(JSON.stringify(events).includes('secret')).toBe(false)
     for (const [path, template] of [['/api/folders?path=private', '/api/folders'], ['/api/chat/private?before=secret', '/api/chat/:terminal'],
       ['/api/chat/private/images/private', '/api/chat/:terminal/images/:id'], ['/api/chat-setups/private', '/api/chat-setups/:agent'],
-      ['/unknown/private', 'other'], ['/api/files?name=private', '/api/files']]) expect(diagnosticEndpoint(path)).toBe(template)
+      ['/unknown/private', 'other'], ['/api/files?name=private', '/api/files'], ['/api/cli', '/api/cli']]) expect(diagnosticEndpoint(path)).toBe(template)
   } finally { setDiag(() => {}) }
 })
 

@@ -13,13 +13,15 @@ export function progressTree(): FakeTree {
   return JSON.parse(JSON.stringify(/^zh/i.test(locale()) ? v2 : en))
 }
 
-/** `herdr-anywhere progress agents` on a computer with four agents, its Codex too old. */
+/** `herdr-anywhere progress agents` on a computer with five agents, its Codex too old, and on Windows its Oh My Pi
+ *  installed as a .cmd script whose program can't be found. */
 export const AGENTS = {
   agents: [
     { id: 'claude-code', name: 'Claude Code', cmd: 'claude --model claude-haiku-5-5', usable: true },
     { id: 'pi', name: 'Pi', cmd: 'pi', usable: true },
     { id: 'kimi-code', name: 'Kimi Code', cmd: 'kimi --yolo', usable: true },
     { id: 'codex', name: 'Codex', cmd: 'codex', usable: false, note: 'needs 0.163 or later to report whether it is busy; this computer has 0.150.0', needs: '0.163', version: '0.150.0' },
+    { id: 'omp', name: 'Oh My Pi', cmd: 'omp', usable: false, note: "installed only as a .cmd script, which herdr-core can't start as an agent: C:\\npm\\omp.cmd", script: true },
   ],
   chosen: '',
 }

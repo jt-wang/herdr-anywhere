@@ -227,7 +227,7 @@ for (const [locale, [section, detail]] of Object.entries(SWITCH)) {
   }, 60000)
 }
 
-test('in English, picking the agent is in English, the too-old note too', async () => {
+test('in English, picking the agent is in English, the too-old and the .cmd notes too', async () => {
   const app = await progress('en')
   await app.waitFor('text:Needs you')
   await app.press('id:view-agents')
@@ -237,6 +237,7 @@ test('in English, picking the agent is in English, the too-old note too', async 
   await app.waitFor('id:agent-pi')
   expect(app.texts()).toContain('Which agent sorts what you say')
   expect(app.texts()).toContain('Needs 0.163 or later to report whether it is busy; this computer has 0.150.0')
+  expect(app.texts()).toContain("On Windows it is installed here as a script (.cmd) that doesn't say which program it runs, so herdr-core can't start it as an agent")
   await app.press('id:agent-pi')
   await app.waitFor('text:The first screen lists your tasks and how far each has got. · Pi is sorting')
   // The sorting agent writes in the phone's language.

@@ -11,7 +11,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -20,6 +19,7 @@ import (
 	"time"
 
 	"herdr-anywhere/companion/internal/chat"
+	"herdr-anywhere/companion/internal/proc"
 )
 
 // Reader reads under Dir, Claude Code's config folder (CLAUDE_CONFIG_DIR, else ~/.claude).
@@ -78,7 +78,7 @@ func (r *Reader) Find(pid int) (string, string, error) {
 func noFile(pid int, why string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	out, _ := exec.CommandContext(ctx, "ps", "eww", "-o", "command=", "-p", fmt.Sprint(pid)).Output()
+	out, _ := proc.CommandContext(ctx, "ps", "eww", "-o", "command=", "-p", fmt.Sprint(pid)).Output()
 	if bytes.Contains(out, []byte(" CLAUDE_CODE_CHILD_SESSION=1")) {
 		return chat.NoRecord
 	}
@@ -89,7 +89,7 @@ func noFile(pid int, why string) string {
 func startTime(pid int) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "ps", "-o", "lstart=", "-p", fmt.Sprint(pid))
+	cmd := proc.CommandContext(ctx, "ps", "-o", "lstart=", "-p", fmt.Sprint(pid))
 	cmd.Env = append(os.Environ(), "TZ=UTC")
 	out, err := cmd.Output()
 	return strings.TrimSpace(string(out)), err
