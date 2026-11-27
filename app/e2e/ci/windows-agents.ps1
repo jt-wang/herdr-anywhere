@@ -13,9 +13,11 @@ New-Item -ItemType Directory -Force $work | Out-Null
 $native = Join-Path $HOME '.local\bin\claude.exe'
 $cases = [ordered]@{
   'shell'          = ''
-  'npm-claude'     = 'claude'
-  'npm-gemini'     = 'gemini'
-  'npm-codex'      = 'codex'
+  # npm's own .cmd shims by their path: herdr-core's shell here lacks the npm folder a user's PATH has, and typed
+  # bare the name isn't found. The path runs what a user's `claude` runs: the shim, then node and the agent.
+  'npm-claude'     = "& '$env:HM_NPM\claude.cmd'"
+  'npm-gemini'     = "& '$env:HM_NPM\gemini.cmd'"
+  'npm-codex'      = "& '$env:HM_NPM\codex.cmd'"
 }
 if (Test-Path $native) { $cases['native-claude'] = "& '$native'" }
 
