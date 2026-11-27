@@ -1,0 +1,64 @@
+name: Trial, agents a phone sees on Windows
+# A trial on its own branch: on a Windows computer, which agents the phone lists under each space. Each agent is
+# typed into herdr-core's own shell, as someone does in Herdr; then the phone's rule (app/src/model/programs.ts and
+# Store.agents: an agent's own report, or a program it knows to be an agent) is applied to what herdr-core says runs
+# in front.
+on:
+  push:
+    branches: ["ci-try-agents-windows"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: pwsh
+
+jobs:
+  agents:
+    name: Agents a phone sees, Companion on ${{ matrix.os }}
+    if: github.repository == 'jt-wang/herdr-anywhere'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, windows-11-arm]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    env:
+      HERDR_CORE_VERSION: "0.1.22"
+      CORE_SHA256: 37cae9d6c522e205efcdb55a42d354285f41b8cbb4c6e60fb505b73b151966c9
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install herdr-core
+        run: |
+          $dir = Join-Path $env:LOCALAPPDATA "Programs\herdr-core"
+          $zip = Join-Path $env:RUNNER_TEMP "herdr-core.zip"
+          curl.exe -fsSL --retry 5 --retry-delay 10 "https://releases.herdr.dev/core/$env:HERDR_CORE_VERSION/herdr-core-windows-x86_64.zip" -o $zip
+          if ((Get-FileHash $zip -Algorithm SHA256).Hash -ne $env:CORE_SHA256) { throw "herdr-core doesn't match its sha256" }
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          & "$env:SystemRoot\System32\tar.exe" -xf $zip -C $dir
+          & "$dir\herdr-core.exe" --version
+          "HM_HC=$dir\herdr-core.exe" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+      - name: Agents as users install them
+        run: |
+          node --version
+          $prefix = Join-Path $env:RUNNER_TEMP "npm"
+          npm install -g --prefix $prefix @anthropic-ai/claude-code @google/gemini-cli @openai/codex@0.167.0
+          if ($LASTEXITCODE) { throw "npm install: $LASTEXITCODE" }
+          Get-ChildItem $prefix -Filter *.cmd | ForEach-Object { $_.Name }
+          "HM_NPM=$prefix" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          # Claude Code's own Windows installer, which gives claude.exe: the case the phone should know.
+          try {
+            irm https://claude.ai/install.ps1 | iex
+          } catch { Write-Host "native installer: $_" }
+          Get-ChildItem "$HOME\.local\bin" -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }
+      - name: What runs in front of each pane, and whether the phone lists it
+        run: app/e2e/ci/windows-agents.ps1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: windows-agents-${{ matrix.os }}
+          path: ${{ runner.temp }}/agents
